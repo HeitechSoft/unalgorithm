@@ -1,0 +1,42 @@
+name: Version PR
+
+# Keeps a "Version packages" PR open that applies pending changesets (version bump + CHANGELOG).
+# Merging it bumps the version; a maintainer then tags the merge commit (git tag vX.Y.Z) to run release.yml.
+# Needs "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General) on the org and repo.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency: changesets-${{ github.ref }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset version
+          pr-title: Version packages
+          commit-message: 'chore: version packages'
+        env:
+          # @changesets/changelog-github reads the token from the environment.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,41 @@
+{
+  "name": "@unalgorithm/extension",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "UnAlgorithm browser extension",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:fb": "cross-env UA_START=facebook wxt",
+    "build": "wxt build",
+    "build:e2e": "wxt build --mode e2e",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "e2e": "pnpm build:e2e && playwright test",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@unalgorithm/ai": "workspace:*",
+    "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/platforms": "workspace:*",
+    "@unalgorithm/protocol": "workspace:*",
+    "@unalgorithm/ui": "workspace:*",
+    "lucide-react": "^1.55.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.64.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "cross-env": "^10.1.0",
+    "fake-indexeddb": "^6.2.5",
+    "web-ext": "^10.7.0",
+    "wxt": "0.21.4"
+  }
+}

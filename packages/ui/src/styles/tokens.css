@@ -1,0 +1,163 @@
+/*
+ * UnAlgorithm design tokens. Every color resolves through light-dark(), so a surface switches theme by setting
+ * `color-scheme`. Extension pages follow the system; in-feed UI follows the host page's sampled theme.
+ */
+@layer tokens {
+  :root,
+  :host {
+    color-scheme: light dark;
+
+    /* Brand ramp: Lagoon */
+    --ua-lagoon-50: #ecfaf8;
+    --ua-lagoon-100: #d0f3ee;
+    --ua-lagoon-200: #a3e6dd;
+    --ua-lagoon-300: #5edbcb;
+    --ua-lagoon-400: #3ccfc0;
+    --ua-lagoon-500: #16a89b;
+    --ua-lagoon-600: #0e8c83;
+    --ua-lagoon-700: #0b7a75;
+    --ua-lagoon-800: #08615d;
+    --ua-lagoon-900: #054542;
+
+    /* Accent */
+    --ua-accent: light-dark(#0b7a75, #3ccfc0);
+    --ua-accent-hover: light-dark(#08615d, #5edbcb);
+    --ua-accent-pressed: light-dark(#054542, #16a89b);
+    --ua-on-accent: light-dark(#ffffff, #032b29);
+    --ua-accent-tint: light-dark(rgb(11 122 117 / 0.12), rgb(60 207 192 / 0.18));
+
+    /* Surfaces (Apple grouped-list model) */
+    --ua-bg: light-dark(#ffffff, #161618);
+    --ua-bg-secondary: light-dark(#f5f5f7, #1c1c1f);
+    --ua-bg-grouped: light-dark(#f2f2f7, #161618);
+    --ua-bg-grouped-raised: light-dark(#ffffff, #232327);
+    --ua-bg-elevated: light-dark(#ffffff, #2c2c31);
+
+    /* Text */
+    --ua-text: light-dark(#1d1d1f, #f5f5f7);
+    --ua-text-secondary: light-dark(#5e5e63, #a1a1a6);
+    --ua-text-tertiary: light-dark(#8e8e93, #7c7c82);
+
+    /* Lines and fills */
+    --ua-separator: light-dark(rgb(60 60 67 / 0.16), rgb(235 235 245 / 0.12));
+    --ua-border: light-dark(rgb(60 60 67 / 0.22), rgb(235 235 245 / 0.16));
+    --ua-control-border: light-dark(#8a8a8f, #8e8e93);
+    --ua-fill: light-dark(rgb(120 120 128 / 0.2), rgb(120 120 128 / 0.36));
+    --ua-fill-2: light-dark(rgb(120 120 128 / 0.16), rgb(120 120 128 / 0.32));
+    --ua-fill-3: light-dark(rgb(118 118 128 / 0.12), rgb(118 118 128 / 0.24));
+    --ua-fill-4: light-dark(rgb(116 116 128 / 0.08), rgb(118 118 128 / 0.18));
+
+    /* Semantic */
+    --ua-success: light-dark(#1f7a35, #4cd07a);
+    --ua-success-tint: light-dark(rgb(31 122 53 / 0.12), rgb(76 208 122 / 0.18));
+    --ua-warning: light-dark(#a15c00, #ffb340);
+    --ua-warning-tint: light-dark(rgb(161 92 0 / 0.12), rgb(255 179 64 / 0.18));
+    --ua-danger: light-dark(#c4271f, #ff6b61);
+    --ua-danger-tint: light-dark(rgb(196 39 31 / 0.1), rgb(255 107 97 / 0.18));
+    --ua-ai: light-dark(#5b3fc8, #b7a6ff);
+    --ua-ai-tint: light-dark(rgb(107 79 216 / 0.1), rgb(183 166 255 / 0.18));
+    --ua-focus: var(--ua-accent);
+    --ua-scrim: light-dark(rgb(0 0 0 / 0.32), rgb(0 0 0 / 0.56));
+
+    /* Type */
+    --ua-font-sans:
+      -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial,
+      sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --ua-font-display:
+      -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial,
+      sans-serif;
+    --ua-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --ua-type-display: 700 2.125rem / 2.5rem var(--ua-font-display);
+    --ua-type-title1: 700 1.625rem / 2rem var(--ua-font-display);
+    --ua-type-title2: 600 1.25rem / 1.625rem var(--ua-font-display);
+    --ua-type-title3: 600 1.0625rem / 1.375rem var(--ua-font-sans);
+    --ua-type-headline: 600 0.875rem / 1.25rem var(--ua-font-sans);
+    --ua-type-body: 400 0.875rem / 1.25rem var(--ua-font-sans);
+    --ua-type-callout: 400 0.8125rem / 1.125rem var(--ua-font-sans);
+    --ua-type-subhead: 500 0.8125rem / 1.125rem var(--ua-font-sans);
+    --ua-type-footnote: 400 0.75rem / 1rem var(--ua-font-sans);
+    --ua-type-caption: 500 0.6875rem / 0.875rem var(--ua-font-sans);
+    --ua-type-stat: 700 2.125rem / 2.5rem var(--ua-font-display);
+
+    /* Spacing (4-pt grid) */
+    --ua-space-0_5: 2px;
+    --ua-space-1: 4px;
+    --ua-space-1_5: 6px;
+    --ua-space-2: 8px;
+    --ua-space-3: 12px;
+    --ua-space-4: 16px;
+    --ua-space-5: 20px;
+    --ua-space-6: 24px;
+    --ua-space-8: 32px;
+    --ua-space-10: 40px;
+    --ua-space-12: 48px;
+    --ua-space-16: 64px;
+
+    /* Radii */
+    --ua-radius-xs: 4px;
+    --ua-radius-sm: 6px;
+    --ua-radius-control: 8px;
+    --ua-radius-md: 10px;
+    --ua-radius-lg: 14px;
+    --ua-radius-xl: 20px;
+    --ua-radius-full: 999px;
+
+    /* Elevation */
+    --ua-shadow-1:
+      0 0 0 0.5px light-dark(rgb(0 0 0 / 0.06), rgb(255 255 255 / 0.06)),
+      0 1px 3px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.5));
+    --ua-shadow-2:
+      inset 0 0.5px 0 light-dark(transparent, rgb(255 255 255 / 0.08)),
+      0 0 0 0.5px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.6)), 0 2px 6px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.3)),
+      0 10px 30px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.5));
+    --ua-shadow-3:
+      inset 0 0.5px 0 light-dark(transparent, rgb(255 255 255 / 0.1)), 0 0 0 0.5px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.7)),
+      0 8px 20px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.4)), 0 24px 60px light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.6));
+
+    /* Materials (floating layers only) */
+    --ua-material-regular: light-dark(rgb(255 255 255 / 0.74), rgb(40 40 44 / 0.72));
+    --ua-material-thick: light-dark(rgb(250 250 252 / 0.9), rgb(32 32 36 / 0.88));
+    --ua-material-filter: blur(24px) saturate(180%);
+
+    /* Motion */
+    --ua-dur-1: 100ms;
+    --ua-dur-2: 160ms;
+    --ua-dur-3: 240ms;
+    --ua-dur-4: 360ms;
+    --ua-dur-5: 480ms;
+    --ua-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ua-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ua-ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ua-ease-spring: linear(
+      0,
+      0.058 5%,
+      0.188 10%,
+      0.344 15%,
+      0.498 20%,
+      0.635 25%,
+      0.749 30%,
+      0.837 35%,
+      0.903 40%,
+      0.949 45%,
+      0.98 50%,
+      0.999 55%,
+      1.009 60%,
+      1.015 70%,
+      1.012 80%,
+      1.008 90%,
+      1
+    );
+    --ua-motion-distance: 8px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root,
+    :host {
+      --ua-dur-3: 0ms;
+      --ua-dur-4: 160ms;
+      --ua-dur-5: 160ms;
+      --ua-ease-spring: var(--ua-ease-out);
+      --ua-motion-distance: 0px;
+    }
+  }
+}

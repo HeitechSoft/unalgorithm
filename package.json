@@ -1,0 +1,36 @@
+{
+  "name": "unalgorithm",
+  "private": true,
+  "description": "UnAlgorithm: see the posts you came for. An open-source feed curator for LinkedIn and Facebook.",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @unalgorithm/extension dev",
+    "dev:fb": "pnpm --filter @unalgorithm/extension dev:fb",
+    "build": "pnpm --filter @unalgorithm/extension build",
+    "zip": "pnpm --filter @unalgorithm/extension zip",
+    "lint": "biome ci .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "e2e": "pnpm --filter @unalgorithm/extension e2e",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "changeset": "changeset",
+    "fixtures:check": "node scripts/check-fixtures.mjs",
+    "notices": "node scripts/third-party-notices.mjs",
+    "notices:check": "node scripts/third-party-notices.mjs --check"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
+    "@types/node": "^22.20.5",
+    "jsdom": "^30.1.2",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

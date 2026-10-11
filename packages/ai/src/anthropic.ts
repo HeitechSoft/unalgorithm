@@ -1,0 +1,113 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
+import { AIError, codeForStatus } from './errors.ts';
+import { anthropicCanDisableThinking } from './models.ts';
+import type { AIClient, CapabilityStore, ModelInfo, StructuredRequest, StructuredResult } from './types.ts';
+
+type MessageUsage = Anthropic.Messages.Usage;
+
+/** Anthropic's input_tokens already exclude cache reads and writes. */
+function normalize(u: MessageUsage | undefined): NormalizedUsage {
+  if (!u) return ZERO_USAGE;
+  return {
+    uncachedInput: u.input_tokens ?? 0,
+    cacheRead: u.cache_read_input_tokens ?? 0,
+    cacheWrite: u.cache_creation_input_tokens ?? 0,
+    output: u.output_tokens ?? 0,
+    webSearches: u.server_tool_use?.web_search_requests ?? 0,
+    estimated: false,
+  };
+}
+
+function toAIError(err: unknown): AIError {
+  if (err instanceof AIError) return err;
+  if (err instanceof Anthropic.APIConnectionTimeoutError)
+    return new AIError('timeout', 'Anthropic took too long to answer.', { cause: err });
+  if (err instanceof Anthropic.APIConnectionError) return new AIError('network', "Couldn't reach Anthropic.", { cause: err });
+  if (err instanceof Anthropic.APIError) {
+    const message = err.message ?? '';
+    const code = codeForStatus(err.status ?? 0, message);
+    const retry = Number(err.headers?.get?.('retry-after'));
+    return new AIError(code, message, {
+      cause: err,
+      ...(Number.isFinite(retry) && retry > 0 ? { retryAfterMs: retry * 1000 } : {}),
+    });
+  }
+  return new AIError('unknown', String(err), { cause: err });
+}
+
+/**
+ * Claude via the official SDK, straight from the extension to api.anthropic.com with the user's own key.
+ * Structured output through `output_config.format`, a cached system prompt, low effort, and thinking switched off
+ * where the model allows it (classification needs no deliberation).
+ */
+export function anthropicClient(opts: { apiKey: string; capabilities: CapabilityStore; fetch?: typeof fetch }): AIClient {
+  const client = new Anthropic({
+    apiKey: opts.apiKey,
+    dangerouslyAllowBrowser: true,
+    maxRetries: 1,
+    timeout: 30_000,
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+  });
+
+  async function call(req: StructuredRequest, attempt = 0): Promise<StructuredResult> {
+    const capKey = `anthropic:${req.model}`;
+    const caps = opts.capabilities.get(capKey) ?? {};
+    const body: Anthropic.Messages.MessageCreateParamsNonStreaming = {
+      model: req.model,
+      max_tokens: req.maxOutputTokens,
+      system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: req.user }],
+      output_config: {
+        format: { type: 'json_schema', schema: req.jsonSchema },
+        ...(caps.noEffort ? {} : { effort: req.effort }),
+      },
+      ...(!caps.noThinkingParam && anthropicCanDisableThinking(req.model) ? { thinking: { type: 'disabled' as const } } : {}),
+    };
+    let msg: Anthropic.Messages.Message;
+    try {
+      msg = await client.messages.create(body, {
+        ...(req.signal ? { signal: req.signal } : {}),
+        ...(req.timeoutMs ? { timeout: req.timeoutMs } : {}),
+      });
+    } catch (err) {
+      const e = toAIError(err);
+      // Learn what this model rejects, remember it, and retry once without it.
+      if (e.code === 'bad-request' && attempt === 0) {
+        if (/effort/i.test(e.message) && !caps.noEffort) {
+          opts.capabilities.set(capKey, { ...caps, noEffort: true });
+          return call(req, attempt + 1);
+        }
+        if (/thinking/i.test(e.message) && !caps.noThinkingParam) {
+          opts.capabilities.set(capKey, { ...caps, noThinkingParam: true });
+          return call(req, attempt + 1);
+        }
+      }
+      throw e;
+    }
+    const usage = normalize(msg.usage);
+    if (msg.stop_reason === 'refusal') throw new AIError('refusal', 'The model declined this request.', { usage });
+    if (msg.stop_reason === 'max_tokens') throw new AIError('truncated', 'The answer was cut off.', { usage });
+    const text = msg.content
+      .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+    return { text, usage, model: msg.model, mode: 'json-schema' };
+  }
+
+  return {
+    kind: 'anthropic',
+    structured: (req) => call(req),
+    async listModels(signal) {
+      try {
+        const out: ModelInfo[] = [];
+        for await (const m of client.models.list({ limit: 100 }, signal ? { signal } : {})) {
+          out.push({ id: m.id, name: m.display_name ?? m.id, created: Date.parse(m.created_at) || 0 });
+        }
+        return out.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+      } catch (err) {
+        throw toAIError(err);
+      }
+    },
+  };
+}

@@ -1,0 +1,14 @@
+# Maintainers are listed in MAINTAINERS.md. Every change needs a review from one of them.
+*                                   @TomHeiber
+
+# Platform adapters and their fixtures: layout knowledge lives here.
+/packages/platforms/src/linkedin/   @TomHeiber
+/packages/platforms/src/facebook/   @TomHeiber
+
+# Anything that changes what leaves the device, or how keys are stored, needs a privacy review.
+/packages/protocol/                 @TomHeiber
+/packages/core/src/classify/        @TomHeiber
+/apps/extension/src/background/     @TomHeiber
+/PRIVACY.md                         @TomHeiber
+/CLA.md                             @TomHeiber
+/.github/                           @TomHeiber

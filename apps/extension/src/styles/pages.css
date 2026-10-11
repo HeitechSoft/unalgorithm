@@ -1,0 +1,274 @@
+/* Layout for the extension's own pages. Components and tokens come from @unalgorithm/ui. */
+
+.popup {
+  width: 360px;
+  padding: 12px;
+  background: var(--ua-bg-grouped);
+}
+
+.popup .ua-group {
+  margin-bottom: 0;
+}
+
+/* ---------- Side panel ---------- */
+.panel {
+  min-width: 300px;
+  padding: 16px;
+  container-type: inline-size;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.panel-sub {
+  margin-bottom: 12px;
+}
+.panel-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: start;
+}
+.panel-item + .panel-item {
+  border-top: 0.5px solid var(--ua-separator);
+}
+.panel-snippet {
+  font: var(--ua-type-callout);
+  color: var(--ua-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@container (max-width: 400px) {
+  .panel-snippet {
+    -webkit-line-clamp: 1;
+  }
+}
+
+/* ---------- Settings (macOS System Settings) ---------- */
+.settings {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 16px 10px;
+  border-right: 0.5px solid var(--ua-separator);
+  background: var(--ua-bg-secondary);
+}
+.sidebar-group {
+  margin: 14px 10px 4px;
+  font: var(--ua-type-footnote);
+  font-weight: 600;
+  color: var(--ua-text-secondary);
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: var(--ua-type-body);
+  color: var(--ua-text);
+  text-align: start;
+  cursor: pointer;
+}
+.sidebar-item:hover {
+  background: var(--ua-fill-4);
+}
+.sidebar-item[aria-current="page"] {
+  background: var(--ua-accent-tint);
+  font-weight: 600;
+}
+.sidebar-search {
+  margin: 0 2px 10px;
+}
+.sidebar-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+}
+.pane {
+  max-width: 720px;
+  padding: 28px 32px 64px;
+}
+.pane-title {
+  margin-bottom: 18px;
+}
+.pane-intro {
+  margin: -10px 0 18px;
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+.thumbs {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+.thumb-option {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  font: var(--ua-type-callout);
+  cursor: pointer;
+}
+.thumb-option[aria-checked="true"] .ua-thumb {
+  box-shadow: 0 0 0 3px var(--ua-accent);
+}
+.thumb-option[aria-checked="true"] {
+  font-weight: 600;
+  color: var(--ua-accent);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.flow-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 16px;
+  font: var(--ua-type-callout);
+}
+.flow-box {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--ua-fill-4);
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .settings {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    border-right: none;
+  }
+  .pane {
+    padding: 20px 16px 48px;
+  }
+}
+
+/* ---------- Onboarding ---------- */
+.onboarding {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: 64px 1fr auto;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, light-dark(rgb(20 184 166 / 0.1), rgb(20 184 166 / 0.12)), transparent 60%),
+    var(--ua-bg-grouped);
+}
+.ob-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 24px;
+}
+.ob-top > :last-child {
+  justify-self: end;
+}
+.ob-main {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 24px 24px 32px;
+  animation: ob-in var(--ua-dur-5) var(--ua-ease-spring);
+}
+.ob-main h1 {
+  font: var(--ua-type-display);
+  letter-spacing: -0.022em;
+  margin-bottom: 10px;
+}
+.ob-sub {
+  font: 400 1rem / 1.5rem var(--ua-font-sans);
+  color: var(--ua-text-secondary);
+  margin-bottom: 28px;
+  max-width: 560px;
+}
+.ob-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 16px 24px 24px;
+}
+.ob-welcome {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 40px;
+  align-items: center;
+}
+.ob-welcome h1 {
+  font-size: 2.75rem;
+  line-height: 3.125rem;
+}
+.ob-eyebrow {
+  font: var(--ua-type-subhead);
+  color: var(--ua-accent);
+  margin-bottom: 8px;
+}
+.ob-foot {
+  padding: 12px 24px 24px;
+  text-align: center;
+}
+.ob-done {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 12px;
+  padding-top: 24px;
+}
+.ob-check {
+  animation: ob-pop 600ms var(--ua-ease-spring) both;
+}
+@keyframes ob-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+@keyframes ob-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@media (max-width: 960px) {
+  .ob-welcome {
+    grid-template-columns: 1fr;
+  }
+  .ob-welcome > :last-child {
+    order: -1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-main,
+  .ob-check {
+    animation-duration: 1ms;
+  }
+}

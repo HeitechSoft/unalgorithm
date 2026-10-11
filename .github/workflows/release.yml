@@ -1,0 +1,65 @@
+name: Release
+
+# Runs when a version tag is pushed (see docs/release.md). Builds the extension zip, checksums it, attests build
+# provenance and attaches both to a GitHub Release. Chrome Web Store submission stays manual during the preview.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm check && pnpm fixtures:check && pnpm notices:check
+
+      - name: Check the tag matches the extension version
+        run: |
+          version=$(node -p "require('./apps/extension/package.json').version")
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match apps/extension version $version" >&2
+            exit 1
+          fi
+
+      - name: Build zip
+        run: pnpm zip
+
+      - name: Checksums
+        working-directory: apps/extension/.output
+        run: sha256sum *-chrome.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: apps/extension/.output/*-chrome.zip
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            apps/extension/.output/*-chrome.zip \
+            apps/extension/.output/SHA256SUMS.txt \
+            --title "UnAlgorithm ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag

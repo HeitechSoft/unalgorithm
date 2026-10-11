@@ -1,0 +1,56 @@
+import type { NormalizedUsage } from '@unalgorithm/protocol';
+
+export type StructuredMode = 'json-schema' | 'json-schema-loose' | 'json-object' | 'prompt-only' | 'on-device';
+
+export interface StructuredRequest {
+  model: string;
+  /** Stable across requests so providers can cache it. */
+  system: string;
+  user: string;
+  /** Strict JSON schema (see json-schema.ts). */
+  jsonSchema: Record<string, unknown>;
+  schemaName: string;
+  effort: 'low' | 'medium';
+  maxOutputTokens: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface StructuredResult {
+  /** Raw JSON text from the model; the caller validates it. */
+  text: string;
+  usage: NormalizedUsage;
+  /** The model that actually answered. */
+  model: string;
+  mode: StructuredMode;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  created?: number;
+}
+
+/** One way of reaching a model. Every vendor adapter implements this; the orchestrator does the rest. */
+export interface AIClient {
+  readonly kind: string;
+  structured(req: StructuredRequest): Promise<StructuredResult>;
+  listModels(signal?: AbortSignal): Promise<ModelInfo[]>;
+}
+
+/** What a model or endpoint turned out to accept, remembered across service-worker restarts. */
+export interface Capabilities {
+  noEffort?: boolean;
+  noThinkingParam?: boolean;
+  mode?: StructuredMode;
+}
+
+export interface CapabilityStore {
+  get(key: string): Capabilities | undefined;
+  set(key: string, caps: Capabilities): void;
+}
+
+export function memoryCapabilities(): CapabilityStore {
+  const map = new Map<string, Capabilities>();
+  return { get: (k) => map.get(k), set: (k, v) => void map.set(k, v) };
+}

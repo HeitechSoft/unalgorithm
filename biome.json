@@ -1,0 +1,171 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.output",
+      "!**/.wxt",
+      "!**/coverage",
+      "!**/playwright-report",
+      "!**/test-results",
+      "!screens",
+      "!**/fixtures/**/*.html",
+      "!**/pnpm-lock.yaml"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 130,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all",
+      "semicolons": "always",
+      "arrowParentheses": "always"
+    }
+  },
+  "css": {
+    "formatter": {
+      "enabled": true
+    },
+    "linter": {
+      "enabled": true
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noNonNullAssertion": "warn",
+        "useImportType": "error",
+        "noParameterAssign": "off",
+        "noDescendingSpecificity": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": {
+          "level": "warn",
+          "options": {
+            "allow": ["warn", "error", "debug", "log"]
+          }
+        },
+        "noAssignInExpressions": "off",
+        "noConfusingVoidType": "off"
+      },
+      "complexity": {
+        "noForEach": "off",
+        "noVoid": "off",
+        "noImportantStyles": "off"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "warn"
+      },
+      "a11y": {
+        "preset": "none"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/protocol/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/*"],
+                    "message": "protocol is wire contracts only: zod, nothing else."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "wxt",
+                      "wxt/*",
+                      "react",
+                      "react-dom",
+                      "@unalgorithm/ai",
+                      "@unalgorithm/platforms",
+                      "@unalgorithm/ui"
+                    ],
+                    "message": "core stays pure: no DOM, extension, UI or AI dependencies."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/platforms/**", "packages/ai/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui"],
+                    "message": "Adapters and AI clients never depend on the extension runtime or UI."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/test/**", "**/tests/**", "**/e2e/**", "scripts/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noConsole": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    }
+  ]
+}

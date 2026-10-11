@@ -1,0 +1,23 @@
+{
+  "name": "@unalgorithm/ai",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./chrome-builtin": "./src/chrome-builtin/index.ts",
+    "./presets": "./src/ui-entry.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/protocol": "workspace:*",
+    "@anthropic-ai/sdk": "^0.133.0",
+    "openai": "^7.32.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {}
+}
