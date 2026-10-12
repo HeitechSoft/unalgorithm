@@ -11,6 +11,7 @@ import { AIError } from '@unalgorithm/ai';
 import type { ClassifyResponse, NormalizedUsage } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
 import type { Config } from '../config.ts';
+import type { AppEnv } from '../http/middleware.ts';
 import { errorFields, type Logger } from '../log.ts';
 
 export type BillingTask = 'classify';
@@ -66,8 +67,8 @@ export interface BillingProvider {
   release(input: ReleaseInput): Promise<void>;
   /** Null when the provider keeps no balance. */
   balance(userId: string): Promise<{ balanceMicros: number } | null>;
-  /** Mounts the module's own routes and pages. */
-  mount?(app: Hono): void;
+  /** Mounts the module's own routes and pages on the server's app, behind its middleware and after its routes. */
+  mount?(app: Hono<AppEnv>): void;
 }
 
 export const noopBilling: BillingProvider = Object.freeze({

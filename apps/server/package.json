@@ -16,6 +16,8 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.4",
+    "@hono/zod-openapi": "^1.6.3",
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
