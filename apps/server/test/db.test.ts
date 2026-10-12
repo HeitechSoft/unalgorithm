@@ -1,14 +1,16 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { type AddressInfo, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import drizzleConfig from '../drizzle.config.ts';
-import { type DbHandle, openPglite, openPostgres } from '../src/db/client.ts';
+import { CONNECT_TIMEOUT_MS, type DbHandle, openPglite, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
+import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 
 /** `apps/server`, the folder drizzle-kit resolves `drizzle.config.ts` paths against. */
 const SERVER_ROOT = new URL('../', import.meta.url);
@@ -78,6 +80,33 @@ describe('client', { timeout: PGLITE_TIMEOUT }, () => {
     await expect(h.close()).resolves.toBeUndefined();
   });
 
+  it('test_postgres_connect_times_out', async () => {
+    // A server that accepts the connection and never answers, like a database behind a dropped route.
+    const sockets = new Set<Socket>();
+    const silent = createServer((socket) => sockets.add(socket));
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    cleanup.push(
+      () =>
+        new Promise((resolve) => {
+          for (const socket of sockets) socket.destroy();
+          silent.close(resolve);
+        }),
+    );
+    const { port } = silent.address() as AddressInfo;
+
+    const h = openPostgres(`postgres://ua@127.0.0.1:${port}/ua`, undefined, { connectTimeoutMs: 200 });
+    cleanup.push(() => h.close());
+    const started = performance.now();
+    await expect(h.db.execute(sql`select 1`)).rejects.toThrow();
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(sockets.size).toBe(1);
+
+    // Without the option, the pool gets the server's default.
+    const byDefault = openPostgres(`postgres://ua@127.0.0.1:${port}/ua`);
+    cleanup.push(() => byDefault.close());
+    expect(byDefault.kind === 'postgres' && byDefault.pool.options.connectionTimeoutMillis).toBe(CONNECT_TIMEOUT_MS);
+  });
+
   it('test_create_test_db_applies_migrations', async () => {
     const h = await createTestDb(PROBE_FOLDER);
     cleanup.push(() => h.close());
@@ -132,20 +161,36 @@ describe('migrations', { timeout: PGLITE_TIMEOUT }, () => {
   });
 });
 
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
-
 describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () => {
-  it('test_concurrent_migrations_on_postgres', async () => {
-    // A fresh database per run, so the shared test database (also used by the end-to-end server) stays untouched.
-    const admin = openPostgres(TEST_DATABASE_URL!);
-    cleanup.push(() => admin.close());
-    const name = `ua_migrate_${process.pid}_${Date.now()}`;
-    await admin.db.execute(sql.raw(`create database ${name}`));
-    cleanup.push(() => admin.db.execute(sql.raw(`drop database if exists ${name} with (force)`)));
+  it('test_postgres_test_dbs_are_separate_and_dropped', async () => {
+    const [one, two] = await Promise.all([createPostgresTestDb(), createPostgresTestDb()]);
+    cleanup.push(
+      () => one.drop(),
+      () => two.drop(),
+    );
+    expect(one.name).toMatch(/^ua_test_[0-9a-f]{12}$/);
+    expect(one.name).not.toBe(two.name);
 
-    const url = new URL(TEST_DATABASE_URL!);
-    url.pathname = `/${name}`;
-    const [a, b] = [openPostgres(url.href), openPostgres(url.href)];
+    const [a, b] = [openPostgres(one.url), openPostgres(two.url)];
+    cleanup.push(
+      () => a.close(),
+      () => b.close(),
+    );
+    expect(await rows(a, sql`select current_database() as name`)).toEqual([{ name: one.name }]);
+    await a.db.execute(sql`create table probe (id integer)`);
+    expect(await probeTables(a)).toBe(1);
+    expect(await probeTables(b)).toBe(0);
+
+    // drop() ends the connections still open to it, and a second call does nothing.
+    await one.drop();
+    await expect(one.drop()).resolves.toBeUndefined();
+    expect(await count(b, sql`select count(*)::int as n from pg_database where datname = ${one.name}`)).toBe(0);
+  });
+
+  it('test_concurrent_migrations_on_postgres', async () => {
+    const fresh = await createPostgresTestDb('ua_migrate');
+    cleanup.push(() => fresh.drop());
+    const [a, b] = [openPostgres(fresh.url), openPostgres(fresh.url)];
     cleanup.push(
       () => a.close(),
       () => b.close(),

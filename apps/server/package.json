@@ -6,13 +6,13 @@
   "description": "Self-hostable server for UnAlgorithm Feed: email sign-in and AI classification for the extension",
   "type": "module",
   "engines": {
-    "node": ">=22.18"
+    "node": "^22.18.0 || >=23.6.0"
   },
   "scripts": {
-    "start": "node src/index.ts",
-    "dev": "node --watch src/index.ts",
+    "start": "node --import ./src/require-node.js src/index.ts",
+    "dev": "node --import ./src/require-node.js --watch src/index.ts",
     "typecheck": "tsc --noEmit -p .",
-    "check-config": "node src/cli/check-config.ts",
+    "check-config": "node --import ./src/require-node.js src/cli/check-config.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

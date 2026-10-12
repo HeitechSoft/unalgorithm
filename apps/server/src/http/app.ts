@@ -8,6 +8,7 @@ import { AIError, describeError } from '@unalgorithm/ai';
 import {
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
+  EMAIL_OTP_METHOD,
   MAX_POSTS_PER_REQUEST,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -104,7 +105,7 @@ export function createApp(deps: AppDeps): App {
     source: config.sourceUrl,
     billing: billing.advertised,
     capabilities: { classify: true, sync: false },
-    auth: { methods: ['email-otp'], authorizePath: AUTHORIZE_PAGE_PATH, tokenPath: TOKEN_PATH },
+    auth: { methods: [EMAIL_OTP_METHOD], authorizePath: AUTHORIZE_PAGE_PATH, tokenPath: TOKEN_PATH },
     limits: { maxPostsPerRequest: MAX_POSTS_PER_REQUEST },
   };
   app.get(SERVER_INFO_PATH, (c) => {

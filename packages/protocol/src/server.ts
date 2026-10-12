@@ -12,6 +12,9 @@ export const TOKEN_PATH = '/v1/auth/token';
 export const REVOKE_PATH = '/v1/auth/revoke';
 export const CLASSIFY_PATH = '/v1/classify';
 
+/** The sign-in method every server offers today, and the one the extension uses: a 6-digit code sent by email. */
+export const EMAIL_OTP_METHOD = 'email-otp';
+
 /** Access tokens live 15 minutes; the extension refreshes them with its refresh token. */
 export const ACCESS_TOKEN_TTL_SECONDS = 900;
 
@@ -44,7 +47,11 @@ export const ServerInfoSchema = z.object({
   billing: z.boolean(),
   capabilities: z.object({ classify: z.boolean(), sync: z.boolean() }),
   auth: z.object({
-    methods: z.array(z.enum(['email-otp'])).min(1),
+    /**
+     * Sign-in methods the server offers, such as `email-otp`. Open-ended, so a server that adds a method later still
+     * passes: a client checks that the list includes the method it supports (`EMAIL_OTP_METHOD`).
+     */
+    methods: z.array(z.string().min(1).max(40)).min(1).max(10),
     authorizePath: OriginPath,
     tokenPath: OriginPath,
   }),

@@ -97,6 +97,7 @@ function socketAddress(c: Context): string | null {
 /**
  * CORS for `/v1/*`: only `chrome-extension://<id>` origins of the configured extension ids are answered, for the
  * methods and headers the extension uses. No credentials: the extension sends bearer tokens, never cookies.
+ * `Retry-After` is exposed: without that, a cross-origin fetch cannot read it and the extension could not wait as told.
  */
 export function extensionCors(extensionIds: readonly string[]): MiddlewareHandler {
   const allowed = new Set(extensionIds.map((id) => `chrome-extension://${id}`));
@@ -104,6 +105,7 @@ export function extensionCors(extensionIds: readonly string[]): MiddlewareHandle
     origin: (origin) => (allowed.has(origin) ? origin : null),
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['authorization', 'content-type'],
+    exposeHeaders: ['Retry-After'],
     maxAge: 600,
   });
 }

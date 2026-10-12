@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRoute } from '@hono/zod-openapi';
@@ -21,6 +22,8 @@ import { createTestApp, type TestAppOptions, testConfig } from './support/test-a
 const PGLITE_TIMEOUT = 30_000;
 
 const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
+/** The entry point, by absolute path: the test must not depend on the folder Vitest runs in. */
+const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
 const DEV_ORIGIN = `chrome-extension://${DEV_EXTENSION_ID}`;
 const OTHER_ORIGIN = `chrome-extension://${'b'.repeat(32)}`;
@@ -127,6 +130,9 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
 describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_cors_allows_configured_extension_only', async () => {
     const t = await testApp();
+    t.app.get('/v1/limited', () => {
+      throw new AIError('rate-limit', 'x', { retryAfterMs: 2000 });
+    });
     const preflight = (origin: string) =>
       t.app.request('/v1/anything', {
         method: 'OPTIONS',
@@ -150,6 +156,16 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
     const notFound = await t.app.request('/v1/anything', { headers: { Origin: DEV_ORIGIN } });
     expect(notFound.status).toBe(404);
     expect(notFound.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+
+    // A cross-origin fetch reads only exposed headers: Retry-After must be one, or the extension cannot honour it.
+    const limited = await t.app.request('/v1/limited', { headers: { Origin: DEV_ORIGIN } });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    expect(limited.headers.get('retry-after')).toBe('2');
+    expect(limited.headers.get('access-control-expose-headers')).toBe('Retry-After');
+    expect(
+      (await t.app.request('/v1/limited', { headers: { Origin: OTHER_ORIGIN } })).headers.get('access-control-allow-origin'),
+    ).toBeNull();
 
     // The allowlist is the configured one: a second id is admitted once it is listed.
     const both = await testApp({ config: testConfig({ EXTENSION_IDS: `${DEV_EXTENSION_ID},${'b'.repeat(32)}` }) });
@@ -408,7 +424,8 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
 
   it('test_entry_exits_on_missing_config', () => {
     const run = (env: Record<string, string>) =>
-      spawnSync(process.execPath, ['src/index.ts'], { env, cwd: SERVER_DIR, encoding: 'utf8', timeout: 20_000 });
+      // From a folder outside the repository, so the entry is shown not to depend on the working directory either.
+      spawnSync(process.execPath, [ENTRY], { env, cwd: tmpdir(), encoding: 'utf8', timeout: 20_000 });
 
     const empty = run({});
     expect(empty.status).toBe(1);

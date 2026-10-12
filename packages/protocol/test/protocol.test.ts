@@ -6,6 +6,7 @@ import {
   chromiumRedirectUri,
   compareHlc,
   costMicros,
+  EMAIL_OTP_METHOD,
   ExtensionIdSchema,
   formatHlc,
   PostForAISchema,
@@ -113,6 +114,18 @@ describe('discovery', () => {
 
   it('test_server_info_accepts_full_document', () => {
     expect(ServerInfoSchema.parse(info)).toEqual(info);
+  });
+
+  it('test_server_info_accepts_new_sign_in_methods', () => {
+    // A method this client does not know is no reason to refuse the server; it checks for the one it supports.
+    const later = { ...info, auth: { ...info.auth, methods: ['email-otp', 'passkey'] } };
+    expect(ServerInfoSchema.parse(later).auth.methods).toEqual(['email-otp', 'passkey']);
+    expect(ServerInfoSchema.parse(later).auth.methods).toContain(EMAIL_OTP_METHOD);
+    expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, methods: ['passkey'] } }).success).toBe(true);
+    // Still bounded: no empty or oversized names, and no endless list.
+    for (const methods of [[''], ['x'.repeat(41)], Array.from({ length: 11 }, (_, i) => `m${i}`)]) {
+      expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, methods } }).success).toBe(false);
+    }
   });
 
   it('test_server_info_rejects_bad_fields', () => {

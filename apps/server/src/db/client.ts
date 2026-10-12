@@ -19,11 +19,26 @@ export type DbHandle =
 const POOL_MAX = 10;
 
 /**
+ * How long a query waits for a connection: to open one, or for a free one when all are busy. Past it the query fails,
+ * so a database that is down or unreachable gives a fast error (and a 503 from `/health`) instead of a hang.
+ */
+export const CONNECT_TIMEOUT_MS = 10_000;
+
+export interface PostgresOptions {
+  /** Default: `CONNECT_TIMEOUT_MS`. */
+  connectTimeoutMs?: number;
+}
+
+/**
  * A pooled Postgres connection. Nothing connects until the first query. `log` receives errors of idle connections (the
  * database restarted, say): the pool drops such a connection and opens a new one on demand, so they are not fatal.
  */
-export function openPostgres(databaseUrl: string, log?: Logger): DbHandle {
-  const pool = new Pool({ connectionString: databaseUrl, max: POOL_MAX });
+export function openPostgres(databaseUrl: string, log?: Logger, opts: PostgresOptions = {}): DbHandle {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    max: POOL_MAX,
+    connectionTimeoutMillis: opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
+  });
   pool.on('error', (err) => log?.warn('db.pool.error', errorFields(err)));
   return { kind: 'postgres', db: drizzle({ client: pool, schema }), pool, close: once(() => pool.end()) };
 }

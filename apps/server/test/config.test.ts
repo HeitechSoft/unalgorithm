@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import pkg from '../package.json' with { type: 'json' };
 import { ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
 import { errorFields } from '../src/log.ts';
 import { captureLog } from './support/log.ts';
@@ -278,10 +280,12 @@ describe('logger', () => {
   });
 });
 
+/** By absolute path, and run from a folder outside the repository: no CLI test depends on where Vitest runs. */
+const CHECK_CONFIG = fileURLToPath(new URL('../src/cli/check-config.ts', import.meta.url));
+
 describe('cli', () => {
-  const serverDir = fileURLToPath(new URL('..', import.meta.url));
   const run = (env: Record<string, string>) =>
-    spawnSync(process.execPath, ['src/cli/check-config.ts'], { env, cwd: serverDir, encoding: 'utf8' });
+    spawnSync(process.execPath, [CHECK_CONFIG], { env, cwd: tmpdir(), encoding: 'utf8' });
 
   it('test_check_config_cli_exit_codes', () => {
     const empty = run({});
@@ -300,5 +304,44 @@ describe('cli', () => {
     for (const out of [empty, ok, bad]) {
       for (const secret of SECRETS) expect(out.stdout + out.stderr).not.toContain(secret);
     }
+  });
+});
+
+describe('node version', () => {
+  /** As a file URL: `--import` resolves its argument like an `import` specifier. */
+  const guard = new URL('../src/require-node.js', import.meta.url).href;
+  /** Turning type stripping off stands in for a Node.js too old to have it. */
+  const canTurnOff =
+    spawnSync(process.execPath, ['--no-experimental-strip-types', '-p', 'Boolean(process.features.typescript)'], {
+      encoding: 'utf8',
+    }).stdout.trim() === 'false';
+
+  it.skipIf(!canTurnOff)('test_node_without_type_stripping_gets_a_clear_error', () => {
+    const run = (...flags: string[]) =>
+      spawnSync(process.execPath, [...flags, '--import', guard, CHECK_CONFIG], {
+        env: minimalEnv(),
+        cwd: tmpdir(),
+        encoding: 'utf8',
+      });
+
+    const old = run('--no-experimental-strip-types');
+    expect(old.status).toBe(1);
+    expect(old.stderr).toMatch(/^This server needs Node\.js 22\.18 or newer/m);
+    expect(old.stderr).not.toContain('ERR_UNKNOWN_FILE_EXTENSION');
+
+    // Where Node.js runs TypeScript, the check stays out of the way.
+    const current = run();
+    expect(current.status).toBe(0);
+    expect(current.stdout.trim()).toBe(`config ok (server ${SERVER_VERSION})`);
+  });
+
+  it('test_scripts_preload_the_node_check', () => {
+    // Every script that runs a .ts file goes through the check first.
+    const scripts = Object.entries(pkg.scripts).filter(([, command]) => /^node .*\.ts$/.test(command));
+    expect(scripts.map(([name]) => name)).toEqual(expect.arrayContaining(['check-config', 'dev', 'start']));
+    for (const [name, command] of scripts)
+      expect([name, command]).toEqual([name, expect.stringContaining('--import ./src/require-node.js ')]);
+    // The same requirement, for package managers: type stripping is on by default from 22.18 and from 23.6.
+    expect(pkg.engines.node).toBe('^22.18.0 || >=23.6.0');
   });
 });
