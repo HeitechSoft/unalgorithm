@@ -16,7 +16,7 @@ export interface MailMessage {
 }
 
 export interface Mailer {
-  /** Resolves once the mail server accepted the message; rejects when it did not. */
+  /** Resolves once the mail server accepted the message; rejects when it did not or stopped answering. */
   send(msg: MailMessage): Promise<void>;
 }
 
@@ -35,11 +35,25 @@ const SECURITY = {
   none: { secure: false, ignoreTLS: true },
 } as const;
 
+/**
+ * Limits on a mail server that stops answering. nodemailer's defaults (2 minutes to connect, 10 minutes of silence)
+ * would keep a stalled send and its socket open longer than a sign-in code lives; these fail it within seconds.
+ */
+const TIMEOUTS = {
+  /** From the DNS lookup to the end of the greeting and any STARTTLS upgrade. */
+  connectionTimeout: 10_000,
+  /** Waiting for the greeting, inside `connectionTimeout`. */
+  greetingTimeout: 10_000,
+  /** Silence from the server at any later step, the reply to the message's data included. */
+  socketTimeout: 30_000,
+} as const;
+
 /** A mailer on one SMTP transport, created now; every send opens its own connection. */
 export function smtpMailer(smtp: Config['smtp'], log: Logger, deps: SmtpMailerDeps = {}): Mailer {
   const transport = (deps.createTransport ?? createTransport)({
     host: smtp.host,
     port: smtp.port,
+    ...TIMEOUTS,
     ...SECURITY[smtp.secure],
     // `loadConfig` sets the user and the password together, or neither.
     ...(smtp.user !== undefined ? { auth: { user: smtp.user, pass: smtp.password } } : {}),

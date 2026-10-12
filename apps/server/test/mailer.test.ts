@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { createTransport } from 'nodemailer';
+import { type AddressInfo, createServer, type Socket } from 'node:net';
+import { createTransport } from 'nodemailer';
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../src/config.ts';
 import { type MailMessage, memoryMailer, signInCodeEmail, smtpMailer } from '../src/mail/mailer.ts';
@@ -23,6 +24,9 @@ const SMTP: Config['smtp'] = {
   from: 'signin@example.org',
   fromName: 'Family AI',
 };
+
+/** The limits `smtpMailer` puts on a stalled mail server, instead of nodemailer's minutes. */
+const TIMEOUTS = { connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000 };
 
 /**
  * A `createTransport` spy: it records the options of every transport it creates and every message those transports
@@ -90,13 +94,20 @@ describe('smtp transport with an injected createTransport spy', () => {
       const fake = fakeTransport();
       smtpMailer({ ...SMTP, secure }, log, fake);
       // Strict: a mode adds exactly its own options, and `auth` is absent (not undefined) without a user.
-      expect(fake.created).toStrictEqual([{ host: SMTP.host, port: SMTP.port, ...options }]);
+      expect(fake.created).toStrictEqual([{ host: SMTP.host, port: SMTP.port, ...TIMEOUTS, ...options }]);
     }
 
     const fake = fakeTransport();
     smtpMailer({ ...SMTP, user: 'smtp-user', password: 'smtp-password' }, log, fake);
     expect(fake.created).toStrictEqual([
-      { host: SMTP.host, port: SMTP.port, secure: false, requireTLS: true, auth: { user: 'smtp-user', pass: 'smtp-password' } },
+      {
+        host: SMTP.host,
+        port: SMTP.port,
+        ...TIMEOUTS,
+        secure: false,
+        requireTLS: true,
+        auth: { user: 'smtp-user', pass: 'smtp-password' },
+      },
     ]);
   });
 
@@ -148,6 +159,59 @@ describe('smtp transport with an injected createTransport spy', () => {
     expect(logged[0]).toMatchObject({ level: 'info' });
     expect(Number.isInteger(logged[0]?.ms)).toBe(true);
     expectNoMessageContent(lines);
+  });
+});
+
+describe('stalled mail server', () => {
+  /**
+   * Real nodemailer with every timeout `smtpMailer` sets cut to a hundredth, so a stall fails in milliseconds. A
+   * timeout it leaves out keeps nodemailer's default of minutes, and the test runs out of time instead.
+   */
+  const fastTimeouts = ((options: Record<string, unknown>) => {
+    const scaled = { ...options };
+    for (const key of Object.keys(TIMEOUTS)) {
+      const ms = options[key];
+      if (typeof ms === 'number') scaled[key] = ms / 100;
+    }
+    return createTransport(scaled);
+  }) as unknown as typeof createTransport;
+
+  /** A loopback SMTP server that takes the connection and then stops answering, before or after its greeting. */
+  async function stallingServer(greet: boolean) {
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on('error', () => {});
+      if (greet) socket.write('220 stall.example.org ESMTP\r\n');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return {
+      port: (server.address() as AddressInfo).port,
+      sockets,
+      close: () =>
+        new Promise((resolve) => {
+          for (const socket of sockets) socket.destroy();
+          server.close(resolve);
+        }),
+    };
+  }
+
+  it('test_smtp_stalled_server_times_out', async () => {
+    for (const greet of [false, true]) {
+      const server = await stallingServer(greet);
+      try {
+        const { log, lines, events } = captureLog();
+        const mailer = smtpMailer({ ...SMTP, host: '127.0.0.1', port: server.port, secure: 'none' }, log, {
+          createTransport: fastTimeouts,
+        });
+        await expect(mailer.send(MESSAGE)).rejects.toMatchObject({ code: 'ETIMEDOUT' });
+        expect(server.sockets.size).toBe(1);
+        expect(events()).toMatchObject([{ event: 'mail.failed', level: 'error', err_code: 'ETIMEDOUT' }]);
+        expectNoMessageContent(lines);
+      } finally {
+        await server.close();
+      }
+    }
   });
 });
 
