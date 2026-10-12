@@ -12,12 +12,20 @@
     "start": "node src/index.ts",
     "dev": "node --watch src/index.ts",
     "typecheck": "tsc --noEmit -p .",
-    "check-config": "node src/cli/check-config.ts"
+    "check-config": "node src/cli/check-config.ts",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
     "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
+    "@types/pg": "^8",
+    "drizzle-kit": "^0.31.11"
   }
 }

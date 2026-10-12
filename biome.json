@@ -16,6 +16,7 @@
       "!**/test-results",
       "!screens",
       "!**/fixtures/**/*.html",
+      "!apps/server/drizzle",
       "!**/pnpm-lock.yaml"
     ]
   },
