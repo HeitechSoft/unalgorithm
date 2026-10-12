@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
-import { createLogger, errorFields, type LogLevel } from '../src/log.ts';
+import { errorFields } from '../src/log.ts';
+import { captureLog } from './support/log.ts';
 
 /** Distinctive secret values: none of them may ever appear in an error, a reason or CLI output. */
 const AUTH_SECRET = 'auth-secret-QXZ7-distinctive-0123456789abcdef';
@@ -191,20 +192,8 @@ describe('validation', () => {
 });
 
 describe('logger', () => {
-  function capture(level: LogLevel) {
-    const lines: string[] = [];
-    const log = createLogger({ level, sink: (line) => lines.push(line) });
-    const parsed = () =>
-      lines
-        .join('')
-        .trimEnd()
-        .split('\n')
-        .map((l) => JSON.parse(l) as Record<string, unknown>);
-    return { log, lines, parsed };
-  }
-
   it('test_logger_json_lines_and_levels', () => {
-    const { log, lines, parsed } = capture('info');
+    const { log, lines, events } = captureLog('info');
     log.debug('debug.dropped', { n: 1 });
     log.info('server.started', { port: 8787, version: '0.1.0' });
     log.warn('rate.limited', { ok: false, rid: null });
@@ -212,7 +201,7 @@ describe('logger', () => {
 
     expect(lines).toHaveLength(3);
     for (const line of lines) expect(line.endsWith('\n')).toBe(true);
-    const [started, limited, failed] = parsed();
+    const [started, limited, failed] = events();
     for (const entry of [started, limited, failed]) {
       expect(typeof entry?.t).toBe('string');
       expect(new Date(entry?.t as string).toISOString()).toBe(entry?.t);
@@ -223,7 +212,7 @@ describe('logger', () => {
 
     // Fields never replace the three fixed keys.
     log.info('real.event', { event: 'spoofed', level: 'error', t: 'never' });
-    const spoof = parsed().at(-1);
+    const spoof = events().at(-1);
     expect(spoof).toMatchObject({ event: 'real.event', level: 'info' });
     expect(spoof?.t).not.toBe('never');
 
@@ -233,11 +222,11 @@ describe('logger', () => {
   });
 
   it('test_logger_truncates_strings', () => {
-    const { log, parsed } = capture('debug');
+    const { log, events } = captureLog();
     log.debug('long.field', { text: 'x'.repeat(300) });
     // No key gets more room, err_stack included.
     log.debug('long.stack', { err_stack: 'z'.repeat(1500) });
-    const [entry, stack] = parsed();
+    const [entry, stack] = events();
     expect(entry?.text).toBe('x'.repeat(200));
     expect(stack?.err_stack).toBe('z'.repeat(200));
   });
