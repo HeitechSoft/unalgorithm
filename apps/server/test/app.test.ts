@@ -413,6 +413,15 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
     const big = await fetch(`${server.url}/v1/anything`, { method: 'POST', body: 'x'.repeat(200 * 1024) });
     expect(big.status).toBe(413);
 
+    // Sign-in is mounted, and a request body survives the copy that sets the client address for Better Auth.
+    const send = await fetch(`${server.url}/api/auth/email-otp/send-verification-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: testConfig().publicOrigin },
+      body: JSON.stringify({ email: 'stranger@example.com', type: 'sign-in' }),
+    });
+    expect(send.status).toBe(200);
+    expect(await send.json()).toEqual({ success: true });
+
     const started = events().filter((e) => e.event === 'server.started');
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ port: Number(new URL(server.url).port), version: SERVER_VERSION });

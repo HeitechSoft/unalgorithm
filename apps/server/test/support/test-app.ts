@@ -1,6 +1,8 @@
+import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingProvider, noopBilling } from '../../src/billing/provider.ts';
 import { type Config, loadConfig } from '../../src/config.ts';
 import { type AppDeps, createApp } from '../../src/http/app.ts';
+import { memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
 
@@ -34,20 +36,29 @@ export interface TestAppOptions {
   config?: Config;
   /** Default: the no-op provider. */
   billing?: BillingProvider;
+  /**
+   * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
+   * limiter allows 3 codes and 3 sign-ins a minute per address, so a few sign-ins would get 429. Its counts live in one
+   * store per process, so only the test of the limiter itself turns it on.
+   */
+  authRateLimit?: boolean;
 }
 
 /**
- * The real app on a fresh migrated PGlite database, logging into memory: `lines` and `events()` hold what it wrote.
- * Call `close()` when done. Tests add routes of their own to `app` when they need one.
+ * The real app on a fresh migrated PGlite database, logging into memory: `lines` and `events()` hold what it wrote,
+ * and `outbox` every email it sent. Call `close()` when done. Tests add routes of their own to `app` when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
   const db = await createTestDb();
   const capture = captureLog();
+  const config = overrides.config ?? testConfig();
+  const { mailer, outbox } = memoryMailer();
   const deps: AppDeps = {
-    config: overrides.config ?? testConfig(),
+    config,
     db,
     log: capture.log,
     billing: overrides.billing ?? noopBilling,
+    auth: createAuth({ config, db, mailer, log: capture.log, rateLimitEnabled: overrides.authRateLimit ?? false }),
   };
-  return { app: createApp(deps), deps, lines: capture.lines, events: capture.events, close: () => db.close() };
+  return { app: createApp(deps), deps, outbox, lines: capture.lines, events: capture.events, close: () => db.close() };
 }

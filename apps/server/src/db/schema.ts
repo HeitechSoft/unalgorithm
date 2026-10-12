@@ -11,4 +11,4 @@
  * committed migration. A branch that rebases onto someone else's migration deletes its own generated files and runs
  * `db:generate` again.
  */
-export {};
+export * from './auth-schema.ts';

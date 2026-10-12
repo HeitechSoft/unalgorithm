@@ -7,12 +7,14 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { createAuth } from './auth/better-auth.ts';
 import { selectBilling } from './billing/provider.ts';
 import { type Config, ConfigError, loadConfig } from './config.ts';
 import { type DbHandle, openPostgres } from './db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from './db/migrate.ts';
 import { type App, createApp } from './http/app.ts';
 import { createLogger, errorFields, type Logger } from './log.ts';
+import { smtpMailer } from './mail/mailer.ts';
 
 /** How long a stopping server lets requests in flight finish before it closes their connections. */
 const STOP_GRACE_MS = 10_000;
@@ -39,7 +41,9 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let server: Server;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
-    const app = createApp({ config, db, log, billing: selectBilling(config) });
+    // The rate limit stays at its default (on): only tests turn it off.
+    const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
+    const app = createApp({ config, db, log, billing: selectBilling(config), auth });
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
     await db.close();

@@ -20,6 +20,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { type Auth, mountAuth } from '../auth/better-auth.ts';
 import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
@@ -33,6 +34,8 @@ export interface AppDeps {
   db: DbHandle;
   log: Logger;
   billing: BillingProvider;
+  /** Better Auth: email-code sign-in, web sessions and the access-token signing key. */
+  auth: Auth;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -71,7 +74,7 @@ export function httpStatusFor(code: AIErrorCode): ContentfulStatusCode {
 }
 
 export function createApp(deps: AppDeps): App {
-  const { config, db, log, billing } = deps;
+  const { config, db, log, billing, auth } = deps;
   const app = new OpenAPIHono<AppEnv>({
     // A request that fails its schema gets one fixed answer: zod's issues quote the input.
     defaultHook: (result, c) => {
@@ -114,6 +117,8 @@ export function createApp(deps: AppDeps): App {
     c.header('Access-Control-Allow-Origin', '*');
     return c.json(serverInfo);
   });
+
+  mountAuth(app, auth);
 
   billing.mount?.(app);
 

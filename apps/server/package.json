@@ -13,7 +13,8 @@
     "dev": "node --import ./src/require-node.js --watch src/index.ts",
     "typecheck": "tsc --noEmit -p .",
     "check-config": "node --import ./src/require-node.js src/cli/check-config.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "auth:generate": "auth generate --config auth.cli.ts --output src/db/auth-schema.ts --adapter drizzle --dialect postgresql --yes && pnpm run db:generate"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
@@ -21,6 +22,7 @@
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
+    "better-auth": "1.7.7",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
     "nodemailer": "^10.1.0",
@@ -30,6 +32,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.9",
     "@types/pg": "^8",
+    "auth": "1.7.7",
     "drizzle-kit": "^0.31.11"
   }
 }

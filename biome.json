@@ -17,6 +17,7 @@
       "!screens",
       "!**/fixtures/**/*.html",
       "!apps/server/drizzle",
+      "!apps/server/src/db/auth-schema.ts",
       "!**/pnpm-lock.yaml"
     ]
   },
