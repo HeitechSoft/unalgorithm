@@ -18,7 +18,8 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
 - Free accounts and **sync across devices** (settings, interests, exceptions; never API keys).
 - **Hosted AI** with **pay-as-you-go credits**: no subscription, priced at the AI cost plus a published margin, a
   starter credit, purchased credit never expires. Rules, on-device, own key and self-hosted stay free.
-- A **self-hostable server** (Docker Compose) for people and organizations who want to run their own.
+- An **open-source, self-hostable server** (AGPL, Docker Compose) for people and organizations who want to run their
+  own. UnAlgorithm Cloud runs this same server; only its billing and HeitechSoft's operations are private.
 - **Organizations**: shared policies, private AI endpoints, invoicing (HeitechSoft Private AI).
 - **On the website**: how credits work, with live prices and the published margin; terms of service; a guide to
   running your own server.
