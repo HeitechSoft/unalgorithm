@@ -1,0 +1,6 @@
+# Reviewed gitleaks false positives, one fingerprint per line: <commit>:<file>:<rule>:<line>.
+# `gitleaks git .` reads this file. Every entry needs the lead maintainer's review, as for scripts/ip-allowlist.txt.
+# A real secret is never ignored here: it is rotated.
+
+# The extension manifest's public key, which pins the development build's extension id. It is not a secret.
+8e64954f667683985df7f2bb8687671814a9e068:apps/extension/dev-key.json:generic-api-key:2

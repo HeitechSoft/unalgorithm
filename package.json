@@ -21,6 +21,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "changeset": "changeset",
     "fixtures:check": "node scripts/check-fixtures.mjs",
+    "scan:public": "node scripts/scan-public-repo.mjs",
     "notices": "node scripts/third-party-notices.mjs",
     "notices:check": "node scripts/third-party-notices.mjs --check"
   },
