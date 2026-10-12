@@ -103,11 +103,22 @@ describe('failure and lifecycle', () => {
     for (const ref of ['p1', 'p2']) {
       const o = failed.byRef.get(ref);
       expect(o?.ok).toBe(false);
-      if (o && !o.ok) expect(o.error.code).toBe('overloaded');
+      if (o && !o.ok) {
+        expect(o.error.code).toBe('overloaded');
+        expect(o.error.message).toContain('echo: secret text');
+      }
     }
     const next = await classify(m, posts);
     expect(okFor(next, 'p1').relevance).toBe(92);
     expect(okFor(next, 'p2').relevance).toBe(40);
+  });
+
+  it('test_mock_fail_next_sends_raw_body', async () => {
+    const m = await start();
+    m.failNext(500, 'echo: secret text');
+    const res = await fetch(`${m.baseUrl}/chat/completions`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe('echo: secret text');
   });
 
   it('test_mock_records_bodies', async () => {
