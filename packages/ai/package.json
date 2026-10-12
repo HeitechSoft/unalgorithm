@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./chrome-builtin": "./src/chrome-builtin/index.ts",
-    "./presets": "./src/ui-entry.ts"
+    "./presets": "./src/ui-entry.ts",
+    "./testing": "./src/testing/mock-openai-server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
