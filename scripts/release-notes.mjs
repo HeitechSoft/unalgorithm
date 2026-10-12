@@ -19,7 +19,7 @@ if (existsSync(file)) {
   }
 }
 
-console.log(`${notes || `UnAlgorithm ${version}`}
+console.log(`${notes || `UnAlgorithm Feed ${version}`}
 
 **Install:** download \`unalgorithm-${version}-chrome.zip\`, unzip it, open \`chrome://extensions\`, turn on
 Developer mode and choose **Load unpacked**. Verify the download against \`SHA256SUMS.txt\` and the build provenance

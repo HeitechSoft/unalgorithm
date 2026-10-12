@@ -22,9 +22,13 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 6. **Chrome Web Store** (manual during the preview): upload the same zip in the developer dashboard, update the
    listing and privacy disclosures if permissions or data use changed, submit for review.
 
-## Chrome Web Store assets
+## Chrome Web Store listing
 
+- **Name:** UnAlgorithm Feed. It comes from `extName` in `apps/extension/public/_locales/en/messages.json`; never
+  plain "UnAlgorithm" (see [brand.md](brand.md)). Publish from the HeitechSoft developer account, so the listing shows
+  HeitechSoft as the developer, and open the long description with "UnAlgorithm Feed by HeitechSoft".
 - 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tile, short and long descriptions
   with the non-affiliation line.
-- The privacy policy URL is PRIVACY.md on GitHub; update the store's data-use disclosures whenever PRIVACY.md
-  changes.
+- **Website, support and privacy policy URLs:** `https://unalgorithm.app`, its help page and its privacy page once the
+  website is live; until then the GitHub repo, SUPPORT.md and PRIVACY.md on GitHub. Update the store's data-use
+  disclosures whenever PRIVACY.md changes.

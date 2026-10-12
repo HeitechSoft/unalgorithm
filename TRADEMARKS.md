@@ -1,9 +1,9 @@
 # Trademark policy
 
 The UnAlgorithm source code and artwork are free software under the AGPL-3.0-only. As permitted by section 7(e) of
-that license, **no rights are granted under trademark law to the name "UnAlgorithm" or the UnAlgorithm logo**, which
-are trademarks of HeitechSoft. You may copy and modify the code and artwork, but you may not use the name or logo to
-brand your own build or service.
+that license, **no rights are granted under trademark law to the names "UnAlgorithm Feed", "UnAlgorithm" and "UnAlgo"
+or the UnAlgorithm logo**, which are trademarks of HeitechSoft. You may copy and modify the code and artwork, but you
+may not use the names or logo to brand your own build or service.
 
 ## You may
 
@@ -13,7 +13,8 @@ brand your own build or service.
 
 ## Please don't, without written permission
 
-- Publish a fork, a browser extension, an app or a service **named "UnAlgorithm"** or a confusingly similar name.
+- Publish a fork, a browser extension, an app or a service **named "UnAlgorithm Feed", "UnAlgorithm" or "UnAlgo"**,
+  or a confusingly similar name.
 - Use the UnAlgorithm logo or icon for your own build, extension listing or product.
 - Suggest that HeitechSoft endorses or supports your fork or service.
 
@@ -27,4 +28,5 @@ If you publish a fork, rebrand everywhere the name and logo appear:
 
 Questions or permission requests: **legal@heitechsoft.com**.
 
-*LinkedIn and Facebook are trademarks of their respective owners. UnAlgorithm is not affiliated with LinkedIn or Meta.*
+*LinkedIn and Facebook are trademarks of their respective owners. UnAlgorithm Feed is not affiliated with LinkedIn or
+Meta.*

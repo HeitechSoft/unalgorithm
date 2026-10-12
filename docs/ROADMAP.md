@@ -1,6 +1,6 @@
 # Roadmap
 
-UnAlgorithm is built in phases. Dates are not promised; each phase ships when it is solid.
+UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships when it is solid.
 
 ## Phase 1: the extension (now)
 
@@ -8,8 +8,10 @@ UnAlgorithm is built in phases. Dates are not promised; each phase ships when it
   For you highlights, toolbar popup, side panel, settings, onboarding, health monitor and Report a problem. Optional
   AI: Chrome's on-device AI, your own key (Anthropic, OpenAI, Gemini, OpenRouter, Groq), local and self-hosted
   models; noise labels, relevance, More/Less like this.
-- **Next.** Facebook verified on live feeds, a right-click menu on posts, French for Canada, and Chrome Web Store
-  release.
+- **Next.** Facebook verified on live feeds, a right-click menu on posts, and French for Canada.
+- **Website and Chrome Web Store.** The product website at unalgorithm.app: what UnAlgorithm Feed does, how to
+  install it, the privacy policy, help and release notes. Then the Chrome Web Store release as UnAlgorithm Feed by
+  HeitechSoft, with the listing and the extension's links pointing to the website.
 
 ## Phase 2: UnAlgorithm Cloud
 
@@ -18,6 +20,8 @@ UnAlgorithm is built in phases. Dates are not promised; each phase ships when it
   starter credit, purchased credit never expires. Rules, on-device, own key and self-hosted stay free.
 - A **self-hostable server** (Docker Compose) for people and organizations who want to run their own.
 - **Organizations**: shared policies, private AI endpoints, invoicing (HeitechSoft Private AI).
+- **On the website**: how credits work, with live prices and the published margin; terms of service; a guide to
+  running your own server.
 
 ## Phase 3: Fact-check and Other perspectives
 
@@ -26,11 +30,14 @@ UnAlgorithm is built in phases. Dates are not promised; each phase ships when it
 - **Other perspectives** ("reality mode") for shared news links: how outlets across the spectrum covered the same
   story, what they agree on, what differs, with links to every source. Outlet leanings come from an open,
   reviewable registry, never from the model.
+- The **methodology**, the outlet registry, corrections and regular **transparency reports** are published on the
+  website.
 
 ## Phase 4: more places
 
 - Edge, Firefox and Safari builds; mobile through Safari on iOS and Firefox on Android.
 - More sites (X, Threads, Reddit, Instagram, YouTube), more languages (French for Canada first).
 - Signed, data-only detection updates so layout fixes don't wait for store review.
+- The website in French, with an install page for each browser.
 
 Ideas and votes: [GitHub Discussions](https://github.com/HeitechSoft/unalgorithm/discussions).

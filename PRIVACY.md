@@ -1,7 +1,7 @@
 # UnAlgorithm privacy policy
 
-*Last updated: October 2026. This policy covers the UnAlgorithm browser extension (public preview). It is also the
-privacy policy linked from the Chrome Web Store listing.*
+*Last updated: October 2026. This policy covers UnAlgorithm Feed ("UnAlgorithm"), the browser extension (public
+preview). It is also the privacy policy linked from the Chrome Web Store listing.*
 
 UnAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **It does
 not collect your data, and it has no analytics or tracking.**

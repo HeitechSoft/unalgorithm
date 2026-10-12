@@ -60,6 +60,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             apps/extension/.output/*-chrome.zip \
             apps/extension/.output/SHA256SUMS.txt \
-            --title "UnAlgorithm ${GITHUB_REF_NAME}" \
+            --title "UnAlgorithm Feed ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md \
             --verify-tag
