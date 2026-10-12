@@ -14,6 +14,11 @@ export interface StructuredRequest {
   maxOutputTokens: number;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * A leading part of `system` that is the same for every user. Adapters with several cache breakpoints cache it
+   * separately; others ignore it. When set, `system.startsWith(cachePrefix)` must hold.
+   */
+  cachePrefix?: string;
 }
 
 export interface StructuredResult {

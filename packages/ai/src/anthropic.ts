@@ -37,9 +37,27 @@ function toAIError(err: unknown): AIError {
 }
 
 /**
+ * The system prompt as cached text blocks. With a valid `cachePrefix` there are two breakpoints, so the part shared
+ * by every user is written to the cache once and read by all of them; otherwise one. The blocks always join back to
+ * exactly `req.system`.
+ */
+function systemBlocks(req: StructuredRequest): Anthropic.Messages.TextBlockParam[] {
+  const cached = (text: string): Anthropic.Messages.TextBlockParam => ({
+    type: 'text',
+    text,
+    cache_control: { type: 'ephemeral' },
+  });
+  const prefix = req.cachePrefix;
+  if (prefix && req.system.length > prefix.length && req.system.startsWith(prefix))
+    return [cached(prefix), cached(req.system.slice(prefix.length))];
+  return [cached(req.system)];
+}
+
+/**
  * Claude via the official SDK, straight from the extension to api.anthropic.com with the user's own key.
- * Structured output through `output_config.format`, a cached system prompt, low effort, and thinking switched off
- * where the model allows it (classification needs no deliberation).
+ * Structured output through `output_config.format`, a cached system prompt (split after the shared rubric when the
+ * caller marks it), low effort, and thinking switched off where the model allows it (classification needs no
+ * deliberation).
  */
 export function anthropicClient(opts: { apiKey: string; capabilities: CapabilityStore; fetch?: typeof fetch }): AIClient {
   const client = new Anthropic({
@@ -56,7 +74,7 @@ export function anthropicClient(opts: { apiKey: string; capabilities: Capability
     const body: Anthropic.Messages.MessageCreateParamsNonStreaming = {
       model: req.model,
       max_tokens: req.maxOutputTokens,
-      system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+      system: systemBlocks(req),
       messages: [{ role: 'user', content: req.user }],
       output_config: {
         format: { type: 'json_schema', schema: req.jsonSchema },

@@ -43,12 +43,24 @@ export interface ClassifyOptions {
   timeoutMs?: number;
 }
 
+/**
+ * The rubric part of the full system prompt, up to and including the blank line before `<user_profile>`, so providers
+ * with several cache breakpoints can share it across users. Profile values are escaped and the rubric only mentions
+ * the tag inline, so the last `\n\n<user_profile>\n` is the boundary.
+ */
+function rubricPrefix(system: string): string | undefined {
+  const index = system.lastIndexOf('\n\n<user_profile>\n');
+  return index > 0 ? system.slice(0, index + 2) : undefined;
+}
+
 async function callOnce(client: AIClient, posts: PostForAI[], opts: ClassifyOptions) {
   const system = opts.compact ? buildCompactSystemPrompt(opts.profile) : buildSystemPrompt(opts.profile);
+  const cachePrefix = opts.compact ? undefined : rubricPrefix(system);
   const user = buildUserPrompt(posts, opts.nonce ?? makeNonce());
   const res = await client.structured({
     model: opts.model,
     system,
+    ...(cachePrefix ? { cachePrefix } : {}),
     user,
     jsonSchema: BATCH_JSON_SCHEMA,
     schemaName: CLASSIFICATION_SCHEMA_NAME,
