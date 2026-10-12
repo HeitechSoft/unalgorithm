@@ -198,8 +198,9 @@ export function loadConfig(env: Env = process.env): Config {
   const smtpHost = required('SMTP_HOST');
   const smtpPort = integer('SMTP_PORT', 587, 1, 65535);
   const smtpSecure = oneOf('SMTP_SECURE', ['starttls', 'tls', 'none'] as const, 'starttls');
-  if (smtpSecure === 'none' && smtpHost !== undefined && !LOOPBACK_HOSTS.has(smtpHost) && smtpHost.includes('.')) {
-    bad('SMTP_SECURE', 'none is allowed only for a local mail server (localhost or a name without dots)');
+  // Local means loopback or a single-label name (a Compose service); a dot or a colon (an IPv6 literal) means remote.
+  if (smtpSecure === 'none' && smtpHost !== undefined && !LOOPBACK_HOSTS.has(smtpHost) && /[.:]/.test(smtpHost)) {
+    bad('SMTP_SECURE', 'none is allowed only for a local mail server (localhost, ::1 or a name without dots)');
   }
   const smtpUser = read('SMTP_USER');
   const smtpPassword = readSecret('SMTP_PASSWORD');
@@ -243,8 +244,9 @@ export function loadConfig(env: Env = process.env): Config {
   const webDistValue = read('WEB_DIST');
   const webDist = webDistValue ? resolve(webDistValue) : DEFAULT_WEB_DIST;
   const logLevel = oneOf('LOG_LEVEL', LOG_LEVELS, 'info');
-  const telemetry = read('BETTER_AUTH_TELEMETRY');
-  if (telemetry !== undefined && telemetry !== '0' && telemetry !== 'false') {
+  // Better Auth reads this variable itself, untrimmed: any value but '', '0' or 'false' (any case) turns telemetry on.
+  const telemetry = env.BETTER_AUTH_TELEMETRY;
+  if (telemetry !== undefined && telemetry !== '' && telemetry !== '0' && telemetry.toLowerCase() !== 'false') {
     bad('BETTER_AUTH_TELEMETRY', 'telemetry must stay off: unset it, or set it to 0 or false');
   }
 

@@ -24,9 +24,8 @@ export interface LoggerOptions {
   sink?: (line: string) => void;
 }
 
+/** Every string field is cut to this many characters, `err_stack` included. */
 const MAX_STRING = 200;
-/** `errorFields` already bounds the stack to 10 frames of V8 text, so it gets more room than other strings. */
-const MAX_STACK = 2000;
 /** Keys every line has; fields never replace them. */
 const FIXED_KEYS = new Set(['t', 'level', 'event']);
 
@@ -39,7 +38,7 @@ export function createLogger({ level, sink = (line) => process.stdout.write(line
       const line: Record<string, string | number | boolean | null> = { t: new Date().toISOString(), level: lvl, event };
       for (const [key, value] of Object.entries({ ...base, ...fields })) {
         if (FIXED_KEYS.has(key)) continue;
-        if (typeof value === 'string') line[key] = value.slice(0, key === 'err_stack' ? MAX_STACK : MAX_STRING);
+        if (typeof value === 'string') line[key] = value.slice(0, MAX_STRING);
         else if (typeof value === 'number' || typeof value === 'boolean' || value === null) line[key] = value;
         // Anything else (undefined, or an object smuggled past the types) is dropped.
       }
@@ -63,9 +62,10 @@ const MAX_FRAMES = 10;
 const FRAME = /^\s+at /;
 
 /**
- * Loggable facts about an error: its name, its code and up to 10 stack frames. Never its message, which can hold
- * provider response text and so post text. Frames are read only after the message in the stack, so a multi-line
- * message cannot pass for frames; when the message cannot be found there, the stack is left out.
+ * Loggable facts about an error: its name, its code and its top stack frames, at most 10 and only as many whole frames
+ * as fit in the logger's 200-character cut. Never its message, which can hold provider response text and so post
+ * text. Frames are read only after the message in the stack, so a multi-line message cannot pass for frames; when the
+ * message cannot be found there, the stack is left out.
  */
 export function errorFields(err: unknown): ErrorFields {
   if (typeof err !== 'object' || err === null) return { err_name: 'NonError' };
@@ -80,8 +80,16 @@ export function errorFields(err: unknown): ErrorFields {
         .slice(at + message.length)
         .split('\n')
         .slice(1);
-      const frames = rest.filter((line) => FRAME.test(line)).slice(0, MAX_FRAMES);
-      if (frames.length) out.err_stack = frames.map((line) => line.trim()).join('\n');
+      const frames = rest
+        .filter((line) => FRAME.test(line))
+        .slice(0, MAX_FRAMES)
+        .map((line) => line.trim());
+      let stack = frames[0]?.slice(0, MAX_STRING) ?? '';
+      for (const frame of frames.slice(1)) {
+        if (stack.length + 1 + frame.length > MAX_STRING) break;
+        stack += `\n${frame}`;
+      }
+      if (stack) out.err_stack = stack;
     }
   }
   return out;

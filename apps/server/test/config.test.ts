@@ -8,7 +8,9 @@ import { createLogger, errorFields, type LogLevel } from '../src/log.ts';
 const AUTH_SECRET = 'auth-secret-QXZ7-distinctive-0123456789abcdef';
 const API_KEY = 'sk-ant-api-key-QXZ7-distinctive';
 const SMTP_PASSWORD = 'smtp-password-QXZ7-distinctive';
-const SECRETS = [AUTH_SECRET, API_KEY, SMTP_PASSWORD];
+/** Under 32 characters, so it fails the length rule: a too-short secret is still a secret. */
+const SHORT_AUTH_SECRET = 'shortQXZ7auth';
+const SECRETS = [AUTH_SECRET, API_KEY, SMTP_PASSWORD, SHORT_AUTH_SECRET];
 
 const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
 
@@ -132,6 +134,11 @@ describe('validation', () => {
   it('test_config_smtp_rules', () => {
     expect(loadConfig({ ...minimalEnv(), SMTP_HOST: 'mailpit', SMTP_SECURE: 'none' }).smtp.secure).toBe('none');
     expect(invalidNames({ ...minimalEnv(), SMTP_HOST: 'mail.smtp2go.com', SMTP_SECURE: 'none' })).toEqual(['SMTP_SECURE']);
+    // An IPv6 literal has no dots but is a remote host, bracketed or not; only loopback passes.
+    expect(invalidNames({ ...minimalEnv(), SMTP_HOST: '2001:db8::25', SMTP_SECURE: 'none' })).toEqual(['SMTP_SECURE']);
+    expect(invalidNames({ ...minimalEnv(), SMTP_HOST: '[2001:db8::25]', SMTP_SECURE: 'none' })).toEqual(['SMTP_SECURE']);
+    expect(isValid({ ...minimalEnv(), SMTP_HOST: '::1', SMTP_SECURE: 'none' })).toBe(true);
+    expect(isValid({ ...minimalEnv(), SMTP_HOST: 'localhost', SMTP_SECURE: 'none' })).toBe(true);
     expect(invalidNames({ ...minimalEnv(), SMTP_USER: 'mailer' })).toEqual(['SMTP_USER']);
   });
 
@@ -141,6 +148,12 @@ describe('validation', () => {
     expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: undefined })).toBe(true);
     expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: '0' })).toBe(true);
     expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: 'false' })).toBe(true);
+    // Better Auth reads the raw value: blank-only or padded values turn telemetry on, so they are refused here too.
+    for (const value of [' ', '0 ', ' false']) {
+      expect(invalidNames({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: value })).toEqual(['BETTER_AUTH_TELEMETRY']);
+    }
+    expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: '' })).toBe(true);
+    expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: 'FALSE' })).toBe(true);
   });
 
   it('test_config_billing_and_allowlist', () => {
@@ -156,7 +169,7 @@ describe('validation', () => {
       ...minimalEnv(),
       PUBLIC_URL: `https://${AUTH_SECRET}.example.org/${API_KEY}`,
       DATABASE_URL: `mysql://user:${SMTP_PASSWORD}@db/ua`,
-      BETTER_AUTH_SECRET: 'short',
+      BETTER_AUTH_SECRET: SHORT_AUTH_SECRET,
       AI_BASE_URL: `https://${API_KEY}.example.org`,
       AI_DATA_POLICY: API_KEY,
       SMTP_PASSWORD,
@@ -173,7 +186,7 @@ describe('validation', () => {
     for (const text of texts) {
       for (const secret of SECRETS) expect(text).not.toContain(secret);
     }
-    expect(err.message).toContain('BETTER_AUTH_SECRET');
+    expect(err.invalid.map((i) => i.name)).toContain('BETTER_AUTH_SECRET');
   });
 });
 
@@ -222,8 +235,11 @@ describe('logger', () => {
   it('test_logger_truncates_strings', () => {
     const { log, parsed } = capture('debug');
     log.debug('long.field', { text: 'x'.repeat(300) });
-    const [entry] = parsed();
+    // No key gets more room, err_stack included.
+    log.debug('long.stack', { err_stack: 'z'.repeat(1500) });
+    const [entry, stack] = parsed();
     expect(entry?.text).toBe('x'.repeat(200));
+    expect(stack?.err_stack).toBe('z'.repeat(200));
   });
 
   it('test_error_fields_drop_message', () => {
@@ -232,6 +248,13 @@ describe('logger', () => {
     expect(plain.err_name).toBe('Error');
     expect(plain.err_stack).toMatch(/^at /);
     expect(plain.err_stack?.split('\n').length).toBeLessThanOrEqual(10);
+
+    // A deep stack keeps only the whole top frames that fit in the logger's 200-character cut.
+    const deep = (n: number): Error => (n === 0 ? new Error('deep') : deep(n - 1));
+    const deepStack = errorFields(deep(20)).err_stack ?? '';
+    expect(deepStack.length).toBeGreaterThan(0);
+    expect(deepStack.length).toBeLessThanOrEqual(200);
+    for (const frame of deepStack.split('\n')) expect(frame).toMatch(/^at .+:\d+:\d+\)?$/);
 
     const coded = errorFields(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }));
     expect(coded.err_code).toBe('ECONNREFUSED');
@@ -267,7 +290,7 @@ describe('cli', () => {
     expect(ok.status).toBe(0);
     expect(ok.stdout.trim()).toBe(`config ok (server ${SERVER_VERSION})`);
 
-    const bad = run({ ...minimalEnv(), BETTER_AUTH_SECRET: 'short', SMTP_PASSWORD });
+    const bad = run({ ...minimalEnv(), BETTER_AUTH_SECRET: SHORT_AUTH_SECRET, SMTP_PASSWORD });
     expect(bad.status).toBe(1);
     expect(bad.stderr).toMatch(/^invalid: BETTER_AUTH_SECRET \(.+\)$/m);
     expect(bad.stderr).toMatch(/^invalid: SMTP_PASSWORD \(.+\)$/m);
