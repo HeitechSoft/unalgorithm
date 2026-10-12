@@ -8,13 +8,16 @@
  *   nginx server-block syntax;
  * - extra markers: host-specific names and addresses from PUBLIC_SCAN_EXTRA_PATTERNS (a CI secret, one per line);
  * - key files by path (tracked files only).
+ * File paths are checked for public IPv4 addresses and extra markers too, in the tree and in history.
  * Findings never print an address or an extra marker, so CI logs cannot republish what this scan keeps out of the
- * repository: read the reported line locally. History findings are added lines, named by commit, file and line.
+ * repository: read the reported line locally. A path that holds either is printed as `path #<n>`: the n-th path of
+ * `git ls-files`, or the n-th file in that commit's diff. History findings are added lines, named by commit, file and
+ * line; for a merge, the lines that differ from git's own automatic merge (such as a conflict resolution).
  *
  * Usage: node scripts/scan-public-repo.mjs [repository]   (default: the repository holding this script)
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -144,17 +147,27 @@ export function formatFinding({ commit, file, line, kind, text, marker }) {
   return `${where}  ${kind}`;
 }
 
-/** Every content rule over one line, without its location. */
-function lineFindings(content, { allowlist, extra }, path) {
-  const found = findPublicIPv4(content, allowlist).length ? [{ kind: 'public-ipv4' }] : [];
-  return found.concat(markersIn(content, !SELF.has(path), extra));
+/**
+ * Every content rule over one line or one path, without its location. `generic: false` skips the generic host markers
+ * (for paths, and for this scanner and its test).
+ */
+function textFindings(text, { allowlist, extra }, generic) {
+  const found = findPublicIPv4(text, allowlist).length ? [{ kind: 'public-ipv4' }] : [];
+  return found.concat(markersIn(text, generic, extra));
 }
 
 function* trackedFindings(root, rules) {
   const paths = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
     .split('\0')
     .filter(Boolean);
-  for (const file of findSecretPaths(paths)) yield { file, kind: 'secret-path' };
+  // A path that holds an address or an extra marker is printed as its position in `git ls-files`, never by name.
+  const shown = new Map();
+  for (const [i, file] of paths.entries()) {
+    const found = textFindings(file, rules, false);
+    shown.set(file, found.length ? `path #${i + 1}` : file);
+    for (const f of found) yield { file: shown.get(file), ...f };
+  }
+  for (const file of findSecretPaths(paths)) yield { file: shown.get(file), kind: 'secret-path' };
   for (const file of paths) {
     let bytes;
     try {
@@ -167,7 +180,7 @@ function* trackedFindings(root, rules) {
     if (bytes.subarray(0, 8192).includes(0)) continue; // binary
     const lines = bytes.toString('utf8').split(/\r?\n/);
     for (const [i, content] of lines.entries()) {
-      for (const f of lineFindings(content, rules, file)) yield { file, line: i + 1, ...f };
+      for (const f of textFindings(content, rules, !SELF.has(file))) yield { file: shown.get(file), line: i + 1, ...f };
     }
   }
 }
@@ -192,13 +205,15 @@ function headerPath(header) {
 
 /**
  * Added lines in every commit of every ref, streamed: the patch output of all refs is far above execFileSync's
- * default buffer. Hunk headers give each added line's number in the commit's version of the file.
+ * default buffer. Hunk headers give each added line's number in the commit's version of the file. A merge shows the
+ * lines that differ from git's own automatic merge (`--diff-merges=remerge`, git 2.36 or later), so an address added
+ * while resolving a conflict is scanned too.
  */
 async function* historyFindings(root, rules) {
   const git = spawn(
     'git',
     [
-      ...['-c', 'core.quotePath=false', '-c', 'log.showRoot=true', 'log', '--all', '-p'],
+      ...['-c', 'core.quotePath=false', '-c', 'log.showRoot=true', 'log', '--all', '-p', '--diff-merges=remerge'],
       ...['--no-color', '--no-ext-diff', '--no-textconv', '--no-decorate', '--src-prefix=a/', '--dst-prefix=b/'],
     ],
     { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] },
@@ -209,13 +224,16 @@ async function* historyFindings(root, rules) {
   });
   let commit = '';
   let file = '';
+  let shown = '';
+  let fileNo = 0;
   let line = 0;
   let oldLeft = 0;
   let newLeft = 0;
   for await (const text of linesOf(git.stdout)) {
     if (oldLeft > 0 || newLeft > 0) {
       if (text.startsWith('+')) {
-        for (const f of lineFindings(text.slice(1), rules, file)) yield { commit, file, line, ...f };
+        const found = textFindings(text.slice(1), rules, !SELF.has(file));
+        for (const f of found) yield { commit, file: shown || file, line, ...f };
         newLeft--;
         line++;
       } else if (text.startsWith('-')) {
@@ -230,6 +248,16 @@ async function* historyFindings(root, rules) {
     if (text.startsWith('commit ')) {
       commit = text.slice(7).split(' ')[0] ?? '';
       file = '';
+      shown = '';
+      fileNo = 0;
+    } else if (text.startsWith('diff --git ')) {
+      // Both paths of one file's diff (old and new). One that holds an address or an extra marker is printed as the
+      // file's position in the commit's diff, never by name.
+      fileNo++;
+      const found = textFindings(text.slice(11), rules, false);
+      shown = found.length ? `path #${fileNo}` : '';
+      file = '';
+      for (const f of found) yield { commit, file: shown, ...f };
     } else if (text.startsWith('+++ ')) {
       file = headerPath(text.slice(4));
     } else {
@@ -264,8 +292,25 @@ async function main() {
   if (count) process.exitCode = 1;
 }
 
-// Importing this module (the test does) runs nothing: no git, no exit.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function realPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * True when node runs this file; false when a module imports it (the test does), so importing runs nothing: no git, no
+ * exit. Node runs the real path of its entry script (unless --preserve-symlinks-main) while argv keeps the path as
+ * given, so a run through a symlinked or junction path compares real paths. Otherwise the scan would silently pass.
+ */
+function isEntryPoint() {
+  const entry = process.argv[1];
+  return Boolean(entry) && [entry, realPath(entry)].some((path) => pathToFileURL(path).href === import.meta.url);
+}
+
+if (isEntryPoint()) {
   main().catch((err) => {
     console.error(`public repo scan failed: ${err instanceof Error ? err.message : err}`);
     process.exit(1);

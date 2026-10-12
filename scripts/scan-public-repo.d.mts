@@ -4,7 +4,7 @@ export type FindingKind = 'public-ipv4' | 'host-marker' | 'extra-marker' | 'secr
 
 /** One scan finding, as formatFinding prints it. */
 export interface Finding {
-  /** Path from the repository root. */
+  /** Path from the repository root, or `path #<n>` when the path itself holds an address or an extra marker. */
   file: string;
   /** 1-based line in the file (in the commit's version of it, for history); absent for a path finding. */
   line?: number;

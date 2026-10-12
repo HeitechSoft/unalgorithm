@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   findHostMarkers,
   findPublicIPv4,
@@ -29,6 +29,45 @@ const SCRIPT = fileURLToPath(new URL('../../../scripts/scan-public-repo.mjs', im
 afterEach(() => {
   vi.unstubAllEnvs();
 });
+
+/**
+ * A throwaway repository that ignores the developer's own git configuration, scanned with one extra marker. It is
+ * removed when the test finishes.
+ */
+function throwawayRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'ua-scan-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  const repo = join(dir, 'repo');
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: join(dir, 'none'),
+    GIT_CONFIG_NOSYSTEM: '1',
+    PUBLIC_SCAN_EXTRA_PATTERNS: 'example-host-7',
+  };
+  const run = (...args: string[]) =>
+    spawnSync('git', ['-c', 'user.name=Scan Test', '-c', 'user.email=scan@example.org', ...args], {
+      cwd: repo,
+      env,
+      encoding: 'utf8',
+    });
+  const git = (...args: string[]) => {
+    const result = run(...args);
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout.trim();
+  };
+  mkdirSync(repo);
+  git('init', '-q');
+  return {
+    dir,
+    run,
+    git,
+    write(file: string, text: string) {
+      mkdirSync(dirname(join(repo, file)), { recursive: true });
+      writeFileSync(join(repo, file), text);
+    },
+    scan: (script = SCRIPT) => spawnSync(process.execPath, [script, repo], { env, encoding: 'utf8' }),
+  };
+}
 
 describe('IPv4', () => {
   it('test_is_public_ipv4_ranges', () => {
@@ -176,45 +215,92 @@ describe('output and self-check', () => {
   });
 
   it('test_cli_fails_on_a_committed_public_address', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ua-scan-'));
-    // A throwaway repository that ignores the developer's own git configuration, scanned with one extra marker.
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      GIT_CONFIG_GLOBAL: join(dir, 'none'),
-      GIT_CONFIG_NOSYSTEM: '1',
-      PUBLIC_SCAN_EXTRA_PATTERNS: 'example-host-7',
-    };
-    const git = (...args: string[]) => {
-      const run = spawnSync('git', ['-c', 'user.name=Scan Test', '-c', 'user.email=scan@example.org', ...args], {
-        cwd: join(dir, 'repo'),
-        env,
-        encoding: 'utf8',
-      });
-      expect(run.status, run.stderr).toBe(0);
-      return run.stdout.trim();
-    };
-    const scan = () => spawnSync(process.execPath, [SCRIPT, join(dir, 'repo')], { env, encoding: 'utf8' });
-    try {
-      spawnSync('git', ['init', '-q', join(dir, 'repo')], { env });
-      writeFileSync(join(dir, 'repo', 'notes.md'), 'local only: 127.0.0.1\n');
-      git('add', '.');
-      git('commit', '-q', '-m', 'clean');
-      const clean = scan();
-      expect(clean.status, clean.stdout + clean.stderr).toBe(0);
-      expect(clean.stdout).toContain('extra markers: 1');
-      expect(clean.stdout).toContain('public repo scan: 0 findings');
+    const repo = throwawayRepo();
+    repo.write('notes.md', 'local only: 127.0.0.1\n');
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'clean');
+    const clean = repo.scan();
+    expect(clean.status, clean.stdout + clean.stderr).toBe(0);
+    expect(clean.stdout).toContain('extra markers: 1');
+    expect(clean.stdout).toContain('public repo scan: 0 findings');
 
-      writeFileSync(join(dir, 'repo', 'notes.md'), `local only: 127.0.0.1\nthe host is ${RESOLVER_A}.\n`);
-      git('commit', '-q', '-am', 'leak');
-      const commit = git('rev-parse', 'HEAD');
-      const leak = scan();
-      expect(leak.status).toBe(1);
-      expect(leak.stdout).toContain('notes.md:2  public-ipv4');
-      expect(leak.stdout).toContain(`${commit} notes.md:2  public-ipv4`);
-      expect(leak.stdout).toContain('public repo scan: 2 findings');
-      expect(leak.stdout + leak.stderr).not.toContain(RESOLVER_A);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    repo.write('notes.md', `local only: 127.0.0.1\nthe host is ${RESOLVER_A}.\n`);
+    repo.git('commit', '-q', '-am', 'leak');
+    const commit = repo.git('rev-parse', 'HEAD');
+    const leak = repo.scan();
+    expect(leak.status).toBe(1);
+    expect(leak.stdout).toContain('notes.md:2  public-ipv4');
+    expect(leak.stdout).toContain(`${commit} notes.md:2  public-ipv4`);
+    expect(leak.stdout).toContain('public repo scan: 2 findings');
+    expect(leak.stdout + leak.stderr).not.toContain(RESOLVER_A);
+  });
+
+  it('test_cli_scans_merge_resolutions', () => {
+    // An address added while resolving a conflict, and removed by the next commit, stays in the merge commit.
+    const repo = throwawayRepo();
+    repo.write('f.txt', 'base\n');
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'base');
+    repo.git('checkout', '-q', '-b', 'side');
+    repo.write('f.txt', 'side\n');
+    repo.git('commit', '-q', '-am', 'side');
+    repo.git('checkout', '-q', '-');
+    repo.write('f.txt', 'main\n');
+    repo.git('commit', '-q', '-am', 'main');
+    expect(repo.run('merge', '-q', 'side').status).toBe(1);
+    repo.write('f.txt', `main side host ${RESOLVER_A}\n`);
+    repo.git('commit', '-q', '-am', 'merge');
+    const merge = repo.git('rev-parse', 'HEAD');
+    repo.write('f.txt', 'main side\n');
+    repo.git('commit', '-q', '-am', 'clean');
+
+    const result = repo.scan();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`${merge} f.txt:1  public-ipv4`);
+    expect(result.stdout).toContain('public repo scan: 1 findings');
+  });
+
+  it('test_cli_hides_paths_that_hold_an_address_or_extra_marker', () => {
+    const repo = throwawayRepo();
+    repo.write('deploy/example-host-7.conf', '  server_name example.org;\n');
+    repo.write(`deploy/known-host-${RESOLVER_A}.txt`, 'ok\n');
+    repo.write('notes.md', 'ok\n');
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'paths');
+    const commit = repo.git('rev-parse', 'HEAD');
+
+    const result = repo.scan();
+    expect(result.status).toBe(1);
+    // Paths are numbered by `git ls-files` in the tree and by the commit's diff in history.
+    expect(result.stdout.trim().split(/\r?\n/)).toEqual([
+      'extra markers: 1',
+      'path #1  extra-marker #1',
+      'path #2  public-ipv4',
+      'path #1:1  host-marker server_name ',
+      `${commit} path #1  extra-marker #1`,
+      `${commit} path #1:1  host-marker server_name `,
+      `${commit} path #2  public-ipv4`,
+      'public repo scan: 6 findings',
+    ]);
+    const output = (result.stdout + result.stderr).toLowerCase();
+    for (const hidden of ['example-host-7', 'known-host', RESOLVER_A]) expect(output).not.toContain(hidden);
+  });
+
+  it('test_cli_runs_through_a_linked_path', () => {
+    // Node runs the real path of a linked entry script; the scan must still run (and fail) rather than do nothing.
+    const repo = throwawayRepo();
+    repo.write('notes.md', `the host is ${RESOLVER_A}\n`);
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'leak');
+    // A copy, so the link never points into the checkout. A junction on Windows, a directory symlink elsewhere.
+    const real = join(repo.dir, 'real', 'scripts');
+    mkdirSync(real, { recursive: true });
+    for (const name of ['scan-public-repo.mjs', 'ip-allowlist.txt']) copyFileSync(join(dirname(SCRIPT), name), join(real, name));
+    symlinkSync(join(repo.dir, 'real'), join(repo.dir, 'link'), 'junction');
+
+    const direct = repo.scan();
+    const linked = repo.scan(join(repo.dir, 'link', 'scripts', 'scan-public-repo.mjs'));
+    expect(direct.status).toBe(1);
+    expect([linked.status, linked.stdout]).toEqual([1, direct.stdout]);
   });
 });
