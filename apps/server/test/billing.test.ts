@@ -12,6 +12,7 @@ import {
   selectBilling,
 } from '../src/billing/provider.ts';
 import { loadConfig } from '../src/config.ts';
+import { captureLog } from './support/log.ts';
 
 const CTX: BillingContext = { userId: 'user-1', deviceId: 'device-1', task: 'classify', requestId: 'req-1' };
 
@@ -215,5 +216,68 @@ describe('runWithBilling with a recording fake', () => {
     expect(err).toBe(failure);
     expect(failed.calls.release).toEqual([released]);
     expect(failed.calls.settle).toHaveLength(0);
+  });
+
+  it('test_release_failure_keeps_the_outcome', async () => {
+    const hold: BillingDecision = { kind: 'hold', holdId: 'hold-7', amountMicros: 5_000 };
+    const { provider, calls } = recordingFake(hold);
+    const ledgerDown: BillingProvider = {
+      ...provider,
+      async release(input) {
+        calls.release.push(input);
+        throw new Error('ledger unavailable for user-1');
+      },
+    };
+    const { log, lines, events } = captureLog();
+
+    // A failed call: the AI error itself comes back, retry hint and usage included.
+    const failure = new AIError('overloaded', 'The provider is busy.', {
+      retryAfterMs: 2_000,
+      usage: { ...ZERO_USAGE, uncachedInput: 800 },
+    });
+    const err = await rejection(
+      runWithBilling(
+        ledgerDown,
+        CTX,
+        async () => {
+          throw failure;
+        },
+        settleInput,
+        log,
+      ),
+    );
+    expect(err).toBe(failure);
+
+    // Nothing chargeable: the result still comes back, uncharged.
+    const out = await runWithBilling(
+      ledgerDown,
+      CTX,
+      async () => 'every post failed',
+      () => null,
+      log,
+    );
+    expect(out).toEqual({ result: 'every post failed', billing: null });
+
+    expect(calls.release).toHaveLength(2);
+    expect(calls.settle).toHaveLength(0);
+    expect(events()).toEqual([
+      expect.objectContaining({ level: 'warn', event: 'billing.release.failed', rid: CTX.requestId, billing: 'fake' }),
+      expect.objectContaining({ level: 'warn', event: 'billing.release.failed', rid: CTX.requestId, billing: 'fake' }),
+    ]);
+    // Only `errorFields`: the provider's message never reaches the log.
+    for (const line of lines) expect(line).not.toContain('ledger unavailable');
+
+    // Without a log the outcome is the same.
+    await expect(
+      runWithBilling(
+        ledgerDown,
+        CTX,
+        async () => 'answer',
+        () => null,
+      ),
+    ).resolves.toEqual({
+      result: 'answer',
+      billing: null,
+    });
   });
 });

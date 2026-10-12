@@ -11,6 +11,7 @@ import { AIError } from '@unalgorithm/ai';
 import type { ClassifyResponse, NormalizedUsage } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
 import type { Config } from '../config.ts';
+import { errorFields, type Logger } from '../log.ts';
 
 export type BillingTask = 'classify';
 
@@ -58,7 +59,10 @@ export interface BillingProvider {
   check(ctx: BillingContext): Promise<BillingDecision>;
   /** Charges a finished request. Null when nothing is charged (the no-op provider). */
   settle(input: SettleInput): Promise<Settlement | null>;
-  /** Lets go of a request that is not charged, and of its hold when there is one. */
+  /**
+   * Lets go of a request that is not charged, and of its hold when there is one. Best effort: `runWithBilling` logs a
+   * rejection and carries on, so a hold that is not released must expire on its own.
+   */
   release(input: ReleaseInput): Promise<void>;
   /** Null when the provider keeps no balance. */
   balance(userId: string): Promise<{ balanceMicros: number } | null>;
@@ -95,20 +99,30 @@ export function selectBilling(config: Config): BillingProvider {
  * 3. `toSettle` answering null (no post succeeded) releases the request; anything else is settled exactly as given,
  *    plus the hold id of a `hold` decision.
  *
- * Errors of the provider itself (`settle`, `release`) propagate and fail the request; the provider owns its own
- * idempotency by `requestId`.
+ * A `settle` error propagates and fails the request; the provider owns its own idempotency by `requestId`. A `release`
+ * error never does: nothing is charged on either release path, so it neither replaces the error of a failed call (the
+ * route needs that `AIError` for its answer and retry hint) nor fails a request that succeeded with nothing to charge.
+ * It goes to `log` as `billing.release.failed` with the request id and `errorFields` only, and a hold left behind is the
+ * provider's to expire.
  */
 export async function runWithBilling<T>(
   provider: BillingProvider,
   ctx: BillingContext,
   call: () => Promise<T>,
   toSettle: (result: T) => SettleInput | null,
+  log?: Logger,
 ): Promise<{ result: T; billing: Settlement | null }> {
   const decision = await provider.check(ctx);
   if (decision.kind === 'refuse') throw new AIError('insufficient-credits', decision.message);
 
   const holdId = decision.kind === 'hold' ? decision.holdId : undefined;
-  const release = () => provider.release({ userId: ctx.userId, requestId: ctx.requestId, holdId });
+  const release = async () => {
+    try {
+      await provider.release({ userId: ctx.userId, requestId: ctx.requestId, holdId });
+    } catch (err) {
+      log?.warn('billing.release.failed', { rid: ctx.requestId, billing: provider.id, ...errorFields(err) });
+    }
+  };
 
   let result: T;
   let input: SettleInput | null;
