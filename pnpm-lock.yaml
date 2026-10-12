@@ -91,6 +91,21 @@ importers:
         specifier: 0.21.4
         version: 0.21.4(eslint@9.39.4(jiti@2.7.0))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@22.20.5)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0))
 
+  apps/server:
+    dependencies:
+      '@unalgorithm/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@unalgorithm/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@unalgorithm/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
+
   packages/ai:
     dependencies:
       '@anthropic-ai/sdk':

@@ -154,6 +154,26 @@
       }
     },
     {
+      "includes": ["apps/server/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui", "@unalgorithm/platforms"],
+                    "message": "the server never imports the extension runtime, UI or DOM adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/test/**", "**/tests/**", "**/e2e/**", "scripts/**"],
       "linter": {
         "rules": {

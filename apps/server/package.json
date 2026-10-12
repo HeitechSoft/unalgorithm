@@ -1,0 +1,23 @@
+{
+  "name": "@unalgorithm/server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Self-hostable server for UnAlgorithm Feed: email sign-in and AI classification for the extension",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "check-config": "node src/cli/check-config.ts"
+  },
+  "dependencies": {
+    "@unalgorithm/ai": "workspace:*",
+    "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/protocol": "workspace:*",
+    "zod": "^4.6.6"
+  }
+}
