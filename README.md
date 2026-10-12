@@ -2,10 +2,11 @@
   <img src="apps/extension/public/icon/128.png" width="96" height="96" alt="" />
 </p>
 
-<h1 align="center">UnAlgorithm</h1>
+<h1 align="center">UnAlgorithm Feed</h1>
 
 <p align="center"><strong>See the posts you came for.</strong><br />
-An open-source browser extension that quietly folds away ads, suggested posts and other noise on LinkedIn and Facebook.</p>
+An open-source browser extension by HeitechSoft that quietly folds away ads, suggested posts and other noise on LinkedIn
+and Facebook.</p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-0B7A75" /></a>
@@ -16,8 +17,9 @@ An open-source browser extension that quietly folds away ads, suggested posts an
 ---
 
 Social feeds are ranked to keep you scrolling. They mix in ads, posts "suggested for you", "Jane liked this"
-activity, and content from people you never chose to follow. **UnAlgorithm hides that noise and leaves a thin line in
-its place**, so you can still peek, and it never touches the posts from people you actually follow.
+activity, and content from people you never chose to follow. **UnAlgorithm Feed (UnAlgorithm for short) hides that
+noise and leaves a thin line in its place**, so you can still peek, and it never touches the posts from people you
+actually follow.
 
 <p align="center"><img src="docs/images/feed-linkedin-light.png" width="520" alt="A LinkedIn feed where an ad and other noise posts are folded into thin lines, and one post is highlighted For you" /></p>
 
@@ -102,10 +104,11 @@ post goes to the AI you picked, never who wrote it. Read [PRIVACY.md](PRIVACY.md
 
 Copyright (C) 2026 HeitechSoft. UnAlgorithm is free software under the
 [GNU Affero General Public License, version 3 only](LICENSE) (SPDX: `AGPL-3.0-only`). Contributions will be accepted
-under the [Contributor License Agreement](CLA.md) once it is final. "UnAlgorithm" and the logo are trademarks of
-HeitechSoft; see [TRADEMARKS.md](TRADEMARKS.md) if you fork. Maintainers are listed in [MAINTAINERS.md](MAINTAINERS.md).
+under the [Contributor License Agreement](CLA.md) once it is final. "UnAlgorithm Feed", "UnAlgorithm", "UnAlgo" and
+the logo are trademarks of HeitechSoft; see [TRADEMARKS.md](TRADEMARKS.md) if you fork, and [docs/brand.md](docs/brand.md)
+for how to write the name. Maintainers are listed in [MAINTAINERS.md](MAINTAINERS.md).
 
-UnAlgorithm is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta. LinkedIn and Facebook are
+UnAlgorithm Feed is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta. LinkedIn and Facebook are
 trademarks of their respective owners.
 
 Made by [HeitechSoft](https://heitechsoft.com) in Ontario, Canada.

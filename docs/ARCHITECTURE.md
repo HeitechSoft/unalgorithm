@@ -1,8 +1,8 @@
 # Architecture
 
-UnAlgorithm is a Manifest V3 browser extension built with [WXT](https://wxt.dev) and React, organized as a pnpm
-workspace. Everything platform-specific lives behind one adapter interface; everything that does not need the browser
-is plain TypeScript, so the future UnAlgorithm server can reuse it.
+UnAlgorithm Feed (UnAlgorithm for short) is a Manifest V3 browser extension built with [WXT](https://wxt.dev) and
+React, organized as a pnpm workspace. Everything platform-specific lives behind one adapter interface; everything that
+does not need the browser is plain TypeScript, so the future UnAlgorithm server can reuse it.
 
 ```
 apps/extension ──► packages/platforms ──► packages/core ──► packages/protocol
