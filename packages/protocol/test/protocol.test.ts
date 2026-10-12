@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AuthorizeRequestSchema,
+  AuthorizeResponseSchema,
   ClassifyRequestSchema,
   chromiumRedirectUri,
   compareHlc,
@@ -10,9 +11,11 @@ import {
   PostForAISchema,
   parseHlc,
   platformOfKey,
+  RevokeRequestSchema,
   ServerErrorSchema,
   ServerInfoSchema,
   TokenRequestSchema,
+  TokenResponseSchema,
   tickHlc,
   toPostRef,
   uuidv7,
@@ -117,6 +120,12 @@ describe('discovery', () => {
     expect(ServerInfoSchema.safeParse({ ...info, name: '' }).success).toBe(false);
     expect(ServerInfoSchema.safeParse({ ...info, source: 'not a url' }).success).toBe(false);
     expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, methods: [] } }).success).toBe(false);
+    expect(ServerInfoSchema.safeParse({ ...info, source: 'javascript:alert(1)' }).success).toBe(false);
+    expect(ServerInfoSchema.safeParse({ ...info, source: 'data:text/html,x' }).success).toBe(false);
+    for (const path of ['//evil.example/token', '/\\evil.example/token', '/\t/evil.example/token', 'v1/auth/token']) {
+      expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, tokenPath: path } }).success).toBe(false);
+      expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, authorizePath: path } }).success).toBe(false);
+    }
   });
 });
 
@@ -153,18 +162,54 @@ describe('auth contracts', () => {
     expect(TokenRequestSchema.safeParse({ ...code, grant_type: 'password' }).success).toBe(false);
   });
 
+  const req = {
+    client_id: DEV_ID,
+    redirect_uri: chromiumRedirectUri(DEV_ID),
+    code_challenge: CHALLENGE,
+    code_challenge_method: 'S256',
+    state: 's'.repeat(32),
+  };
+
   it('test_authorize_request_rejects_plain_and_short', () => {
-    const req = {
-      client_id: DEV_ID,
-      redirect_uri: chromiumRedirectUri(DEV_ID),
-      code_challenge: CHALLENGE,
-      code_challenge_method: 'S256',
-      state: 's'.repeat(32),
-    };
     expect(AuthorizeRequestSchema.safeParse(req).success).toBe(true);
     expect(AuthorizeRequestSchema.safeParse({ ...req, code_challenge_method: 'plain' }).success).toBe(false);
     expect(AuthorizeRequestSchema.safeParse({ ...req, code_challenge: CHALLENGE.slice(1) }).success).toBe(false);
     expect(AuthorizeRequestSchema.safeParse({ ...req, state: 's'.repeat(15) }).success).toBe(false);
+  });
+
+  it('test_authorize_request_binds_redirect_uri', () => {
+    const otherId = 'b'.repeat(32);
+    for (const redirect_uri of ['https://evil.example/cb', 'javascript:alert(1)', chromiumRedirectUri(otherId)]) {
+      const result = AuthorizeRequestSchema.safeParse({ ...req, redirect_uri });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(['redirect_uri']);
+    }
+  });
+
+  it('test_authorize_response_redirect_is_chromiumapp', () => {
+    const redirect = `${chromiumRedirectUri(DEV_ID)}?code=${'c'.repeat(43)}&state=${'s'.repeat(32)}`;
+    expect(AuthorizeResponseSchema.safeParse({ redirect }).success).toBe(true);
+    expect(AuthorizeResponseSchema.safeParse({ redirect: 'javascript:alert(1)' }).success).toBe(false);
+    expect(AuthorizeResponseSchema.safeParse({ redirect: 'https://evil.example/?code=x' }).success).toBe(false);
+    expect(AuthorizeResponseSchema.safeParse({ redirect: redirect.replace('https:', 'http:') }).success).toBe(false);
+  });
+
+  it('test_refresh_token_bounds_match_everywhere', () => {
+    const tokens = {
+      access_token: 'a.b.c',
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: 'r'.repeat(43),
+      device_id: '0190a5b4-8c1e-7000-8000-000000000000',
+      account: { email: 'reader@example.com' },
+    };
+    expect(TokenResponseSchema.safeParse(tokens).success).toBe(true);
+    const long = 'r'.repeat(201);
+    expect(TokenResponseSchema.safeParse({ ...tokens, refresh_token: long }).success).toBe(false);
+    expect(TokenRequestSchema.safeParse({ grant_type: 'refresh_token', refresh_token: long, client_id: DEV_ID }).success).toBe(
+      false,
+    );
+    expect(RevokeRequestSchema.safeParse({ refresh_token: long, client_id: DEV_ID }).success).toBe(false);
   });
 
   it('test_server_error_schema', () => {
