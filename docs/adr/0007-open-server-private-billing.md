@@ -5,10 +5,11 @@
 
 ## Context
 
-Phase 2 adds a server for accounts, sync and hosted AI. People and organizations want to run their own copy, and
-privacy-minded users want to read the code that handles their posts. HeitechSoft also runs UnAlgorithm Cloud, paid
-for with prepaid credits. The billing code (payments, the credit ledger, abuse controls, reconciliation) and
-HeitechSoft's operations configuration are of no use to self-hosters and carry business and security risk if public.
+Phase 2 of UnAlgorithm Feed adds a server for accounts, sync and hosted AI. People and organizations want to run
+their own copy, and privacy-minded users want to read the code that handles their posts. HeitechSoft also runs
+UnAlgorithm Cloud, paid for with prepaid credits. The billing code (payments, the credit ledger, abuse controls,
+reconciliation) and HeitechSoft's operations configuration are of no use to self-hosters and carry business and
+security risk if public.
 
 HeitechSoft holds the copyright in UnAlgorithm, and the [CLA](../../CLA.md) grants it rights to contributions under
 any licence. The AGPL binds licensees, not the copyright holder, so HeitechSoft can run the open server together with
