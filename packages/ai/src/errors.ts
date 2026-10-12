@@ -46,27 +46,32 @@ export function codeForStatus(status: number, body: string, host?: string): AIEr
   return 'unknown';
 }
 
-/** Plain-language message for an error code, shown in the popup, side panel and settings. */
-export function describeError(code: AIErrorCode, provider = 'The AI provider'): string {
+/**
+ * Plain-language message for an error code, shown in the popup, side panel and settings, and sent by servers in their
+ * error bodies. `provider` names who answered: the extension's label for a source, or a server's own INSTANCE_NAME. No
+ * text here names a particular server: a self-hosted one must never tell people to sign in somewhere else.
+ */
+export function describeError(code: AIErrorCode, provider?: string): string {
+  const name = provider || 'The AI provider';
   switch (code) {
     case 'no-key':
       return 'Add an API key in Settings → AI.';
     case 'auth':
-      return `${provider} didn't accept this key. Check that you copied all of it.`;
+      return `${name} didn't accept this key. Check that you copied all of it.`;
     case 'permission':
-      return `${provider} says this key can't use that model.`;
+      return `${name} says this key can't use that model.`;
     case 'host-permission':
       return 'UnAlgorithm needs permission to reach this AI server. Open Settings → AI and test it again.';
     case 'origin-blocked':
       return 'The local server refused the request. For Ollama, set OLLAMA_ORIGINS=chrome-extension://* and restart it.';
     case 'model-not-found':
-      return `${provider} doesn't have that model. Pick another in Settings → AI.`;
+      return `${name} doesn't have that model. Pick another in Settings → AI.`;
     case 'rate-limit':
-      return `${provider} is rate limiting requests. UnAlgorithm will try again shortly.`;
+      return `${name} is rate limiting requests. UnAlgorithm will try again shortly.`;
     case 'quota':
-      return `Your ${provider} account is out of credit or over its quota.`;
+      return `Your ${name} account is out of credit or over its quota.`;
     case 'overloaded':
-      return `${provider} is busy right now. UnAlgorithm will try again shortly.`;
+      return `${name} is busy right now. UnAlgorithm will try again shortly.`;
     case 'refusal':
       return 'The AI declined to classify this post.';
     case 'truncated':
@@ -84,13 +89,13 @@ export function describeError(code: AIErrorCode, provider = 'The AI provider'): 
     case 'context-overflow':
       return 'The post was too long for this model.';
     case 'insufficient-credits':
-      return 'Your UnAlgorithm Cloud balance is empty.';
+      return provider ? `Your ${provider} balance is empty.` : 'Your balance on this AI server is empty.';
     case 'auth-required':
-      return 'Sign in to UnAlgorithm Cloud again.';
+      return provider ? `Sign in to ${provider} again.` : 'Sign in to your AI server again.';
     case 'no-model':
       return 'Choose a model in Settings → AI.';
     case 'bad-request':
-      return `${provider} rejected the request.`;
+      return `${name} rejected the request.`;
     default:
       return 'Something went wrong with the AI request.';
   }

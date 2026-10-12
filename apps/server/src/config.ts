@@ -82,6 +82,8 @@ export class ConfigError extends Error {
 /** The development key's extension id (ADR 0004). The store id joins it once the store assigns one. */
 const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+/** INSTANCE_NAME and MAIL_FROM_NAME; the discovery document's `name` has the same limit. */
+const MAX_DISPLAY_NAME = 80;
 const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 const Email = z.email();
@@ -145,7 +147,7 @@ export function loadConfig(env: Env = process.env): Config {
 
   /** A display name: at most 80 characters on one line (it reaches mail headers and the extension). */
   function displayName(name: string, value: string): string {
-    if (value.length <= 80 && !/\p{Cc}/u.test(value)) return value;
+    if (value.length <= MAX_DISPLAY_NAME && !/\p{Cc}/u.test(value)) return value;
     bad(name, 'must be 1 to 80 characters on one line');
     return '';
   }
@@ -174,6 +176,10 @@ export function loadConfig(env: Env = process.env): Config {
   // Identity of this instance
   const instanceNameValue = read('INSTANCE_NAME');
   const instanceName = instanceNameValue ? displayName('INSTANCE_NAME', instanceNameValue) : (publicUrl?.host ?? '');
+  // Unset, the name is the PUBLIC_URL host, which must fit the same limit (the discovery document refuses a longer one).
+  if (!instanceNameValue && instanceName.length > MAX_DISPLAY_NAME) {
+    bad('INSTANCE_NAME', 'must be set when the PUBLIC_URL host is longer than 80 characters');
+  }
   const sourceValue = read('SOURCE_URL');
   const sourceUrl = sourceValue
     ? httpUrl('SOURCE_URL', sourceValue)

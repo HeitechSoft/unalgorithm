@@ -44,6 +44,26 @@ export function requestLog(log: Logger): MiddlewareHandler<AppEnv> {
 }
 
 /**
+ * Hono hands only `Error`s to `onError`. Any other thrown value (a string, a plain object, an abort reason) would
+ * escape the app: Node would answer an empty 500 with no CORS header, and no `http` line would be written. This turns
+ * such a value into an `Error` named `NonError` that leaves the value behind (it may hold post text), so `onError`
+ * answers and logs it like any other failure. Registered after the other middleware, closest to the routes, so every
+ * middleware above it still adds its headers and writes its log line.
+ */
+export function nonErrorsAsErrors(): MiddlewareHandler {
+  return async (_c, next) => {
+    try {
+      await next();
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      const wrapped = new Error('A value that is not an Error was thrown.');
+      wrapped.name = 'NonError';
+      throw wrapped;
+    }
+  };
+}
+
+/**
  * Stores the client's address for `getClientIp`. With `none` it is the socket's address and `X-Forwarded-For` is
  * ignored entirely. With `one-hop` (behind our nginx, which sets the header to the address it saw) it is the right-most
  * `X-Forwarded-For` entry: anything left of it was written by the client. The socket address stands in when that entry

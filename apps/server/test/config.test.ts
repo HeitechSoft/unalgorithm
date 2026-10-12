@@ -114,6 +114,19 @@ describe('validation', () => {
     expect(invalidNames({ ...minimalEnv(), PUBLIC_URL: 'https://x.org/app' })).toEqual(['PUBLIC_URL']);
   });
 
+  it('test_config_instance_name_fallback_limit', () => {
+    // Unset, INSTANCE_NAME falls back to the PUBLIC_URL host, which must then fit the same 80 characters.
+    const host = `${'a'.repeat(60)}.${'b'.repeat(8)}.example.org`;
+    expect(host).toHaveLength(81);
+    expect(configError({ ...minimalEnv(), PUBLIC_URL: `https://${host}` }).invalid).toEqual([
+      { name: 'INSTANCE_NAME', reason: 'must be set when the PUBLIC_URL host is longer than 80 characters' },
+    ]);
+    expect(loadConfig({ ...minimalEnv(), PUBLIC_URL: `https://${host}`, INSTANCE_NAME: 'Long host' }).instanceName).toBe(
+      'Long host',
+    );
+    expect(loadConfig({ ...minimalEnv(), PUBLIC_URL: `https://${host.slice(1)}` }).instanceName).toBe(host.slice(1));
+  });
+
   it('test_config_ai_provider_rules', () => {
     const { AI_API_KEY: _, ...noKey } = minimalEnv();
 

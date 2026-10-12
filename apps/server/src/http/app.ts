@@ -23,7 +23,7 @@ import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
-import { type AppEnv, clientIp, extensionCors, requestLog } from './middleware.ts';
+import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
 
@@ -84,6 +84,8 @@ export function createApp(deps: AppDeps): App {
   // CORS before the body limit, so the extension can read a 413 too.
   app.use('/v1/*', extensionCors(config.extensionIds));
   app.use('/v1/*', bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
+  // Last: everything registered after it (every route, and middleware added later) is inside it.
+  app.use(nonErrorsAsErrors());
 
   app.get('/health', async (c) => {
     try {

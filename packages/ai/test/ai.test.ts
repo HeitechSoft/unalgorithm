@@ -1,10 +1,14 @@
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildInterestProfile, ClassificationBatchSchema, defaultSettings } from '@unalgorithm/core';
-import type { PostForAI } from '@unalgorithm/protocol';
+import { AI_ERROR_CODES, type PostForAI } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   AIError,
   anthropicClient,
   classifyPosts,
+  describeError,
   detectProvider,
   memoryCapabilities,
   openaiClient,
@@ -267,5 +271,34 @@ describe('keys and presets', () => {
 
   it('AIError is an Error with a code', () => {
     expect(new AIError('timeout', 'x')).toBeInstanceOf(Error);
+  });
+});
+
+describe('error messages', () => {
+  it('names the server it is given, and no server when given none', () => {
+    // The extension passes its own label for the pinned hosted origin; a server passes its INSTANCE_NAME.
+    expect(describeError('auth-required', 'UnAlgorithm Cloud')).toBe('Sign in to UnAlgorithm Cloud again.');
+    expect(describeError('auth-required', 'ai.example.org')).toBe('Sign in to ai.example.org again.');
+    expect(describeError('insufficient-credits', 'My Server')).toBe('Your My Server balance is empty.');
+    expect(describeError('auth-required')).toBe('Sign in to your AI server again.');
+    expect(describeError('insufficient-credits')).toBe('Your balance on this AI server is empty.');
+    expect(describeError('auth', '')).toBe(describeError('auth'));
+    for (const code of AI_ERROR_CODES) {
+      expect(describeError(code)).not.toMatch(/UnAlgorithm\s+Cloud/i);
+      expect(describeError(code, 'My Server')).not.toMatch(/UnAlgorithm\s+Cloud/i);
+    }
+  });
+
+  it('no source file hardcodes the hosted service name', async () => {
+    const srcDir = fileURLToPath(new URL('../src', import.meta.url));
+    const files = (await readdir(srcDir, { recursive: true, withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name));
+    expect(files).toContain(join(srcDir, 'errors.ts'));
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (/UnAlgorithm\s+Cloud/i.test(await readFile(file, 'utf8'))) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
   });
 });

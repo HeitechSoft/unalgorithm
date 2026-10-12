@@ -9,7 +9,7 @@ import { HTTPException } from 'hono/http-exception';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { noopBilling } from '../src/billing/provider.ts';
-import { SERVER_VERSION } from '../src/config.ts';
+import { ConfigError, SERVER_VERSION } from '../src/config.ts';
 import { httpStatusFor } from '../src/http/app.ts';
 import { getClientIp } from '../src/http/middleware.ts';
 import { startServer } from '../src/index.ts';
@@ -92,6 +92,19 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await testApp({ config: testConfig({ INSTANCE_NAME: undefined, PUBLIC_URL: 'https://ai.example.org' }) });
     const doc = ServerInfoSchema.parse(await (await t.app.request(SERVER_INFO_PATH)).json());
     expect(doc.name).toBe('ai.example.org');
+  });
+
+  it('test_well_known_name_fallback_fits_schema', async () => {
+    // The host stands in for the name only while it fits the document's 80 characters; a longer one must be named.
+    const host = `${'a'.repeat(60)}.${'b'.repeat(7)}.example.org`;
+    expect(host).toHaveLength(80);
+    const t = await testApp({ config: testConfig({ INSTANCE_NAME: undefined, PUBLIC_URL: `https://${host}` }) });
+    expect(ServerInfoSchema.parse(await (await t.app.request(SERVER_INFO_PATH)).json()).name).toBe(host);
+
+    const longer = { INSTANCE_NAME: undefined, PUBLIC_URL: `https://b${host}` };
+    expect(() => testConfig(longer)).toThrow(ConfigError);
+    const named = await testApp({ config: testConfig({ ...longer, INSTANCE_NAME: 'Long host' }) });
+    expect(ServerInfoSchema.parse(await (await named.app.request(SERVER_INFO_PATH)).json()).name).toBe('Long host');
   });
 
   it('test_server_source_never_hardcodes_cloud_name', async () => {
@@ -245,6 +258,50 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
       timeout: 504,
     };
     for (const code of AI_ERROR_CODES) expect([code, httpStatusFor(code)]).toEqual([code, table[code] ?? 500]);
+  });
+
+  it('test_error_bodies_never_name_another_server', async () => {
+    const t = await testApp({ config: testConfig({ INSTANCE_NAME: 'My Server' }) });
+    t.app.get('/v1/fail/:code', (c) => {
+      throw new AIError(c.req.param('code') as AIErrorCode, 'x');
+    });
+    for (const code of AI_ERROR_CODES) {
+      const res = await t.app.request(`/v1/fail/${code}`);
+      const text = await res.text();
+      expect([code, res.status]).toEqual([code, httpStatusFor(code)]);
+      expect(ServerErrorSchema.parse(JSON.parse(text))).toEqual({ code, message: describeError(code, 'My Server') });
+      expect(text).not.toMatch(/UnAlgorithm\s+Cloud/i);
+    }
+    // The two codes whose text used to name the hosted service now name this server.
+    expect(describeError('auth-required', 'My Server')).toBe('Sign in to My Server again.');
+    expect(describeError('insufficient-credits', 'My Server')).toBe('Your My Server balance is empty.');
+  });
+
+  it('test_non_error_throw_is_500_json', async () => {
+    const t = await testApp();
+    t.app.get('/v1/string', () => {
+      throw 'CANARY string';
+    });
+    t.app.get('/v1/object', () => {
+      throw { text: 'CANARY object' };
+    });
+    for (const path of ['/v1/string', '/v1/object']) {
+      const res = await t.app.request(path, { headers: { Origin: DEV_ORIGIN } });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ code: 'unknown', message: 'Something went wrong on the server.' });
+      // Every middleware still applies: CORS (the extension can read it), security headers and the request id.
+      expect(res.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      const rid = res.headers.get('x-request-id');
+      expect(rid).toMatch(UUID);
+
+      const lines = t.events().filter((e) => e.rid === rid);
+      expect(lines.filter((e) => e.event === 'http')).toEqual([expect.objectContaining({ path, status: 500 })]);
+      expect(lines.filter((e) => e.event === 'http.error')).toEqual([
+        expect.objectContaining({ level: 'error', err_name: 'NonError' }),
+      ]);
+    }
+    expect(t.lines.join('')).not.toContain('CANARY');
   });
 
   it('test_unexpected_error_is_500_and_unlogged_message', async () => {
