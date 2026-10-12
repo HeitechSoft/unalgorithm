@@ -1,6 +1,6 @@
-# Contributing to UnAlgorithm
+# Contributing to UnAlgorithm Feed
 
-Thanks for helping. UnAlgorithm is maintained by HeitechSoft and built in the open. Bug reports, layout fixes,
+Thanks for helping. UnAlgorithm Feed is maintained by HeitechSoft and built in the open. Bug reports, layout fixes,
 translations, accessibility improvements and ideas are all welcome.
 
 ## Before you start
@@ -54,9 +54,9 @@ Useful commands:
 - Screenshots for UI changes, light and dark: `pnpm e2e` builds the extension and writes them to `screens/`.
 - Contributions are accepted under a [Contributor License Agreement](CLA.md). HeitechSoft needs it to keep offering
   the project under AGPL-3.0, to run the server in UnAlgorithm Cloud together with its private billing module, and to
-  license it commercially, for example to organizations running private deployments. **The CLA is still being finalized:** pull requests from outside contributors are welcome and will be
-  reviewed, and they will be merged once the final CLA is published and signed. A bot will then ask you to sign it
-  with a comment.
+  license it commercially, for example to organizations running private deployments. **The CLA is still being
+  finalized:** pull requests from outside contributors are welcome and will be reviewed, and they will be merged once
+  the final CLA is published and signed. A bot will then ask you to sign it with a comment.
 
 ## Style
 
