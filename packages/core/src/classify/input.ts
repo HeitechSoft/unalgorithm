@@ -87,6 +87,8 @@ export function toPostForAI(post: PostData, opts: ToPostForAIOptions): PostForAI
           },
         }
       : {}),
+    // Never rendered into a prompt; lets a server refuse posts that are not public.
+    ...(post.platform === 'facebook' ? { audience: post.audience ?? 'unknown' } : {}),
   };
 }
 

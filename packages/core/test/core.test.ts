@@ -262,6 +262,26 @@ describe('classification prompt', () => {
   });
 });
 
+describe('toPostForAI audience', () => {
+  const fb = (over: Partial<PostData> = {}) => post({ id: 'fb:1', platform: 'facebook', ...over });
+
+  it('test_to_post_for_ai_sets_facebook_audience', () => {
+    expect(toPostForAI(fb({ audience: 'friends' }), { ref: 'p1', redactMentions: true }).audience).toBe('friends');
+    expect(toPostForAI(fb(), { ref: 'p1', redactMentions: true }).audience).toBe('unknown');
+  });
+
+  it('test_to_post_for_ai_linkedin_has_no_audience', () => {
+    const result = toPostForAI(post({ audience: 'friends' }), { ref: 'p1', redactMentions: true });
+    expect('audience' in result).toBe(false);
+  });
+
+  it('test_user_prompt_never_renders_audience', () => {
+    const input = toPostForAI(fb({ text: 'Lunch', audience: 'friends' }), { ref: 'p1', redactMentions: true });
+    expect(input.audience).toBe('friends');
+    expect(buildUserPrompt([input], 'deadbeef')).not.toContain('friends');
+  });
+});
+
 describe('learning', () => {
   it('caps topic weights and adjustments', () => {
     let prefs = EMPTY_LEARNED;

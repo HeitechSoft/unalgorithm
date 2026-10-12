@@ -12,6 +12,9 @@ export const NoiseLabelSchema = z.enum(NOISE_LABELS);
 export const MAX_POST_CHARS = 2000;
 export const MAX_POSTS_PER_REQUEST = 12;
 
+/** Who can see a post, as the platform shows it. Only Facebook reports this. */
+export const AUDIENCES = ['public', 'friends', 'custom', 'unknown'] as const;
+
 /**
  * Everything about a post that may leave the device for classification. Deliberately has no author name,
  * profile URL, group name, comments or images. Text is normalized and capped; mentions/emails/phones masked.
@@ -29,6 +32,8 @@ export const PostForAISchema = z.object({
   media: z.enum(MEDIA_KINDS),
   /** Only the domain and title of a shared link, never the URL. */
   link: z.object({ domain: z.string().max(253), title: z.string().max(300).optional() }).optional(),
+  /** Facebook only: who can see the post. Servers drop anything not public (R23). */
+  audience: z.enum(AUDIENCES).optional(),
 });
 export type PostForAI = z.infer<typeof PostForAISchema>;
 
