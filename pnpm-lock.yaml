@@ -114,6 +114,9 @@ importers:
       hono:
         specifier: ^4.13.13
         version: 4.13.13
+      nodemailer:
+        specifier: ^10.1.0
+        version: 10.1.0
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -2503,6 +2506,10 @@ packages:
   node-forge@1.4.0:
     resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
     engines: {node: '>= 6.13.0'}
+
+  nodemailer@10.1.0:
+    resolution: {integrity: sha512-fXW8AulB25aOTuwfRYV6lqHyfz2VM4rr4SGXH03mE7x5znEUpzL5mu6anARUpZN7744Ziwkmr4AxSLPJsBQspg==}
+    engines: {node: '>=20.0.0'}
 
   nth-check@2.1.1:
     resolution: {integrity: sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w==}
@@ -5301,6 +5308,8 @@ snapshots:
   natural-compare@1.4.0: {}
 
   node-forge@1.4.0: {}
+
+  nodemailer@10.1.0: {}
 
   nth-check@2.1.1:
     dependencies:
