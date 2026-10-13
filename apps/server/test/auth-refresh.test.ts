@@ -361,19 +361,29 @@ describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
     const next = await refreshed(t, first.refresh_token);
     expect((await withBearer(t, next.access_token)).status).toBe(200);
     await refresh(t, first.refresh_token);
+    // Spent by the revocation: a reuse on a device revoked already.
     await refresh(t, next.refresh_token);
     await withBearer(t, next.access_token);
     const second = await signedIn(t);
     await revoke(t, second.refresh_token);
+    // A signed-out token tried again: also a reuse, and the device stays signed out.
+    await refresh(t, second.refresh_token);
     await revoke(t, 'y'.repeat(43));
 
     const events = t.events();
+    // Every reuse writes a line, also one that finds the device revoked already, which keeps its first reason.
     const reuse = events.filter((e) => e.event === 'auth.refresh_reuse');
-    expect(reuse).toHaveLength(1);
-    expect(reuse[0]).toMatchObject({ level: 'warn', device_id: first.device_id });
+    expect(reuse.map((e) => [e.level, e.device_id, e.already_revoked])).toEqual([
+      ['warn', first.device_id, false],
+      ['warn', first.device_id, true],
+      ['warn', second.device_id, true],
+    ]);
+    expect((await device(t, first.device_id)).revokedReason).toBe('refresh-reuse');
+    expect((await device(t, second.device_id)).revokedReason).toBe('sign-out');
+    for (const e of reuse) expect(Object.keys(e).sort()).toEqual(['already_revoked', 'device_id', 'event', 'level', 'rid', 't']);
     expect(events.filter((e) => e.event === 'auth.refreshed').map((e) => e.device_id)).toEqual([first.device_id]);
     expect(events.filter((e) => e.event === 'auth.revoked').map((e) => e.device_id)).toEqual([second.device_id]);
-    for (const e of [...reuse, ...events.filter((x) => x.event === 'auth.refreshed' || x.event === 'auth.revoked')]) {
+    for (const e of events.filter((x) => x.event === 'auth.refreshed' || x.event === 'auth.revoked')) {
       expect(Object.keys(e).sort()).toEqual(['device_id', 'event', 'level', 'rid', 't']);
     }
 

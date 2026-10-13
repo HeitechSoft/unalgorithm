@@ -100,8 +100,10 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
         const rid = c.get('rid');
         const rotation = await rotateRefreshToken({ db: db.db, auth }, req.refresh_token, req.client_id);
         if (!rotation.ok) {
-          // A spent token came back: someone else holds a copy, and the device is now revoked.
-          if (rotation.revokedForReuse) log.warn('auth.refresh_reuse', { rid, device_id: rotation.revokedForReuse });
+          // A spent token came back: someone else holds a copy, and the device is now revoked. Logged every time, so a
+          // copy tried again after the device was revoked or signed out leaves a trace too.
+          const { reuse } = rotation;
+          if (reuse) log.warn('auth.refresh_reuse', { rid, device_id: reuse.deviceId, already_revoked: reuse.alreadyRevoked });
           throw new AIError('auth-required', 'The refresh token was not accepted.');
         }
         log.info('auth.refreshed', { rid, device_id: rotation.tokens.device_id });

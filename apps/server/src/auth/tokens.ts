@@ -195,17 +195,22 @@ async function findRefreshToken(db: Db, refreshToken: string) {
   return row ?? null;
 }
 
-/**
- * What a refresh comes to: new tokens for the same device, or a refusal. `revokedForReuse` names the device when this
- * refusal revoked it because its token had been spent before.
- */
-export type Rotation = { ok: true; tokens: TokenResponse } | { ok: false; revokedForReuse?: string };
+/** A spent refresh token that came back: its device, and whether that device had been revoked before. */
+export interface Reuse {
+  deviceId: string;
+  alreadyRevoked: boolean;
+}
+
+/** What a refresh comes to: new tokens for the same device, or a refusal, which names the reuse when it was one. */
+export type Rotation = { ok: true; tokens: TokenResponse } | { ok: false; reuse?: Reuse };
 
 /**
  * The refresh grant. An unknown token is refused. A spent one is reuse: the device is revoked, so the newer token stops
- * working too, whoever holds it. An expired token, a revoked device or another extension's id is refused without
- * revoking anything. Otherwise the token is spent and replaced (`issueTokens` with `replaces`); when a concurrent
- * refresh spent it first, this one is reuse as well. Expiry is judged by this server's clock, which also set it.
+ * working too, whoever holds it. Every reuse is reported, also one on a device revoked before (an earlier reuse, or a
+ * sign-out), which keeps its first reason. An expired token, a revoked device or another extension's id is refused
+ * without revoking anything. Otherwise the token is spent and replaced (`issueTokens` with `replaces`); when a
+ * concurrent refresh spent it first, this one is reuse as well. Expiry is judged by this server's clock, which also
+ * set it.
  */
 export async function rotateRefreshToken(
   deps: TokenDeps,
@@ -215,10 +220,10 @@ export async function rotateRefreshToken(
 ): Promise<Rotation> {
   const found = await findRefreshToken(deps.db, refreshToken);
   if (!found) return { ok: false };
-  const reuse = async (): Promise<Rotation> =>
-    (await revokeDevice(deps.db, found.deviceId, 'refresh-reuse', now))
-      ? { ok: false, revokedForReuse: found.deviceId }
-      : { ok: false };
+  const reuse = async (): Promise<Rotation> => {
+    const revoked = await revokeDevice(deps.db, found.deviceId, 'refresh-reuse', now);
+    return { ok: false, reuse: { deviceId: found.deviceId, alreadyRevoked: !revoked } };
+  };
   if (found.usedAt !== null) return reuse();
   if (found.expiresAt.getTime() <= now || found.revokedAt !== null || found.clientId !== clientId) return { ok: false };
   const grant = { userId: found.userId, deviceId: found.deviceId, clientId: found.clientId };
