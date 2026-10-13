@@ -279,15 +279,20 @@ describe('classify: validation and auth', { timeout: PGLITE_TIMEOUT }, () => {
     expect(many.status).toBe(400);
     expect(await many.json()).toEqual({ code: 'bad-request', message: 'The request was not valid.' });
 
-    // A body that is not declared JSON is refused too, never handed on as an empty object. The status is the media-type
-    // check's own 415 (the app keeps the status of a client error Hono raises); the body is the usual `bad-request`.
-    const plain = await t.app.request(CLASSIFY_PATH, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain', Authorization: `Bearer ${t.tokens.access_token}` },
-      body: JSON.stringify(request(posts.slice(0, 2))),
-    });
-    expect(plain.status).toBe(415);
-    expect(await plain.json()).toEqual({ code: 'bad-request', message: 'The request was not valid.' });
+    // A body that is not declared JSON, or not declared at all, is refused too, never handed on as an empty object. AC 3
+    // says 400; the status is the media-type check's own 415, as on the app's other JSON routes and sign-in (the app
+    // keeps the status of a client error Hono raises). The body, which is what a device reads, is `bad-request`.
+    // Bytes, not a string: a string body brings its own `text/plain` type.
+    const bytes = new TextEncoder().encode(JSON.stringify(request(posts.slice(0, 2))));
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded', undefined]) {
+      const res = await t.app.request(CLASSIFY_PATH, {
+        method: 'POST',
+        headers: { ...(type ? { 'Content-Type': type } : {}), Authorization: `Bearer ${t.tokens.access_token}` },
+        body: bytes,
+      });
+      expect(res.status, type).toBe(415);
+      expect(await res.json()).toEqual({ code: 'bad-request', message: 'The request was not valid.' });
+    }
 
     expect(t.mock.bodies).toEqual([]);
     // Refused before the handler: nothing to meter.
