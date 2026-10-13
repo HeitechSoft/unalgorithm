@@ -8,7 +8,7 @@ import {
   ClassificationBatchSchema,
   defaultSettings,
 } from '@unalgorithm/core';
-import { AI_ERROR_CODES, type InterestProfile, type PostForAI } from '@unalgorithm/protocol';
+import { AI_ERROR_CODES, type InterestProfile, type PostForAI, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   AIError,
@@ -74,6 +74,14 @@ function anthropicMessage(results: unknown[], over: Record<string, unknown> = {}
     ...over,
   };
 }
+
+/** Anthropic's usage block with these token counts and no cache writes. */
+const anthropicUsage = (input: number, cacheRead: number, output: number) => ({
+  input_tokens: input,
+  output_tokens: output,
+  cache_read_input_tokens: cacheRead,
+  cache_creation_input_tokens: 0,
+});
 
 const post = (ref: string): PostForAI => ({
   ref,
@@ -251,6 +259,36 @@ describe('classify orchestrator', () => {
     const out = await classifyPosts(client, [post('p1'), post('p2')], { model: 'claude-haiku-5-5', profile });
     expect(out.byRef.get('p2')).toMatchObject({ ok: true, classification: { relevance: 30 } });
     expect(f.calls).toHaveLength(2);
+  });
+
+  it('test_ok_usage_excludes_failed_calls', async () => {
+    const f = fakeFetch([
+      { body: anthropicMessage([], { stop_reason: 'refusal', content: [], usage: anthropicUsage(1000, 100, 10) }) }, // p1+p2
+      { body: anthropicMessage([result('p1')], { usage: anthropicUsage(200, 20, 2) }) }, // p1
+      { body: anthropicMessage([result('p2')], { usage: anthropicUsage(30, 3, 0) }) }, // p2
+    ]);
+    const client = anthropicClient({ apiKey: 'k', capabilities: memoryCapabilities(), fetch: f.fetch });
+    const out = await classifyPosts(client, [post('p1'), post('p2')], { model: 'claude-haiku-5-5', profile });
+    expect([out.byRef.get('p1')?.ok, out.byRef.get('p2')?.ok]).toEqual([true, true]);
+    expect([out.calls, out.failedCalls]).toEqual([3, 1]);
+    expect(out.usage).toEqual({ ...ZERO_USAGE, uncachedInput: 1230, cacheRead: 123, output: 12 });
+    expect(out.okUsage).toEqual({ ...ZERO_USAGE, uncachedInput: 230, cacheRead: 23, output: 2 });
+  });
+
+  it('test_ok_usage_zero_when_all_fail', async () => {
+    // The refusal costs tokens; then the first half gets 500s (the SDK retries once), which stops the batch.
+    const serverError = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'Internal error' } } };
+    const f = fakeFetch([
+      { body: anthropicMessage([], { stop_reason: 'refusal', content: [], usage: anthropicUsage(1000, 100, 10) }) },
+      serverError,
+      serverError,
+    ]);
+    const client = anthropicClient({ apiKey: 'k', capabilities: memoryCapabilities(), fetch: f.fetch });
+    const out = await classifyPosts(client, [post('p1'), post('p2')], { model: 'claude-haiku-5-5', profile });
+    expect([out.byRef.get('p1')?.ok, out.byRef.get('p2')?.ok]).toEqual([false, false]);
+    expect([out.calls, out.failedCalls]).toEqual([2, 2]);
+    expect(out.usage).toEqual({ ...ZERO_USAGE, uncachedInput: 1000, cacheRead: 100, output: 10 });
+    expect(out.okUsage).toEqual(ZERO_USAGE);
   });
 });
 

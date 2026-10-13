@@ -27,6 +27,8 @@ export interface ClassifyOutcome {
   byRef: Map<string, PostOutcome>;
   /** Every token spent, including on calls that failed. */
   usage: NormalizedUsage;
+  /** The tokens of calls that returned a valid answer: the part a server may charge for (failed calls never are). */
+  okUsage: NormalizedUsage;
   model: string;
   mode?: StructuredMode;
   calls: number;
@@ -85,16 +87,25 @@ async function callOnce(client: AIClient, posts: PostForAI[], opts: ClassifyOpti
 
 /**
  * Classify a batch with one call. If the model refuses, split the batch until only the offending post fails.
- * Posts the model skipped are retried once on their own. Usage from failed calls still counts.
+ * Posts the model skipped are retried once on their own. Usage from failed calls still counts in `usage`, never in
+ * `okUsage`.
  */
 export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: ClassifyOptions): Promise<ClassifyOutcome> {
-  const out: ClassifyOutcome = { byRef: new Map(), usage: ZERO_USAGE, model: opts.model, calls: 0, failedCalls: 0 };
+  const out: ClassifyOutcome = {
+    byRef: new Map(),
+    usage: ZERO_USAGE,
+    okUsage: ZERO_USAGE,
+    model: opts.model,
+    calls: 0,
+    failedCalls: 0,
+  };
 
   async function run(group: PostForAI[], retryMissing: boolean): Promise<void> {
     out.calls++;
     try {
       const res = await callOnce(client, group, opts);
       out.usage = addUsage(out.usage, res.usage);
+      out.okUsage = addUsage(out.okUsage, res.usage);
       out.model = res.model;
       out.mode = res.mode;
       for (const [ref, c] of res.byRef) out.byRef.set(ref, { ok: true, classification: c });

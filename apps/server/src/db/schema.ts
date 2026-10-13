@@ -99,3 +99,45 @@ export const aiRoutes = pgTable(
   },
   (table) => [uniqueIndex('ai_routes_one_enabled_per_task').on(table.task).where(sql`${table.enabled}`)],
 );
+
+/**
+ * One row per AI request, written in the gateway's `finally` whether the request succeeded, partly failed or threw
+ * (R21, `recordUsageEvent`). Counts and token numbers only: no column can hold post content, and `task` and `model`
+ * are short identifiers. `usage` columns hold every token spent, failed calls included; the chargeable cost covers
+ * only the calls that answered, because failed calls are the operator's cost. Rows stay until the account is deleted.
+ */
+export const usageEvents = pgTable(
+  'usage_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The request's `rid`, so a request can never be recorded twice. */
+    requestId: uuid('request_id').notNull().unique(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    /** Null when no route served the request (none was configured, or none had passed its eval). */
+    routeId: uuid('route_id').references(() => aiRoutes.id),
+    /** 'classify'. */
+    task: text('task').notNull(),
+    model: text('model').notNull(),
+    /** 'ok', 'partial', 'failed' or 'refused-before-call' (`UsageEventInput`). */
+    outcome: text('outcome').notNull(),
+    postsRequested: integer('posts_requested').notNull(),
+    postsOk: integer('posts_ok').notNull(),
+    calls: integer('calls').notNull(),
+    failedCalls: integer('failed_calls').notNull(),
+    uncachedInput: integer('uncached_input').notNull(),
+    cacheRead: integer('cache_read').notNull(),
+    cacheWrite: integer('cache_write').notNull(),
+    output: integer('output').notNull(),
+    webSearches: integer('web_searches').notNull(),
+    estimated: boolean('estimated').notNull(),
+    /** Micro-dollars: the operator's cost of all usage. Null when the model has no price card. */
+    costMicros: integer('cost_micros'),
+    /** Micro-dollars: the cost of the calls that answered; 0 when no post succeeded, else null when no price card. */
+    chargeableCostMicros: integer('chargeable_cost_micros'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('usage_events_user_day').on(table.userId, table.createdAt), index('usage_events_day').on(table.createdAt)],
+);
