@@ -9,6 +9,7 @@
  * same check runs through the Cloud's nginx in CL1-35.
  */
 import { format } from 'node:util';
+import { describeError } from '@unalgorithm/ai';
 import { CLASSIFY_PATH, ClassifyResponseSchema } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,15 @@ import { createTestApp, testConfig } from './support/test-app.ts';
 const RUN_TIMEOUT = 90_000;
 
 const TOM = 'tom@example.com';
+
+const CONFIG = testConfig({ SIGNUP_ALLOWLIST: TOM });
+
+/**
+ * The response formats the OpenAI-compatible client tries in turn (strict JSON schema, loose JSON schema, JSON object,
+ * prompt only). It reads a provider's 400 as a format the provider does not take and steps down a format, so the 400 is
+ * queued once for each: only then does it reach the handler as the provider's answer.
+ */
+const RESPONSE_FORMATS = 4;
 
 /**
  * Tables the scan must find. Every base table is scanned, so a new one is covered by itself; one renamed or moved out of
@@ -60,7 +70,7 @@ interface Answers {
   providerEcho: Answer;
   /** 2b: the same, on a later line (`errorFields` drops only the first line of a message from `err_stack`). */
   multiLineEcho: Answer;
-  /** 3: the provider rejects the request, quoting the marker. */
+  /** 3: the provider rejects the request on every response format, quoting the marker. */
   providerBadInput: Answer;
   /** 4: 13 posts, which the schema refuses. */
   thirteenPosts: Answer;
@@ -173,7 +183,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
   try {
     const database = await open();
     cleanup.push(() => database.close());
-    const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: TOM }), db: database.handle });
+    const t = await createTestApp({ config: CONFIG, db: database.handle });
     cleanup.push(t.close);
     const token = (await signInDevice(t.app, t.outbox, TOM)).access_token;
 
@@ -194,7 +204,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     const providerEcho = await classify(classifyBody(posts, profile));
     t.mock.failNext(502, `<html>\nupstream error\n${CANARY}\n</html>`);
     const multiLineEcho = await classify(classifyBody(posts, profile));
-    t.mock.failNext(400, `{"error":"bad input ${CANARY}"}`);
+    for (let i = 0; i < RESPONSE_FORMATS; i++) t.mock.failNext(400, `{"error":"bad input ${CANARY}"}`);
     const providerBadInput = await classify(classifyBody(posts, profile));
     const thirteenPosts = await classify(classifyBody(thirteen, profile));
     const notJson = await request(async () =>
@@ -248,7 +258,7 @@ describe.each(DATABASES)('canary (%s)', (_name, open) => {
     const expected: [keyof Answers, number][] = [
       ['providerEcho', 503],
       ['multiLineEcho', 503],
-      // The client reads a provider's 400 as a response format it does not take: it steps down a format and succeeds.
+      // A 400 is about the posts, not the provider: each post gets an error, and the request does not fail.
       ['providerBadInput', 200],
       ['thirteenPosts', 400],
       ['notJson', 400],
@@ -259,6 +269,18 @@ describe.each(DATABASES)('canary (%s)', (_name, open) => {
       expect(answers[path].body, path).not.toContain(CANARY);
       expect(answers[path].headers, path).not.toContain(CANARY);
     }
+
+    // Path 3 reached the handler as the provider's own 400, which quoted the marker: every response format was tried and
+    // refused, and each post's error is `describeError` text, never the provider's words.
+    const badInput = answers.providerBadInput;
+    expect(badInput.sent).toHaveLength(RESPONSE_FORMATS);
+    for (const body of badInput.sent) expect(body).toContain(CANARY);
+    const message = describeError('bad-request', CONFIG.instanceName);
+    const { results } = ClassifyResponseSchema.parse(JSON.parse(badInput.body));
+    expect(results.map((r) => (r.status === 'error' ? `error: ${r.message}` : r.status))).toEqual([
+      ...Array.from({ length: 6 }, () => `error: ${message}`),
+      'declined',
+    ]);
   });
 
   check('test_canary_absent_from_every_table', () => {
