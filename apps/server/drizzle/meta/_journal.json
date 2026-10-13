@@ -8,6 +8,13 @@
       "when": 1791848224814,
       "tag": "0000_gray_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791851377661,
+      "tag": "0001_warm_silver_sable",
+      "breakpoints": true
     }
   ]
 }

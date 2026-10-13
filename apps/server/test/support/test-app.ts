@@ -6,13 +6,16 @@ import { memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
 
+/** `PUBLIC_URL` of every test server: the origin its own pages send, and the JWT issuer and audience. */
+export const TEST_PUBLIC_URL = 'http://127.0.0.1:8787';
+
 /**
  * The environment every test server starts from: a loopback origin, Mailpit's port, and an OpenAI-compatible provider
  * at the mock's standalone address (CL1-02). Nothing here is a real secret, and `DATABASE_URL` is never connected to:
  * test servers run on PGlite.
  */
 const TEST_ENV: Record<string, string> = {
-  PUBLIC_URL: 'http://127.0.0.1:8787',
+  PUBLIC_URL: TEST_PUBLIC_URL,
   DATABASE_URL: 'postgres://unalgorithm@127.0.0.1:5432/unalgorithm',
   BETTER_AUTH_SECRET: 'test-only-auth-secret-0123456789abcdef',
   INSTANCE_NAME: 'Test server',

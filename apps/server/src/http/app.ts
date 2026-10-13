@@ -25,6 +25,7 @@ import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
+import { authRoutes } from '../routes/auth.ts';
 import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
@@ -123,6 +124,7 @@ export function createApp(deps: AppDeps): App {
   // Better Auth reads a body of any size, and these routes take requests from anyone.
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
   mountAuth(app, auth);
+  authRoutes(app, deps);
 
   billing.mount?.(app);
 
