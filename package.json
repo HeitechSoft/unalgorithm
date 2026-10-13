@@ -22,6 +22,7 @@
     "changeset": "changeset",
     "fixtures:check": "node scripts/check-fixtures.mjs",
     "scan:public": "node scripts/scan-public-repo.mjs",
+    "licenses:server": "node scripts/check-server-licenses.mjs",
     "notices": "node scripts/third-party-notices.mjs",
     "notices:check": "node scripts/third-party-notices.mjs --check"
   },

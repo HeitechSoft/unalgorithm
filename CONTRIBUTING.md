@@ -32,6 +32,7 @@ Useful commands:
 | `pnpm e2e` | Build in `e2e` mode and run Playwright: the real extension in Chromium against fixture pages |
 | `pnpm fixtures:check` | Make sure captured fixtures contain no real names or post text |
 | `pnpm scan:public` | Make sure no tracked file or commit holds a public IP address, server details or a key file |
+| `pnpm licenses:server` | Make sure no server dependency is GPL, AGPL or LGPL, and none is MPL or unknown without a review |
 | `pnpm changeset` | Describe a user-facing change for the changelog |
 
 ## Ground rules

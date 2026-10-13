@@ -50,6 +50,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: pnpm notices:check
 
+      - name: Server licences
+        if: matrix.os == 'ubuntu-latest'
+        # Stricter than dependency-review.yml: no third-party GPL, AGPL or LGPL in the server and its web page, and MPL
+        # only after legal review (ADR 0007). Reviewed exceptions are in scripts/license-review.json.
+        run: pnpm licenses:server
+
       - name: Build
         run: pnpm zip
 
