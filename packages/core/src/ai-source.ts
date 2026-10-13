@@ -33,7 +33,9 @@ export const SOURCE_LIMITS: Record<
   anthropic: { batch: 6, concurrency: 2, timeoutMs: 30_000, maxPostChars: 2000 },
   openai: { batch: 6, concurrency: 2, timeoutMs: 30_000, maxPostChars: 2000 },
   'openai-compatible': { batch: 4, concurrency: 1, timeoutMs: 60_000, maxPostChars: 2000 },
-  server: { batch: 8, concurrency: 2, timeoutMs: 30_000, maxPostChars: 2000 },
+  // One server request can make several provider calls; must exceed the server's 25 s request deadline (CL1-14) and
+  // nginx's 60 s proxy_read_timeout (CL1-33), so the extension never gives up on (and re-sends) a batch still metered.
+  server: { batch: 8, concurrency: 2, timeoutMs: 90_000, maxPostChars: 2000 },
 };
 
 /** Stable id for caches and capability learning: kind plus endpoint. */

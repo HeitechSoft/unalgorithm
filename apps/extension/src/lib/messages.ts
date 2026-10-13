@@ -10,7 +10,7 @@ export interface ClassifyItem {
 
 export type ClassifyItemResult =
   | { key: PostKey; status: 'ok'; classification: Classification; model: string; cached: boolean }
-  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' }
+  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' | 'not-public' }
   | { key: PostKey; status: 'failed'; code: AIErrorCode; message: string; retryable: boolean };
 
 export interface BgError {

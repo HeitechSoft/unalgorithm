@@ -236,9 +236,22 @@ function tokenEndpoint(account: ServerAccount): URL | undefined {
  */
 async function requireSignIn(origin: string): Promise<never> {
   await Promise.all([setSecret(refreshKey(origin), undefined), clearAccess(origin)]);
+  await markAccount(origin);
+  throw new AIError('auth-required', describeError('auth-required', serverLabel(origin).title));
+}
+
+/**
+ * The server refused a request made with a freshly refreshed access token (CL1-17): the account is marked for signing
+ * in again. Its refresh token stays, so the next sign-in can still end this device on the server.
+ */
+export function markNeedsSignIn(origin: string): Promise<void> {
+  return exclusive(() => markAccount(origin));
+}
+
+/** Runs under `exclusive`. */
+async function markAccount(origin: string): Promise<void> {
   const account = await serverAccountItem.getValue();
   if (account?.origin === origin && !account.needsSignIn) await serverAccountItem.setValue({ ...account, needsSignIn: true });
-  throw new AIError('auth-required', describeError('auth-required', serverLabel(origin).title));
 }
 
 /**

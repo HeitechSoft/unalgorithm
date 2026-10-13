@@ -5,6 +5,7 @@ import {
   anthropicClient,
   type Capabilities,
   type CapabilityStore,
+  type ClassifyOutcome,
   COMPAT_PREFERENCES,
   COMPAT_PRESET_INFO,
   classifyPosts,
@@ -35,13 +36,16 @@ import {
   SOURCE_LIMITS,
   sourceId,
 } from '@unalgorithm/core';
-import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema } from '@unalgorithm/protocol';
+import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, toPostRef } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
+import { serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from '../lib/storage.ts';
 import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
+import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
+import { classifyViaServer } from './server-source.ts';
 
 // ---------- capability learning, persisted across service-worker restarts ----------
 
@@ -60,6 +64,13 @@ async function loadCapabilities(): Promise<void> {
 
 // ---------- sources ----------
 
+type ServerSource = Extract<AISourceConfig, { kind: 'server' }>;
+
+/** The browser's language, sent with every server request (`ClassifyRequest.locale`). */
+function uiLocale(): string {
+  return (globalThis.navigator?.language || 'en').slice(0, 16);
+}
+
 export function sourceLabel(cfg: AISourceConfig | null): string {
   if (!cfg) return 'Off';
   switch (cfg.kind) {
@@ -72,7 +83,7 @@ export function sourceLabel(cfg: AISourceConfig | null): string {
     case 'openai-compatible':
       return COMPAT_PRESET_INFO[cfg.preset].label;
     case 'server':
-      return 'UnAlgorithm Cloud';
+      return serverLabel(cfg.baseUrl).title;
   }
 }
 
@@ -81,7 +92,7 @@ function providerName(cfg: AISourceConfig): string {
   if (cfg.kind === 'openai') return 'OpenAI';
   if (cfg.kind === 'openai-compatible') return COMPAT_PRESET_INFO[cfg.preset].label;
   if (cfg.kind === 'on-device') return 'Chrome';
-  return 'UnAlgorithm Cloud';
+  return serverLabel(cfg.baseUrl).title;
 }
 
 /** The host permission a source needs, as a match pattern (null when it needs none). */
@@ -100,7 +111,8 @@ export function sourcePermission(cfg: AISourceConfig): string | null {
 
 let onDevice: AIClient | undefined;
 
-async function clientFor(cfg: AISourceConfig, apiKey?: string): Promise<AIClient> {
+/** A `server` source has no client here: the server calls the model (`classifyViaServer`). */
+async function clientFor(cfg: Exclude<AISourceConfig, { kind: 'server' }>, apiKey?: string): Promise<AIClient> {
   await loadCapabilities();
   const key = apiKey ?? (await getSecret(sourceId(cfg)));
   switch (cfg.kind) {
@@ -123,8 +135,6 @@ async function clientFor(cfg: AISourceConfig, apiKey?: string): Promise<AIClient
           ? { extraHeaders: { 'HTTP-Referer': 'https://github.com/HeitechSoft/unalgorithm', 'X-Title': 'UnAlgorithm' } }
           : {}),
       });
-    case 'server':
-      throw new AIError('not-available', 'UnAlgorithm Cloud is coming soon.');
   }
 }
 
@@ -175,20 +185,26 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
     ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: toBgError(e, cfg) } : {}),
   });
 
+  const limits = SOURCE_LIMITS[cfg.kind];
+  const profile = buildInterestProfile(settings, learned);
+  const pHash = profileHash(profile);
   let model: string;
-  let client: AIClient;
+  let classify: (posts: PostForAI[]) => Promise<ClassifyOutcome>;
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission for the AI server.');
     model = modelFor(cfg);
-    client = await clientFor(cfg);
+    if (cfg.kind === 'server') {
+      classify = (posts) => classifyViaServer(cfg, posts, { profile, profileHash: pHash, locale: uiLocale() });
+    } else {
+      const client = await clientFor(cfg);
+      classify = (posts) =>
+        classifyPosts(client, posts, { model, profile, compact: cfg.kind === 'on-device', timeoutMs: limits.timeoutMs });
+    }
   } catch (err) {
     return fail(err instanceof AIError ? err : new AIError('unknown', String(err)));
   }
 
   const sid = sourceId(cfg);
-  const limits = SOURCE_LIMITS[cfg.kind];
-  const profile = buildInterestProfile(settings, learned);
-  const pHash = profileHash(profile);
   const results: ClassifyItemResult[] = [];
   const prepared = [];
   for (const it of items) {
@@ -212,6 +228,11 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
       continue;
     }
     const input: PostForAI = parsed.data;
+    // R23: a Facebook post that isn't public never leaves this computer for a server, whatever the server would do.
+    if (cfg.kind === 'server' && input.platform === 'facebook' && input.audience !== 'public') {
+      results.push({ key: it.key, status: 'skipped', reason: 'not-public' });
+      continue;
+    }
     const key = classificationCacheKey({
       postKey: it.key,
       inputHash: inputHash(input),
@@ -251,17 +272,15 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
   await Promise.all(
     groups.map((group) =>
       (limit as ReturnType<typeof createLimiter>)(async () => {
-        const posts = group.map((p, i) => ({ ...p.input, ref: `p${i + 1}` }));
-        const outcome = await classifyPosts(client, posts, {
-          model,
-          profile,
-          compact: cfg.kind === 'on-device',
-          timeoutMs: limits.timeoutMs,
-        });
+        // A server only ever sees `pk_<sha256>` refs, never post keys; local sources get short ids for small prompts.
+        const sent = await Promise.all(
+          group.map(async (p, i) => ({ p, ref: cfg.kind === 'server' ? await toPostRef(p.item.key) : `p${i + 1}` })),
+        );
+        const outcome = await classify(sent.map(({ p, ref }) => ({ ...p.input, ref })));
         const fresh = [];
         let ok = 0;
-        for (const [i, p] of group.entries()) {
-          const r = outcome.byRef.get(`p${i + 1}`);
+        for (const { p, ref } of sent) {
+          const r = outcome.byRef.get(ref);
           if (r?.ok) {
             ok++;
             results.push({
@@ -331,6 +350,7 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
   const started = Date.now();
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
+    if (cfg.kind === 'server') return await testServer(cfg, started);
     if (cfg.kind === 'on-device') {
       const a = await onDeviceAvailability();
       if (a !== 'available') throw new AIError('not-available', `On-device AI is ${a}.`);
@@ -371,10 +391,31 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
   }
 }
 
+/**
+ * A server source: discovery says whether the address is an UnAlgorithm server, then the probe post goes through the
+ * signed-in device like any batch. The server chooses its model, so there is no list to pick from.
+ */
+async function testServer(cfg: ServerSource, started: number): Promise<TestSourceResult> {
+  const found = await discoverServer(cfg.baseUrl);
+  if (!found.ok) return found;
+  const profile = buildInterestProfile(defaultSettings());
+  const ref = await toPostRef('li:probe');
+  const out = await classifyViaServer(cfg, [{ ...PROBE, ref }], {
+    profile,
+    profileHash: profileHash(profile),
+    locale: uiLocale(),
+  });
+  const r = out.byRef.get(ref);
+  if (!r?.ok) throw r?.error ?? new AIError('unknown', 'No answer.');
+  return { ok: true, model: out.model, mode: 'server', latencyMs: Date.now() - started, models: [] };
+}
+
 /** The models a configured source offers, using its saved key. Nothing is classified. */
 export async function listSourceModels(cfg: AISourceConfig): Promise<BgResponses['listModels']> {
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
+    // A server chooses its own model.
+    if (cfg.kind === 'server') return { ok: true, models: [] };
     const client = await clientFor(cfg);
     try {
       return { ok: true, models: (await client.listModels()).map((m) => m.id) };
@@ -427,27 +468,47 @@ export async function forgetKey(cfg: AISourceConfig): Promise<void> {
 }
 
 export async function aiStatus(): Promise<AiStatus> {
-  const [device, settings, ledger] = await Promise.all([readDevice(), readSettings(), usageItem.getValue()]);
+  const [device, settings, ledger, account] = await Promise.all([
+    readDevice(),
+    readSettings(),
+    usageItem.getValue(),
+    serverAccountItem.getValue(),
+  ]);
   const cfg = device.aiSource;
+  const label = sourceLabel(cfg);
   const day = dayUsage(ledger);
   let model: string | undefined;
   try {
-    model = cfg ? modelLabel(modelFor(cfg)) : undefined;
+    // A server chooses its own model.
+    model = cfg && cfg.kind !== 'server' ? modelLabel(modelFor(cfg)) : undefined;
   } catch {
     model = undefined;
   }
+  // R26: a server source works only while this device is signed in to that server.
+  const signInAgain = cfg?.kind === 'server' && !signedInTo(cfg, account);
   const cost = dayCostMicros(day);
   return {
     configured: !!cfg,
     kind: cfg?.kind ?? null,
-    label: sourceLabel(cfg),
+    label,
     ...(model ? { model } : {}),
-    state: cfg ? 'ready' : 'off',
+    state: !cfg ? 'off' : signInAgain ? 'needs-attention' : 'ready',
+    ...(signInAgain ? { message: describeError('auth-required', label) } : {}),
     postsToday: day.posts,
     dailyCap: settings.ai.dailyCap,
     capApplies: !!cfg && !isLocalSource(cfg),
     ...(cost !== undefined ? { costTodayMicros: cost } : {}),
   };
+}
+
+/** True when the account is signed in to the source's server and the server still accepts it. */
+function signedInTo(cfg: ServerSource, account: ServerAccount | null): boolean {
+  if (!account || account.needsSignIn) return false;
+  try {
+    return account.origin === new URL(cfg.baseUrl).origin;
+  } catch {
+    return false;
+  }
 }
 
 export async function onDeviceStatus(): Promise<OnDeviceAvailability> {
