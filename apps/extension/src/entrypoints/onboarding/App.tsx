@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup } from '../../components/AiSetup.tsx';
 import { FEED_URLS, useDevice, useSettings } from '../../lib/hooks.ts';
+import { serverLabel } from '../../lib/server-label.ts';
 
 const STEPS = ['welcome', 'strength', 'interests', 'ai', 'done'] as const;
 type Step = (typeof STEPS)[number];
@@ -238,7 +239,18 @@ export function App() {
         ) : null}
 
         {step === 'done' ? (
-          <Done platforms={platforms} h1={h1} interests={selectedCount} aiLabel={device.aiSource ? device.aiSource.kind : null} />
+          <Done
+            platforms={platforms}
+            h1={h1}
+            interests={selectedCount}
+            aiLabel={
+              !device.aiSource
+                ? null
+                : device.aiSource.kind === 'server'
+                  ? `server:${serverLabel(device.aiSource.baseUrl).title}`
+                  : device.aiSource.kind
+            }
+          />
         ) : null}
       </main>
 
@@ -280,6 +292,7 @@ function Done({
   platforms: PlatformId[];
   h1: React.RefObject<HTMLHeadingElement | null>;
   interests: number;
+  /** The AI source kind, or `server:` and the server's title. */
   aiLabel: string | null;
 }) {
   const [pinned, setPinned] = useState<boolean | null>(null);
@@ -298,7 +311,9 @@ function Done({
         ? 'On-device AI'
         : aiLabel === 'openai-compatible'
           ? 'Your AI server'
-          : 'AI with your key';
+          : aiLabel.startsWith('server:')
+            ? `AI from ${aiLabel.slice('server:'.length)}`
+            : 'AI with your key';
   return (
     <div className="ob-done">
       <div className="ob-check">

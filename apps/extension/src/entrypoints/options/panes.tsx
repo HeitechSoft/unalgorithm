@@ -46,6 +46,7 @@ import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { useStorageItem } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
+import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
 import { learnedItem, usageItem } from '../../lib/storage.ts';
 
@@ -734,10 +735,12 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
             to: new URL(src.baseUrl).host,
             text: `Post text goes from your browser straight to ${new URL(src.baseUrl).host}. HeitechSoft never sees it.`,
           }
-        : {
-            to: src.kind === 'anthropic' ? 'Anthropic' : src.kind === 'openai' ? 'OpenAI' : 'UnAlgorithm Cloud',
-            text: `Post text goes from your browser straight to ${src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI'}. HeitechSoft never sees it. Author names, emails and phone numbers are never sent.`,
-          };
+        : src.kind === 'server'
+          ? recipientText(serverLabel(src.baseUrl))
+          : {
+              to: src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI',
+              text: `Post text goes from your browser straight to ${src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI'}. HeitechSoft never sees it. Author names, emails and phone numbers are never sent.`,
+            };
 
   const exportSettings = () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
@@ -800,7 +803,8 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
               .catch(() => toast({ title: "Couldn't clear stats. Try again." }))
           }
         />
-        {src && src.kind !== 'on-device' ? (
+        {/* A server source has no saved API key, only a sign-in, which this row can't end. */}
+        {src && src.kind !== 'on-device' && src.kind !== 'server' ? (
           <ListRow
             title="Remove saved API key"
             tone="destructive"
@@ -834,7 +838,8 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
           />
         ))}
       </ListGroup>
-      <ListGroup footer="No analytics. No tracking. No account.">
+      {/* With a server source the person has an account there: they signed in with an email. */}
+      <ListGroup footer={src?.kind === 'server' ? 'No analytics. No tracking.' : 'No analytics. No tracking. No account.'}>
         <ListRow
           title="Erase everything…"
           tone="destructive"
