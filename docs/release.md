@@ -32,3 +32,69 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 - **Website, support and privacy policy URLs:** `https://unalgorithm.app`, its help page and its privacy page once the
   website is live; until then the GitHub repo, SUPPORT.md and PRIVACY.md on GitHub. Update the store's data-use
   disclosures whenever PRIVACY.md changes.
+
+## Server releases
+
+The self-hostable server (`apps/server`) has a release train of its own: tags `server-vX.Y.Z`, built by
+`.github/workflows/server-release.yml` into the public image `ghcr.io/heitechsoft/unalgorithm-server`. The extension's
+`v*.*.*` tags and the server's `server-v*.*.*` tags never trigger each other's workflow. The steps above are for the
+extension.
+
+### Versioning
+
+The server version lives in `apps/server/package.json` and follows semver, independently of the extension. A PR that
+changes the server adds a changeset for `@unalgorithm/server` (`pnpm changeset`); the **Version packages** PR bumps the
+version and writes `apps/server/CHANGELOG.md`, whose section for the version becomes the release notes. A release with
+no changelog section gets the heading "UnAlgorithm Feed server X.Y.Z".
+
+### Steps
+
+1. Review the `apps/server/CHANGELOG.md` wording in the **Version packages** PR, then merge it.
+2. Tag the merge commit and push the tag:
+   ```bash
+   git tag server-v0.1.0 && git push origin server-v0.1.0
+   ```
+3. Approve the deployment: the job runs in the protected `release` environment and waits for a reviewer.
+4. `server-release.yml` verifies (lint, typecheck, tests, the server licence check), checks the tag matches the version
+   in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and pushes the image,
+   attests its build provenance and creates the GitHub Release.
+
+### The `release` environment
+
+Both trains deploy through the same protected `release` environment. Its deployment tag rules (Settings → Environments
+→ release → Deployment branches and tags) must list both patterns, each of type tag:
+
+- `v*.*.*` for the extension;
+- `server-v*.*.*` for the server. Without it, the server job is rejected before any step runs.
+
+Check them with:
+
+```bash
+gh api repos/HeitechSoft/unalgorithm/environments/release/deployment-branch-policies
+```
+
+### What is published
+
+- The image `ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z`, and `:latest` moved to it. The image carries an SBOM and
+  BuildKit provenance, and its OCI labels name the source repository, the licence (AGPL-3.0-only) and the version.
+- A build provenance attestation for the image digest, stored in the registry and on GitHub. Anyone can check it:
+  ```bash
+  gh attestation verify oci://ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z --repo HeitechSoft/unalgorithm
+  ```
+- A GitHub Release titled "UnAlgorithm Feed server X.Y.Z" with the changelog section and install notes. It is never
+  marked Latest, so the repository's Latest release stays the extension, which is what store users look for.
+
+**After the first release, once:** the image must be pullable without signing in. Check with
+`docker logout ghcr.io && docker pull ghcr.io/heitechsoft/unalgorithm-server:0.1.0`. If GHCR created the package as
+private, a HeitechSoft organization owner sets it to public in the package settings (Danger Zone → Change visibility;
+the organization's package creation settings must allow public packages).
+
+### Pinning a release
+
+Self-hosters pin a release with `UNALGORITHM_VERSION=X.Y.Z` in the `.env` next to `apps/server/compose.yaml`
+(unset, compose runs `latest`), and upgrade by changing it and running `docker compose pull && docker compose up -d`.
+A running server reports its release as `version` in `/.well-known/unalgorithm.json`, and `source` links to the
+`server-vX.Y.Z` tree unless `SOURCE_URL` names the source of a modified build.
+
+UnAlgorithm Cloud, HeitechSoft's hosted server, pins a server release in its private repository and builds its image
+from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the public release it runs.
