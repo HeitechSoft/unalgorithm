@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
-import { defineConfig } from 'wxt';
+import { defineConfig, type UserManifest } from 'wxt';
 
 /**
  * Public half of a development key so unpacked dev and E2E builds always get the same extension ID
@@ -29,6 +29,44 @@ function devBrowser(): string | undefined {
 const devChrome = devBrowser();
 const licenses = process.env.UA_LICENSES === '1';
 
+/**
+ * The server card and its `identity` permission (R47a): store builds leave them out until the Cloud beta notice, terms
+ * and store disclosures are live. `UA_CLOUD=1` puts them in a production build; development and e2e builds always
+ * have them. The UI reads the result as `import.meta.env.UA_CLOUD`.
+ */
+export function cloudEnabled(mode: string): boolean {
+  return process.env.UA_CLOUD === '1' || mode === 'development' || mode === 'e2e';
+}
+
+/** The manifest for a build mode. Pure, so tests can check every mode. */
+export function manifestFor(mode: string): UserManifest {
+  const e2e = mode === 'e2e';
+  // `identity` opens a server's sign-in page (`launchWebAuthFlow`); the server card asks for it from the click that
+  // starts a sign-in. Playwright can't answer that prompt, so e2e builds have it from the start.
+  const identity = cloudEnabled(mode) && !e2e ? ['identity' as const] : [];
+  return {
+    name: '__MSG_extName__',
+    short_name: 'UnAlgorithm',
+    description: '__MSG_extDescription__',
+    default_locale: 'en',
+    minimum_chrome_version: '130',
+    homepage_url: 'https://github.com/HeitechSoft/unalgorithm',
+    permissions: ['storage', 'sidePanel', 'scripting', ...(e2e ? ['identity'] : [])],
+    host_permissions: [
+      'https://www.linkedin.com/*',
+      'https://www.facebook.com/*',
+      // The e2e sign-in tab reports the URL it is sent back to only to a host permission for that address (CL1-16).
+      ...(e2e ? ['http://127.0.0.1/*', `https://${devKey.id}.chromiumapp.org/*`] : []),
+    ],
+    // AI endpoints are requested at setup, one origin at a time, from a click. Servers are reached through CORS
+    // (ADR 0004).
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
+    optional_permissions: ['declarativeNetRequestWithHostAccess', ...identity],
+    action: { default_title: 'UnAlgorithm' },
+    ...(mode === 'production' ? {} : { key: devKey.key }),
+  };
+}
+
 export default defineConfig({
   srcDir: 'src',
   imports: false,
@@ -36,9 +74,10 @@ export default defineConfig({
   // UA_LICENSES=1 builds the production bundle with source maps into its own folder, so
   // scripts/third-party-notices.mjs can list exactly what ships.
   ...(licenses ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-licenses' } : {}),
-  vite: () => ({
+  vite: (env) => ({
     resolve: { dedupe: ['react', 'react-dom', 'zod'] },
     build: { sourcemap: licenses },
+    define: { 'import.meta.env.UA_CLOUD': JSON.stringify(cloudEnabled(env.mode)) },
   }),
   hooks: {
     // Every zip carries the licence and the notices for the bundled open-source code.
@@ -49,25 +88,7 @@ export default defineConfig({
       );
     },
   },
-  manifest: ({ mode }) => ({
-    name: '__MSG_extName__',
-    short_name: 'UnAlgorithm',
-    description: '__MSG_extDescription__',
-    default_locale: 'en',
-    minimum_chrome_version: '130',
-    homepage_url: 'https://github.com/HeitechSoft/unalgorithm',
-    permissions: ['storage', 'sidePanel', 'scripting'],
-    host_permissions: [
-      'https://www.linkedin.com/*',
-      'https://www.facebook.com/*',
-      ...(mode === 'e2e' ? ['http://127.0.0.1/*'] : []),
-    ],
-    // AI endpoints are requested at setup, one origin at a time, from a click.
-    optional_host_permissions: ['https://*/*', 'http://*/*'],
-    optional_permissions: ['declarativeNetRequestWithHostAccess'],
-    action: { default_title: 'UnAlgorithm' },
-    ...(mode === 'production' ? {} : { key: devKey.key }),
-  }),
+  manifest: ({ mode }) => manifestFor(mode),
   webExt: {
     ...(devChrome ? { binaries: { chrome: devChrome } } : {}),
     chromiumProfile: resolve(import.meta.dirname, '.wxt/chrome-data'),

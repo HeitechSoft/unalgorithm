@@ -40,7 +40,7 @@ import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, serverMayReceive, 
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
-import { serverLabel } from '../lib/server-label.ts';
+import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from '../lib/storage.ts';
 import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
@@ -504,16 +504,6 @@ export async function aiStatus(): Promise<AiStatus> {
 /** True when the account is signed in to the source's server and the server still accepts it. */
 function signedInTo(cfg: ServerSource, account: ServerAccount | null): boolean {
   return !!account && !account.needsSignIn && isServerAt(cfg, account.origin);
-}
-
-/** True when the AI source is the server at `origin`. */
-export function isServerAt(cfg: AISourceConfig | null, origin: string): boolean {
-  if (cfg?.kind !== 'server') return false;
-  try {
-    return new URL(cfg.baseUrl).origin === origin;
-  } catch {
-    return false;
-  }
 }
 
 export async function onDeviceStatus(): Promise<OnDeviceAvailability> {

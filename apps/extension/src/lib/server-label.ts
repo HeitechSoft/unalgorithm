@@ -1,4 +1,4 @@
-import { canonicalText } from '@unalgorithm/core';
+import { type AISourceConfig, canonicalText } from '@unalgorithm/core';
 
 /**
  * How a `server` AI source is named on screen (R25, docs/brand.md). The same server code runs HeitechSoft's Cloud and
@@ -101,4 +101,14 @@ export function recipientText(label: ServerLabel): { to: string; text: string } 
     to: label.host || label.title,
     text: `Post text goes from your browser to ${host}. That server is run by its owner, not HeitechSoft, and its owner chooses which AI it uses. ${NEVER_SENT}`,
   };
+}
+
+/** True when the AI source is the server at `origin`. */
+export function isServerAt(cfg: AISourceConfig | null, origin: string): boolean {
+  if (cfg?.kind !== 'server') return false;
+  try {
+    return new URL(cfg.baseUrl).origin === origin;
+  } catch {
+    return false;
+  }
 }

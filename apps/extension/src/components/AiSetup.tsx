@@ -24,7 +24,9 @@ import {
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { sendToBackground } from '../lib/messages.ts';
+import { serverLabel } from '../lib/server-label.ts';
 import { ORIGIN_RULE_ID } from '../lib/storage.ts';
+import { CLOUD_ENABLED, ServerSetup } from './ServerSetup.tsx';
 
 type Choice = 'none' | 'on-device' | 'key' | 'local' | 'cloud';
 type Availability = 'no-api' | 'unavailable' | 'downloadable' | 'downloading' | 'available' | 'checking';
@@ -202,7 +204,17 @@ export function AiSetup({
           });
       }}
     >
-      {showCloud ? (
+      {!showCloud ? null : CLOUD_ENABLED ? (
+        // Every `server` source lands on this card, self-hosted ones too, so it never carries the Cloud's name, and it
+        // promises no sync (CL3) and no billing (CL2) that a server doesn't have yet.
+        <ChoiceCard
+          value="cloud"
+          title="UnAlgorithm server"
+          description="No API key needed. Sign in to UnAlgorithm Cloud (invite only during the beta) or to an UnAlgorithm server you trust."
+        >
+          <ServerSetup device={device} onSaved={onSaved} />
+        </ChoiceCard>
+      ) : (
         <ChoiceCard
           value="cloud"
           disabled
@@ -210,7 +222,7 @@ export function AiSetup({
           badge={<Badge>Coming soon</Badge>}
           description="Nothing to set up and works on all your devices. Pay only for what you use."
         />
-      ) : null}
+      )}
       <ChoiceCard
         value="on-device"
         disabled={availability === 'no-api' || availability === 'unavailable'}
@@ -377,7 +389,11 @@ export function AiSetup({
       ) : current && choiceOf(current) === choice && choice !== 'none' ? (
         <span className="ua-footnote ua-hstack" style={{ gridColumn: '1 / -1', gap: 6 }}>
           <Check size={14} aria-hidden="true" /> In use
-          {'model' in current && current.model ? ` · ${modelLabel(current.model)}` : ''}
+          {current.kind === 'server'
+            ? ` · ${serverLabel(current.baseUrl).title}`
+            : 'model' in current && current.model
+              ? ` · ${modelLabel(current.model)}`
+              : ''}
         </span>
       ) : null}
     </ChoiceCardGroup>

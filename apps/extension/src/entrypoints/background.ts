@@ -7,7 +7,6 @@ import {
   clearAiCapabilities,
   clearAiData,
   forgetKey,
-  isServerAt,
   listSourceModels,
   onDeviceStatus,
   saveSource,
@@ -19,7 +18,7 @@ import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut 
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
 import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
-import { serverLabel } from '../lib/server-label.ts';
+import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, readDevice, statsItem, usageItem, votesItem } from '../lib/storage.ts';
 
