@@ -2,8 +2,9 @@
  * The AI gateway: `POST /v1/classify` (R19, R21, R22, R23). A signed-in device sends up to 12 posts and its interest
  * profile; the server builds the prompts itself with the `packages/core` builders the extension uses and calls its
  * route's model through `packages/ai`. There is no prompt field, so the server cannot be used as an open model proxy.
- * Facebook posts that are not public never reach a model. Every request that reaches the handler goes through the
- * billing seam (a failed call is never charged) and leaves exactly one usage row, written in `finally`.
+ * Facebook posts that are not public never reach a model. A request with posts to send passes the limits first (rate,
+ * spend breaker, daily cap; R24). Every request that reaches the handler goes through the billing seam (a failed call is
+ * never charged) and leaves exactly one usage row, written in `finally`.
  *
  * Nothing about a request body is logged or kept: not the text, the profile, the refs or the locale. Neither is a
  * provider's error message, which can echo prompt text: a device gets `describeError` text for a code, never the
@@ -24,6 +25,7 @@ import {
   serverMayReceive,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
+import { checkLimits, createRateLimiter, type LimitDeps } from '../ai/limits.ts';
 import { recordUsageEvent, type UsageOutcome } from '../ai/metering.ts';
 import { type AiRoute, resolveRoute } from '../ai/routes.ts';
 import { requireDevice } from '../auth/bearer.ts';
@@ -108,6 +110,13 @@ function usageOutcomeOf(outcome: ClassifyOutcome | undefined, postsRequested: nu
 export function classifyRoutes(app: App, deps: AppDeps): void {
   const { config, db, log, billing, ai } = deps;
   const deadlineMs = deps.classifyDeadlineMs ?? CLASSIFY_DEADLINE_MS;
+  // One per app, so the rate buckets and the breaker's log state last as long as the server process.
+  const limits: LimitDeps = {
+    db: db.db,
+    config,
+    limiter: createRateLimiter({ perMinute: config.userRequestsPerMinute }),
+    log,
+  };
 
   app.openapi(
     createRoute({
@@ -122,6 +131,7 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
         400: errorResponse('The request was not valid'),
         401: errorResponse('No valid device token'),
         402: errorResponse('The balance is empty'),
+        429: errorResponse("Too many requests this minute (rate-limit), or today's limit is reached (cap-reached)"),
         500: errorResponse('The server failed'),
         503: errorResponse('The AI provider is busy, or no AI route is available'),
         504: errorResponse('The AI provider took too long'),
@@ -145,6 +155,10 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
           const body: ClassifyResponse = { v: 1, results: posts.map(declined), source };
           return c.json(body, 200);
         }
+
+        // R24, once there is something to send: the rate limit, the spend breaker and the daily cap. A refusal is
+        // metered below as `refused-before-call`.
+        await checkLimits(limits, { userId });
 
         const served = await resolveRoute(db.db, 'classify', config.routeEvalMinAgreement, log);
         route = served;

@@ -1,0 +1,142 @@
+/**
+ * The guards in front of every classify call (R24). Whoever runs a server pays its AI bill, so before a request reaches
+ * a model it passes three checks, the cheap one first: a per-user rate limit, the daily spend breaker over everyone's
+ * cost, and the per-user daily post cap. A refusal is an `AIError` that the app answers with 429 and `describeError`
+ * text; the gateway meters it as `refused-before-call`.
+ *
+ * Days are UTC, as in metering (CL1-13). The rate buckets live in memory: a deployment runs one server process in CL1,
+ * so memory is enough. A shared store is needed only once the server runs as several processes.
+ */
+import { AIError } from '@unalgorithm/ai';
+import { eq } from 'drizzle-orm';
+import type { DeviceAccount } from '../auth/bearer.ts';
+import type { Config } from '../config.ts';
+import type { Db } from '../db/client.ts';
+import { userLimits } from '../db/schema.ts';
+import type { Logger } from '../log.ts';
+import { postsToday, spendTodayMicros, utcDayStart } from './metering.ts';
+
+export type RateDecision = { ok: true } | { ok: false; retryAfterMs: number };
+
+export interface RateLimiter {
+  /** Takes one request from `userId`'s bucket at `now` (ms since the epoch), or says how long until one is there. */
+  take(userId: string, now?: number): RateDecision;
+  /** How many buckets are held. */
+  readonly size: number;
+}
+
+/** A bucket untouched this long is dropped. It refilled within a minute, so dropping it changes no answer. */
+export const IDLE_BUCKET_MS = 10 * 60_000;
+
+/** One request in bucket units: a bucket gains `perMinute` units a millisecond, so the arithmetic stays in integers. */
+const REQUEST_UNITS = 60_000;
+
+interface Bucket {
+  units: number;
+  /** When the bucket was last refilled: its last request. */
+  at: number;
+}
+
+/**
+ * An in-memory token bucket per user: `perMinute` requests at once, refilled at `perMinute / 60` a second. Buckets are
+ * kept in the order of their last request, so each request drops the idle ones from the front and memory stays bounded
+ * by the people active in the last 10 minutes.
+ */
+export function createRateLimiter({ perMinute }: { perMinute: number }): RateLimiter {
+  const capacity = perMinute * REQUEST_UNITS;
+  const buckets = new Map<string, Bucket>();
+
+  return {
+    take(userId, now = Date.now()) {
+      for (const [id, b] of buckets) {
+        if (now - b.at < IDLE_BUCKET_MS) break;
+        buckets.delete(id);
+      }
+
+      const bucket = buckets.get(userId) ?? { units: capacity, at: now };
+      bucket.units = Math.min(capacity, bucket.units + Math.max(0, now - bucket.at) * perMinute);
+      bucket.at = Math.max(bucket.at, now);
+      // Moved to the back: the most recent request is last.
+      buckets.delete(userId);
+      buckets.set(userId, bucket);
+
+      if (bucket.units < REQUEST_UNITS) return { ok: false, retryAfterMs: Math.ceil((REQUEST_UNITS - bucket.units) / perMinute) };
+      bucket.units -= REQUEST_UNITS;
+      return { ok: true };
+    },
+    get size() {
+      return buckets.size;
+    },
+  };
+}
+
+export type LimitConfig = Pick<Config, 'userDailyPostCap' | 'dailySpendLimitMicros'>;
+
+export interface LimitDeps {
+  db: Db;
+  config: LimitConfig;
+  /** One per server process, made with `config.userRequestsPerMinute`. */
+  limiter: RateLimiter;
+  log: Logger;
+  /** Kept by `checkLimits`: the UTC day (its start, in ms) whose breaker trip was logged, so it is logged once a day. */
+  breakerLoggedDay?: number;
+}
+
+/**
+ * Refuses the request with an `AIError` when a limit is reached, in this order:
+ * 1. the user's rate limit: `rate-limit` with `retryAfterMs`;
+ * 2. the spend breaker, when everyone's AI cost today has reached `DAILY_SPEND_LIMIT_USD`: `cap-reached` for everyone,
+ *    and `limits.spend_breaker` is logged once per UTC day per process;
+ * 3. the user's daily cap (`effectiveDailyCap`): `cap-reached` once the posts classified today reach it. A batch that
+ *    starts below the cap is served in full, so a day can end up to 12 posts over it; a batch is never split.
+ *
+ * Call it only for a request that will send posts to a model: a request with none spends no token and counts nothing.
+ * The messages are internal: the app answers every `AIError` with `describeError` text for its code.
+ */
+export async function checkLimits(
+  deps: LimitDeps,
+  account: Pick<DeviceAccount, 'userId'>,
+  now: Date = new Date(),
+): Promise<void> {
+  const { db, config, limiter, log } = deps;
+  const { userId } = account;
+
+  const rate = limiter.take(userId, now.getTime());
+  if (!rate.ok) {
+    throw new AIError('rate-limit', 'Too many requests this minute.', { retryAfterMs: rate.retryAfterMs });
+  }
+
+  const spend = await spendTodayMicros(db, now);
+  if (spend >= config.dailySpendLimitMicros) {
+    const day = utcDayStart(now).getTime();
+    if (deps.breakerLoggedDay !== day) {
+      deps.breakerLoggedDay = day;
+      log.warn('limits.spend_breaker', { spend_micros: spend, limit_micros: config.dailySpendLimitMicros });
+    }
+    throw new AIError('cap-reached', "This server has reached today's AI spending limit. AI resumes tomorrow.");
+  }
+
+  const cap = await effectiveDailyCap(db, userId, config);
+  if ((await postsToday(db, userId, now)) >= cap) {
+    throw new AIError('cap-reached', "This account has reached today's post limit. AI resumes tomorrow.");
+  }
+}
+
+/** The user's daily post cap: their own, set with `user-cap`, else the server's `USER_DAILY_POST_CAP`. */
+export async function effectiveDailyCap(db: Db, userId: string, config: Pick<Config, 'userDailyPostCap'>): Promise<number> {
+  const [row] = await db.select({ cap: userLimits.dailyPostCap }).from(userLimits).where(eq(userLimits.userId, userId)).limit(1);
+  return row?.cap ?? config.userDailyPostCap;
+}
+
+/** Sets the user's own daily post cap, or removes it (`null`) so the server's default applies. */
+export async function setDailyCap(db: Db, userId: string, cap: number | null): Promise<void> {
+  if (cap === null) {
+    await db.delete(userLimits).where(eq(userLimits.userId, userId));
+    return;
+  }
+  const updatedAt = new Date();
+  await db
+    .insert(userLimits)
+    .values({ userId, dailyPostCap: cap, updatedAt })
+    .onConflictDoUpdate({ target: userLimits.userId, set: { dailyPostCap: cap, updatedAt } });
+}

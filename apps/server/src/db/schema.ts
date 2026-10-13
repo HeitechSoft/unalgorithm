@@ -141,3 +141,16 @@ export const usageEvents = pgTable(
   },
   (table) => [index('usage_events_user_day').on(table.userId, table.createdAt), index('usage_events_day').on(table.createdAt)],
 );
+
+/**
+ * A person's own limits, set by the server's admin (`user-cap`, CL1-21). No row, or a null column, means the server's
+ * default from the environment applies.
+ */
+export const userLimits = pgTable('user_limits', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** Posts a day; null: `USER_DAILY_POST_CAP`. */
+  dailyPostCap: integer('daily_post_cap'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

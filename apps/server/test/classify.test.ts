@@ -8,15 +8,14 @@ import {
   type NormalizedUsage,
   type PostForAI,
   REVOKE_PATH,
-  toPostRef,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
-import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BillingDecision, BillingProvider, ReleaseInput, SettleInput, Settlement } from '../src/billing/provider.ts';
 import { usageEvents } from '../src/db/schema.ts';
 import type { AppDeps } from '../src/http/app.ts';
 import { excludeNonPublic, wireCodeFor } from '../src/routes/classify.ts';
+import { classifyBody, serverPost as post, postClassify, usageRowOf } from './support/classify.ts';
 import { seedPassingRoute } from './support/routes.ts';
 import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
@@ -53,31 +52,14 @@ async function classifyApp(options: TestAppOptions = {}) {
   return { ...t, tokens };
 }
 
-/** A post as the extension sends it to a server: a `pk_` ref, LinkedIn unless `over` says otherwise. */
-async function post(key: string, text: string, over: Partial<PostForAI> = {}): Promise<PostForAI> {
-  return {
-    ref: await toPostRef(`li:${key}`),
-    platform: 'linkedin',
-    text,
-    textComplete: true,
-    authorKind: 'person',
-    isReshare: false,
-    media: 'none',
-    ...over,
-  };
-}
-
-/** A classify request body for these posts; `extra` adds fields at the top level. */
+/** A classify request body for these posts, with the profile that carries the marker. */
 function request(posts: PostForAI[], extra: Record<string, unknown> = {}) {
-  return { v: 1, posts, profile: PROFILE, profileHash: 'h1', locale: 'en-CA', ...extra };
+  return classifyBody(posts, PROFILE, extra);
 }
 
 /** `POST /v1/classify` from the extension with the device's access token, or without one when `token` is null. */
 function classify(t: TestApp, body: unknown, token: string | null = t.tokens.access_token): Promise<Response> {
-  return postJson(t.app, CLASSIFY_PATH, body, {
-    Origin: DEV_EXTENSION_ORIGIN,
-    ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
-  });
+  return postClassify(t.app, body, token);
 }
 
 async function usageRows(t: TestApp) {
@@ -85,11 +67,8 @@ async function usageRows(t: TestApp) {
 }
 
 /** The one usage row of the request that got `res`. */
-async function usageRow(t: TestApp, res: Response) {
-  const rid = res.headers.get('x-request-id') ?? '';
-  const rows = await t.deps.db.db.select().from(usageEvents).where(eq(usageEvents.requestId, rid));
-  expect(rows).toHaveLength(1);
-  return rows[0]!;
+function usageRow(t: TestApp, res: Response) {
+  return usageRowOf(t.deps.db.db, res);
 }
 
 /** The messages of the mock's `index`th chat/completions request. */
