@@ -75,6 +75,10 @@ describe('rules', () => {
     // AND binds tighter than OR, and parentheses group: the AND needs its GPL child to pass.
     expect(ruleOf('GPL-3.0-only AND (MIT OR Apache-2.0)')).toBe('copyleft');
     expect(ruleOf('GPL-3.0-only OR MIT AND Apache-2.0')).toBe('ok');
+    // Without parentheses these read (GPL AND MIT) OR Apache and MIT OR (Apache AND GPL), so they pass; with OR binding
+    // tighter, the AND would need its GPL child to pass and they would fail.
+    expect(ruleOf('GPL-3.0-only AND MIT OR Apache-2.0')).toBe('ok');
+    expect(ruleOf('MIT OR Apache-2.0 AND GPL-3.0-only')).toBe('ok');
     expect(ruleOf('(GPL-3.0-only OR MIT) AND MPL-2.0')).toBe('needs-legal-review');
     // A leaf is judged by its id before WITH.
     expect(ruleOf('Apache-2.0 WITH LLVM-exception')).toBe('ok');
