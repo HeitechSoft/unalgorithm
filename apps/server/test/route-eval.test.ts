@@ -45,7 +45,7 @@ async function setup(opts: { verdict?: (text: string) => MockVerdict; env?: Reco
   const route = await syncRouteFromConfig(handle.db, config, log);
   const lines: string[] = [];
   const run = () => main([], { db: handle, config, out: (line) => lines.push(line) });
-  return { db: handle.db, config, log, route, lines, run, mock };
+  return { handle, db: handle.db, config, log, route, lines, run, mock };
 }
 
 async function routeRow(db: Db, id: string): Promise<AiRoute | undefined> {
@@ -129,6 +129,72 @@ describe('gate', { timeout: PGLITE_TIMEOUT }, () => {
 
     expect(await main([], { db: handle, config: testConfig(), out: (line) => lines.push(line) })).toBe(1);
     expect(lines.join('\n')).toContain('no classify route');
+  });
+
+  it('test_route_eval_refuses_a_route_the_environment_does_not_describe', async () => {
+    const { handle, db, route, mock } = await setup({ verdict: perfectVerdict });
+    const calls: string[] = [];
+    const spy: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return new Response('{}', { status: 500 });
+    };
+
+    // AI_* edited for a new provider, but the server has not restarted with them: the stored route is still the mock's.
+    const changed = [
+      testConfig({
+        AI_PROVIDER: 'anthropic',
+        AI_MODEL: 'claude-haiku-5-5',
+        AI_DATA_POLICY: 'vendor-zdr',
+        AI_BASE_URL: undefined,
+        AI_API_KEY: 'sk-ant-test-only-not-a-real-key',
+      }),
+      testConfig({ AI_BASE_URL: 'http://127.0.0.1:9/v1', AI_API_KEY: 'test-only-other-key' }),
+    ];
+    for (const config of changed) {
+      const lines: string[] = [];
+      expect(await main([], { db: handle, config, out: (line) => lines.push(line), fetch: spy })).toBe(1);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('is not the one AI_PROVIDER, AI_MODEL, AI_BASE_URL and AI_DATA_POLICY describe');
+      expect(lines[0]).toContain('start the server with this environment first');
+      // Neither the key nor the base URL is printed.
+      expect(lines[0]).not.toContain('key');
+      expect(lines[0]).not.toContain('127.0.0.1');
+    }
+
+    // No provider was called, so no key went to the stored route's endpoint, and nothing was stored.
+    expect(calls).toEqual([]);
+    expect(mock.bodies).toHaveLength(0);
+    const row = await routeRow(db, route.id);
+    expect(row?.evalAgreement).toBeNull();
+    expect(row?.evalPassedAt).toBeNull();
+  });
+
+  it('test_route_eval_provider_errors_keep_the_stored_result', async () => {
+    const { handle, db, config, log, route, lines, run } = await setup({ verdict: perfectVerdict });
+    expect(await run()).toBe(0);
+    const before = await routeRow(db, route.id);
+    expect(before?.evalPassedAt).toBeInstanceOf(Date);
+
+    // A provider outage during a second run: every call answers 503.
+    const busy: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: { message: 'busy' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
+    const outage: string[] = [];
+    expect(await main([], { db: handle, config, out: (line) => outage.push(line), fetch: busy })).toBe(1);
+    expect(outage).toEqual([
+      expect.stringMatching(
+        /^route openai-compatible\/mock-model: not evaluated \(provider errors: overloaded\), stored result unchanged, cost /,
+      ),
+    ]);
+    expect(lines).toHaveLength(1);
+
+    // The outage measured the provider, not the model: the passed result and the open gate stay.
+    const after = await routeRow(db, route.id);
+    expect(after?.evalAgreement).toBe(1);
+    expect(after?.evalPassedAt).toEqual(before?.evalPassedAt);
+    expect((await resolveRoute(db, 'classify', config.routeEvalMinAgreement, log)).id).toBe(route.id);
   });
 
   it('test_route_eval_takes_no_flags', async () => {

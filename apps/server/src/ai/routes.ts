@@ -112,7 +112,8 @@ export async function syncRouteFromConfig(db: Db, config: Config, log: Logger): 
   return route;
 }
 
-function sameRoute(a: RouteSpec, b: RouteSpec): boolean {
+/** Whether two routes are the same provider, model, endpoint, effort and data policy (the task is the caller's). */
+export function sameRoute(a: RouteSpec, b: RouteSpec): boolean {
   return (
     a.provider === b.provider &&
     a.model === b.model &&

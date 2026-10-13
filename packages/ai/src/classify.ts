@@ -8,6 +8,7 @@ import {
   normalizeItem,
 } from '@unalgorithm/core';
 import {
+  type AIErrorCode,
   addUsage,
   type Classification,
   type InterestProfile,
@@ -22,6 +23,17 @@ import type { AIClient, StructuredMode } from './types.ts';
 const BATCH_JSON_SCHEMA = toStrictJsonSchema(ClassificationBatchSchema);
 
 export type PostOutcome = { ok: true; classification: Classification } | { ok: false; error: AIError };
+
+/**
+ * Errors about one call's posts or the model's answer to them: the rest of a run goes on. Any other error (a bad key,
+ * no credit, a busy or unreachable provider) says nothing about the posts and would fail every call, so the run stops.
+ */
+export const POST_ERROR_CODES: ReadonlySet<AIErrorCode> = new Set<AIErrorCode>([
+  'refusal',
+  'truncated',
+  'context-overflow',
+  'bad-request',
+]);
 
 export interface ClassifyOutcome {
   byRef: Map<string, PostOutcome>;
@@ -128,7 +140,7 @@ export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: 
       }
       for (const p of group) out.byRef.set(p.ref, { ok: false, error: e });
       // Errors that affect every request (bad key, no credit) should not be retried per post.
-      if (!['refusal', 'truncated', 'context-overflow', 'bad-request'].includes(e.code)) throw e;
+      if (!POST_ERROR_CODES.has(e.code)) throw e;
     }
   }
 

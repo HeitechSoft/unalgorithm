@@ -139,7 +139,7 @@ describe('scoring', () => {
     }));
     const report = await runClassifyEval(client, 'eval-model');
 
-    expect(report).toMatchObject({ agreement: 1, passed: 30, total: 30, failures: [], model: 'eval-model' });
+    expect(report).toMatchObject({ agreement: 1, passed: 30, total: 30, failures: [], providerErrors: [], model: 'eval-model' });
     // Five batches of six, each with the eval profile, every token counted.
     expect(requests).toHaveLength(5);
     for (const req of requests) {
@@ -155,7 +155,7 @@ describe('scoring', () => {
     const { client } = fakeClient(() => ({ relevance: 50, noise: [] }));
     const report = await runClassifyEval(client, 'eval-model');
 
-    expect(report).toMatchObject({ agreement: 0, passed: 0, total: 30 });
+    expect(report).toMatchObject({ agreement: 0, passed: 0, total: 30, providerErrors: [] });
     expect(report.failures.map((f) => f.id)).toEqual(EVAL_SET.map((item) => item.id));
     for (const { id, reason } of report.failures) {
       expect(reason, id).toMatch(REASON);
@@ -186,5 +186,42 @@ describe('scoring', () => {
     const errors = await runClassifyEval(failing, 'eval-model');
     expect(errors.agreement).toBe(0);
     expect(new Set(errors.failures.map((f) => f.reason))).toEqual(new Set(['error overloaded']));
+  });
+
+  it('test_provider_errors_reported_apart', async () => {
+    // A provider that is busy for one batch only: those items fail, and the report says the provider failed.
+    const { client: perfect } = fakeClient((item) => ({
+      relevance: item.expect.relevance === 'high' ? 90 : 10,
+      noise: [...item.expect.noise],
+    }));
+    let calls = 0;
+    const flaky: AIClient = {
+      kind: 'fake',
+      async structured(req) {
+        calls++;
+        if (calls === 2) throw new AIError('rate-limit', 'Slow down.');
+        return perfect.structured(req);
+      },
+      async listModels() {
+        return [];
+      },
+    };
+    const busy = await runClassifyEval(flaky, 'eval-model');
+    expect(busy).toMatchObject({ passed: 24, total: 30, providerErrors: ['rate-limit'] });
+    expect(busy.failures.map((f) => f.reason)).toEqual(Array(6).fill('error rate-limit'));
+
+    // An answer the model got wrong is about the posts, not the provider: a failure, but not a provider error.
+    const garbled: AIClient = {
+      kind: 'fake',
+      async structured() {
+        return { text: 'not json', usage: ZERO_USAGE, model: 'answered-model', mode: 'json-schema' };
+      },
+      async listModels() {
+        return [];
+      },
+    };
+    const wrong = await runClassifyEval(garbled, 'eval-model');
+    expect(wrong).toMatchObject({ agreement: 0, providerErrors: [] });
+    expect(new Set(wrong.failures.map((f) => f.reason))).toEqual(new Set(['error bad-request']));
   });
 });
