@@ -4,19 +4,15 @@ import { authLog, authOptions, CLIENT_IP_HEADER, isEmailAllowed } from '../src/a
 import { jwks, user, verification } from '../src/db/schema.ts';
 import { memoryMailer } from '../src/mail/mailer.ts';
 import { captureLog } from './support/log.ts';
-import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
+import { postJson, SEND_CODE, SIGN_IN, SIX_DIGITS, sentCode, signInWeb } from './support/sign-in.ts';
+import { createTestApp, TEST_PUBLIC_URL, type TestAppOptions, testConfig } from './support/test-app.ts';
 
 /** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
 const PGLITE_TIMEOUT = 30_000;
 
-/** `PUBLIC_URL` of the test config: the origin every POST names, and the JWT issuer and audience. */
-const ORIGIN = 'http://127.0.0.1:8787';
-const SEND = '/api/auth/email-otp/send-verification-otp';
-const SIGN_IN = '/api/auth/sign-in/email-otp';
 const GET_SESSION = '/api/auth/get-session';
 const TOM = 'tom@example.com';
 const STRANGER = 'stranger@example.com';
-const SIX_DIGITS = /\b\d{6}\b/;
 const JWT = /eyJ[\w-]+\.[\w-]+\.[\w-]+/;
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -41,43 +37,18 @@ async function authApp(env: Record<string, string> = {}, options: Omit<TestAppOp
 }
 
 /** A JSON POST from the sign-in page: Better Auth refuses state-changing requests from other origins. */
-function post(t: TestApp, path: string, body: unknown, headers: Record<string, string> = {}) {
-  return t.app.request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: ORIGIN, ...headers },
-    body: JSON.stringify(body),
-  });
-}
+const post = (t: TestApp, path: string, body: unknown, headers: Record<string, string> = {}) =>
+  postJson(t.app, path, body, { Origin: TEST_PUBLIC_URL, ...headers });
 
 const sendCode = (t: TestApp, email: string, headers?: Record<string, string>) =>
-  post(t, SEND, { email, type: 'sign-in' }, headers);
+  post(t, SEND_CODE, { email, type: 'sign-in' }, headers);
 const signIn = (t: TestApp, email: string, otp: string) => post(t, SIGN_IN, { email, otp });
-
-/** The code in the newest message to `email`. */
-function codeFor(t: TestApp, email: string): string {
-  const text = t.outbox.findLast((m) => m.to === email)?.text ?? '';
-  const code = SIX_DIGITS.exec(text)?.[0];
-  if (!code) throw new Error('No sign-in code was sent.');
-  return code;
-}
+const codeFor = (t: TestApp, email: string) => sentCode(t.outbox, email);
+/** Signs `email` in through the two mounted endpoints and returns the session cookie. */
+const signedIn = (t: TestApp, email = TOM) => signInWeb(t.app, t.outbox, email);
 
 /** A six-digit code that is not `code`. */
 const wrong = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, '0');
-
-/** The `Cookie` header that sends back every cookie a response set. */
-const cookieFrom = (res: Response) =>
-  res.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .join('; ');
-
-/** Signs `email` in through the two mounted endpoints and returns the session cookie. */
-async function signedIn(t: TestApp, email = TOM): Promise<string> {
-  expect((await sendCode(t, email)).status).toBe(200);
-  const res = await signIn(t, email, codeFor(t, email));
-  expect(res.status).toBe(200);
-  return cookieFrom(res);
-}
 
 const usersWithEmail = (t: TestApp, email: string) => t.deps.db.db.select().from(user).where(eq(user.email, email));
 
@@ -129,7 +100,7 @@ describe('sign-in flow', { timeout: PGLITE_TIMEOUT }, () => {
     expect(rightCode.headers.getSetCookie()).toEqual([]);
     expect(await usersWithEmail(t, STRANGER)).toHaveLength(0);
     // Other types send nothing either, even to an allowed address.
-    expect((await post(t, SEND, { email: TOM, type: 'email-verification' })).status).toBe(200);
+    expect((await post(t, SEND_CODE, { email: TOM, type: 'email-verification' })).status).toBe(200);
     expect(t.outbox).toHaveLength(0);
   });
 
@@ -213,7 +184,7 @@ describe('keys and sessions', { timeout: PGLITE_TIMEOUT }, () => {
 
     expect(segment(token, 0)).toMatchObject({ alg: 'EdDSA' });
     const payload = segment(token, 1);
-    expect(payload).toMatchObject({ sub: 'u1', iat, iss: ORIGIN, aud: ORIGIN });
+    expect(payload).toMatchObject({ sub: 'u1', iat, iss: TEST_PUBLIC_URL, aud: TEST_PUBLIC_URL });
     expect(Number(payload.exp) - Number(payload.iat)).toBe(900);
     expect(await t.deps.db.db.select().from(jwks)).toHaveLength(1);
   });
@@ -301,7 +272,7 @@ describe('mounted surface', { timeout: PGLITE_TIMEOUT }, () => {
     const pad = (bytes: number) => ({ email: TOM, otp: '123456', pad: 'x'.repeat(bytes) });
 
     // Refused before Better Auth reads it, on every auth path, mounted or not.
-    for (const path of [SIGN_IN, SEND, '/api/auth/sign-out', '/api/auth/update-user']) {
+    for (const path of [SIGN_IN, SEND_CODE, '/api/auth/sign-out', '/api/auth/update-user']) {
       const res = await post(t, path, pad(32 * 1024));
       expect(res.status).toBe(413);
       expect(await res.json()).toEqual(tooLarge);
@@ -330,7 +301,7 @@ describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
     await signIn(t, TOM, wrong(codeFor(t, TOM)));
     const cookie = await signedIn(t);
     await t.app.request(GET_SESSION, { headers: { Cookie: cookie } });
-    await post(t, SEND, { email: 'not-an-address', type: 'sign-in' });
+    await post(t, SEND_CODE, { email: 'not-an-address', type: 'sign-in' });
 
     expect(t.lines.length).toBeGreaterThan(0);
     expectNoEmailOrCode(t.lines);
@@ -358,7 +329,7 @@ describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: TOM }) });
     cleanup.push(t.close);
     const raw = (headers: Record<string, string>, body: string) =>
-      t.app.request(SIGN_IN, { method: 'POST', headers: { Origin: ORIGIN, ...headers }, body });
+      t.app.request(SIGN_IN, { method: 'POST', headers: { Origin: TEST_PUBLIC_URL, ...headers }, body });
 
     // Refused before any endpoint runs; Better Auth's text for these quotes what the client sent. (It checks the
     // Origin only when the request has a cookie.)

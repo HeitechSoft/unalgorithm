@@ -70,13 +70,6 @@ export async function consumeAuthCode(db: Db, code: string, now = Date.now()): P
   return row ?? null;
 }
 
-/** A new device for this account and extension; returns its id. */
-export async function createDevice(db: Db, userId: string, clientId: string): Promise<string> {
-  const [device] = await db.insert(devices).values({ userId, clientId }).returning({ id: devices.id });
-  if (!device) throw new Error('The device was not stored.');
-  return device.id;
-}
-
 export interface DeviceGrant {
   userId: string;
   deviceId: string;
@@ -88,12 +81,26 @@ export interface TokenDeps {
   auth: Auth;
 }
 
+export interface IssueOptions {
+  /** Store the device along with its first tokens: a new sign-in. Default: the device exists already. */
+  newDevice?: boolean;
+  now?: number;
+}
+
 /**
- * New tokens for a device that exists: an access JWT (`sub` the user, `did` the device, `cid` the extension; issuer,
- * audience, EdDSA and 15 minutes from Better Auth's jwt plugin) and a refresh token stored by its hash. The answer
- * names the account's address, which the extension shows.
+ * New tokens for a device: an access JWT (`sub` the user, `did` the device, `cid` the extension; issuer, audience,
+ * EdDSA and 15 minutes from Better Auth's jwt plugin) and a refresh token stored by its hash. The answer names the
+ * account's address, which the extension shows.
+ *
+ * All or nothing: the JWT is signed before anything is written, and a new device and its refresh token are stored in
+ * one transaction, so a failure leaves no device without a token. Signing stays outside the transaction: Better Auth
+ * runs its own queries, which under PGlite would wait for the transaction's connection.
  */
-export async function issueTokens({ db, auth }: TokenDeps, grant: DeviceGrant, now = Date.now()): Promise<TokenResponse> {
+export async function issueTokens(
+  { db, auth }: TokenDeps,
+  grant: DeviceGrant,
+  { newDevice = false, now = Date.now() }: IssueOptions = {},
+): Promise<TokenResponse> {
   const [owner] = await db.select({ email: user.email }).from(user).where(eq(user.id, grant.userId)).limit(1);
   if (!owner) throw new AIError('auth-required', 'The account no longer exists.');
   const { token } = await auth.api.signJWT({
@@ -101,10 +108,13 @@ export async function issueTokens({ db, auth }: TokenDeps, grant: DeviceGrant, n
     body: { payload: { sub: grant.userId, did: grant.deviceId, cid: grant.clientId, iat: Math.floor(now / 1000) } },
   });
   const refreshToken = newSecret();
-  await db.insert(refreshTokens).values({
-    deviceId: grant.deviceId,
-    tokenHash: hashSecret(refreshToken),
-    expiresAt: new Date(now + REFRESH_TOKEN_TTL_DAYS * DAY_MS),
+  await db.transaction(async (tx) => {
+    if (newDevice) await tx.insert(devices).values({ id: grant.deviceId, userId: grant.userId, clientId: grant.clientId });
+    await tx.insert(refreshTokens).values({
+      deviceId: grant.deviceId,
+      tokenHash: hashSecret(refreshToken),
+      expiresAt: new Date(now + REFRESH_TOKEN_TTL_DAYS * DAY_MS),
+    });
   });
   return {
     access_token: token,

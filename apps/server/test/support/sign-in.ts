@@ -22,9 +22,11 @@ import { TEST_PUBLIC_URL } from './test-app.ts';
 export const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
 export const DEV_EXTENSION_ORIGIN = `chrome-extension://${DEV_EXTENSION_ID}`;
 
-const SEND_CODE = '/api/auth/email-otp/send-verification-otp';
-const SIGN_IN = '/api/auth/sign-in/email-otp';
-const SIX_DIGITS = /\b\d{6}\b/;
+/** Better Auth's two mounted sign-in endpoints: email a code, then sign in with it. */
+export const SEND_CODE = '/api/auth/email-otp/send-verification-otp';
+export const SIGN_IN = '/api/auth/sign-in/email-otp';
+/** A sign-in code as the email shows it. */
+export const SIX_DIGITS = /\b\d{6}\b/;
 
 /** A JSON POST with these headers added (an `Origin`, a `Cookie`). */
 export function postJson(app: App, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
@@ -37,14 +39,19 @@ export function postJson(app: App, path: string, body: unknown, headers: Record<
   );
 }
 
+/** The code in the newest email to `email`. */
+export function sentCode(outbox: readonly MailMessage[], email: string): string {
+  const code = SIX_DIGITS.exec(outbox.findLast((m) => m.to === email)?.text ?? '')?.[0];
+  if (!code) throw new Error('No sign-in code was sent: is the address on SIGNUP_ALLOWLIST?');
+  return code;
+}
+
 /** Signs `email` in on the server's own page (code by email, then the code) and returns the session `Cookie` header. */
 export async function signInWeb(app: App, outbox: readonly MailMessage[], email: string): Promise<string> {
   const page = { Origin: TEST_PUBLIC_URL };
   const sent = await postJson(app, SEND_CODE, { email, type: 'sign-in' }, page);
   if (sent.status !== 200) throw new Error(`Sending the sign-in code answered ${sent.status}.`);
-  const code = SIX_DIGITS.exec(outbox.findLast((m) => m.to === email)?.text ?? '')?.[0];
-  if (!code) throw new Error('No sign-in code was sent: is the address on SIGNUP_ALLOWLIST?');
-  const res = await postJson(app, SIGN_IN, { email, otp: code }, page);
+  const res = await postJson(app, SIGN_IN, { email, otp: sentCode(outbox, email) }, page);
   if (res.status !== 200) throw new Error(`Signing in answered ${res.status}.`);
   return res.headers
     .getSetCookie()

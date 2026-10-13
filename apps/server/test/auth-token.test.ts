@@ -8,7 +8,7 @@ import {
   TOKEN_PATH,
   TokenResponseSchema,
 } from '@unalgorithm/protocol';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { verifyPkce } from '../src/auth/tokens.ts';
 import { authCodes, devices, refreshTokens, user } from '../src/db/schema.ts';
@@ -37,13 +37,14 @@ const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server 
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
-/** Apps a test opened, closed after it whatever the outcome; fake timers are put back too. */
+/** Apps a test opened, closed after it whatever the outcome; fake timers and spies are put back too. */
 const cleanup: (() => Promise<unknown>)[] = [];
 /** Every log line of every app in this file, and every secret the tests saw, for the log test at the end (AC 13). */
 const allLines: string[] = [];
 const secrets: string[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
@@ -255,6 +256,32 @@ describe('token: authorization_code', { timeout: PGLITE_TIMEOUT }, () => {
     expect(answers.map((r) => r.status).sort()).toEqual([200, 401]);
     expect(await t.deps.db.db.select().from(devices)).toHaveLength(1);
     expect(await t.deps.db.db.select().from(refreshTokens)).toHaveLength(1);
+  });
+
+  it('test_failed_exchange_stores_no_device', async () => {
+    const t = await tokenApp();
+    const cookie = await webSession(t);
+    const serverError = { code: 'unknown', message: 'Something went wrong on the server.' };
+    const stored = async () => ({
+      devices: (await t.deps.db.db.select().from(devices)).length,
+      refreshTokens: (await t.deps.db.db.select().from(refreshTokens)).length,
+    });
+
+    // Signing fails (the key cannot be read after a secret change, say): nothing has been written yet.
+    const unsigned = await authorized(t, cookie);
+    vi.spyOn(t.deps.auth.api, 'signJWT').mockRejectedValueOnce(new Error('No signing key.'));
+    const first = await exchange(t, codeExchange(unsigned.code, unsigned.verifier));
+    expect(first.status).toBe(500);
+    expect(await first.json()).toEqual(serverError);
+    expect(await stored()).toEqual({ devices: 0, refreshTokens: 0 });
+
+    // Storing the refresh token fails: the device it was for is not kept either.
+    await t.deps.db.db.execute(sql`ALTER TABLE refresh_tokens ADD CONSTRAINT refuse_all CHECK (false)`);
+    const unstored = await authorized(t, cookie);
+    const second = await exchange(t, codeExchange(unstored.code, unstored.verifier));
+    expect(second.status).toBe(500);
+    expect(await second.json()).toEqual(serverError);
+    expect(await stored()).toEqual({ devices: 0, refreshTokens: 0 });
   });
 
   it('test_verify_pkce_s256', () => {

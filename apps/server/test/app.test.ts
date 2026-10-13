@@ -16,6 +16,7 @@ import { getClientIp } from '../src/http/middleware.ts';
 import { startServer } from '../src/index.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
+import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, SEND_CODE } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 
 /** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
@@ -24,8 +25,6 @@ const PGLITE_TIMEOUT = 30_000;
 const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
 /** The entry point, by absolute path: the test must not depend on the folder Vitest runs in. */
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
-const DEV_ORIGIN = `chrome-extension://${DEV_EXTENSION_ID}`;
 const OTHER_ORIGIN = `chrome-extension://${'b'.repeat(32)}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -139,9 +138,9 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
         headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' },
       });
 
-    const dev = await preflight(DEV_ORIGIN);
+    const dev = await preflight(DEV_EXTENSION_ORIGIN);
     expect(dev.status).toBe(204);
-    expect(dev.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    expect(dev.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
     expect(dev.headers.get('access-control-allow-methods')).toBe('GET,POST,OPTIONS');
     expect(dev.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
     expect(dev.headers.get('access-control-max-age')).toBe('600');
@@ -153,14 +152,14 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
     }
 
     // Actual responses carry the header too, error bodies included, so the extension can read them.
-    const notFound = await t.app.request('/v1/anything', { headers: { Origin: DEV_ORIGIN } });
+    const notFound = await t.app.request('/v1/anything', { headers: { Origin: DEV_EXTENSION_ORIGIN } });
     expect(notFound.status).toBe(404);
-    expect(notFound.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    expect(notFound.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
 
     // A cross-origin fetch reads only exposed headers: Retry-After must be one, or the extension cannot honour it.
-    const limited = await t.app.request('/v1/limited', { headers: { Origin: DEV_ORIGIN } });
+    const limited = await t.app.request('/v1/limited', { headers: { Origin: DEV_EXTENSION_ORIGIN } });
     expect(limited.status).toBe(429);
-    expect(limited.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    expect(limited.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
     expect(limited.headers.get('retry-after')).toBe('2');
     expect(limited.headers.get('access-control-expose-headers')).toBe('Retry-After');
     expect(
@@ -302,11 +301,11 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
       throw { text: 'CANARY object' };
     });
     for (const path of ['/v1/string', '/v1/object']) {
-      const res = await t.app.request(path, { headers: { Origin: DEV_ORIGIN } });
+      const res = await t.app.request(path, { headers: { Origin: DEV_EXTENSION_ORIGIN } });
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ code: 'unknown', message: 'Something went wrong on the server.' });
       // Every middleware still applies: CORS (the extension can read it), security headers and the request id.
-      expect(res.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+      expect(res.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
       expect(res.headers.get('x-content-type-options')).toBe('nosniff');
       const rid = res.headers.get('x-request-id');
       expect(rid).toMatch(UUID);
@@ -385,13 +384,13 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_body_limit_413', async () => {
     const t = await testApp();
     const post = (bytes: number) =>
-      t.app.request('/v1/anything', { method: 'POST', headers: { Origin: DEV_ORIGIN }, body: 'x'.repeat(bytes) });
+      t.app.request('/v1/anything', { method: 'POST', headers: { Origin: DEV_EXTENSION_ORIGIN }, body: 'x'.repeat(bytes) });
 
     const big = await post(200 * 1024);
     expect(big.status).toBe(413);
     expect(ServerErrorSchema.parse(await big.json()).code).toBe('bad-request');
     // Readable by the extension: the refusal carries the CORS header.
-    expect(big.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    expect(big.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
 
     // Under the limit the request goes on to routing.
     expect((await post(100 * 1024)).status).toBe(404);
@@ -414,7 +413,7 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
     expect(big.status).toBe(413);
 
     // Sign-in is mounted, and a request body survives the copy that sets the client address for Better Auth.
-    const send = await fetch(`${server.url}/api/auth/email-otp/send-verification-otp`, {
+    const send = await fetch(`${server.url}${SEND_CODE}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: testConfig().publicOrigin },
       body: JSON.stringify({ email: 'stranger@example.com', type: 'sign-in' }),
@@ -422,7 +421,7 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
     expect(send.status).toBe(200);
     expect(await send.json()).toEqual({ success: true });
     // The auth routes have a body limit of their own, also checked on the Content-Length.
-    const bigSend = await fetch(`${server.url}/api/auth/email-otp/send-verification-otp`, {
+    const bigSend = await fetch(`${server.url}${SEND_CODE}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: testConfig().publicOrigin },
       body: JSON.stringify({ email: 'stranger@example.com', type: 'sign-in', pad: 'x'.repeat(32 * 1024) }),

@@ -22,7 +22,7 @@ import {
 } from '@unalgorithm/protocol';
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { consumeAuthCode, createDevice, issueAuthCode, issueTokens, verifyPkce } from '../auth/tokens.ts';
+import { consumeAuthCode, issueAuthCode, issueTokens, verifyPkce } from '../auth/tokens.ts';
 import type { App, AppDeps } from '../http/app.ts';
 
 const REFUSED: WireError = { code: 'permission', message: "This server doesn't accept sign-ins from here." };
@@ -94,9 +94,10 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
       ) {
         throw new AIError('auth-required', 'The code was not accepted.');
       }
-      const deviceId = await createDevice(db.db, grant.userId, grant.clientId);
-      const tokens = await issueTokens({ db: db.db, auth }, { userId: grant.userId, deviceId, clientId: grant.clientId });
-      log.info('auth.signed_in', { rid: c.get('rid'), device_id: deviceId });
+      // A new device. Its id goes into the access token, which is signed before the device is stored.
+      const device = { userId: grant.userId, deviceId: crypto.randomUUID(), clientId: grant.clientId };
+      const tokens = await issueTokens({ db: db.db, auth }, device, { newDevice: true });
+      log.info('auth.signed_in', { rid: c.get('rid'), device_id: device.deviceId });
       return c.json(tokens, 200);
     },
   );
