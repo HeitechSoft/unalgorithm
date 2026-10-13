@@ -41,14 +41,19 @@ const NOT_PUBLIC = [
   ['224.0.0.0', 3], // multicast (224.0.0.0/4) and everything above it
 ].map(([first, bits]) => ({ block: blockOf(toNumber(octets(first)), bits), bits }));
 
-/** Generic host markers, matched case-insensitively. A finding prints the matched text: the marker itself, no more. */
+/**
+ * Generic host markers, matched case-insensitively unless noted. A finding prints the matched text: the marker itself,
+ * no more.
+ */
 const HOST_MARKERS = [
   /ubuntu@/i, // an SSH login on the host
   /(?<=[\w-])\.ppk\b/i, // a PuTTY key file's path (an ignore rule `*.ppk`, or prose about the extension, is not one)
   /PuTTY-User-Key-File-/i, // a PuTTY key's first line
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/i, // a PEM or OpenSSH private key
   /\/opt\/unalgorithm\/\.env/i, // the Cloud deployment's env file
-  /server_name /i, // nginx server-block syntax
+  // nginx server-block syntax. The directive is lowercase and takes names up to `;`, so a code name such as
+  // `MAX_SERVER_NAME = 80;` is not one. The names (perhaps the host's) stay out of the match, so they are never printed.
+  /\bserver_name\s(?=\s*[^\s;=][^;]*;)/,
   /proxy_pass /i,
   /ssl_certificate/i,
 ];

@@ -147,6 +147,19 @@ describe('host markers', () => {
 
     // An ignore rule or prose naming the extension is not a key path.
     expect(findHostMarkers('*.ppk\nNever commit a .ppk file.')).toEqual([]);
+    // nginx's server_name takes names up to `;`, all of them caught, none of them printed. Code names are not it.
+    expect(findHostMarkers('server_name\ta.example.org b.example.org;')).toEqual([
+      { line: 1, kind: 'host-marker', text: 'server_name\t' },
+    ]);
+    const codeNames = [
+      'const MAX_SERVER_NAME = 80;',
+      'const SERVER_NAME = "x";',
+      'server_name = value;',
+      "it('test_describe_error_uses_server_name', () => {",
+      'SERVER_NAME example.org;',
+      'proxy_set_header Host $server_name;',
+    ];
+    expect(findHostMarkers(codeNames.join('\n'))).toEqual([]);
     // The scanner and its test skip the generic markers, as they contain them.
     expect(findHostMarkers(text, { generic: false })).toEqual([]);
   });
