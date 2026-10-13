@@ -3,8 +3,6 @@
  * sign-in window an injected `webAuthFlow`; the secrets store is fake-indexeddb and extension storage the WXT fake
  * browser, so the tests can look at every place a token could end up.
  */
-import { readdir, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
 import { AIError, describeError } from '@unalgorithm/ai';
 import {
   AUTHORIZE_PAGE_PATH,
@@ -23,6 +21,7 @@ import { clearSecrets, getSecret } from '../src/background/idb.ts';
 import {
   discoverServer,
   getAccessToken,
+  type ServerAccount,
   serverAccountItem,
   signIn,
   signOut,
@@ -71,7 +70,7 @@ interface Call {
 function fakeServer(
   opts: {
     info?: () => Response | Promise<Response>;
-    token?: () => Response | Promise<Response>;
+    token?: (init: RequestInit) => Response | Promise<Response>;
     revoke?: () => Promise<Response>;
   } = {},
 ) {
@@ -81,7 +80,7 @@ function fakeServer(
     calls.push({ url, init });
     const { pathname } = new URL(url);
     if (pathname === SERVER_INFO_PATH) return (opts.info ?? (() => json(INFO)))();
-    if (pathname === TOKEN_PATH) return (opts.token ?? (() => json(tokens(1))))();
+    if (pathname === TOKEN_PATH) return (opts.token ?? (() => json(tokens(1))))(init);
     if (pathname === REVOKE_PATH) return (opts.revoke ?? (async () => json({ ok: true })))();
     return new Response('Not found', { status: 404 });
   }) as unknown as typeof globalThis.fetch;
@@ -102,6 +101,7 @@ async function signedIn(server = fakeServer()) {
 }
 
 const stored = async (area: 'local' | 'session') => JSON.stringify(await fakeBrowser.storage[area].get(null));
+const isRefresh = (init: RequestInit) => (JSON.parse(String(init.body)) as { grant_type: string }).grant_type === 'refresh_token';
 
 beforeEach(async () => {
   fakeBrowser.reset();
@@ -261,6 +261,41 @@ describe('sign-in', () => {
     expect(await getSecret(`server-refresh:${ORIGIN}`)).toBeUndefined();
     expect(await getSecret('server-refresh:https://other.example.org')).toBe(refresh(1));
   });
+
+  it('test_sign_in_again_while_a_refresh_runs', async () => {
+    let refused = false;
+    let issued = 0;
+    const s = await signedIn(
+      fakeServer({
+        token: (init) =>
+          refused && isRefresh(init)
+            ? json({ code: 'auth-required', message: 'Sign in to Example AI again.' }, 401)
+            : json(tokens(++issued)),
+      }),
+    );
+    const LATER = NOW + 16 * MINUTE;
+    refused = true;
+    await expect(getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => LATER })).rejects.toMatchObject({
+      code: 'auth-required',
+    });
+    expect(await serverAccountItem.getValue()).toMatchObject({ needsSignIn: true });
+    refused = false;
+
+    // "Sign in to … again", while a classify batch asks for a token just as the new account is put in place.
+    let racing: Promise<unknown> | undefined;
+    const now = () => {
+      racing ??= getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => LATER }).catch((e: unknown) => e);
+      return LATER;
+    };
+    expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: authFlow(), now })).toMatchObject({ ok: true });
+    const token = await racing;
+    expect(token).toMatch(/^access-token-\d+$/);
+
+    // The new sign-in stands: its refresh token is kept, and the account isn't marked for signing in again.
+    expect(await serverAccountItem.getValue()).toMatchObject({ signedInAt: LATER, needsSignIn: false });
+    expect(await getSecret(`server-refresh:${ORIGIN}`)).toBe(refresh(issued));
+    expect(await getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => LATER })).toBe(token);
+  });
 });
 
 describe('tokens', () => {
@@ -364,6 +399,80 @@ describe('tokens', () => {
     expect(await serverAccountItem.getValue()).toBeNull();
   });
 
+  it('test_refresh_token_goes_only_to_the_account_server', async () => {
+    const s = await signedIn();
+    const later = { fetch: s.fetch, now: () => NOW + 16 * MINUTE };
+    const withTokenPath = (a: ServerAccount, tokenPath: string) => ({
+      ...a,
+      info: { ...a.info, auth: { ...a.info.auth, tokenPath } },
+    });
+    // The account sits in storage.local, which a content script can write (ADR 0005).
+    const rewrites: Array<(a: ServerAccount) => unknown> = [
+      (a) => withTokenPath(a, '//attacker.example/collect'),
+      (a) => withTokenPath(a, '/\\attacker.example/collect'),
+      (a) => withTokenPath(a, 'https://attacker.example/collect'),
+      (a) => ({ ...a, info: { ...a.info, auth: undefined } }),
+    ];
+    for (const rewrite of rewrites) {
+      await signedIn(s);
+      const account = await serverAccountItem.getValue();
+      if (!account) throw new Error('not signed in');
+      await fakeBrowser.storage.local.set({ serverAccount: rewrite(account) });
+      const before = s.calls.length;
+      await expect(getAccessToken(ORIGIN, {}, later)).rejects.toMatchObject({ code: 'auth-required' });
+      expect(s.calls.slice(before)).toStrictEqual([]);
+    }
+
+    // An account moved to another origin finds no refresh token there, and none for its own origin.
+    await signedIn(s);
+    const account = await serverAccountItem.getValue();
+    await fakeBrowser.storage.local.set({ serverAccount: { ...account, origin: 'https://attacker.example' } });
+    const before = s.calls.length;
+    await expect(getAccessToken('https://attacker.example', {}, later)).rejects.toMatchObject({ code: 'auth-required' });
+    await expect(getAccessToken(ORIGIN, {}, later)).rejects.toMatchObject({ code: 'auth-required' });
+    expect(s.calls.slice(before)).toStrictEqual([]);
+  });
+
+  it('test_sign_out_wins_over_refresh', async () => {
+    let answer: (r: Response) => void = () => {};
+    let release: (r: Response) => void = () => {};
+    const s = await signedIn(
+      fakeServer({
+        token: (init) => (isRefresh(init) ? new Promise<Response>((resolve) => (answer = resolve)) : json(tokens(1))),
+        revoke: () => new Promise<Response>((resolve) => (release = resolve)),
+      }),
+    );
+    const refreshes = () => s.posts(TOKEN_PATH).filter((c) => isRefresh(c.init));
+    const cleared = async () => {
+      expect(await getSecret(`server-refresh:${ORIGIN}`)).toBeUndefined();
+      expect(await fakeBrowser.storage.session.get(null)).toStrictEqual({});
+      expect(await serverAccountItem.getValue()).toBeNull();
+    };
+
+    // Asked for a token close to expiry while the server is still answering the revoke: nothing is left to refresh.
+    const out = signOut(ORIGIN, { fetch: s.fetch });
+    const racing = getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => NOW + 14.5 * MINUTE }).catch((e: unknown) => e);
+    await vi.waitFor(() => expect(s.posts(REVOKE_PATH)).toHaveLength(1));
+    expect(await racing).toMatchObject({ code: 'auth-required' });
+    release(json({ ok: true }));
+    await out;
+    expect(refreshes()).toHaveLength(0);
+    await cleared();
+
+    // A refresh already in flight finishes first, and the refresh token it got is the one revoked.
+    await signedIn(s);
+    const inFlight = getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => NOW + 16 * MINUTE });
+    await vi.waitFor(() => expect(refreshes()).toHaveLength(1));
+    const again = signOut(ORIGIN, { fetch: s.fetch });
+    answer(json(tokens(2)));
+    expect(await inFlight).toBe(access(2));
+    await vi.waitFor(() => expect(s.posts(REVOKE_PATH)).toHaveLength(2));
+    expect(s.bodyOf(s.posts(REVOKE_PATH)[1])).toStrictEqual({ refresh_token: refresh(2), client_id: ID });
+    release(json({ ok: true }));
+    await again;
+    await cleared();
+  });
+
   it('test_e2e_web_auth_flow_uses_a_tab', async () => {
     vi.stubEnv('MODE', 'e2e');
     const remove = vi.spyOn(fakeBrowser.tabs, 'remove').mockResolvedValue(undefined as never);
@@ -387,19 +496,10 @@ describe('tokens', () => {
 });
 
 describe('copy', () => {
-  it('test_describe_error_uses_server_name', async () => {
+  // The default texts and the scan of packages/ai/src for the hosted service name (AC 11) are in
+  // packages/ai/test/ai.test.ts ('error messages'); this checks the names the extension passes in.
+  it('test_describe_error_uses_server_name', () => {
     expect(describeError('auth-required', serverLabel(PINNED_CLOUD_ORIGIN).title)).toBe('Sign in to UnAlgorithm Cloud again.');
     expect(describeError('auth-required', serverLabel(ORIGIN, INFO).title)).toBe('Sign in to ai.example.org again.');
-    expect(describeError('auth-required')).toBe('Sign in to your AI server again.');
-    expect(describeError('insufficient-credits')).toBe('Your balance on this AI server is empty.');
-
-    const src = resolve(import.meta.dirname, '../../../packages/ai/src');
-    const files = (await readdir(src, { recursive: true, withFileTypes: true }))
-      .filter((f) => f.isFile())
-      .map((f) => join(f.parentPath, f.name));
-    expect(files).toContain(join(src, 'errors.ts'));
-    const offenders: string[] = [];
-    for (const file of files) if ((await readFile(file, 'utf8')).includes('UnAlgorithm Cloud')) offenders.push(file);
-    expect(offenders).toStrictEqual([]);
   });
 });

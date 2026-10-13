@@ -1,5 +1,5 @@
 import { AIError, codeForStatus, describeError, isAIError } from '@unalgorithm/ai';
-import { safeExternalUrl } from '@unalgorithm/core';
+import { createLock, safeExternalUrl } from '@unalgorithm/core';
 import {
   b64url,
   chromiumRedirectUri,
@@ -44,6 +44,12 @@ const accessItem = storage.defineItem<{ origin: string; token: string; expiresAt
   fallback: null,
 });
 const refreshKey = (origin: string) => `server-refresh:${origin}`;
+
+/**
+ * Every change to the account and its tokens runs one at a time, so a refresh never reads a half-swapped account and
+ * never stores tokens for an account that was signed out or replaced while it waited for the server.
+ */
+const exclusive = createLock();
 
 export interface AuthDeps {
   fetch: typeof fetch;
@@ -149,11 +155,7 @@ async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise
   if (res.status === 401) throw new AIError('auth-required', UNFINISHED);
   const tokens = await readTokens(res, origin);
 
-  // One account at a time: a device left behind on the previous server (or an older one on this server) is ended.
-  const previous = await serverAccountItem.getValue();
-  if (previous) await signOut(previous.origin, d);
   const now = d.now();
-  await storeTokens(origin, tokens, now);
   const account: ServerAccount = {
     origin,
     email: tokens.account.email,
@@ -162,7 +164,15 @@ async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise
     info,
     needsSignIn: false,
   };
-  await serverAccountItem.setValue(account);
+  // One account at a time: a device left behind on the previous server (or an older one on this server) is ended.
+  const replaced = await exclusive(async () => {
+    const previous = await serverAccountItem.getValue();
+    const spent = previous ? { origin: previous.origin, refreshToken: await forget(previous.origin) } : undefined;
+    await storeTokens(origin, tokens, now);
+    await serverAccountItem.setValue(account);
+    return spent;
+  });
+  if (replaced) await revoke(replaced.origin, replaced.refreshToken, d);
   return account;
 }
 
@@ -185,25 +195,45 @@ export async function getAccessToken(
   }
   let pending = refreshing.get(origin);
   if (!pending) {
-    pending = refresh(origin, d).finally(() => refreshing.delete(origin));
+    pending = exclusive(() => refresh(origin, d)).finally(() => refreshing.delete(origin));
     refreshing.set(origin, pending);
   }
   return pending;
 }
 
+/** Runs under `exclusive`. */
 async function refresh(origin: string, d: AuthDeps): Promise<string> {
   const account = await serverAccountItem.getValue();
   const refreshToken = account?.origin === origin ? await getSecret(refreshKey(origin)) : undefined;
-  if (!account || !refreshToken) return requireSignIn(origin);
+  const tokenUrl = account && tokenEndpoint(account);
+  if (!refreshToken || !tokenUrl) return requireSignIn(origin);
   const body = { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: browser.runtime.id };
-  const res = await call(d, new URL(account.info.auth.tokenPath, origin), TIMEOUT_MS, body);
+  const res = await call(d, tokenUrl, TIMEOUT_MS, body);
   if (res.status === 401) return requireSignIn(origin);
   const tokens = await readTokens(res, origin);
   await storeTokens(origin, tokens, d.now());
   return tokens.access_token;
 }
 
-/** The server no longer accepts this device: forget its tokens and keep the account, marked for signing in again. */
+/**
+ * Where the account's refresh token may go. The account sits in `storage.local`, which content scripts can write
+ * (ADR 0005), so its discovery document is checked again and the endpoint must be on the account's own origin.
+ */
+function tokenEndpoint(account: ServerAccount): URL | undefined {
+  const info = ServerInfoSchema.safeParse(account.info);
+  if (!info.success) return undefined;
+  try {
+    const url = new URL(info.data.auth.tokenPath, account.origin);
+    return url.origin === account.origin ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The server no longer accepts this device: forget its tokens and keep the account, marked for signing in again.
+ * Runs under `exclusive`, so the account it marks is the one whose refresh token was refused.
+ */
 async function requireSignIn(origin: string): Promise<never> {
   await Promise.all([setSecret(refreshKey(origin), undefined), clearAccess(origin)]);
   const account = await serverAccountItem.getValue();
@@ -212,27 +242,36 @@ async function requireSignIn(origin: string): Promise<never> {
 }
 
 /**
- * Ends this device on the server (best effort, the server may be gone) and always forgets the account, its refresh
- * token and its access token here.
+ * Always forgets the account, its refresh token and its access token here, then ends this device on the server (best
+ * effort, the server may be gone).
  */
 export async function signOut(origin: string, deps: Partial<AuthDeps> = {}): Promise<void> {
-  const d = withDefaults(deps);
-  // A refresh in flight would store a new refresh token after this one is revoked and deleted.
-  await refreshing.get(origin)?.catch(() => undefined);
-  try {
-    const body = RevokeRequestSchema.safeParse({
-      refresh_token: await getSecret(refreshKey(origin)),
-      client_id: browser.runtime.id,
-    });
-    if (body.success) await call(d, new URL(REVOKE_PATH, origin), REVOKE_TIMEOUT_MS, body.data);
-  } catch {
-    // Signed out here all the same; the server's refresh token expires on its own.
-  }
+  // Forgotten here before the server is asked, so nothing that starts while it answers finds the account or its tokens.
+  // A refresh already in flight finishes first, and the refresh token it stored is the one revoked.
+  const refreshToken = await exclusive(() => forget(origin));
+  await revoke(origin, refreshToken, withDefaults(deps));
+}
+
+/** Forgets the account at `origin` and its tokens here, and returns the refresh token to revoke. Runs under `exclusive`. */
+async function forget(origin: string): Promise<string | undefined> {
+  const refreshToken = await getSecret(refreshKey(origin)).catch(() => undefined);
   await Promise.all([
     setSecret(refreshKey(origin), undefined),
     clearAccess(origin),
     serverAccountItem.getValue().then((a) => (a?.origin === origin ? serverAccountItem.removeValue() : undefined)),
   ]);
+  return refreshToken;
+}
+
+/** Ends the device on the server, best effort: the server may be gone, and its refresh token expires on its own. */
+async function revoke(origin: string, refreshToken: string | undefined, d: AuthDeps): Promise<void> {
+  const body = RevokeRequestSchema.safeParse({ refresh_token: refreshToken, client_id: browser.runtime.id });
+  if (!body.success) return;
+  try {
+    await call(d, new URL(REVOKE_PATH, origin), REVOKE_TIMEOUT_MS, body.data);
+  } catch {
+    // Signed out here all the same.
+  }
 }
 
 async function storeTokens(origin: string, tokens: TokenResponse, now: number): Promise<void> {
