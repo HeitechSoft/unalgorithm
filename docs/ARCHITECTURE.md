@@ -94,7 +94,7 @@ usage is recorded even when a call fails.
 | Layer | Tool | What |
 |---|---|---|
 | Unit | Vitest projects (jsdom where needed) | Rules, decide, presets, migration, clocks, prompt/fence, adapters on fixtures, the contract check, AI clients against a fake fetch, the feed controller |
-| End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark |
+| End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it |
 
 ## Decisions
 

@@ -10,7 +10,7 @@ import { CONNECT_TIMEOUT_MS, type DbHandle, openPglite, openPostgres } from '../
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
-import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
+import { createPostgresTestDb, databaseExists, TEST_DATABASE_URL } from './support/postgres.ts';
 
 /** `apps/server`, the folder drizzle-kit resolves `drizzle.config.ts` paths against. */
 const SERVER_ROOT = new URL('../', import.meta.url);
@@ -182,9 +182,10 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () 
     expect(await probeTables(b)).toBe(0);
 
     // drop() ends the connections still open to it, and a second call does nothing.
+    expect(await databaseExists(one.name)).toBe(true);
     await one.drop();
     await expect(one.drop()).resolves.toBeUndefined();
-    expect(await count(b, sql`select count(*)::int as n from pg_database where datname = ${one.name}`)).toBe(0);
+    expect(await databaseExists(one.name)).toBe(false);
   });
 
   it('test_concurrent_migrations_on_postgres', async () => {

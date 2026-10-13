@@ -37,3 +37,7 @@
   color: var(--ua-text-secondary);
   text-align: center;
 }
+/* The source link sits in a line of text, so it is underlined rather than told apart by color alone (WCAG 1.4.1). */
+.web-footer a {
+  text-decoration: underline;
+}

@@ -35,16 +35,23 @@ export async function createPostgresTestDb(prefix = 'ua_test', adminUrl = TEST_D
   return {
     name,
     url: url.href,
-    drop: () => (dropping ??= runAdmin(adminUrl, `drop database if exists ${name} with (force)`)),
+    drop: () => (dropping ??= runAdmin(adminUrl, `drop database if exists ${name} with (force)`).then(() => undefined)),
   };
 }
 
+/** Whether the server `TEST_DATABASE_URL` points at has a database of this name: a check that `drop()` did its work. */
+export async function databaseExists(name: string, adminUrl = TEST_DATABASE_URL): Promise<boolean> {
+  if (!adminUrl) throw new Error('TEST_DATABASE_URL is not set');
+  const rows = await runAdmin(adminUrl, 'select 1 from pg_database where datname = $1', [name]);
+  return rows.length > 0;
+}
+
 /** One statement on its own short-lived connection, so a test leaves no admin connection open. */
-async function runAdmin(adminUrl: string, statement: string): Promise<void> {
+async function runAdmin(adminUrl: string, statement: string, params: unknown[] = []): Promise<unknown[]> {
   const client = new Client({ connectionString: adminUrl, connectionTimeoutMillis: CONNECT_TIMEOUT_MS });
   await client.connect();
   try {
-    await client.query(statement);
+    return (await client.query(statement, params)).rows;
   } finally {
     await client.end();
   }
