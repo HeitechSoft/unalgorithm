@@ -289,6 +289,17 @@ describe('learning', () => {
     expect(prefs.weights.crypto).toBe(-3);
     expect(adjustRelevance(50, ['Crypto'], prefs.weights)).toBe(26);
   });
+
+  it('sends a server only the rated examples a server may receive (R23)', () => {
+    let prefs = EMPTY_LEARNED;
+    prefs = applyFeedback(prefs, { id: '1', at: 1, verdict: 'more', topics: [], summary: 'Older rating, unmarked.' });
+    prefs = applyFeedback(prefs, { id: '2', at: 2, verdict: 'less', topics: [], summary: 'Friends-only post.' });
+    prefs = applyFeedback(prefs, { id: '3', at: 3, verdict: 'more', topics: [], summary: 'Public post.', shareable: true });
+    const local = buildInterestProfile(defaultSettings(), prefs).examples.map((e) => e.summary);
+    expect(local).toEqual(['Public post.', 'Friends-only post.', 'Older rating, unmarked.']);
+    const server = buildInterestProfile(defaultSettings(), prefs, { forServer: true }).examples;
+    expect(server).toEqual([{ summary: 'Public post.', verdict: 'more' }]);
+  });
 });
 
 describe('health', () => {

@@ -24,7 +24,14 @@ import {
   toPostForAI,
 } from '@unalgorithm/core';
 import { type InspectContext, MAX_FRUITLESS, type PlatformAdapter, rearmMarker, shouldRearm } from '@unalgorithm/platforms';
-import { BLOCKING_AI_ERRORS, type Classification, type PlatformId, type PostKey, uuidv7 } from '@unalgorithm/protocol';
+import {
+  BLOCKING_AI_ERRORS,
+  type Classification,
+  type PlatformId,
+  type PostKey,
+  serverMayReceive,
+  uuidv7,
+} from '@unalgorithm/protocol';
 import { type FeedItemHandlers, type FeedItemModel, type ToastModel, type WhyActionId, whyCopy } from '@unalgorithm/ui';
 import type { BgError, BgResponses, ClassifyItem, SettingsAction } from '../lib/messages.ts';
 import { GLOBAL_STYLE_ID, globalCss, sampleHostTheme } from './global-css.ts';
@@ -51,7 +58,14 @@ export interface Runtime {
 export interface Bridge {
   classify(items: ClassifyItem[]): Promise<BgResponses['classify']>;
   pushTabState(patch: Partial<TabState>): void;
-  vote(key: PostKey, verdict: 'more' | 'less' | null, topics: string[], summary?: string): Promise<void>;
+  /** `shareable`: a server may receive the rated post, and so its summary (R23). */
+  vote(
+    key: PostKey,
+    verdict: 'more' | 'less' | null,
+    topics: string[],
+    summary: string | undefined,
+    shareable: boolean,
+  ): Promise<void>;
   settingsAction(action: SettingsAction): Promise<SettingsAction | null>;
   coachMarkShown(): void;
   openSettings(hash?: string): void;
@@ -715,7 +729,9 @@ export class FeedController {
     else delete e.vote;
     this.decideAndApply(e);
     this.recomputeRuns();
-    await this.bridge.vote(e.post.id, v, e.classification?.topics ?? [], e.classification?.reason).catch(() => undefined);
+    await this.bridge
+      .vote(e.post.id, v, e.classification?.topics ?? [], e.classification?.reason, serverMayReceive(e.post))
+      .catch(() => undefined);
   }
 
   // ---------- AI classification queue ----------

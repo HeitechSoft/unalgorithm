@@ -27,12 +27,13 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { aiStatus, classifyItems, testSource } from '../src/background/ai.ts';
+import { recordVote } from '../src/background/feedback.ts';
 import { clearCache } from '../src/background/idb.ts';
 import { type getAccessToken, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { classifyViaServer } from '../src/background/server-source.ts';
 import type { ClassifyItem } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN } from '../src/lib/server-label.ts';
-import { deviceItem } from '../src/lib/storage.ts';
+import { deviceItem, learnedItem } from '../src/lib/storage.ts';
 
 // `classifyItems` and `testSource` take no dependencies: the device token comes from this stub.
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
@@ -367,6 +368,32 @@ describe('classifyItems with a server source', () => {
     const local = await classifyItems([item('fb:1004', 'Custom audience', { platform: 'facebook', audience: 'custom' })]);
     expect(local.results).toStrictEqual([{ key: 'fb:1004', status: 'skipped', reason: 'not-public' }]);
     expect(s.calls).toHaveLength(before);
+  });
+
+  it('test_rated_non_public_summary_stays_local', async () => {
+    // Rated while a source on this computer classified Facebook posts that aren't public too.
+    await recordVote('li:urn:li:activity:81', 'more', ['automation'], 'About automating paperwork.', true);
+    await recordVote('fb:2001', 'more', ['family'], 'A friends-only post about a family holiday.', false);
+    // A rating recorded before ratings said whether a server may receive their post.
+    const learned = await learnedItem.getValue();
+    await learnedItem.setValue({
+      ...learned,
+      events: [...learned.events, { id: 'old', at: 1, verdict: 'less', topics: [], summary: 'An older rating.' }],
+    });
+    expect((await learnedItem.getValue()).events.map((e) => e.shareable)).toStrictEqual([undefined, true, undefined]);
+
+    await setSource({ kind: 'server', baseUrl: ORIGIN });
+    const s = fakeServer();
+    vi.stubGlobal('fetch', s.fetch);
+    const res = await classifyItems([item('li:urn:li:activity:82', 'A post')]);
+
+    expect(res.results[0]).toMatchObject({ status: 'ok' });
+    const [body] = s.bodies();
+    expect(body).not.toContain('friends-only');
+    expect(body).not.toContain('An older rating');
+    expect(ClassifyRequestSchema.parse(JSON.parse(body ?? '')).profile.examples).toStrictEqual([
+      { summary: 'About automating paperwork.', verdict: 'more' },
+    ]);
   });
 
   it('test_extra_fields_stripped_before_sending', async () => {

@@ -34,7 +34,9 @@ history. Web addresses inside the text are reduced to `[link: site]`.
 Each request also carries the user's `InterestProfile` (`core/classify/profile.ts`) so the model can judge relevance:
 up to 20 topics wanted and 20 not wanted, the optional "About you" note (500 characters), and, when "Learn from More
 like this and Not for me" is on, AI-written summaries (240 characters) of up to 4 rated posts with the rating. The
-summaries come from earlier model output, so they are fenced like posts.
+summaries come from earlier model output, so they are fenced like posts. Each rating records whether a server may
+receive its post (`serverMayReceive`); a server's profile leaves out summaries of Facebook posts that aren't public,
+and of ratings recorded before that mark existed (R23).
 
 The content script builds `PostForAI` with `toPostForAI()`; the background parses it again with `PostForAISchema`,
 which drops any field not listed above, and applies the per-source length cap.

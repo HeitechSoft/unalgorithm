@@ -36,7 +36,7 @@ import {
   SOURCE_LIMITS,
   sourceId,
 } from '@unalgorithm/core';
-import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, toPostRef } from '@unalgorithm/protocol';
+import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, serverMayReceive, toPostRef } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
@@ -186,7 +186,7 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
   });
 
   const limits = SOURCE_LIMITS[cfg.kind];
-  const profile = buildInterestProfile(settings, learned);
+  const profile = buildInterestProfile(settings, learned, { forServer: cfg.kind === 'server' });
   const pHash = profileHash(profile);
   let model: string;
   let classify: (posts: PostForAI[]) => Promise<ClassifyOutcome>;
@@ -229,7 +229,7 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
     }
     const input: PostForAI = parsed.data;
     // R23: a Facebook post that isn't public never leaves this computer for a server, whatever the server would do.
-    if (cfg.kind === 'server' && input.platform === 'facebook' && input.audience !== 'public') {
+    if (cfg.kind === 'server' && !serverMayReceive(input)) {
       results.push({ key: it.key, status: 'skipped', reason: 'not-public' });
       continue;
     }

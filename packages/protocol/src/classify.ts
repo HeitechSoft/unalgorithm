@@ -37,6 +37,14 @@ export const PostForAISchema = z.object({
 });
 export type PostForAI = z.infer<typeof PostForAISchema>;
 
+/**
+ * R23: a server may receive a post, or a summary of one, unless it is a Facebook post whose audience isn't public
+ * (friends, custom, unknown or missing).
+ */
+export function serverMayReceive(post: Pick<PostForAI, 'platform' | 'audience'>): boolean {
+  return post.platform !== 'facebook' || post.audience === 'public';
+}
+
 /** What the user wants more and less of, as sent with every classification request. */
 export const InterestProfileSchema = z.object({
   v: z.literal(1),

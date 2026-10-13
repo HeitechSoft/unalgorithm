@@ -15,6 +15,7 @@ import {
   RevokeRequestSchema,
   ServerErrorSchema,
   ServerInfoSchema,
+  serverMayReceive,
   TokenRequestSchema,
   TokenResponseSchema,
   tickHlc,
@@ -246,5 +247,12 @@ describe('audience', () => {
     expect(PostForAISchema.parse({ ...post, audience: 'friends' }).audience).toBe('friends');
     expect(PostForAISchema.safeParse(post).success).toBe(true);
     expect(PostForAISchema.safeParse({ ...post, audience: 'everyone' }).success).toBe(false);
+  });
+
+  it('test_server_may_receive_only_public_facebook_posts', () => {
+    expect(serverMayReceive({ platform: 'linkedin' })).toBe(true);
+    expect(serverMayReceive({ platform: 'facebook', audience: 'public' })).toBe(true);
+    for (const audience of ['friends', 'custom', 'unknown', undefined] as const)
+      expect(serverMayReceive({ platform: 'facebook', audience })).toBe(false);
   });
 });

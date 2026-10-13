@@ -9,12 +9,19 @@ const MAX_INTERESTS = 20;
 const MAX_LESS = 20;
 const MAX_EXAMPLES = 4;
 
-/** The user's interests as the AI sees them. Rated examples are summaries, never raw post text. */
-export function buildInterestProfile(settings: Settings, learned?: LearnedPrefs): InterestProfile {
+/**
+ * The user's interests as the AI sees them. Rated examples are summaries, never raw post text. For a server
+ * (`forServer`), only summaries of posts a server may receive are included (R23).
+ */
+export function buildInterestProfile(
+  settings: Settings,
+  learned?: LearnedPrefs,
+  opts: { forServer?: boolean } = {},
+): InterestProfile {
   const examples =
     settings.ai.learnFromFeedback && learned
       ? learned.events
-          .filter((e) => e.summary)
+          .filter((e) => e.summary && (!opts.forServer || e.shareable === true))
           .slice(0, MAX_EXAMPLES)
           .map((e) => ({ summary: (e.summary ?? '').slice(0, 240), verdict: e.verdict }))
       : [];

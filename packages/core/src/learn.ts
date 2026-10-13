@@ -11,6 +11,11 @@ export interface FeedbackEvent {
   topics: string[];
   /** Short neutral summary for the AI profile (from the classification reason), never raw post text. */
   summary?: string;
+  /**
+   * True when a server may receive the rated post (`serverMayReceive`), so its summary may go to one too (R23).
+   * Missing on ratings of Facebook posts that aren't public and on ratings recorded before this field existed.
+   */
+  shareable?: boolean;
 }
 
 export interface LearnedPrefs {

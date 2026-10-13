@@ -21,6 +21,7 @@ import {
   costMicros,
   type PostClassificationResult,
   type PostForAI,
+  serverMayReceive,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import { recordUsageEvent, type UsageOutcome } from '../ai/metering.ts';
@@ -82,7 +83,7 @@ export function wireCodeFor(providerCode: AIErrorCode): AIErrorCode {
 export function excludeNonPublic(posts: readonly PostForAI[]): { kept: PostForAI[]; excluded: PostForAI[] } {
   const kept: PostForAI[] = [];
   const excluded: PostForAI[] = [];
-  for (const p of posts) (p.platform === 'facebook' && p.audience !== 'public' ? excluded : kept).push(p);
+  for (const p of posts) (serverMayReceive(p) ? kept : excluded).push(p);
   return { kept, excluded };
 }
 

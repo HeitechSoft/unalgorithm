@@ -1,6 +1,7 @@
 import { defaultDevice, defaultSettings, EMPTY_LEARNED } from '@unalgorithm/core';
-import { linkedinAdapter } from '@unalgorithm/platforms';
+import { facebookAdapter, linkedinAdapter } from '@unalgorithm/platforms';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
   COMPANY_NOT_FOLLOWED,
   FIRST_DEGREE_POST,
@@ -172,5 +173,36 @@ describe('FeedController on LinkedIn', () => {
     vi.advanceTimersByTime(20_000);
     expect(c.isActive).toBe(false);
     expect(document.querySelectorAll('unalgo-post')).toHaveLength(0);
+  });
+});
+
+describe('FeedController on Facebook', () => {
+  beforeEach(() => {
+    document.documentElement.lang = 'en';
+    document.body.innerHTML = fbFeed(FRIEND_POST, ORGANIC_LINK_SHARE);
+  });
+
+  it('marks a rating as shareable with a server only for public posts (R23)', async () => {
+    const b = bridge();
+    const c = new FeedController(facebookAdapter, b, mountUi);
+    const settings = defaultSettings();
+    // Highlighted posts get our UI, and with it the rating buttons.
+    settings.interests.highlightWords = {
+      tomatoes: { label: 'tomatoes', addedAt: 1 },
+      transit: { label: 'transit', addedAt: 1 },
+    };
+    c.start(runtime({ settings }));
+    const byAudience = (a: string) => c.mounted().find((e) => e.post?.audience === a);
+    const friends = byAudience('friends');
+    const everyone = byAudience('public');
+    expect(friends?.handlers).toBeDefined();
+    expect(everyone?.handlers).toBeDefined();
+
+    friends?.handlers?.onVote('more');
+    everyone?.handlers?.onVote('more');
+    await vi.waitFor(() => expect(b.vote).toHaveBeenCalledTimes(2));
+    expect(b.vote).toHaveBeenCalledWith(friends?.id, 'more', [], undefined, false);
+    expect(b.vote).toHaveBeenCalledWith(everyone?.id, 'more', [], undefined, true);
+    c.stop();
   });
 });

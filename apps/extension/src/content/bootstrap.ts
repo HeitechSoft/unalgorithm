@@ -23,8 +23,8 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     pushTabState: (patch) => {
       if (ctx.isValid) void sendToBackground({ type: 'tabState', patch }).catch(() => undefined);
     },
-    vote: async (key, verdict, topics, summary) => {
-      await sendToBackground({ type: 'vote', key, verdict, topics, ...(summary ? { summary } : {}) });
+    vote: async (key, verdict, topics, summary, shareable) => {
+      await sendToBackground({ type: 'vote', key, verdict, topics, ...(summary ? { summary, shareable } : {}) });
     },
     settingsAction: async (action) => (await sendToBackground({ type: 'settingsAction', action })).undo,
     coachMarkShown: () => void sendToBackground({ type: 'coachMarkShown', platform: adapter.id }).catch(() => undefined),

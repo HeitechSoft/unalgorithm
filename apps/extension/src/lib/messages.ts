@@ -50,7 +50,15 @@ export type TestSourceResult =
 export type BgRequest =
   | { type: 'classify'; platform: PlatformId; items: ClassifyItem[] }
   | { type: 'tabState'; patch: Partial<TabState> }
-  | { type: 'vote'; key: PostKey; verdict: 'more' | 'less' | null; topics: string[]; summary?: string }
+  | {
+      type: 'vote';
+      key: PostKey;
+      verdict: 'more' | 'less' | null;
+      topics: string[];
+      summary?: string;
+      /** Whether a server may receive the rated post, and so its summary (R23). */
+      shareable?: boolean;
+    }
   | { type: 'settingsAction'; action: SettingsAction }
   | { type: 'pause'; platform: PlatformId; until: number | 'manual' | null }
   | { type: 'coachMarkShown'; platform: PlatformId }

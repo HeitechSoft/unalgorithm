@@ -62,7 +62,7 @@ const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   },
   vote: async (msg, sender) => {
     if (!fromOwnUi(sender)) deny('vote');
-    await recordVote(msg.key, msg.verdict, msg.topics.slice(0, 3), msg.summary);
+    await recordVote(msg.key, msg.verdict, msg.topics.slice(0, 3), msg.summary, msg.shareable === true);
     return { ok: true };
   },
   settingsAction: async (msg, sender) => {
