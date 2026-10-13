@@ -4,7 +4,8 @@
  * Only the five routes in `AUTH_ROUTES` are reachable over HTTP; everything else Better Auth offers stays unmounted.
  *
  * The server's operator pays for its AI, so accounts are created only for allow-listed addresses. Nothing here logs an
- * address or a code: Better Auth's own log messages are dropped (`authLog`), and mail failures log `errorFields` only.
+ * address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals are answered without a log
+ * line, any other failure goes to the app's `onError`, and mail failures log `errorFields` only.
  */
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -91,8 +92,17 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     // Also refused as BETTER_AUTH_TELEMETRY by `loadConfig`: Better Auth honours that variable over this option.
     telemetry: { enabled: false },
     rateLimit: { enabled: rateLimitEnabled, storage: 'memory' },
-    advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
+    advanced: {
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+      // Better Auth skips the Origin check when NODE_ENV is `test` or TEST is set; it holds in every environment here.
+      disableOriginCheck: false,
+    },
     logger: { level: 'warn', log: authLog(log) },
+    // Otherwise Better Auth's router writes a failed request to the console, past `authLog`: a refusal's message (which
+    // can quote the client's Content-Type) and, for any other error, the whole error, whose query parameters hold the
+    // address and the code's hash. Its refusals are still answered as before; any other error reaches the app's
+    // `onError`, which logs `errorFields` only and answers 500 `unknown`.
+    onAPIError: { throw: true },
     plugins: [
       emailOTP({ otpLength: 6, expiresIn: OTP_TTL_SECONDS, allowedAttempts: 3, storeOTP: 'hashed', sendVerificationOTP }),
       jwt({

@@ -282,8 +282,10 @@ describe('logger', () => {
 
 /** By absolute path, and run from a folder outside the repository: no CLI test depends on where Vitest runs. */
 const CHECK_CONFIG = fileURLToPath(new URL('../src/cli/check-config.ts', import.meta.url));
+/** Each test starts Node.js several times, which takes seconds on a busy machine. */
+const SPAWN_TIMEOUT = 30_000;
 
-describe('cli', () => {
+describe('cli', { timeout: SPAWN_TIMEOUT }, () => {
   const run = (env: Record<string, string>) =>
     spawnSync(process.execPath, [CHECK_CONFIG], { env, cwd: tmpdir(), encoding: 'utf8' });
 
@@ -307,7 +309,7 @@ describe('cli', () => {
   });
 });
 
-describe('node version', () => {
+describe('node version', { timeout: SPAWN_TIMEOUT }, () => {
   /** As a file URL: `--import` resolves its argument like an `import` specifier. */
   const guard = new URL('../src/require-node.js', import.meta.url).href;
   /** Turning type stripping off stands in for a Node.js too old to have it. */

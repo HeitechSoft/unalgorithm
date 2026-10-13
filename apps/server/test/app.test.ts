@@ -421,6 +421,13 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
     });
     expect(send.status).toBe(200);
     expect(await send.json()).toEqual({ success: true });
+    // The auth routes have a body limit of their own, also checked on the Content-Length.
+    const bigSend = await fetch(`${server.url}/api/auth/email-otp/send-verification-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: testConfig().publicOrigin },
+      body: JSON.stringify({ email: 'stranger@example.com', type: 'sign-in', pad: 'x'.repeat(32 * 1024) }),
+    });
+    expect(bigSend.status).toBe(413);
 
     const started = events().filter((e) => e.event === 'server.started');
     expect(started).toHaveLength(1);

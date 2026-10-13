@@ -42,6 +42,8 @@ export type App = OpenAPIHono<AppEnv>;
 
 /** Larger `/v1` request bodies are refused before any route reads them. */
 const MAX_BODY_BYTES = 128 * 1024;
+/** The same for `/api/auth`, whose bodies hold an address, a code and a type: well under a kilobyte. */
+const MAX_AUTH_BODY_BYTES = 16 * 1024;
 
 const NOT_VALID: WireError = { code: 'bad-request', message: 'The request was not valid.' };
 const TOO_LARGE: WireError = { code: 'bad-request', message: 'The request was too large.' };
@@ -118,6 +120,8 @@ export function createApp(deps: AppDeps): App {
     return c.json(serverInfo);
   });
 
+  // Better Auth reads a body of any size, and these routes take requests from anyone.
+  app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
   mountAuth(app, auth);
 
   billing.mount?.(app);

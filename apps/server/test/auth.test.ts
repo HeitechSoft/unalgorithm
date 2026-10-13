@@ -27,6 +27,7 @@ const cleanup: (() => Promise<unknown>)[] = [];
 const allLines: string[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
@@ -119,6 +120,13 @@ describe('sign-in flow', { timeout: PGLITE_TIMEOUT }, () => {
     const attempt = await signIn(t, STRANGER, '123456');
     expect(attempt.status).toBeGreaterThanOrEqual(400);
     expect(attempt.headers.getSetCookie()).toEqual([]);
+    expect(await usersWithEmail(t, STRANGER)).toHaveLength(0);
+    // Even the right code (never mailed; made here on the server) creates no account: the user-create hook refuses it.
+    const otp = await t.deps.auth.api.createVerificationOTP({ body: { email: STRANGER, type: 'sign-in' } });
+    const rightCode = await signIn(t, STRANGER, otp);
+    expect(rightCode.status).toBe(403);
+    expect(await rightCode.json()).toMatchObject({ message: 'Sign-up is closed.' });
+    expect(rightCode.headers.getSetCookie()).toEqual([]);
     expect(await usersWithEmail(t, STRANGER)).toHaveLength(0);
     // Other types send nothing either, even to an allowed address.
     expect((await post(t, SEND, { email: TOM, type: 'email-verification' })).status).toBe(200);
@@ -286,6 +294,21 @@ describe('mounted surface', { timeout: PGLITE_TIMEOUT }, () => {
     const after = await t.app.request(GET_SESSION, { headers: { Cookie: cookie } });
     expect(await after.json()).toBeNull();
   });
+
+  it('test_auth_body_limit_413', async () => {
+    const t = await authApp();
+    const tooLarge = { code: 'bad-request', message: 'The request was too large.' };
+    const pad = (bytes: number) => ({ email: TOM, otp: '123456', pad: 'x'.repeat(bytes) });
+
+    // Refused before Better Auth reads it, on every auth path, mounted or not.
+    for (const path of [SIGN_IN, SEND, '/api/auth/sign-out', '/api/auth/update-user']) {
+      const res = await post(t, path, pad(32 * 1024));
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual(tooLarge);
+    }
+    // Under the limit the body still reaches Better Auth intact.
+    expect(await (await post(t, SIGN_IN, pad(8 * 1024))).json()).toMatchObject({ code: 'INVALID_OTP' });
+  });
 });
 
 describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
@@ -325,5 +348,37 @@ describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
 
     authLog(capture.log)('warn', 'Invalid origin: https://evil.example', { origin: 'https://evil.example' });
     expect(capture.events()[1]).toEqual({ t: expect.any(String), level: 'warn', event: 'auth.log' });
+  });
+
+  it('test_auth_writes_nothing_to_the_console', async () => {
+    const consoleCalls = (['error', 'warn', 'info', 'log', 'debug'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => {}),
+    );
+    // Not `authApp`: this app's error line has stack frames, whose package paths hold an @.
+    const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: TOM }) });
+    cleanup.push(t.close);
+    const raw = (headers: Record<string, string>, body: string) =>
+      t.app.request(SIGN_IN, { method: 'POST', headers: { Origin: ORIGIN, ...headers }, body });
+
+    // Refused before any endpoint runs; Better Auth's text for these quotes what the client sent. (It checks the
+    // Origin only when the request has a cookie.)
+    const crossSite = await post(t, '/api/auth/sign-out', {}, { Origin: 'https://evil.example', Cookie: 'a=b' });
+    expect(crossSite.status).toBe(403);
+    expect((await raw({ 'Content-Type': 'application/json' }, `{"email":"${TOM}",`)).status).toBe(400);
+    expect((await raw({ 'Content-Type': `text/plain; who=${TOM}` }, '{}')).status).toBe(415);
+    for (const call of consoleCalls) expect(call).not.toHaveBeenCalled();
+
+    // A database failure: the query's error quotes the address and the code's hash.
+    await t.close();
+    const down = await signIn(t, TOM, '123456');
+    for (const call of consoleCalls) expect(call).not.toHaveBeenCalled();
+    expect(down.status).toBe(500);
+    expect(await down.json()).toEqual({ code: 'unknown', message: 'Something went wrong on the server.' });
+    // The failure is the app's one error line, with the error's fields only.
+    const errors = t.events().filter((e) => e.event === 'http.error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ level: 'error', err_name: expect.any(String) });
+    expect(t.lines.join('\n')).not.toContain(TOM);
+    expect(t.lines.join('\n')).not.toContain('sign-in-otp');
   });
 });
