@@ -155,7 +155,8 @@ jobs:
 
   compose-smoke:
     # The server image and the public compose file as self-hosters run them: the build, configuration errors, the
-    # published ports, the read-only root, no .env in the image, and route-eval inside the container.
+    # published ports, the read-only root, no .env in the image, route-eval inside the container, and a single-quoted
+    # value with $ in .env reaching the server unchanged.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

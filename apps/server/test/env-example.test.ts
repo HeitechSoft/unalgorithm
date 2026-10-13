@@ -59,23 +59,43 @@ const IPV4 = /(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.]*\d)/g;
 /** Hosts in URLs (after any user info) and in email addresses. */
 const URL_HOST = /\b[a-z][a-z\d+.-]*:\/\/(?:[^/\s@]*@)?([^/\s:?#]+)/gi;
 const EMAIL_DOMAIN = /[\w.+-]+@([a-z\d-]+(?:\.[a-z\d-]+)+)/gi;
-/** A bare host name with a common top-level domain (file names such as compose.yaml do not end in one). */
+/** A bare host name in prose, with a common top-level domain (file names such as compose.yaml do not end in one). */
 const BARE_HOST = /\b(?:[a-z\d-]+\.)+(?:com|net|org|io|app|dev|cloud|co|ai|sh|me|eu|de|uk|info|xyz)\b/gi;
+/** A host name with any top-level domain: its last label starts with a letter, so 0.8 and IPv4 addresses are not. */
+const HOST_NAME = /^(?:[a-z\d-]+\.)+[a-z][a-z\d-]*$/i;
 const ALLOWED_HOST = /^(?:localhost|127\.0\.0\.1|(?:[a-z\d-]+\.)*example\.org)$/i;
 /** Key prefixes, and a long token of letters and digits mixed, as generated secrets are. */
 const SECRET_LIKE = [/^(?:sk-|sk_|pk_|rk_|ghp_|gho_|github_pat_|xox[abp]-|AKIA|SG\.)/, /^(?=.*\d)(?=.*[a-z])[\w+/=-]{20,}$/i];
 
+/**
+ * The host names in an entry's value, whatever their top-level domain: a bare host (SMTP_HOST, with or without a port),
+ * and the domain of an email address or an @domain list entry. A value may be quoted and comma-separated.
+ */
+function valueHosts(value: string): string[] {
+  return value
+    .split(/[\s,]+/)
+    .map((item) =>
+      item
+        .replace(/^['"]|['"]$/g, '')
+        .replace(/^.*@/, '')
+        .replace(/:\d+$/, ''),
+    )
+    .filter((item) => HOST_NAME.test(item));
+}
+
 /** What makes an env example unfit to publish: addresses, host names and secret-like values, by kind. */
 function findHostsAndSecrets(text: string): string[] {
   const found: string[] = [];
+  const entries = parseEnvExample(text);
   for (const [address] of text.matchAll(IPV4)) if (address !== '127.0.0.1') found.push(`ipv4 ${address}`);
   const hosts = [
     ...[...text.matchAll(URL_HOST)].map((m) => m[1] ?? ''),
     ...[...text.matchAll(EMAIL_DOMAIN)].map((m) => m[1] ?? ''),
     ...[...text.matchAll(BARE_HOST)].map((m) => m[0]),
+    ...entries.flatMap((e) => valueHosts(e.value)),
   ];
   for (const host of new Set(hosts)) if (!ALLOWED_HOST.test(host)) found.push(`host ${host}`);
-  for (const { name, value } of parseEnvExample(text)) {
+  for (const { name, value } of entries) {
     const v = value.trim();
     if (SECRET_NAMES.includes(name) && v) found.push(`secret ${name} has a value`);
     else if (SECRET_LIKE.some((re) => re.test(v))) found.push(`secret-like ${name}`);
@@ -138,6 +158,9 @@ describe('configuration parity', () => {
       expect(entry?.comment).toMatch(/set by compose\.yaml; any value here is ignored/i);
     }
 
+    // loadConfig refuses a longer INSTANCE_NAME, and an unset one when the PUBLIC_URL host it falls back to is longer.
+    expect(entries.find((e) => e.name === 'INSTANCE_NAME')?.comment).toMatch(/up to 80 characters.*host.*over 80/);
+
     // The parser counts both kinds of line, and only those.
     expect(
       parseEnvExample('# Prose.\nA=1\n# B=\n\n# Shared,\n# on two lines.\n# C=\nD=x\n# Not=an entry\nE=\n').map((e) => [
@@ -177,12 +200,18 @@ describe('configuration parity', () => {
       `# SOURCE_URL=${token}`,
       'PUBLIC_URL=https://unalgorithm.example.org',
       'SMTP_PORT=587',
+      '# SMTP_HOST=mail.vendor.internal:25',
+      "SIGNUP_ALLOWLIST='someone@example.org, @vendor.ca'",
+      'ROUTE_EVAL_MIN_AGREEMENT=0.8',
     ].join('\n');
     expect(findHostsAndSecrets(planted)).toEqual([
       'ipv4 192.0.2.10',
       'host cloud.vendor.net',
       'host mail.vendor.net',
       'host smtp.vendor.com',
+      // Bare hosts with a top-level domain the prose check does not know.
+      'host mail.vendor.internal',
+      'host vendor.ca',
       'secret AI_API_KEY has a value',
       'secret-like SOURCE_URL',
     ]);

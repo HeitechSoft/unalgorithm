@@ -82,6 +82,8 @@ set_var AI_MODEL mock-model
 set_var AI_DATA_POLICY self-hosted
 set_var BETTER_AUTH_SECRET "$(openssl rand -hex 32)"
 set_var POSTGRES_PASSWORD "$(openssl rand -hex 32)"
+# Single-quoted as .env.example advises, so Compose keeps $PORT as written; unquoted, it would put 8788 in its place.
+set_var MAIL_FROM_NAME "'Smoke \$PORT test'"
 
 # The server's image, tagged with the project name above (the other image is Postgres).
 image="$(compose config --images | grep -F ":$project")"
@@ -153,5 +155,11 @@ grep -qF 'route openai-compatible/mock-model: not evaluated' <<<"$out" ||
   fail 'route-eval reports the route as not evaluated'
 if grep -qF 'ERR_MODULE_NOT_FOUND' <<<"$out"; then fail 'route-eval finds all its modules'; fi
 ok 'route-eval runs in the image'
+
+# 12. A single-quoted value with $ in it reaches the server as written (.env.example tells people to quote them).
+# shellcheck disable=SC2016 # the $ is meant literally
+[ "$(compose exec -T server printenv MAIL_FROM_NAME)" = 'Smoke $PORT test' ] ||
+  fail 'a single-quoted value with $ reaches the server unchanged'
+ok 'a single-quoted value with $ reaches the server unchanged'
 
 echo "compose smoke test passed ($step checks)"
