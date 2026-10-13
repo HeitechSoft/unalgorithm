@@ -13,6 +13,7 @@
     "dev": "node --import ./src/require-node.js --watch src/index.ts",
     "typecheck": "tsc --noEmit -p .",
     "check-config": "node --import ./src/require-node.js src/cli/check-config.ts",
+    "route-eval": "node --import ./src/require-node.js src/cli/route-eval.ts",
     "db:generate": "drizzle-kit generate",
     "auth:generate": "auth generate --config auth.cli.ts --output src/db/auth-schema.ts --adapter drizzle --dialect postgresql --yes && pnpm run db:generate"
   },

@@ -10,9 +10,9 @@
  */
 import { costMicros, type NormalizedUsage } from '@unalgorithm/protocol';
 import { and, eq, gte, type SQL, sql } from 'drizzle-orm';
-import type { Db } from '../db/client.ts';
+import { type Db, queryErrorFields } from '../db/client.ts';
 import { usageEvents } from '../db/schema.ts';
-import { type ErrorFields, errorFields, type Logger } from '../log.ts';
+import type { Logger } from '../log.ts';
 import type { RouteTask } from './routes.ts';
 
 /**
@@ -75,19 +75,6 @@ export async function recordUsageEvent(db: Db, e: UsageEventInput, log: Logger):
   } catch (err) {
     log.error('usage.record_failed', { rid: e.requestId, ...queryErrorFields(err) });
   }
-}
-
-/**
- * `errorFields`, with the Postgres error code (SQLSTATE: `23505` for a request recorded twice) that Drizzle keeps on
- * the cause of the error it throws.
- */
-function queryErrorFields(err: unknown): ErrorFields {
-  const fields = errorFields(err);
-  if (fields.err_code === undefined && err instanceof Error) {
-    const { err_code } = errorFields(err.cause);
-    if (err_code !== undefined) fields.err_code = err_code;
-  }
-  return fields;
 }
 
 /** 00:00:00.000 UTC of the day `now` falls on. */

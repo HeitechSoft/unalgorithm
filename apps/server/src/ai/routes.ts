@@ -137,15 +137,24 @@ const EVAL_PENDING_LOG_INTERVAL_MS = 60_000;
 const evalPendingLoggedAt = new WeakMap<Logger, number>();
 
 /**
+ * The enabled route for `task`, if any, as stored: neither the guard nor the eval gate is applied. `resolveRoute`
+ * applies both before a request is served; the eval command (`route-eval`) evaluates the route before it has passed.
+ */
+export async function enabledRoute(db: Db, task: RouteTask): Promise<AiRoute | undefined> {
+  const [route] = await db
+    .select()
+    .from(aiRoutes)
+    .where(and(eq(aiRoutes.task, task), eq(aiRoutes.enabled, true)));
+  return route;
+}
+
+/**
  * The route that serves `task`: enabled, allowed by the guard, and past its eval for the current prompt version with
  * at least `minAgreement`. Otherwise `AIError` `not-available`, which the app answers with 503. `log` is required so a
  * refused route always says why in the log (`ai.route.eval_pending`, at most once a minute).
  */
 export async function resolveRoute(db: Db, task: RouteTask, minAgreement: number, log: Logger): Promise<AiRoute> {
-  const [route] = await db
-    .select()
-    .from(aiRoutes)
-    .where(and(eq(aiRoutes.task, task), eq(aiRoutes.enabled, true)));
+  const route = await enabledRoute(db, task);
   if (!route) throw new AIError('not-available', 'No AI route is configured.');
   const check = validateRoute(route);
   if (!check.ok) throw new AIError('not-available', `The AI route is not allowed: ${check.reason}`);
@@ -168,7 +177,7 @@ export interface EvalResult {
   passed: boolean;
 }
 
-/** Stores an eval run's result on the route (CL1-24's eval command is the one production caller). */
+/** Stores an eval run's result on the route (the `route-eval` command is the one production caller). */
 export async function recordEval(db: Db, routeId: string, { agreement, promptVersion, passed }: EvalResult): Promise<AiRoute> {
   const [route] = await db
     .update(aiRoutes)

@@ -6,10 +6,23 @@ import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
-import { errorFields, type Logger } from '../log.ts';
+import { type ErrorFields, errorFields, type Logger } from '../log.ts';
 import * as schema from './schema.ts';
 
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
+
+/**
+ * `errorFields` of a failed query, with the code Drizzle keeps on the cause of the error it throws: the Postgres error
+ * code (SQLSTATE, `23505` for a duplicate key) or the connection's (`ECONNREFUSED`).
+ */
+export function queryErrorFields(err: unknown): ErrorFields {
+  const fields = errorFields(err);
+  if (fields.err_code === undefined && err instanceof Error) {
+    const { err_code } = errorFields(err.cause);
+    if (err_code !== undefined) fields.err_code = err_code;
+  }
+  return fields;
+}
 
 export type DbHandle =
   | { kind: 'postgres'; db: Db; pool: Pool; close(): Promise<void> }
