@@ -1,0 +1,28 @@
+{
+  "name": "@unalgorithm/web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Sign-in page an UnAlgorithm server serves on its own origin for the UnAlgorithm Feed extension",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@unalgorithm/protocol": "workspace:*",
+    "@unalgorithm/ui": "workspace:*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.4"
+  }
+}

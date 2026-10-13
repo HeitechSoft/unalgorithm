@@ -176,6 +176,26 @@
       }
     },
     {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "@unalgorithm/platforms"],
+                    "message": "the server's web page never imports the extension runtime or the feed adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/test/**", "**/tests/**", "**/e2e/**", "scripts/**"],
       "linter": {
         "rules": {

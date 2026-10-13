@@ -1,0 +1,39 @@
+/* Layout of the server's own pages. Colors, type and controls come from @unalgorithm/ui. */
+.web-page {
+  display: grid;
+  gap: var(--ua-space-6);
+  width: min(400px, 100%);
+  margin: 0 auto;
+  padding: var(--ua-space-12) var(--ua-space-4);
+}
+.web-main {
+  display: grid;
+  gap: var(--ua-space-4);
+}
+.web-main .ua-group {
+  margin: 0;
+}
+.web-header {
+  display: grid;
+  gap: var(--ua-space-1);
+  margin-bottom: var(--ua-space-2);
+  text-align: center;
+}
+.web-header p,
+.web-status {
+  color: var(--ua-text-secondary);
+}
+.web-status {
+  text-align: center;
+}
+.web-form {
+  padding: var(--ua-space-4);
+}
+.web-actions {
+  justify-content: space-between;
+}
+.web-footer {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+  text-align: center;
+}

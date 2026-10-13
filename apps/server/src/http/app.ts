@@ -3,6 +3,10 @@
  * mapping; later features extend `AppDeps` and add their routes, never a second app. Error bodies are fixed strings or
  * `describeError` text: never a zod issue, an input value or an error message, any of which can hold post text.
  */
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { AIError, describeError } from '@unalgorithm/ai';
 import {
@@ -16,6 +20,7 @@ import {
   type WireError,
 } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
+import type { Context, MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
@@ -50,6 +55,18 @@ const NOT_VALID: WireError = { code: 'bad-request', message: 'The request was no
 const TOO_LARGE: WireError = { code: 'bad-request', message: 'The request was too large.' };
 const NOT_FOUND: WireError = { code: 'bad-request', message: 'Not found.' };
 const UNKNOWN: WireError = { code: 'unknown', message: 'Something went wrong on the server.' };
+
+/** The sign-in page's CSP: scripts, styles and requests from this origin only, nothing inline, never in a frame. */
+const PAGE_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join('; ');
 
 /** The HTTP status for an error code; the body carries the code itself. */
 export function httpStatusFor(code: AIErrorCode): ContentfulStatusCode {
@@ -128,6 +145,8 @@ export function createApp(deps: AppDeps): App {
 
   billing.mount?.(app);
 
+  mountWeb(app, deps);
+
   app.notFound((c) => c.json(NOT_FOUND, 404));
 
   app.onError((err, c) => {
@@ -141,6 +160,44 @@ export function createApp(deps: AppDeps): App {
   });
 
   return app;
+}
+
+/**
+ * The sign-in page (apps/web), built into `config.webDist`: `/` and `/authorize` answer its `index.html`, and
+ * `/assets/*` the files Vite built, named by their content hash. Without a build those two pages answer 503 and the
+ * log says so once. Both are looked up per request, so a build made after the server started is served.
+ */
+function mountWeb(app: App, { config, log }: AppDeps): void {
+  const indexHtml = join(config.webDist, 'index.html');
+  let missingLogged = false;
+  const page = async (c: Context<AppEnv>) => {
+    let html: string;
+    try {
+      html = await readFile(indexHtml, 'utf8');
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err;
+      if (!missingLogged) log.warn('web.missing', { web_dist: config.webDist });
+      missingLogged = true;
+      return c.text('Build apps/web first', 503);
+    }
+    c.header('Content-Security-Policy', PAGE_CSP);
+    c.header('Cache-Control', 'no-store');
+    return c.html(html);
+  };
+  app.get('/', page);
+  app.get(AUTHORIZE_PAGE_PATH, page);
+
+  // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
+  let assets: MiddlewareHandler | undefined;
+  app.use('/assets/*', async (c, next) => {
+    assets ??= existsSync(config.webDist) ? serveStatic({ root: config.webDist }) : undefined;
+    if (!assets) return next();
+    const found = await assets(c, next);
+    // Only a file it served (not found, it calls `next`): Vite names each by its content hash, so a copy never goes stale.
+    if (found instanceof Response) found.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return found;
+  });
 }
 
 /**
