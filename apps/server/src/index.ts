@@ -1,12 +1,13 @@
 /**
- * The server process. `startServer` opens the database, applies migrations, and serves the app; run directly
- * (`node apps/server/src/index.ts`, or `pnpm start`), this module reads the configuration from the environment, starts
- * the server, and stops it gracefully on SIGTERM or SIGINT.
+ * The server process. `startServer` opens the database, applies migrations, brings the AI route in line with the
+ * configuration, and serves the app; run directly (`node apps/server/src/index.ts`, or `pnpm start`), this module
+ * reads the configuration from the environment, starts the server, and stops it gracefully on SIGTERM or SIGINT.
  */
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
 import { selectBilling } from './billing/provider.ts';
 import { type Config, ConfigError, loadConfig } from './config.ts';
@@ -41,6 +42,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let server: Server;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
+    // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
+    await syncRouteFromConfig(db.db, config, log);
     // The rate limit stays at its default (on): only tests turn it off.
     const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
     const app = createApp({ config, db, log, billing: selectBilling(config), auth });
@@ -100,7 +103,9 @@ async function main(): Promise<void> {
   try {
     server = await startServer(config, { log });
   } catch (err) {
-    log.error('server.start_failed', errorFields(err));
+    // A routing rule is printed like a ConfigError: errorFields would drop the message, which is all it has to say.
+    if (err instanceof RouteConfigError) console.error(err.message);
+    else log.error('server.start_failed', errorFields(err));
     process.exitCode = 1;
     return;
   }

@@ -54,14 +54,18 @@ function systemBlocks(req: StructuredRequest): Anthropic.Messages.TextBlockParam
 }
 
 /**
- * Claude via the official SDK, straight from the extension to api.anthropic.com with the user's own key.
- * Structured output through `output_config.format`, a cached system prompt (split after the shared rubric when the
- * caller marks it), low effort, and thinking switched off where the model allows it (classification needs no
- * deliberation).
+ * Claude via the official SDK, always at api.anthropic.com: from the extension with the user's own key, or from a
+ * server with its configured key. Structured output through `output_config.format`, a cached system prompt (split
+ * after the shared rubric when the caller marks it), low effort, and thinking switched off where the model allows it
+ * (classification needs no deliberation).
  */
 export function anthropicClient(opts: { apiKey: string; capabilities: CapabilityStore; fetch?: typeof fetch }): AIClient {
   const client = new Anthropic({
     apiKey: opts.apiKey,
+    // Both fixed here, so the SDK never falls back to ANTHROPIC_BASE_URL or ANTHROPIC_LOG in a server's environment:
+    // one would send prompts to another host, the other would print every prompt and answer to the console.
+    baseURL: 'https://api.anthropic.com',
+    logLevel: 'off',
     dangerouslyAllowBrowser: true,
     maxRetries: 1,
     timeout: 30_000,

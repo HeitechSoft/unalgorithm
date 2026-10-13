@@ -11,7 +11,8 @@
  * committed migration. A branch that rebases onto someone else's migration deletes its own generated files and runs
  * `db:generate` again.
  */
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema.ts';
 
 export * from './auth-schema.ts';
@@ -68,4 +69,33 @@ export const refreshTokens = pgTable(
     usedAt: timestamp('used_at', { withTimezone: true }),
   },
   (table) => [index('refresh_tokens_device_id_idx').on(table.deviceId)],
+);
+
+/**
+ * Which model serves each AI task (R20). The enabled `classify` route follows the provider configured by environment
+ * (`syncRouteFromConfig`, R36); replaced routes stay, disabled, as a record. A route serves requests only once it has
+ * passed its eval for the current prompt version. The API key is never stored here: it stays in the environment.
+ */
+export const aiRoutes = pgTable(
+  'ai_routes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** 'classify' (research and synthesis arrive in Phase 3). */
+    task: text('task').notNull(),
+    /** 'anthropic' or 'openai-compatible'. */
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    /** Null for anthropic, which is always reached at api.anthropic.com. */
+    baseUrl: text('base_url'),
+    effort: text('effort').notNull().default('low'),
+    /** 'vendor-zdr' (the vendor retains no data) or 'self-hosted' (hardware the operator controls). */
+    dataPolicy: text('data_policy').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    evalPassedAt: timestamp('eval_passed_at', { withTimezone: true }),
+    /** Double precision, so the stored agreement compares exactly with the minimum the eval measured it against. */
+    evalAgreement: doublePrecision('eval_agreement'),
+    evalPromptVersion: integer('eval_prompt_version'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('ai_routes_one_enabled_per_task').on(table.task).where(sql`${table.enabled}`)],
 );
