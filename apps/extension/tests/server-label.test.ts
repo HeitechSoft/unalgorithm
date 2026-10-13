@@ -13,6 +13,7 @@ import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
 import { PINNED_CLOUD_ORIGIN, recipientText, serverLabel } from '../src/lib/server-label.ts';
 import { deviceItem } from '../src/lib/storage.ts';
 
+const cp = String.fromCodePoint;
 const NEVER_SENT =
   "Author names, emails and phone numbers are never sent, and Facebook posts that aren't public stay on this computer.";
 
@@ -47,6 +48,9 @@ describe('naming', () => {
     // Normalized like post text, trimmed and cut to 80 characters; a name that only repeats the host is dropped.
     expect(serverLabel('https://ai.example.org', { name: '  ‮Family​ AI  ' }).serverName).toBe('Family AI');
     expect(serverLabel('https://ai.example.org', { name: 'x'.repeat(120) }).serverName).toBe('x'.repeat(80));
+    // The cut counts code points: an emoji that crosses it is dropped whole, never left as half a surrogate pair.
+    expect(serverLabel('https://ai.example.org', { name: `${'x'.repeat(79)}😀😀` }).serverName).toBe(`${'x'.repeat(79)}😀`);
+    expect(serverLabel('https://ai.example.org', { name: `${'x'.repeat(80)}😀` }).serverName).toBe('x'.repeat(80));
     expect(serverLabel('https://ai.example.org', { name: 'ai.example.org' })).not.toHaveProperty('serverName');
   });
 
@@ -54,6 +58,30 @@ describe('naming', () => {
     for (const name of ['UnAlgorithm Cloud', 'unalgorithm  cloud', 'UnAlgo​rithm Cloud']) {
       const label = serverLabel('https://ai.example.org', { name });
       expect(label, name).toStrictEqual({ title: 'ai.example.org', host: 'ai.example.org', isCloud: false });
+    }
+    for (const name of [
+      // Look-alike letters, written as code points so they can be told apart here: Cyrillic i, Cyrillic o, Greek and
+      // Lisu capitals, all Lisu; then accents, a capital I for l, and "rn" for m.
+      `UnAlgor${cp(0x0456)}thm Cloud`,
+      `UnAlg${cp(0x043e)}rithm Cl${cp(0x043e)}ud`,
+      `UNALG${cp(0x039f)}RITHM ${cp(0xa4da)}L${cp(0x039f)}UD`,
+      `${cp(0xa4f4, 0xa4e0, 0xa4ee, 0xa4e1, 0xa4d6, 0xa4f3, 0xa4e3, 0xa4f2, 0xa4d4, 0xa4e7, 0xa4df)} ${cp(0xa4da, 0xa4e1, 0xa4f3, 0xa4f4, 0xa4d3)}`,
+      'ÜnÀlgorithm Clöud',
+      'UnAIgorithm Cloud',
+      'UnAlgorithrn Cloud',
+      // The Cloud's host, or both words in any order.
+      'cloud.unalgorithm.app',
+      'Cloud by UnAlgorithm',
+    ]) {
+      expect(serverLabel('https://evil.org', { name }), name).toStrictEqual({
+        title: 'evil.org',
+        host: 'evil.org',
+        isCloud: false,
+      });
+    }
+    // Names in other alphabets, or with only one of the two words, are still shown.
+    for (const name of ['Семейный AI', 'Ψηφιακό σύννεφο', 'UnAlgorithm at home', 'Family Cloud']) {
+      expect(serverLabel('https://ai.example.org', { name }).serverName, name).toBe(name);
     }
   });
 });
