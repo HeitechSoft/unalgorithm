@@ -1,3 +1,4 @@
+import type { SQL } from 'drizzle-orm';
 import { type DbHandle, openPglite } from '../../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../../src/db/migrate.ts';
 import { createLogger } from '../../src/log.ts';
@@ -11,4 +12,9 @@ export async function createTestDb(migrationsFolder: string = MIGRATIONS_FOLDER)
   const handle = await openPglite();
   await runMigrations(handle, { migrationsFolder, log: createLogger({ level: 'error', sink: () => {} }) });
   return handle;
+}
+
+/** Rows of a raw `execute()` result: node-postgres and PGlite both answer `{ rows }`. */
+export async function queryRows(h: DbHandle, query: SQL): Promise<Record<string, unknown>[]> {
+  return ((await h.db.execute(query)) as { rows: Record<string, unknown>[] }).rows;
 }

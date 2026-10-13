@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import drizzleConfig from '../drizzle.config.ts';
 import { CONNECT_TIMEOUT_MS, type DbHandle, openPglite, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
-import { createTestDb } from './support/db.ts';
+import { createTestDb, queryRows } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, databaseExists, TEST_DATABASE_URL } from './support/postgres.ts';
 
@@ -21,13 +21,8 @@ const PROBE_FOLDER = fileURLToPath(new URL('./fixtures/migrations', import.meta.
 /** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
 const PGLITE_TIMEOUT = 30_000;
 
-/** Rows of a raw `execute()` result: node-postgres and PGlite both answer `{ rows }`. */
-async function rows(h: DbHandle, query: ReturnType<typeof sql>): Promise<Record<string, unknown>[]> {
-  return ((await h.db.execute(query)) as { rows: Record<string, unknown>[] }).rows;
-}
-
 async function count(h: DbHandle, query: ReturnType<typeof sql>): Promise<number> {
-  return Number((await rows(h, query))[0]?.n);
+  return Number((await queryRows(h, query))[0]?.n);
 }
 
 const advisoryLocks = (h: DbHandle) => count(h, sql`select count(*)::int as n from pg_locks where locktype = 'advisory'`);
@@ -67,7 +62,7 @@ describe('client', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_pglite_select_one', async () => {
     const h = await pglite();
     expect(h.kind).toBe('pglite');
-    expect(await rows(h, sql`select 1 as one`)).toEqual([{ one: 1 }]);
+    expect(await queryRows(h, sql`select 1 as one`)).toEqual([{ one: 1 }]);
   });
 
   it('test_create_test_db_and_close', async () => {
@@ -76,7 +71,7 @@ describe('client', { timeout: PGLITE_TIMEOUT }, () => {
     expect(MIGRATIONS_FOLDER).toBe(fileURLToPath(new URL(String(drizzleConfig.out), SERVER_ROOT)));
     const h = await createTestDb();
     expect(h.kind).toBe('pglite');
-    expect(await rows(h, sql`select 1 as one`)).toEqual([{ one: 1 }]);
+    expect(await queryRows(h, sql`select 1 as one`)).toEqual([{ one: 1 }]);
     await expect(h.close()).resolves.toBeUndefined();
   });
 
@@ -176,7 +171,7 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () 
       () => a.close(),
       () => b.close(),
     );
-    expect(await rows(a, sql`select current_database() as name`)).toEqual([{ name: one.name }]);
+    expect(await queryRows(a, sql`select current_database() as name`)).toEqual([{ name: one.name }]);
     await a.db.execute(sql`create table probe (id integer)`);
     expect(await probeTables(a)).toBe(1);
     expect(await probeTables(b)).toBe(0);

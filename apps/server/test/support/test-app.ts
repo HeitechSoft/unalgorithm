@@ -3,6 +3,7 @@ import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingProvider, noopBilling } from '../../src/billing/provider.ts';
 import { type Config, loadConfig } from '../../src/config.ts';
+import type { DbHandle } from '../../src/db/client.ts';
 import { type AppDeps, createApp } from '../../src/http/app.ts';
 import { memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
@@ -55,20 +56,25 @@ export interface TestAppOptions {
   ai?: AppDeps['ai'];
   /** The deadline of a whole classify request. Default: the server's own (25 s). */
   classifyDeadlineMs?: number;
+  /**
+   * A migrated database that the caller opened and closes itself, such as a Postgres one. Default: a fresh PGlite
+   * database, which `close()` closes.
+   */
+  db?: DbHandle;
 }
 
 /**
- * The real app on a fresh migrated PGlite database, logging into memory: `lines` and `events()` hold what it wrote,
- * and `outbox` every email it sent. Its classify route (`route`) is the app's own mock AI provider (`mock`), past its
- * eval; `seedPassingRoute` with overrides replaces it. Call `close()` when done. Tests add routes of their own to `app`
- * when they need one.
+ * The real app on a fresh migrated PGlite database (or the caller's `db`), logging into memory: `lines` and `events()`
+ * hold what it wrote, and `outbox` every email it sent. Its classify route (`route`) is the app's own mock AI provider
+ * (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. Call `close()` when done. Tests add routes of
+ * their own to `app` when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
-  const db = await createTestDb();
+  const db = overrides.db ?? (await createTestDb());
   const mock = await startMockOpenAI();
   const close = async () => {
     await mock.close();
-    await db.close();
+    if (!overrides.db) await db.close();
   };
   try {
     const capture = captureLog();
