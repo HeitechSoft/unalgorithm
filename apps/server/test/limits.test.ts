@@ -3,7 +3,7 @@ import { describeError } from '@unalgorithm/ai';
 import { ClassifyResponseSchema, type PostForAI, type TokenResponse } from '@unalgorithm/protocol';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRateLimiter, IDLE_BUCKET_MS } from '../src/ai/limits.ts';
+import { checkLimits, createRateLimiter, IDLE_BUCKET_MS, type LimitDeps } from '../src/ai/limits.ts';
 import { postsToday } from '../src/ai/metering.ts';
 import { main as userCap } from '../src/cli/user-cap.ts';
 import type { Db } from '../src/db/client.ts';
@@ -231,6 +231,54 @@ describe('daily cap', { timeout: PGLITE_TIMEOUT }, () => {
     await expectRefused(await classifyAs(t, t.tom), 'cap-reached');
   });
 
+  it('test_posts_in_flight_count_toward_cap', async () => {
+    const t = await limitsApp({ USER_DAILY_POST_CAP: '10' });
+    await seedUsage(t, t.tomId, { postsOk: 9 });
+    const deps: LimitDeps = {
+      db: t.deps.db.db,
+      config: t.deps.config,
+      limiter: createRateLimiter({ perMinute: 30 }),
+      log: t.deps.log,
+    };
+    const tom = { userId: t.tomId };
+
+    // Two batches checked at once, before either has a usage row: only the first one fits under the cap.
+    const [first, second] = await Promise.allSettled([checkLimits(deps, tom, 8), checkLimits(deps, tom, 8)]);
+    expect(first.status).toBe('fulfilled');
+    expect(second).toMatchObject({ status: 'rejected', reason: { code: 'cap-reached' } });
+    // While those 8 posts are in flight, Tom is refused even for one; Ana is not.
+    await expect(checkLimits(deps, tom, 1)).rejects.toMatchObject({ code: 'cap-reached' });
+    (await checkLimits(deps, { userId: t.anaId }, 12))();
+    expect(deps.inFlight).toEqual(new Map([[t.tomId, 8]]));
+
+    // Released without a row, as when the call failed: Tom is back at 9 and nothing is held. Twice is harmless.
+    if (first.status === 'fulfilled') {
+      first.value();
+      first.value();
+    }
+    expect(deps.inFlight).toEqual(new Map());
+    (await checkLimits(deps, tom, 12))();
+  });
+
+  it('test_concurrent_requests_stay_within_cap', async () => {
+    const t = await limitsApp({ USER_DAILY_POST_CAP: '10' });
+    expect((await classifyAs(t, t.tom, 9)).status).toBe(200);
+    const calls = t.mock.bodies.length;
+
+    // Ten full batches at once, one post below the cap: the first one checked is served, the others count it.
+    const burst = await Promise.all(Array.from({ length: 10 }, () => classifyAs(t, t.tom, 12)));
+    const served = burst.filter((res) => res.status === 200);
+    expect(served).toHaveLength(1);
+    for (const res of burst.filter((r) => r.status !== 200)) await expectRefused(res, 'cap-reached');
+    expect(t.mock.bodies).toHaveLength(calls + 1);
+    expect(await postsToday(t.deps.db.db, t.tomId)).toBe(21);
+
+    // Every request let its posts go once its row was written: one more post fits under a cap of 22.
+    await runUserCap(t, [TOM, '22']);
+    expect((await classifyAs(t, t.tom)).status).toBe(200);
+    await expectRefused(await classifyAs(t, t.tom), 'cap-reached');
+  });
+
   it('test_user_cap_cli_override_and_default', async () => {
     const t = await limitsApp({ USER_DAILY_POST_CAP: '10' });
     expect((await classifyAs(t, t.tom, 10)).status).toBe(200);
@@ -337,6 +385,39 @@ describe('spend breaker', { timeout: PGLITE_TIMEOUT }, () => {
 });
 
 describe('ordering', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_rate_limit_checked_first', async () => {
+    const t = await limitsApp({ USER_REQUESTS_PER_MINUTE: '1', USER_DAILY_POST_CAP: '1', DAILY_SPEND_LIMIT_USD: '1' });
+    vi.useFakeTimers({ toFake: ['Date'] });
+
+    // Tom uses his one request of the minute and his one post of the day, then the server reaches its limit.
+    expect((await classifyAs(t, t.tom)).status).toBe(200);
+    await seedUsage(t, t.anaId, { costMicros: 1_000_000 });
+
+    // All three limits apply: the rate limit answers, with Retry-After, before the breaker is even read.
+    const limited = await classifyAs(t, t.tom);
+    await expectRefused(limited, 'rate-limit');
+    expect(limited.headers.get('retry-after')).toBe('60');
+    expect(breakerLines(t)).toEqual([]);
+
+    // A minute later the breaker answers, and its refusal takes the new token: the next request is rate-limited again.
+    vi.setSystemTime(Date.now() + 60_000);
+    await expectRefused(await classifyAs(t, t.tom), 'cap-reached');
+    expect(breakerLines(t)).toHaveLength(1);
+    await expectRefused(await classifyAs(t, t.tom), 'rate-limit');
+  });
+
+  it('test_spend_breaker_checked_before_cap', async () => {
+    const t = await limitsApp({ USER_DAILY_POST_CAP: '10', DAILY_SPEND_LIMIT_USD: '1' });
+    // Tom is over his own cap, and the server is at its spending limit.
+    await seedUsage(t, t.tomId, { postsOk: 10, costMicros: 1_000_000 });
+
+    const refused = await classifyAs(t, t.tom);
+    await expectRefused(refused, 'cap-reached');
+    await expectMeteredRefusal(t, refused);
+    // The breaker refused him, not his cap: its trip is logged.
+    expect(breakerLines(t)).toHaveLength(1);
+  });
+
   it('test_excluded_only_requests_cost_nothing', async () => {
     const t = await limitsApp({ USER_REQUESTS_PER_MINUTE: '1', USER_DAILY_POST_CAP: '1', DAILY_SPEND_LIMIT_USD: '1' });
     vi.useFakeTimers({ toFake: ['Date'] });

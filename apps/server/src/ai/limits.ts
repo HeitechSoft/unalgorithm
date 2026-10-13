@@ -4,8 +4,8 @@
  * cost, and the per-user daily post cap. A refusal is an `AIError` that the app answers with 429 and `describeError`
  * text; the gateway meters it as `refused-before-call`.
  *
- * Days are UTC, as in metering (CL1-13). The rate buckets live in memory: a deployment runs one server process in CL1,
- * so memory is enough. A shared store is needed only once the server runs as several processes.
+ * Days are UTC, as in metering (CL1-13). The rate buckets and the posts in flight live in memory: a deployment runs one
+ * server process in CL1, so memory is enough. A shared store is needed only once the server runs as several processes.
  */
 import { AIError } from '@unalgorithm/ai';
 import { eq } from 'drizzle-orm';
@@ -80,6 +80,8 @@ export interface LimitDeps {
   log: Logger;
   /** Kept by `checkLimits`: the UTC day (its start, in ms) whose breaker trip was logged, so it is logged once a day. */
   breakerLoggedDay?: number;
+  /** Kept by `checkLimits`: each user's posts in flight, let through but not yet in a usage row. */
+  inFlight?: Map<string, number>;
 }
 
 /**
@@ -87,17 +89,22 @@ export interface LimitDeps {
  * 1. the user's rate limit: `rate-limit` with `retryAfterMs`;
  * 2. the spend breaker, when everyone's AI cost today has reached `DAILY_SPEND_LIMIT_USD`: `cap-reached` for everyone,
  *    and `limits.spend_breaker` is logged once per UTC day per process;
- * 3. the user's daily cap (`effectiveDailyCap`): `cap-reached` once the posts classified today reach it. A batch that
- *    starts below the cap is served in full, so a day can end up to 12 posts over it; a batch is never split.
+ * 3. the user's daily cap (`effectiveDailyCap`): `cap-reached` once the posts classified today, plus the user's posts in
+ *    flight, reach it. A batch that starts below the cap is served in full and never split, so a day ends at most 11
+ *    posts over it (12 posts sent at one below), however many requests run at once.
  *
- * Call it only for a request that will send posts to a model: a request with none spends no token and counts nothing.
- * The messages are internal: the app answers every `AIError` with `describeError` text for its code.
+ * `postCount` is the number of posts the request sends to a model, after the Facebook audience filter. Call it only
+ * when there is at least one: a request with none spends no token and counts nothing. It resolves to `release`, which
+ * the caller calls once the request's usage row is written; until then the posts count as in flight. The spend breaker
+ * sums metered cost only, so requests in flight when it trips still finish. The messages are internal: the app answers
+ * every `AIError` with `describeError` text for its code.
  */
 export async function checkLimits(
   deps: LimitDeps,
   account: Pick<DeviceAccount, 'userId'>,
+  postCount: number,
   now: Date = new Date(),
-): Promise<void> {
+): Promise<() => void> {
   const { db, config, limiter, log } = deps;
   const { userId } = account;
 
@@ -116,10 +123,30 @@ export async function checkLimits(
     throw new AIError('cap-reached', "This server has reached today's AI spending limit. AI resumes tomorrow.");
   }
 
-  const cap = await effectiveDailyCap(db, userId, config);
-  if ((await postsToday(db, userId, now)) >= cap) {
-    throw new AIError('cap-reached', "This account has reached today's post limit. AI resumes tomorrow.");
+  // The posts join the user's in flight before the reads, so of two requests checked at once the later one counts the
+  // earlier one. A request whose row is written during the reads is counted twice: that can refuse early, never late.
+  const inFlight = (deps.inFlight ??= new Map());
+  const ahead = inFlight.get(userId) ?? 0;
+  inFlight.set(userId, ahead + postCount);
+  let held = true;
+  const release = () => {
+    if (!held) return;
+    held = false;
+    const left = (inFlight.get(userId) ?? 0) - postCount;
+    if (left > 0) inFlight.set(userId, left);
+    else inFlight.delete(userId);
+  };
+
+  try {
+    const cap = await effectiveDailyCap(db, userId, config);
+    if ((await postsToday(db, userId, now)) + ahead >= cap) {
+      throw new AIError('cap-reached', "This account has reached today's post limit. AI resumes tomorrow.");
+    }
+  } catch (err) {
+    release();
+    throw err;
   }
+  return release;
 }
 
 /** The user's daily post cap: their own, set with `user-cap`, else the server's `USER_DAILY_POST_CAP`. */

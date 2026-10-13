@@ -148,6 +148,8 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
       // Read in `finally`, so the usage row reflects how far the request got.
       let route: AiRoute | undefined;
       let outcome: ClassifyOutcome | undefined;
+      // Set once the limits let the request through: its posts count toward the daily cap until its row is written.
+      let releaseLimits: (() => void) | undefined;
 
       try {
         if (kept.length === 0) {
@@ -158,7 +160,7 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
 
         // R24, once there is something to send: the rate limit, the spend breaker and the daily cap. A refusal is
         // metered below as `refused-before-call`.
-        await checkLimits(limits, { userId });
+        releaseLimits = await checkLimits(limits, { userId }, kept.length);
 
         const served = await resolveRoute(db.db, 'classify', config.routeEvalMinAgreement, log);
         route = served;
@@ -258,6 +260,8 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
           },
           log,
         );
+        // Only now: from here on the row counts the posts.
+        releaseLimits?.();
         log.info('classify.done', {
           rid,
           posts_requested: posts.length,
