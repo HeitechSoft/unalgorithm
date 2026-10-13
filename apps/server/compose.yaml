@@ -1,0 +1,64 @@
+# The UnAlgorithm Feed server with Postgres, for running your own server.
+#
+# Postgres is never published. The server listens on 127.0.0.1 only; put your own HTTPS proxy in front (a guide comes
+# with CL4).
+#
+#   cp .env.example .env                  then fill in .env (it documents every setting)
+#   docker compose up -d                  start, from this folder; the server applies database migrations itself
+#   docker compose logs -f server         follow the server's log
+#   docker compose pull && docker compose up -d   upgrade to the release UNALGORITHM_VERSION names
+#
+# The server always listens on 0.0.0.0:8787 inside its container: `environment:` below wins over .env, so HOST, PORT,
+# WEB_DIST and DATABASE_URL in .env cannot move it. PORT in .env is only the host port published on BIND_ADDRESS.
+
+services:
+  server:
+    image: ghcr.io/heitechsoft/unalgorithm-server:${UNALGORITHM_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://unalgorithm:${POSTGRES_PASSWORD}@postgres:5432/unalgorithm
+      HOST: 0.0.0.0
+      PORT: '8787'
+      WEB_DIST: /app/apps/web/dist
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-8787}:8787'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # The server writes nothing to disk.
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: unalgorithm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: unalgorithm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U unalgorithm -d unalgorithm']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # No ports: only the server reaches Postgres, over the project's own network.
+
+volumes:
+  pgdata:

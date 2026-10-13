@@ -15,6 +15,44 @@ import { LOG_LEVELS, type LogLevel } from './log.ts';
 
 export const SERVER_VERSION: string = pkg.version;
 
+/**
+ * Every variable `loadConfig` reads, in the order it reads them. `apps/server/.env.example` documents each one
+ * (test/env-example.test.ts holds both to this list), and the Cloud's own example is checked against it.
+ */
+export const CONFIG_VARIABLES: readonly string[] = [
+  'PUBLIC_URL',
+  'HOST',
+  'PORT',
+  'DATABASE_URL',
+  'BETTER_AUTH_SECRET',
+  'INSTANCE_NAME',
+  'SOURCE_URL',
+  'BILLING',
+  'EXTENSION_IDS',
+  'SIGNUP_ALLOWLIST',
+  'TRUST_PROXY',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_SECURE',
+  'SMTP_USER',
+  'SMTP_PASSWORD',
+  'MAIL_FROM',
+  'MAIL_FROM_NAME',
+  'AI_PROVIDER',
+  'AI_MODEL',
+  'AI_API_KEY',
+  'AI_BASE_URL',
+  'AI_DATA_POLICY',
+  'ROUTE_EVAL_MIN_AGREEMENT',
+  'USER_DAILY_POST_CAP',
+  'USER_REQUESTS_PER_MINUTE',
+  'DAILY_SPEND_LIMIT_USD',
+  'WEB_DIST',
+  'LOG_LEVEL',
+  'BETTER_AUTH_TELEMETRY',
+  'ANTHROPIC_CUSTOM_HEADERS',
+];
+
 export interface Config {
   /** The origin people and the extension reach the server on, without a trailing slash. */
   publicUrl: string;

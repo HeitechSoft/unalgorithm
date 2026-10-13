@@ -153,6 +153,16 @@ jobs:
           path: apps/extension/playwright-report
           retention-days: 7
 
+  compose-smoke:
+    # The server image and the public compose file as self-hosters run them: the build, configuration errors, the
+    # published ports, the read-only root, no .env in the image, and route-eval inside the container.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compose smoke test
+        run: bash apps/server/scripts/compose-smoke.sh
+
   public-scan:
     # The public repo holds no host address, host marker, key file or secret: every tracked file and the whole history.
     runs-on: ubuntu-latest

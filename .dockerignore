@@ -1,0 +1,14 @@
+# The server image's build context is the repository root (apps/server/Dockerfile). A self-hoster keeps the filled .env
+# in apps/server, next to compose.yaml: it never reaches the build, nor do the host's node_modules or build output.
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+.git
+**/.output
+**/.wxt
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/*.pem
