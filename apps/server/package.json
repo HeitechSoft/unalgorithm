@@ -33,6 +33,7 @@
     "@electric-sql/pglite": "^0.5.9",
     "@types/pg": "^8",
     "auth": "1.7.7",
-    "drizzle-kit": "^0.31.11"
+    "drizzle-kit": "^0.31.11",
+    "jose": "^6.2.12"
   }
 }

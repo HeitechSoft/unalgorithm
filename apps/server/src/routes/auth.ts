@@ -2,10 +2,11 @@
  * The extension's sign-in (R10). `launchWebAuthFlow` opens the server's sign-in page with a PKCE challenge; once the
  * person is signed in there, the page asks `POST /v1/auth/authorize` for a single-use code bound to the extension, its
  * redirect address and the challenge, and sends the browser back to the extension with it. The extension trades the
- * code and its verifier at `POST /v1/auth/token` for device tokens.
+ * code and its verifier at `POST /v1/auth/token` for device tokens, and later trades each refresh token there for the
+ * next. "Sign out" in the extension ends its device with `POST /v1/auth/revoke`.
  *
- * Neither route logs or stores a code, a verifier or a token in plain form. Every refused exchange gets the same
- * answer, so a caller cannot tell an unknown code from a spent one or a wrong verifier.
+ * No route logs or stores a code, a verifier or a token in plain form. Every refused exchange or refresh gets the same
+ * answer, so a caller cannot tell an unknown code or token from a spent one, an expired one or a wrong verifier.
  */
 import { createRoute } from '@hono/zod-openapi';
 import { AIError } from '@unalgorithm/ai';
@@ -14,6 +15,8 @@ import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
   chromiumRedirectUri,
+  REVOKE_PATH,
+  RevokeRequestSchema,
   ServerErrorSchema,
   TOKEN_PATH,
   TokenRequestSchema,
@@ -22,15 +25,26 @@ import {
 } from '@unalgorithm/protocol';
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { consumeAuthCode, issueAuthCode, issueTokens, verifyPkce } from '../auth/tokens.ts';
+import { z } from 'zod';
+import {
+  consumeAuthCode,
+  issueAuthCode,
+  issueTokens,
+  revokeByRefreshToken,
+  rotateRefreshToken,
+  verifyPkce,
+} from '../auth/tokens.ts';
 import type { App, AppDeps } from '../http/app.ts';
 
 const REFUSED: WireError = { code: 'permission', message: "This server doesn't accept sign-ins from here." };
 
+/** The revoke answer, whatever the token was (RFC 7009): it tells a caller nothing about the token. */
+const RevokeResponseSchema = z.object({ ok: z.literal(true) });
+
 const json = <T>(schema: T) => ({ 'application/json': { schema } });
 const errorResponse = (description: string) => ({ description, content: json(ServerErrorSchema) });
 
-/** Mounts the authorize and token routes on the app. */
+/** Mounts the authorize, token and revoke routes on the app. */
 export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
   const extensionIds = new Set(config.extensionIds);
 
@@ -82,8 +96,17 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
       c.header('Cache-Control', 'no-store');
       const req = c.req.valid('json');
       if (!extensionIds.has(req.client_id)) return c.json(REFUSED, 403);
-      // The refresh grant arrives with CL1-10.
-      if (req.grant_type !== 'authorization_code') throw new HTTPException(400);
+      if (req.grant_type === 'refresh_token') {
+        const rid = c.get('rid');
+        const rotation = await rotateRefreshToken({ db: db.db, auth }, req.refresh_token, req.client_id);
+        if (!rotation.ok) {
+          // A spent token came back: someone else holds a copy, and the device is now revoked.
+          if (rotation.revokedForReuse) log.warn('auth.refresh_reuse', { rid, device_id: rotation.revokedForReuse });
+          throw new AIError('auth-required', 'The refresh token was not accepted.');
+        }
+        log.info('auth.refreshed', { rid, device_id: rotation.tokens.device_id });
+        return c.json(rotation.tokens, 200);
+      }
       // Spent from here on, whatever the checks below find.
       const grant = await consumeAuthCode(db.db, req.code);
       if (
@@ -99,6 +122,27 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
       const tokens = await issueTokens({ db: db.db, auth }, device, { newDevice: true });
       log.info('auth.signed_in', { rid: c.get('rid'), device_id: device.deviceId });
       return c.json(tokens, 200);
+    },
+  );
+
+  // Not in the spec, which names no sign-out: without it, "Sign out" in the extension would only forget the tokens and
+  // leave the device signed in here. The one piece of device management (R11, CL3) that cannot wait: a device signs
+  // itself out, and cannot list or revoke any other.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: REVOKE_PATH,
+      request: { body: { content: json(RevokeRequestSchema), required: true } },
+      responses: {
+        200: { description: 'Signed out, or there was nothing to sign out', content: json(RevokeResponseSchema) },
+        400: errorResponse('The request was not valid'),
+      },
+    }),
+    async (c) => {
+      const req = c.req.valid('json');
+      const deviceId = await revokeByRefreshToken(db.db, req.refresh_token, req.client_id);
+      if (deviceId) log.info('auth.revoked', { rid: c.get('rid'), device_id: deviceId });
+      return c.json({ ok: true as const }, 200);
     },
   );
 }

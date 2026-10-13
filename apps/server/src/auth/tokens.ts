@@ -2,6 +2,9 @@
  * The extension's sign-in secrets (R10): single-use authorization codes bound to a PKCE challenge, and the device tokens
  * a code is exchanged for, a 15-minute access JWT signed by Better Auth's key and an opaque refresh token. Codes and
  * refresh tokens are stored as SHA-256 hashes only and never logged; whoever reads the database cannot use them.
+ *
+ * A refresh token works once: each refresh spends it and issues the next. A spent token coming back means two copies
+ * exist, one of them in someone else's hands, so that revokes the device (CL1-10).
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { AIError } from '@unalgorithm/ai';
@@ -84,7 +87,20 @@ export interface TokenDeps {
 export interface IssueOptions {
   /** Store the device along with its first tokens: a new sign-in. Default: the device exists already. */
   newDevice?: boolean;
+  /**
+   * The id of the refresh token these tokens replace (a rotation): spent in the transaction that stores the new one.
+   * When another request spent it first, nothing is stored and `TokenAlreadyUsed` is thrown.
+   */
+  replaces?: string;
   now?: number;
+}
+
+/** The refresh token a rotation replaces was already spent: see `IssueOptions.replaces`. */
+export class TokenAlreadyUsed extends Error {
+  constructor() {
+    super('The refresh token was already used.');
+    this.name = 'TokenAlreadyUsed';
+  }
 }
 
 /**
@@ -92,14 +108,15 @@ export interface IssueOptions {
  * EdDSA and 15 minutes from Better Auth's jwt plugin) and a refresh token stored by its hash. The answer names the
  * account's address, which the extension shows.
  *
- * All or nothing: the JWT is signed before anything is written, and a new device and its refresh token are stored in
- * one transaction, so a failure leaves no device without a token. Signing stays outside the transaction: Better Auth
- * runs its own queries, which under PGlite would wait for the transaction's connection.
+ * All or nothing: the JWT is signed before anything is written, and the new refresh token is stored in one transaction
+ * with the new device, or with spending the token it replaces. So a failure leaves no device without a token, and a
+ * refresh that fails does not spend its token: tried again, it is not taken for reuse. Signing stays outside the
+ * transaction: Better Auth runs its own queries, which under PGlite would wait for the transaction's connection.
  */
 export async function issueTokens(
   { db, auth }: TokenDeps,
   grant: DeviceGrant,
-  { newDevice = false, now = Date.now() }: IssueOptions = {},
+  { newDevice = false, replaces, now = Date.now() }: IssueOptions = {},
 ): Promise<TokenResponse> {
   const [owner] = await db.select({ email: user.email }).from(user).where(eq(user.id, grant.userId)).limit(1);
   if (!owner) throw new AIError('auth-required', 'The account no longer exists.');
@@ -110,6 +127,15 @@ export async function issueTokens(
   const refreshToken = newSecret();
   await db.transaction(async (tx) => {
     if (newDevice) await tx.insert(devices).values({ id: grant.deviceId, userId: grant.userId, clientId: grant.clientId });
+    if (replaces !== undefined) {
+      // One statement: of two refreshes racing with one token, exactly one spends it.
+      const spent = await tx
+        .update(refreshTokens)
+        .set({ usedAt: new Date(now) })
+        .where(and(eq(refreshTokens.id, replaces), isNull(refreshTokens.usedAt)))
+        .returning({ id: refreshTokens.id });
+      if (spent.length === 0) throw new TokenAlreadyUsed();
+    }
     await tx.insert(refreshTokens).values({
       deviceId: grant.deviceId,
       tokenHash: hashSecret(refreshToken),
@@ -124,4 +150,97 @@ export async function issueTokens(
     device_id: grant.deviceId,
     account: { email: owner.email },
   };
+}
+
+/** Why a device was revoked, as `devices.revoked_reason` holds it. */
+export type RevokeReason = 'sign-out' | 'refresh-reuse';
+
+/**
+ * Ends a device: marks it revoked and spends every refresh token it still holds, in one transaction. Its access tokens
+ * stop working at once, since `requireDevice` reads the device on every request. A device revoked before keeps its
+ * first reason and time. Returns whether this call revoked it.
+ */
+export async function revokeDevice(db: Db, deviceId: string, reason: RevokeReason, now = Date.now()): Promise<boolean> {
+  const at = new Date(now);
+  return db.transaction(async (tx) => {
+    const revoked = await tx
+      .update(devices)
+      .set({ revokedAt: at, revokedReason: reason })
+      .where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)))
+      .returning({ id: devices.id });
+    await tx
+      .update(refreshTokens)
+      .set({ usedAt: at })
+      .where(and(eq(refreshTokens.deviceId, deviceId), isNull(refreshTokens.usedAt)));
+    return revoked.length > 0;
+  });
+}
+
+/** A refresh token found by its hash, with the device it belongs to, or null. */
+async function findRefreshToken(db: Db, refreshToken: string) {
+  const [row] = await db
+    .select({
+      id: refreshTokens.id,
+      expiresAt: refreshTokens.expiresAt,
+      usedAt: refreshTokens.usedAt,
+      deviceId: devices.id,
+      userId: devices.userId,
+      clientId: devices.clientId,
+      revokedAt: devices.revokedAt,
+    })
+    .from(refreshTokens)
+    .innerJoin(devices, eq(devices.id, refreshTokens.deviceId))
+    .where(eq(refreshTokens.tokenHash, hashSecret(refreshToken)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * What a refresh comes to: new tokens for the same device, or a refusal. `revokedForReuse` names the device when this
+ * refusal revoked it because its token had been spent before.
+ */
+export type Rotation = { ok: true; tokens: TokenResponse } | { ok: false; revokedForReuse?: string };
+
+/**
+ * The refresh grant. An unknown token is refused. A spent one is reuse: the device is revoked, so the newer token stops
+ * working too, whoever holds it. An expired token, a revoked device or another extension's id is refused without
+ * revoking anything. Otherwise the token is spent and replaced (`issueTokens` with `replaces`); when a concurrent
+ * refresh spent it first, this one is reuse as well. Expiry is judged by this server's clock, which also set it.
+ */
+export async function rotateRefreshToken(
+  deps: TokenDeps,
+  refreshToken: string,
+  clientId: string,
+  now = Date.now(),
+): Promise<Rotation> {
+  const found = await findRefreshToken(deps.db, refreshToken);
+  if (!found) return { ok: false };
+  const reuse = async (): Promise<Rotation> =>
+    (await revokeDevice(deps.db, found.deviceId, 'refresh-reuse', now))
+      ? { ok: false, revokedForReuse: found.deviceId }
+      : { ok: false };
+  if (found.usedAt !== null) return reuse();
+  if (found.expiresAt.getTime() <= now || found.revokedAt !== null || found.clientId !== clientId) return { ok: false };
+  const grant = { userId: found.userId, deviceId: found.deviceId, clientId: found.clientId };
+  try {
+    return { ok: true, tokens: await issueTokens(deps, grant, { replaces: found.id, now }) };
+  } catch (err) {
+    if (err instanceof TokenAlreadyUsed) return reuse();
+    throw err;
+  }
+}
+
+/**
+ * Sign-out: revokes the device `refreshToken` belongs to, when that device signed in with `clientId`. Returns the
+ * device's id when this call revoked it, else null; the caller answers the same either way.
+ */
+export async function revokeByRefreshToken(
+  db: Db,
+  refreshToken: string,
+  clientId: string,
+  now = Date.now(),
+): Promise<string | null> {
+  const found = await findRefreshToken(db, refreshToken);
+  if (!found || found.clientId !== clientId) return null;
+  return (await revokeDevice(db, found.deviceId, 'sign-out', now)) ? found.deviceId : null;
 }
