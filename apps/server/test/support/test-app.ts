@@ -1,3 +1,5 @@
+import { startMockOpenAI } from '@unalgorithm/ai/testing';
+import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingProvider, noopBilling } from '../../src/billing/provider.ts';
 import { type Config, loadConfig } from '../../src/config.ts';
@@ -5,6 +7,7 @@ import { type AppDeps, createApp } from '../../src/http/app.ts';
 import { memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
+import { seedPassingRoute } from './routes.ts';
 
 /** `PUBLIC_URL` of every test server: the origin its own pages send, and the JWT issuer and audience. */
 export const TEST_PUBLIC_URL = 'http://127.0.0.1:8787';
@@ -45,23 +48,45 @@ export interface TestAppOptions {
    * store per process, so only the test of the limiter itself turns it on.
    */
   authRateLimit?: boolean;
+  /**
+   * Default: the production `clientForRoute`, which reaches this app's mock AI provider (CL1-02) through the route
+   * seeded for it. A fake client answers without the mock.
+   */
+  ai?: AppDeps['ai'];
+  /** The deadline of a whole classify request. Default: the server's own (25 s). */
+  classifyDeadlineMs?: number;
 }
 
 /**
  * The real app on a fresh migrated PGlite database, logging into memory: `lines` and `events()` hold what it wrote,
- * and `outbox` every email it sent. Call `close()` when done. Tests add routes of their own to `app` when they need one.
+ * and `outbox` every email it sent. Its classify route (`route`) is the app's own mock AI provider (`mock`), past its
+ * eval; `seedPassingRoute` with overrides replaces it. Call `close()` when done. Tests add routes of their own to `app`
+ * when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
   const db = await createTestDb();
-  const capture = captureLog();
-  const config = overrides.config ?? testConfig();
-  const { mailer, outbox } = memoryMailer();
-  const deps: AppDeps = {
-    config,
-    db,
-    log: capture.log,
-    billing: overrides.billing ?? noopBilling,
-    auth: createAuth({ config, db, mailer, log: capture.log, rateLimitEnabled: overrides.authRateLimit ?? false }),
+  const mock = await startMockOpenAI();
+  const close = async () => {
+    await mock.close();
+    await db.close();
   };
-  return { app: createApp(deps), deps, outbox, lines: capture.lines, events: capture.events, close: () => db.close() };
+  try {
+    const capture = captureLog();
+    const config = overrides.config ?? testConfig();
+    const { mailer, outbox } = memoryMailer();
+    const route = await seedPassingRoute(db.db, { baseUrl: mock.baseUrl });
+    const deps: AppDeps = {
+      config,
+      db,
+      log: capture.log,
+      billing: overrides.billing ?? noopBilling,
+      auth: createAuth({ config, db, mailer, log: capture.log, rateLimitEnabled: overrides.authRateLimit ?? false }),
+      ai: overrides.ai ?? { clientFor: (r) => clientForRoute(r, config) },
+      classifyDeadlineMs: overrides.classifyDeadlineMs,
+    };
+    return { app: createApp(deps), deps, mock, route, outbox, lines: capture.lines, events: capture.events, close };
+  } catch (err) {
+    await close();
+    throw err;
+  }
 }

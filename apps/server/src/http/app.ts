@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { AIError, describeError } from '@unalgorithm/ai';
+import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
 import {
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
@@ -25,12 +25,14 @@ import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { AiRoute } from '../ai/routes.ts';
 import { type Auth, mountAuth } from '../auth/better-auth.ts';
 import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
 import { authRoutes } from '../routes/auth.ts';
+import { classifyRoutes } from '../routes/classify.ts';
 import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
@@ -42,6 +44,10 @@ export interface AppDeps {
   billing: BillingProvider;
   /** Better Auth: email-code sign-in, web sessions and the access-token signing key. */
   auth: Auth;
+  /** The AI client for a route: `clientForRoute(route, config)` in production; tests answer from the mock or a fake. */
+  ai: { clientFor(route: AiRoute): AIClient };
+  /** Tests only: the deadline of a whole classify request. Default: `CLASSIFY_DEADLINE_MS` (25 s). */
+  classifyDeadlineMs?: number;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -142,6 +148,7 @@ export function createApp(deps: AppDeps): App {
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
   mountAuth(app, auth);
   authRoutes(app, deps);
+  classifyRoutes(app, deps);
 
   billing.mount?.(app);
 

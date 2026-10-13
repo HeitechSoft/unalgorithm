@@ -17,7 +17,6 @@ import {
   chromiumRedirectUri,
   REVOKE_PATH,
   RevokeRequestSchema,
-  ServerErrorSchema,
   TOKEN_PATH,
   TokenRequestSchema,
   TokenResponseSchema,
@@ -35,14 +34,12 @@ import {
   verifyPkce,
 } from '../auth/tokens.ts';
 import type { App, AppDeps } from '../http/app.ts';
+import { errorResponse, json } from './openapi.ts';
 
 const REFUSED: WireError = { code: 'permission', message: "This server doesn't accept sign-ins from here." };
 
 /** The revoke answer, whatever the token was (RFC 7009): it tells a caller nothing about the token. */
 const RevokeResponseSchema = z.object({ ok: z.literal(true) });
-
-const json = <T>(schema: T) => ({ 'application/json': { schema } });
-const errorResponse = (description: string) => ({ description, content: json(ServerErrorSchema) });
 
 /** Mounts the authorize, token and revoke routes on the app. */
 export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {

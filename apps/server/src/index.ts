@@ -7,7 +7,8 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
-import { RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
+import { clientForRoute } from './ai/provider.ts';
+import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
 import { selectBilling } from './billing/provider.ts';
 import { type Config, ConfigError, loadConfig } from './config.ts';
@@ -46,7 +47,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await syncRouteFromConfig(db.db, config, log);
     // The rate limit stays at its default (on): only tests turn it off.
     const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
-    const app = createApp({ config, db, log, billing: selectBilling(config), auth });
+    const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
+    const app = createApp({ config, db, log, billing: selectBilling(config), auth, ai });
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
     await db.close();
