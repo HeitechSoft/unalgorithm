@@ -114,6 +114,11 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
       case 'reportUrl':
         reply<'reportUrl'>({ url: reportProblemUrl(adapter, controller) });
         return false;
+      // Signed in to the server again: the device may not have changed, so no watch above fires. Clears the AI pause.
+      case 'aiResume':
+        refresh();
+        reply<'aiResume'>({ ok: true });
+        return false;
     }
   };
   browser.runtime.onMessage.addListener(onMessage);

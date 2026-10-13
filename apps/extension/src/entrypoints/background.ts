@@ -1,3 +1,4 @@
+import { ServerInfoSchema } from '@unalgorithm/protocol';
 import { type Browser, browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import {
@@ -6,6 +7,7 @@ import {
   clearAiCapabilities,
   clearAiData,
   forgetKey,
+  isServerAt,
   listSourceModels,
   onDeviceStatus,
   saveSource,
@@ -13,13 +15,16 @@ import {
 } from '../background/ai.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
+import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut } from '../background/server-auth.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
-import type { BgFailure, BgRequest, BgResponses } from '../lib/messages.ts';
+import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
+import { serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
-import { learnedItem, statsItem, usageItem, votesItem } from '../lib/storage.ts';
+import { learnedItem, readDevice, statsItem, usageItem, votesItem } from '../lib/storage.ts';
 
 const FEED_HOSTS = ['www.linkedin.com', 'www.facebook.com'];
+const FEED_TAB_URLS = ['https://www.linkedin.com/*', 'https://www.facebook.com/*'];
 
 type Sender = Browser.runtime.MessageSender;
 type Handler<K extends BgRequest['type']> = (msg: Extract<BgRequest, { type: K }>, sender: Sender) => Promise<BgResponses[K]>;
@@ -50,8 +55,33 @@ async function openPage(page: 'options' | 'onboarding', hash = ''): Promise<void
   await browser.tabs.create({ url: browser.runtime.getURL(path) + hash });
 }
 
-/** Every message type must have a handler: a missing one is a compile error. */
-const handlers: { [K in BgRequest['type']]: Handler<K> } = {
+/**
+ * The server account as extension pages see it: no tokens, no device id. The account sits in `storage.local`, which
+ * content scripts can write (ADR 0005), so its discovery document is checked before it names the server.
+ */
+function publicAccount(account: ServerAccount): PublicServerAccount {
+  const info = ServerInfoSchema.safeParse(account.info);
+  return {
+    origin: account.origin,
+    email: account.email,
+    signedInAt: account.signedInAt,
+    needsSignIn: account.needsSignIn,
+    label: serverLabel(account.origin, info.success ? info.data : undefined),
+  };
+}
+
+/**
+ * Open feed tabs try AI again after a sign-in. A new source reaches them through their device watch, but signing in
+ * again to the server that is already the source writes an identical device, which the watch never reports, and those
+ * tabs would stay paused on "Sign in to … again". The message carries nothing; tabs without UnAlgorithm are skipped.
+ */
+async function resumeFeedTabs(): Promise<void> {
+  const tabs = await browser.tabs.query({ url: FEED_TAB_URLS }).catch(() => []);
+  await Promise.all(tabs.map((tab) => (tab.id === undefined ? undefined : sendToTab(tab.id, { type: 'aiResume' }))));
+}
+
+/** Every message type must have a handler: a missing one is a compile error. Exported for tests. */
+export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   classify: async (msg, sender) => {
     if (!fromFeedTab(sender)) deny('classify');
     return classifyItems(msg.items.slice(0, 8));
@@ -107,6 +137,16 @@ const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   clearData: async (msg, sender) => {
     if (!fromExtensionPage(sender)) deny('clearData');
     const all = msg.what === 'all';
+    if (all) {
+      // Ending the device on the server needs its refresh token, which `clearSecrets` deletes, so this goes first. A
+      // failed sign-out doesn't stop the erase: the account itself is removed below either way.
+      try {
+        const account = await serverAccountItem.getValue();
+        if (account) await signOut(account.origin);
+      } catch (err) {
+        console.debug('[UnAlgorithm] server sign-out failed', err);
+      }
+    }
     const steps: Array<() => Promise<unknown>> = [];
     if (msg.what === 'cache' || all) steps.push(clearAiData);
     if (msg.what === 'learned' || all)
@@ -118,6 +158,8 @@ const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     if (all)
       steps.push(
         clearSecrets,
+        // Who was signed in to which server (email, device id).
+        () => serverAccountItem.removeValue(),
         () => usageItem.removeValue(),
         clearAiCapabilities,
         // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes.
@@ -137,6 +179,34 @@ const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     await forgetKey(msg.config);
     return { ok: true };
   },
+  serverDiscover: async (msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverDiscover');
+    const found = await discoverServer(msg.baseUrl);
+    return found.ok ? { ...found, label: serverLabel(found.origin, found.info) } : found;
+  },
+  serverSignIn: async (msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverSignIn');
+    const signedIn = await signIn(msg.baseUrl);
+    if (!signedIn.ok) return signedIn;
+    await saveSource({ kind: 'server', baseUrl: signedIn.account.origin });
+    await resumeFeedTabs();
+    return { ok: true, account: publicAccount(signedIn.account) };
+  },
+  serverSignOut: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverSignOut');
+    const account = await serverAccountItem.getValue();
+    if (!account) return { ok: true };
+    // AI turns off rather than staying on a source that can only fail with "Sign in again"; rules keep working. Off
+    // first, so feed tabs stop sending posts before the device's tokens go.
+    if (isServerAt((await readDevice()).aiSource, account.origin)) await saveSource(null);
+    await signOut(account.origin);
+    return { ok: true };
+  },
+  serverAccount: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverAccount');
+    const account = await serverAccountItem.getValue();
+    return { account: account ? publicAccount(account) : null };
+  },
 };
 
 /** Put UnAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. */
@@ -145,7 +215,7 @@ async function injectIntoOpenTabs(): Promise<void> {
     'www.linkedin.com': '/content-scripts/linkedin.js',
     'www.facebook.com': '/content-scripts/facebook.js',
   };
-  const tabs = await browser.tabs.query({ url: ['https://www.linkedin.com/*', 'https://www.facebook.com/*'] });
+  const tabs = await browser.tabs.query({ url: FEED_TAB_URLS });
   for (const tab of tabs) {
     try {
       const host = new URL(tab.url ?? '').hostname;

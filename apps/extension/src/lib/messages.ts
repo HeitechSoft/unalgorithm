@@ -1,6 +1,7 @@
 import type { AISourceConfig, FilterKey, HealthReport, PersonRule, Preset, TabState, Topic } from '@unalgorithm/core';
-import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, PostKey } from '@unalgorithm/protocol';
+import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, PostKey, ServerInfo } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
+import type { ServerLabel } from './server-label.ts';
 
 /** A post to classify: its local key and exactly what the AI may see (no names, no URLs). */
 export interface ClassifyItem {
@@ -47,6 +48,15 @@ export type TestSourceResult =
   | { ok: true; model: string; mode: string; latencyMs: number; models: string[] }
   | { ok: false; error: BgError };
 
+/** The server account as extension pages see it: no tokens and no device id, which stay in the background. */
+export interface PublicServerAccount {
+  origin: string;
+  email: string;
+  signedInAt: number;
+  needsSignIn: boolean;
+  label: ServerLabel;
+}
+
 export type BgRequest =
   | { type: 'classify'; platform: PlatformId; items: ClassifyItem[] }
   | { type: 'tabState'; patch: Partial<TabState> }
@@ -69,7 +79,11 @@ export type BgRequest =
   | { type: 'saveSource'; config: AISourceConfig | null; apiKey?: string }
   | { type: 'clearData'; what: 'cache' | 'learned' | 'stats' | 'all' }
   | { type: 'onDeviceStatus' }
-  | { type: 'forgetKey'; config: AISourceConfig };
+  | { type: 'forgetKey'; config: AISourceConfig }
+  | { type: 'serverDiscover'; baseUrl: string }
+  | { type: 'serverSignIn'; baseUrl: string }
+  | { type: 'serverSignOut' }
+  | { type: 'serverAccount' };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -86,6 +100,10 @@ export interface BgResponses {
   clearData: { ok: true };
   onDeviceStatus: { availability: 'no-api' | 'unavailable' | 'downloadable' | 'downloading' | 'available' };
   forgetKey: { ok: true };
+  serverDiscover: { ok: true; origin: string; label: ServerLabel; info: ServerInfo } | { ok: false; error: BgError };
+  serverSignIn: { ok: true; account: PublicServerAccount } | { ok: false; error: BgError };
+  serverSignOut: { ok: true };
+  serverAccount: { account: PublicServerAccount | null };
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */
@@ -120,7 +138,9 @@ export type ContentRequest =
   | { type: 'reveal'; key: PostKey }
   | { type: 'diagnostics' }
   /** The prefilled "Filtering looks wrong" issue URL for this page (content-free diagnostics only). */
-  | { type: 'reportUrl' };
+  | { type: 'reportUrl' }
+  /** The person signed in to the server again: try AI again (the device in storage may not have changed). */
+  | { type: 'aiResume' };
 
 export interface Diagnostics {
   adapter: string;
@@ -141,6 +161,7 @@ export interface ContentResponses {
   reveal: { ok: boolean };
   diagnostics: Diagnostics;
   reportUrl: { url: string };
+  aiResume: { ok: true };
 }
 
 export async function sendToTab<T extends ContentRequest['type']>(
