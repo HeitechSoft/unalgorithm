@@ -259,19 +259,19 @@ describe('eval gate', { timeout: PGLITE_TIMEOUT }, () => {
     const db = await testDb();
     const { log } = captureLog();
     const route = await syncRouteFromConfig(db, testConfig(), log);
-    await notAvailable(resolveRoute(db, 'classify', 0.8));
+    await notAvailable(resolveRoute(db, 'classify', 0.8, log));
 
     const evaluated = await recordEval(db, route.id, { agreement: 0.9, promptVersion: PROMPT_VERSION, passed: true });
     expect(evaluated.evalPassedAt).toBeInstanceOf(Date);
-    expect((await resolveRoute(db, 'classify', 0.8)).id).toBe(route.id);
+    expect((await resolveRoute(db, 'classify', 0.8, log)).id).toBe(route.id);
     // The agreement is stored exactly, so a minimum equal to the measured value still passes.
-    expect((await resolveRoute(db, 'classify', 0.9)).id).toBe(route.id);
-    await notAvailable(resolveRoute(db, 'classify', 0.91));
+    expect((await resolveRoute(db, 'classify', 0.9, log)).id).toBe(route.id);
+    await notAvailable(resolveRoute(db, 'classify', 0.91, log));
 
     // A failed eval closes the gate again.
     const failed = await recordEval(db, route.id, { agreement: 0.5, promptVersion: PROMPT_VERSION, passed: false });
     expect(failed).toMatchObject({ evalPassedAt: null, evalAgreement: 0.5, evalPromptVersion: PROMPT_VERSION });
-    await notAvailable(resolveRoute(db, 'classify', 0));
+    await notAvailable(resolveRoute(db, 'classify', 0, log));
   });
 });
 
@@ -300,25 +300,28 @@ describe('provider and secrets', { timeout: PGLITE_TIMEOUT }, () => {
     const config = anthropicConfig();
     const route = await syncRouteFromConfig(await testDb(), config, captureLog().log);
 
-    const saved = { log: process.env.ANTHROPIC_LOG, base: process.env.ANTHROPIC_BASE_URL };
+    const sdkEnv: Record<string, string> = {
+      ANTHROPIC_LOG: 'debug',
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:9',
+      ANTHROPIC_AUTH_TOKEN: 'probe-bearer-token',
+    };
+    const saved = Object.keys(sdkEnv).map((name) => [name, process.env[name]] as const);
     cleanup.push(async () => {
-      for (const [name, value] of [
-        ['ANTHROPIC_LOG', saved.log],
-        ['ANTHROPIC_BASE_URL', saved.base],
-      ] as const) {
+      for (const [name, value] of saved) {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
       }
     });
-    process.env.ANTHROPIC_LOG = 'debug';
-    process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:9';
+    Object.assign(process.env, sdkEnv);
     const consoleSpies = (['debug', 'info', 'log', 'warn'] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation(() => {}),
     );
 
     const urls: string[] = [];
-    const fakeFetch = async (input: string | URL | Request) => {
+    const sent: Headers[] = [];
+    const fakeFetch = async (input: string | URL | Request, init?: RequestInit) => {
       urls.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      sent.push(new Headers(init?.headers));
       return Response.json({
         id: 'msg_test',
         type: 'message',
@@ -345,6 +348,13 @@ describe('provider and secrets', { timeout: PGLITE_TIMEOUT }, () => {
     expect(urls).toHaveLength(1);
     expect(new URL(urls[0] ?? '').origin).toBe('https://api.anthropic.com');
     for (const spy of consoleSpies) expect(spy).not.toHaveBeenCalled();
+    // AI_API_KEY is the one credential: no bearer token from the environment rides along.
+    expect(sent[0]?.get('x-api-key')).toBe(API_KEY);
+    expect(sent[0]?.has('authorization')).toBe(false);
+
+    // No client option stops the SDK adding ANTHROPIC_CUSTOM_HEADERS to every request, so the server refuses to start
+    // while it is set.
+    expect(() => testConfig({ ANTHROPIC_CUSTOM_HEADERS: 'x-probe: injected' })).toThrow(/ANTHROPIC_CUSTOM_HEADERS/);
   });
 
   it('test_api_key_never_stored', async () => {

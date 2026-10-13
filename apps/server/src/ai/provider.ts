@@ -17,8 +17,9 @@ export interface ProviderDeps {
 
 /**
  * A client for `route`, which must pass the routing guard (`not-available` otherwise). Anthropic is always reached at
- * api.anthropic.com: `anthropicClient` fixes the host and silences the SDK's own logging, so `ANTHROPIC_BASE_URL` and
- * `ANTHROPIC_LOG` in the server's environment change nothing.
+ * api.anthropic.com with `AI_API_KEY` alone: `anthropicClient` fixes the host and the credential and silences the SDK's
+ * own logging, so `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and `ANTHROPIC_LOG` in the server's environment change
+ * nothing, and `loadConfig` refuses `ANTHROPIC_CUSTOM_HEADERS`.
  */
 export function clientForRoute(route: AiRoute, config: Config, deps: ProviderDeps = {}): AIClient {
   const check = validateRoute(route);

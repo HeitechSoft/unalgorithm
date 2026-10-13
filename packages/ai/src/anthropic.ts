@@ -62,8 +62,11 @@ function systemBlocks(req: StructuredRequest): Anthropic.Messages.TextBlockParam
 export function anthropicClient(opts: { apiKey: string; capabilities: CapabilityStore; fetch?: typeof fetch }): AIClient {
   const client = new Anthropic({
     apiKey: opts.apiKey,
-    // Both fixed here, so the SDK never falls back to ANTHROPIC_BASE_URL or ANTHROPIC_LOG in a server's environment:
-    // one would send prompts to another host, the other would print every prompt and answer to the console.
+    // All three fixed here, so the SDK never falls back to ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL or ANTHROPIC_LOG in
+    // a server's environment: the first would send a second credential, perhaps another account's, the second would
+    // send prompts to another host, the third would print every prompt and answer to the console. No option stops the
+    // SDK reading ANTHROPIC_CUSTOM_HEADERS, so a server refuses to start while it is set.
+    authToken: null,
     baseURL: 'https://api.anthropic.com',
     logLevel: 'off',
     dangerouslyAllowBrowser: true,

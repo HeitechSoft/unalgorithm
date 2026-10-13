@@ -72,16 +72,25 @@ export function validateRoute(r: RouteSpec): RouteCheck {
 const ROUTE_SYNC_LOCK_KEY = 1431191890;
 
 /**
+ * The `classify` route the configuration describes, past the guard: a `RouteConfigError` when it breaks a routing
+ * rule. The server stores it at startup (`syncRouteFromConfig`); `check-config` runs the same check without a database.
+ */
+export function configuredRoute(config: Config): RouteSpec {
+  const { provider, model, baseUrl, dataPolicy } = config.ai;
+  const route: RouteSpec = { task: 'classify', provider, model, baseUrl: baseUrl ?? null, effort: 'low', dataPolicy };
+  const check = validateRoute(route);
+  if (!check.ok) throw new RouteConfigError(check.reason);
+  return route;
+}
+
+/**
  * Makes the enabled `classify` route the one the configuration describes, at startup. The route is checked first and
  * a `RouteConfigError` thrown before anything is written. A route that already matches is kept with its eval result;
  * otherwise it is disabled and the new route inserted with no eval, in one transaction. Two servers starting together
  * take turns on an advisory lock, so the second finds the first one's route and keeps it.
  */
 export async function syncRouteFromConfig(db: Db, config: Config, log: Logger): Promise<AiRoute> {
-  const { provider, model, baseUrl, dataPolicy } = config.ai;
-  const wanted: RouteSpec = { task: 'classify', provider, model, baseUrl: baseUrl ?? null, effort: 'low', dataPolicy };
-  const check = validateRoute(wanted);
-  if (!check.ok) throw new RouteConfigError(check.reason);
+  const wanted = configuredRoute(config);
 
   const route = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${ROUTE_SYNC_LOCK_KEY})`);
@@ -129,9 +138,10 @@ const evalPendingLoggedAt = new WeakMap<Logger, number>();
 
 /**
  * The route that serves `task`: enabled, allowed by the guard, and past its eval for the current prompt version with
- * at least `minAgreement`. Otherwise `AIError` `not-available`, which the app answers with 503.
+ * at least `minAgreement`. Otherwise `AIError` `not-available`, which the app answers with 503. `log` is required so a
+ * refused route always says why in the log (`ai.route.eval_pending`, at most once a minute).
  */
-export async function resolveRoute(db: Db, task: RouteTask, minAgreement: number, log?: Logger): Promise<AiRoute> {
+export async function resolveRoute(db: Db, task: RouteTask, minAgreement: number, log: Logger): Promise<AiRoute> {
   const [route] = await db
     .select()
     .from(aiRoutes)
@@ -141,7 +151,7 @@ export async function resolveRoute(db: Db, task: RouteTask, minAgreement: number
   if (!check.ok) throw new AIError('not-available', `The AI route is not allowed: ${check.reason}`);
   if (!evalPassed(route, minAgreement)) {
     const now = Date.now();
-    if (log && now - (evalPendingLoggedAt.get(log) ?? Number.NEGATIVE_INFINITY) >= EVAL_PENDING_LOG_INTERVAL_MS) {
+    if (now - (evalPendingLoggedAt.get(log) ?? Number.NEGATIVE_INFINITY) >= EVAL_PENDING_LOG_INTERVAL_MS) {
       evalPendingLoggedAt.set(log, now);
       log.warn('ai.route.eval_pending', { task, provider: route.provider, model: route.model });
     }

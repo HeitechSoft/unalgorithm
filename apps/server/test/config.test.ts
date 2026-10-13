@@ -172,6 +172,26 @@ describe('validation', () => {
     expect(isValid({ ...minimalEnv(), BETTER_AUTH_TELEMETRY: 'FALSE' })).toBe(true);
   });
 
+  it('test_config_refuses_anthropic_custom_headers', () => {
+    // The Anthropic SDK adds these to every request, over the API key too, whatever the client's options.
+    expect(invalidNames({ ...minimalEnv(), ANTHROPIC_CUSTOM_HEADERS: 'x-probe: injected' })).toEqual([
+      'ANTHROPIC_CUSTOM_HEADERS',
+    ]);
+    expect(
+      invalidNames({
+        ...minimalEnv(),
+        AI_PROVIDER: 'openai-compatible',
+        AI_MODEL: 'llama',
+        AI_BASE_URL: 'http://ollama:11434/v1',
+        AI_DATA_POLICY: 'self-hosted',
+        ANTHROPIC_CUSTOM_HEADERS: 'x-probe: injected',
+      }),
+    ).toEqual(['ANTHROPIC_CUSTOM_HEADERS']);
+    // The SDK ignores a blank value, as unset.
+    expect(isValid({ ...minimalEnv(), ANTHROPIC_CUSTOM_HEADERS: ' ' })).toBe(true);
+    expect(isValid({ ...minimalEnv(), ANTHROPIC_CUSTOM_HEADERS: undefined })).toBe(true);
+  });
+
   it('test_config_billing_and_allowlist', () => {
     expect(invalidNames({ ...minimalEnv(), BILLING: 'on' })).toEqual(['BILLING']);
 
@@ -196,6 +216,7 @@ describe('validation', () => {
       PORT: API_KEY,
       LOG_LEVEL: AUTH_SECRET,
       BETTER_AUTH_TELEMETRY: AUTH_SECRET,
+      ANTHROPIC_CUSTOM_HEADERS: `x-api-key: ${API_KEY}`,
     });
     expect(err.invalid.length).toBeGreaterThan(10);
     const texts = [err.message, ...err.invalid.map((i) => i.reason), ...err.invalid.map((i) => i.name)];
@@ -305,6 +326,29 @@ describe('cli', { timeout: SPAWN_TIMEOUT }, () => {
 
     for (const out of [empty, ok, bad]) {
       for (const secret of SECRETS) expect(out.stdout + out.stderr).not.toContain(secret);
+    }
+  });
+
+  it('test_check_config_cli_applies_routing_rules', () => {
+    // Configurations loadConfig accepts but the server refuses at startup fail here too, before a deploy.
+    const opus = run({ ...minimalEnv(), AI_MODEL: 'claude-opus-5-5' });
+    expect(opus.status).toBe(1);
+    expect(opus.stderr).toMatch(/^AI_MODEL claude-opus-5-5 is not eligible for zero data retention/m);
+    expect(opus.stdout).toBe('');
+
+    const vendor = run({
+      ...minimalEnv(),
+      AI_PROVIDER: 'openai-compatible',
+      AI_MODEL: 'some-model',
+      AI_BASE_URL: 'https://api.example.org/v1',
+      AI_DATA_POLICY: 'vendor-zdr',
+    });
+    expect(vendor.status).toBe(1);
+    expect(vendor.stderr).toMatch(/^AI_DATA_POLICY must be self-hosted when AI_PROVIDER is openai-compatible/m);
+
+    for (const out of [opus, vendor]) {
+      for (const secret of SECRETS) expect(out.stdout + out.stderr).not.toContain(secret);
+      expect(out.stdout + out.stderr).not.toContain('api.example.org');
     }
   });
 });

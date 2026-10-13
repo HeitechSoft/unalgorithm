@@ -255,6 +255,11 @@ export function loadConfig(env: Env = process.env): Config {
   if (telemetry !== undefined && telemetry !== '' && telemetry !== '0' && telemetry.toLowerCase() !== 'false') {
     bad('BETTER_AUTH_TELEMETRY', 'telemetry must stay off: unset it, or set it to 0 or false');
   }
+  // The Anthropic SDK adds these headers to every request whatever its options, even over the API key, so the server
+  // could no longer be sure which account a request runs under or what it carries.
+  if (read('ANTHROPIC_CUSTOM_HEADERS') !== undefined) {
+    bad('ANTHROPIC_CUSTOM_HEADERS', 'must be unset: no environment variable may change the AI client');
+  }
 
   if (missing.length || invalid.length) throw new ConfigError(missing, invalid);
 
