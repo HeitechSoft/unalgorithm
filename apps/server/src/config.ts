@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANTHROPIC_DEFAULT_MODEL } from '@unalgorithm/ai';
 import { ExtensionIdSchema } from '@unalgorithm/protocol';
@@ -28,6 +28,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'INSTANCE_NAME',
   'SOURCE_URL',
   'BILLING',
+  'BILLING_MODULE',
   'EXTENSION_IDS',
   'SIGNUP_ALLOWLIST',
   'TRUST_PROXY',
@@ -65,7 +66,15 @@ export interface Config {
   instanceName: string;
   /** Source code of the running release (AGPL section 13); set it for modified builds. */
   sourceUrl: string;
-  billing: 'off';
+  /** `off`: the no-op provider, nobody is charged. `module`: the billing module at `billingModule`, loaded at boot. */
+  billing: 'off' | 'module';
+  /** The module's absolute path; set exactly when `billing` is `module`. */
+  billingModule?: string;
+  /**
+   * The module's own `BILLING_*` variables (all but `BILLING_MODULE`), exactly as set: they may hold secrets. Empty when
+   * `billing` is `off`. The server neither reads nor checks them; the module does (`host.env`).
+   */
+  billingEnv: Readonly<Record<string, string>>;
   extensionIds: string[];
   /** Lowercase emails and `@domain` entries allowed to create an account. Empty: nobody can. */
   signupAllowlist: string[];
@@ -125,6 +134,10 @@ const MAX_DISPLAY_NAME = 80;
 const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 const Email = z.email();
+/** What `BILLING_MODULE` may name: a module Node.js imports as is (type stripping for TypeScript). */
+const MODULE_FILE = /\.(?:ts|mts|js|mjs)$/;
+/** A billing module's own variables; `BILLING_MODULE` is the server's. */
+const BILLING_ENV_NAME = /^BILLING_[A-Z0-9_]+$/;
 
 type Env = Record<string, string | undefined>;
 
@@ -222,7 +235,17 @@ export function loadConfig(env: Env = process.env): Config {
   const sourceUrl = sourceValue
     ? httpUrl('SOURCE_URL', sourceValue)
     : `https://github.com/HeitechSoft/unalgorithm/tree/server-v${SERVER_VERSION}`;
-  const billing = oneOf('BILLING', ['off'] as const, 'off');
+  const billing = oneOf('BILLING', ['off', 'module'] as const, 'off');
+  const billingModule = read('BILLING_MODULE');
+  if (billing === 'module') {
+    required('BILLING_MODULE', billingModule);
+    if (billingModule !== undefined && !(isAbsolute(billingModule) && MODULE_FILE.test(billingModule))) {
+      bad('BILLING_MODULE', 'must be an absolute path to a .ts, .mts, .js or .mjs file');
+    }
+  } else if (billingModule !== undefined && !invalid.some((i) => i.name === 'BILLING')) {
+    // A path left behind with billing off would look as if a module ran.
+    bad('BILLING_MODULE', 'must be unset when BILLING is off');
+  }
 
   // Who may use it
   const extensionIdsValue = read('EXTENSION_IDS');
@@ -313,6 +336,8 @@ export function loadConfig(env: Env = process.env): Config {
     instanceName,
     sourceUrl,
     billing,
+    billingModule: billing === 'module' ? billingModule : undefined,
+    billingEnv: billing === 'module' ? moduleEnv(env) : Object.freeze({}),
     extensionIds,
     signupAllowlist,
     trustProxy,
@@ -340,6 +365,19 @@ export function loadConfig(env: Env = process.env): Config {
     logLevel,
     version: SERVER_VERSION,
   };
+
+  /**
+   * The module's variables, values exactly as given (secrets). Blank counts as unset, as for the server's own: Compose
+   * passes an unset `${VAR}` as ''.
+   */
+  function moduleEnv(from: Env): Readonly<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const name of Object.keys(from)) {
+      const value = from[name];
+      if (name !== 'BILLING_MODULE' && BILLING_ENV_NAME.test(name) && value?.trim()) out[name] = value;
+    }
+    return Object.freeze(out);
+  }
 
   /** An origin only: https, or http for a loopback host; no path, query, fragment or credentials. */
   function parsePublicUrl(value: string | undefined): URL | undefined {

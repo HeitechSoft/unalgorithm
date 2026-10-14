@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import pkg from '../package.json' with { type: 'json' };
-import { ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
+import { CONFIG_VARIABLES, ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
 import { errorFields } from '../src/log.ts';
 import { captureLog } from './support/log.ts';
 
@@ -194,6 +194,8 @@ describe('validation', () => {
 
   it('test_config_billing_and_allowlist', () => {
     expect(invalidNames({ ...minimalEnv(), BILLING: 'on' })).toEqual(['BILLING']);
+    // A module path beside an unknown BILLING is not also reported as "set while off".
+    expect(invalidNames({ ...minimalEnv(), BILLING: 'on', BILLING_MODULE: '/srv/billing/index.ts' })).toEqual(['BILLING']);
 
     const config = loadConfig({ ...minimalEnv(), SIGNUP_ALLOWLIST: 'Tom@Example.com, @heitechsoft.com' });
     expect(config.signupAllowlist).toEqual(['tom@example.com', '@heitechsoft.com']);
@@ -224,6 +226,76 @@ describe('validation', () => {
       for (const secret of SECRETS) expect(text).not.toContain(secret);
     }
     expect(err.invalid.map((i) => i.name)).toContain('BETTER_AUTH_SECRET');
+  });
+});
+
+describe('billing variables', () => {
+  /** A distinctive path: a module path may say where the private code lives, so no error repeats it. */
+  const MODULE_PATH = '/srv/QXZ7-billing/index.ts';
+
+  it('test_billing_module_requires_absolute_path', () => {
+    const missing = configError({ ...minimalEnv(), BILLING: 'module' });
+    expect(missing.message).toContain('missing: BILLING_MODULE');
+    expect(missing.missing).toEqual(['BILLING_MODULE']);
+    // Blank counts as unset, as for every variable.
+    expect(configError({ ...minimalEnv(), BILLING: 'module', BILLING_MODULE: ' ' }).missing).toEqual(['BILLING_MODULE']);
+
+    const refused = [
+      configError({ ...minimalEnv(), BILLING: 'module', BILLING_MODULE: 'relative/QXZ7-billing/index.ts' }),
+      configError({ ...minimalEnv(), BILLING: 'module', BILLING_MODULE: '/x/QXZ7-billing/index.json' }),
+      configError({ ...minimalEnv(), BILLING: 'module', BILLING_MODULE: '/x/QXZ7-billing' }),
+      configError({ ...minimalEnv(), BILLING: 'off', BILLING_MODULE: MODULE_PATH }),
+      // Unset, BILLING is off.
+      configError({ ...minimalEnv(), BILLING_MODULE: MODULE_PATH }),
+    ];
+    for (const err of refused) {
+      expect(err.message).toMatch(/^invalid: BILLING_MODULE \(.+\)$/m);
+      expect(err.invalid.map((i) => i.name)).toEqual(['BILLING_MODULE']);
+      expect(err.message).not.toContain('QXZ7');
+    }
+    expect(refused[0]?.message).toBe('invalid: BILLING_MODULE (must be an absolute path to a .ts, .mts, .js or .mjs file)');
+    expect(refused[3]?.message).toBe('invalid: BILLING_MODULE (must be unset when BILLING is off)');
+
+    for (const file of ['index.ts', 'index.mts', 'index.js', 'index.mjs']) {
+      const path = `/srv/billing/${file}`;
+      const config = loadConfig({ ...minimalEnv(), BILLING: 'module', BILLING_MODULE: path });
+      expect(config.billing).toBe('module');
+      expect(config.billingModule).toBe(path);
+    }
+    const off = loadConfig(minimalEnv());
+    expect(off.billing).toBe('off');
+    expect(off.billingModule).toBeUndefined();
+  });
+
+  it('test_billing_env_passthrough', () => {
+    const env = {
+      ...minimalEnv(),
+      BILLING_MODULE: MODULE_PATH,
+      BILLING_STARTER_SECRET: 's3cret',
+      // Not the module's: lowercase, no name after the prefix, another prefix.
+      BILLING_lower: 'x',
+      BILLING_: 'x',
+      BILLINGX: 'x',
+      STRIPE_KEY: 'x',
+    };
+    const config = loadConfig({ ...env, BILLING: 'module' });
+    expect(config.billingEnv).toStrictEqual({ BILLING_STARTER_SECRET: 's3cret' });
+    expect(Object.isFrozen(config.billingEnv)).toBe(true);
+
+    // Values are kept exactly as set (they may be secrets); a blank one counts as unset, as Compose passes `${VAR}`.
+    const exact = loadConfig({ ...env, BILLING: 'module', BILLING_STARTER_SECRET: ' s3 cret ', BILLING_BLANK: '  ' });
+    expect(exact.billingEnv).toStrictEqual({ BILLING_STARTER_SECRET: ' s3 cret ' });
+
+    // Off, nothing is passed on, and the module's names are not the server's to check.
+    expect(loadConfig({ ...minimalEnv(), BILLING: 'off', BILLING_STARTER_SECRET: 's3cret' }).billingEnv).toStrictEqual({});
+    expect(loadConfig(minimalEnv()).billingEnv).toStrictEqual({});
+    expect(CONFIG_VARIABLES).toContain('BILLING_MODULE');
+    expect(CONFIG_VARIABLES).not.toContain('BILLING_STARTER_SECRET');
+
+    // An error elsewhere never repeats a module variable.
+    const err = configError({ ...env, BILLING: 'module', SMTP_HOST: undefined });
+    expect(err.message).toBe('missing: SMTP_HOST');
+    expect(err.message).not.toContain('s3cret');
   });
 });
 

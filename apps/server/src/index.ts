@@ -1,8 +1,8 @@
 /**
  * The server process. `startServer` opens the database, applies migrations, brings the AI route in line with the
- * configuration, starts the background jobs, and serves the app; run directly (`node apps/server/src/index.ts`, or
- * `pnpm start`), this module reads the configuration from the environment, starts the server, and stops it gracefully
- * on SIGTERM or SIGINT.
+ * configuration, loads the billing module if one is configured, starts the background jobs, and serves the app; run
+ * directly (`node apps/server/src/index.ts`, or `pnpm start`), this module reads the configuration from the environment,
+ * starts the server, and stops it gracefully on SIGTERM or SIGINT.
  */
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -11,7 +11,8 @@ import { serve } from '@hono/node-server';
 import { clientForRoute } from './ai/provider.ts';
 import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
-import { selectBilling } from './billing/provider.ts';
+import { createBillingHost } from './billing/host.ts';
+import { BillingLoadError, loadBilling } from './billing/provider.ts';
 import { type Config, ConfigError, loadConfig } from './config.ts';
 import { type DbHandle, openPostgres } from './db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from './db/migrate.ts';
@@ -56,7 +57,11 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
     // Modules register their tasks here, before the jobs start. With none, no worker runs.
     const jobs = createJobRegistry();
-    const app = createApp({ config, db, log, billing: selectBilling(config), auth, ai });
+    // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
+    // served: a server meant to charge never serves AI for free.
+    const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
+    const billing = await loadBilling(config, host, log);
+    const app = createApp({ config, db, log, billing, auth, ai });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
@@ -106,6 +111,18 @@ async function closeAll(running: RunningJobs | undefined, db: DbHandle): Promise
   }
 }
 
+/**
+ * What `main` prints for a start failure that is the operator's to fix, or undefined for one it logs as
+ * `server.start_failed`. A routing rule, a billing module that cannot be loaded and a module's own configuration error
+ * (named `BillingConfigError`, whose message by contract names variables only) are printed like a ConfigError:
+ * `errorFields` would drop the message, which is all they have to say.
+ */
+export function startFailureMessage(err: unknown): string | undefined {
+  if (err instanceof RouteConfigError || err instanceof BillingLoadError) return err.message;
+  if (err instanceof Error && err.name === 'BillingConfigError') return err.message;
+  return undefined;
+}
+
 async function main(): Promise<void> {
   let config: Config;
   try {
@@ -123,8 +140,8 @@ async function main(): Promise<void> {
   try {
     server = await startServer(config, { log });
   } catch (err) {
-    // A routing rule is printed like a ConfigError: errorFields would drop the message, which is all it has to say.
-    if (err instanceof RouteConfigError) console.error(err.message);
+    const message = startFailureMessage(err);
+    if (message !== undefined) console.error(message);
     else log.error('server.start_failed', errorFields(err));
     process.exitCode = 1;
     return;

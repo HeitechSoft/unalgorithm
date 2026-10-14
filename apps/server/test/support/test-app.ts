@@ -1,10 +1,12 @@
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
 import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
+import { type BillingModule, createBillingHost } from '../../src/billing/host.ts';
 import { type BillingProvider, noopBilling } from '../../src/billing/provider.ts';
 import { type Config, loadConfig } from '../../src/config.ts';
 import type { DbHandle } from '../../src/db/client.ts';
 import { type AppDeps, createApp } from '../../src/http/app.ts';
+import { createJobRegistry } from '../../src/jobs/worker.ts';
 import { memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
@@ -41,8 +43,15 @@ export function testConfig(env: Record<string, string | undefined> = {}): Config
 export interface TestAppOptions {
   /** Default: `testConfig()`. */
   config?: Config;
-  /** Default: the no-op provider. */
+  /** Default: the no-op provider. Not with `billingModule`. */
   billing?: BillingProvider;
+  /**
+   * A billing module (such as `test/fixtures/billing-module`), given as the module itself: its provider, made with a
+   * host on this app's database, config, logger and auth and a job registry of its own, becomes the app's billing.
+   */
+  billingModule?: BillingModule;
+  /** The module's `BILLING_*` variables (`host.env`). Default: none. */
+  billingEnv?: Record<string, string>;
   /**
    * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
    * limiter allows 3 codes and 3 sign-ins a minute per address, so a few sign-ins would get 429. Its counts live in one
@@ -66,10 +75,12 @@ export interface TestAppOptions {
 /**
  * The real app on a fresh migrated PGlite database (or the caller's `db`), logging into memory: `lines` and `events()`
  * hold what it wrote, and `outbox` every email it sent. Its classify route (`route`) is the app's own mock AI provider
- * (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. Call `close()` when done. Tests add routes of
- * their own to `app` when they need one.
+ * (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's billing, and `host` and
+ * `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs never start). Call
+ * `close()` when done. Tests add routes of their own to `app` when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
+  if (overrides.billing && overrides.billingModule) throw new TypeError('Pass billing or billingModule, not both.');
   const db = overrides.db ?? (await createTestDb());
   const mock = await startMockOpenAI();
   const close = async () => {
@@ -81,16 +92,24 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
     const config = overrides.config ?? testConfig();
     const { mailer, outbox } = memoryMailer();
     const route = await seedPassingRoute(db.db, { baseUrl: mock.baseUrl });
+    const log = capture.log;
+    const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: overrides.authRateLimit ?? false });
+    const jobs = createJobRegistry();
+    const host = createBillingHost({ config, db, log, auth, jobs, env: overrides.billingEnv ?? {} });
+    const provider = overrides.billingModule
+      ? await overrides.billingModule.createBillingProvider(host)
+      : (overrides.billing ?? noopBilling);
     const deps: AppDeps = {
       config,
       db,
-      log: capture.log,
-      billing: overrides.billing ?? noopBilling,
-      auth: createAuth({ config, db, mailer, log: capture.log, rateLimitEnabled: overrides.authRateLimit ?? false }),
+      log,
+      billing: provider,
+      auth,
       ai: overrides.ai ?? { clientFor: (r) => clientForRoute(r, config) },
       classifyDeadlineMs: overrides.classifyDeadlineMs,
     };
-    return { app: createApp(deps), deps, mock, route, outbox, lines: capture.lines, events: capture.events, close };
+    const app = createApp(deps);
+    return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };
   } catch (err) {
     await close();
     throw err;

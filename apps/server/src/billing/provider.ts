@@ -2,17 +2,20 @@
  * The one seam between the open server and a billing module (ADR 0007). A provider is asked before every AI call
  * (allow, hold, or refuse) and told after it (settle what succeeded, or release the hold), reports a balance, and may
  * mount its own routes and pages. The built-in provider is a no-op (`BILLING=off`): usage is still recorded and admins
- * set caps, but nobody is charged.
+ * set caps, but nobody is charged. With `BILLING=module`, `loadBilling` imports the module at `BILLING_MODULE` at boot,
+ * and a module that cannot be used stops the start: a server meant to charge never serves AI for free.
  *
  * A provider sees account ids, amounts and usage counts, never posts: `BillingContext` and `SettleInput` have no field
  * that could carry post text, a name or a prompt, and none may be added.
  */
+import { pathToFileURL } from 'node:url';
 import { AIError } from '@unalgorithm/ai';
 import type { ClassifyResponse, NormalizedUsage } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
 import type { Config } from '../config.ts';
 import type { AppEnv } from '../http/middleware.ts';
 import { errorFields, type Logger } from '../log.ts';
+import type { BillingHost, BillingModule } from './host.ts';
 
 export type BillingTask = 'classify';
 
@@ -81,14 +84,57 @@ export const noopBilling: BillingProvider = Object.freeze({
 });
 
 /**
- * The provider for this server. CL1 knows only `off`; the private module extends the `BILLING` enum and this function
- * (a module path loaded at boot), never the routes.
+ * A billing module that cannot be used: missing, failing to import, without `createBillingProvider`, or returning
+ * something that is not a provider. The message names `BILLING_MODULE` only, never its path; a failed import keeps its
+ * error as `cause`.
  */
-export function selectBilling(config: Config): BillingProvider {
-  switch (config.billing) {
-    case 'off':
-      return noopBilling;
+export class BillingLoadError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'BillingLoadError';
   }
+}
+
+/** Imports the module at `path` (absolute) and checks that it exports `createBillingProvider`. */
+export async function importBillingModule(path: string): Promise<BillingModule> {
+  let mod: Partial<BillingModule>;
+  try {
+    mod = await import(pathToFileURL(path).href);
+  } catch (cause) {
+    throw new BillingLoadError('BILLING_MODULE could not be loaded', { cause });
+  }
+  if (typeof mod.createBillingProvider !== 'function') {
+    throw new BillingLoadError('BILLING_MODULE does not export createBillingProvider');
+  }
+  return mod as BillingModule;
+}
+
+/**
+ * The provider for this server. `off`: the no-op provider, and the module path is never touched. `module`: the module's
+ * own provider, made with `host`; its errors (such as a `BillingConfigError` naming its variables) propagate unchanged,
+ * and a result that is not a whole provider is refused. The routes never change: a module only adds its own (`mount`).
+ */
+export async function loadBilling(config: Config, host: BillingHost, log: Logger): Promise<BillingProvider> {
+  if (config.billing === 'off') return noopBilling;
+  const mod = await importBillingModule(config.billingModule ?? '');
+  const provider: unknown = await mod.createBillingProvider(host);
+  if (!isProvider(provider)) throw new BillingLoadError('the billing module returned an invalid provider');
+  log.info('billing.loaded', { billing: provider.id, advertised: provider.advertised });
+  return provider;
+}
+
+/** A module's provider: an id of its own (`off` is the no-op's), the flag, the four calls, and `mount` if any. */
+function isProvider(value: unknown): value is BillingProvider {
+  if (typeof value !== 'object' || value === null) return false;
+  const p = value as Record<keyof BillingProvider, unknown>;
+  return (
+    typeof p.id === 'string' &&
+    p.id !== '' &&
+    p.id !== noopBilling.id &&
+    typeof p.advertised === 'boolean' &&
+    [p.check, p.settle, p.release, p.balance].every((fn) => typeof fn === 'function') &&
+    (p.mount === undefined || typeof p.mount === 'function')
+  );
 }
 
 /**
