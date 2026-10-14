@@ -14,7 +14,7 @@ const COMPOSE_ONLY = ['POSTGRES_PASSWORD', 'BIND_ADDRESS', 'UNALGORITHM_VERSION'
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
 const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL'];
 /** Their values are secrets: the example leaves every one of them empty. */
-const SECRET_NAMES = ['BETTER_AUTH_SECRET', 'AI_API_KEY', 'SMTP_PASSWORD', 'POSTGRES_PASSWORD'];
+const SECRET_NAMES = ['BETTER_AUTH_SECRET', 'AI_API_KEY', 'SMTP_PASSWORD', 'GOOGLE_CLIENT_SECRET', 'POSTGRES_PASSWORD'];
 
 interface EnvExampleEntry {
   name: string;

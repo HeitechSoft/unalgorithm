@@ -1,12 +1,15 @@
 /**
- * Sign-in with Better Auth (pinned exactly; its advisories are watched): a six-digit code sent by email, a one-day web
- * session for the server's own sign-in page, and the EdDSA key that signs the extension's 15-minute access tokens.
- * Only the five routes in `AUTH_ROUTES` are reachable over HTTP; everything else Better Auth offers stays unmounted.
+ * Sign-in with Better Auth (pinned exactly; its advisories are watched): a six-digit code sent by email, or Google when
+ * the operator configures a Google OAuth client; a one-day web session for the server's own sign-in page; and the EdDSA
+ * key that signs the extension's 15-minute access tokens. Only the routes `authRoutesFor` lists are reachable over
+ * HTTP; everything else Better Auth offers stays unmounted.
  *
- * The server's operator pays for its AI, so accounts are created only for allow-listed addresses. Nothing here logs an
- * address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals are answered without a log
- * line, any other failure goes to the app's `onError`, and mail failures log `errorFields` only.
+ * The server's operator pays for its AI, so accounts are created only for allow-listed addresses their provider
+ * verified. Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
+ * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
+ * only.
  */
+import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -32,22 +35,45 @@ const OTP_TTL_SECONDS = 300;
 /** The web session only serves the sign-in page; the extension holds device tokens instead (CL1-09). */
 const SESSION_TTL_SECONDS = 86_400;
 
+/** A route Better Auth answers over HTTP: its method and path. */
+export type AuthRoute = readonly ['GET' | 'POST', string];
+
 /**
  * The Better Auth routes reachable over HTTP, each for one method. Not `/api/auth/*`: Better Auth has many more routes,
  * among them `/token` (a JWT signed with the device tokens' key for any web session), `/update-user` (a name and an
- * image the privacy notice does not cover) and the other email-otp routes. Those stay unreachable, and `signJWT` and
- * `verifyJWT` are server-only calls.
+ * image the privacy notice does not cover), the other email-otp routes and the ones that link, list or unlink accounts.
+ * Those stay unreachable, and `signJWT` and `verifyJWT` are server-only calls. With a Google client, the two routes of
+ * its sign-in join them: starting it, and Google's redirect back.
  */
-const AUTH_ROUTES = [
-  ['POST', '/api/auth/email-otp/send-verification-otp'],
-  ['POST', '/api/auth/sign-in/email-otp'],
-  ['GET', '/api/auth/get-session'],
-  ['POST', '/api/auth/sign-out'],
-  ['GET', '/api/auth/jwks'],
-] as const;
+export function authRoutesFor(config: Pick<Config, 'google'>): AuthRoute[] {
+  const google: AuthRoute[] = [
+    ['POST', '/api/auth/sign-in/social'],
+    ['GET', '/api/auth/callback/google'],
+  ];
+  return [
+    ['POST', '/api/auth/email-otp/send-verification-otp'],
+    ['POST', '/api/auth/sign-in/email-otp'],
+    ['GET', '/api/auth/get-session'],
+    ['POST', '/api/auth/sign-out'],
+    ['GET', '/api/auth/jwks'],
+    ...(config.google ? google : []),
+  ];
+}
+
+/**
+ * What a sign-in through another provider leaves of that provider's tokens: nothing. The server needs Google only to
+ * learn the verified address once; a Google token kept here would only be a liability.
+ */
+const NO_PROVIDER_TOKENS = {
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+};
 
 export interface AuthDeps {
-  config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signupAllowlist'>;
+  config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signupAllowlist' | 'google'>;
   db: DbHandle;
   mailer: Mailer;
   log: Logger;
@@ -88,6 +114,19 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     database: drizzleAdapter(db.db, { provider: 'pg', schema: authSchema }),
     trustedOrigins: [config.publicOrigin],
     emailAndPassword: { enabled: false },
+    socialProviders: config.google
+      ? {
+          google: {
+            clientId: config.google.clientId,
+            clientSecret: config.google.clientSecret,
+            // No 'profile': the server never stores a name or a picture. Nor scopes left from an earlier grant.
+            disableDefaultScope: true,
+            scope: ['openid', 'email'],
+            includeGrantedScopes: false,
+            prompt: 'select_account',
+          },
+        }
+      : undefined,
     session: { expiresIn: SESSION_TTL_SECONDS },
     // Also refused as BETTER_AUTH_TELEMETRY by `loadConfig`: Better Auth honours that variable over this option.
     telemetry: { enabled: false },
@@ -101,8 +140,9 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     // Otherwise Better Auth's router writes a failed request to the console, past `authLog`: a refusal's message (which
     // can quote the client's Content-Type) and, for any other error, the whole error, whose query parameters hold the
     // address and the code's hash. Its refusals are still answered as before; any other error reaches the app's
-    // `onError`, which logs `errorFields` only and answers 500 `unknown`.
-    onAPIError: { throw: true },
+    // `onError`, which logs `errorFields` only and answers 500 `unknown`. A Google sign-in that fails goes back to the
+    // page that started it with an `error` parameter; when the page is unknown (a state never issued), to the account page.
+    onAPIError: { throw: true, errorURL: `${config.publicOrigin}${ACCOUNT_PAGE_PATH}` },
     plugins: [
       emailOTP({ otpLength: 6, expiresIn: OTP_TTL_SECONDS, allowedAttempts: 3, storeOTP: 'hashed', sendVerificationOTP }),
       jwt({
@@ -116,13 +156,22 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
       user: {
         create: {
           before: async (user) => {
-            if (!isEmailAllowed(user.email, config.signupAllowlist)) {
-              throw new APIError('FORBIDDEN', { message: 'Sign-up is closed.' });
+            // Every new account needs an address its provider verified: email codes always are; Google says so in
+            // `email_verified`. The code turns the refusal into a redirect with `error=SIGNUP_CLOSED` in Better Auth's
+            // Google callback; without one it would fail the request.
+            if (user.emailVerified !== true || !isEmailAllowed(user.email, config.signupAllowlist)) {
+              throw new APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED', message: 'Sign-up is closed.' });
             }
             // Only the address is kept: a name or an image sent with the first sign-in is dropped.
             return { data: { ...user, name: '', image: null } };
           },
         },
+      },
+      // Linking Google to an existing account of the same address needs Google's `email_verified` too (Better Auth's
+      // default: Google is not a trusted provider), and writes no name or picture (`updateUserInfoOnLink` stays off).
+      account: {
+        create: { before: async (account) => ({ data: { ...account, ...NO_PROVIDER_TOKENS } }) },
+        update: { before: async (account) => ({ data: { ...account, ...NO_PROVIDER_TOKENS } }) },
       },
     },
   } satisfies BetterAuthOptions;
@@ -135,12 +184,12 @@ export function createAuth(deps: AuthDeps) {
 export type Auth = ReturnType<typeof createAuth>;
 
 /**
- * Forwards each route of `AUTH_ROUTES` to Better Auth; any other `/api/auth` path, or another method, gets the app's
- * 404. The request reaches Better Auth with `CLIENT_IP_HEADER` set to the address `clientIp` decided, or removed when
- * there is none.
+ * Forwards each route of `authRoutesFor(config)` to Better Auth; any other `/api/auth` path, or another method, gets
+ * the app's 404. The request reaches Better Auth with `CLIENT_IP_HEADER` set to the address `clientIp` decided, or
+ * removed when there is none.
  */
-export function mountAuth(app: Hono<AppEnv>, auth: Auth): void {
-  for (const [method, path] of AUTH_ROUTES) app.on(method, path, (c) => auth.handler(withClientIp(c)));
+export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'google'>): void {
+  for (const [method, path] of authRoutesFor(config)) app.on(method, path, (c) => auth.handler(withClientIp(c)));
 }
 
 function withClientIp(c: Context<AppEnv>): Request {

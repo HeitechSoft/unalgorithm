@@ -14,6 +14,7 @@ import {
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
   EMAIL_OTP_METHOD,
+  GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -43,7 +44,7 @@ export interface AppDeps {
   db: DbHandle;
   log: Logger;
   billing: BillingProvider;
-  /** Better Auth: email-code sign-in, web sessions and the access-token signing key. */
+  /** Better Auth: email-code and Google sign-in, web sessions and the access-token signing key. */
   auth: Auth;
   /** The AI client for a route: `clientForRoute(route, config)` in production; tests answer from the mock or a fake. */
   ai: { clientFor(route: AiRoute): AIClient };
@@ -55,7 +56,10 @@ export type App = OpenAPIHono<AppEnv>;
 
 /** Larger `/v1` request bodies are refused before any route reads them. */
 const MAX_BODY_BYTES = 128 * 1024;
-/** The same for `/api/auth`, whose bodies hold an address, a code and a type: well under a kilobyte. */
+/**
+ * The same for `/api/auth`, whose bodies hold an address, a code and a type, or the pages a Google sign-in comes back
+ * to: well under a kilobyte.
+ */
 const MAX_AUTH_BODY_BYTES = 16 * 1024;
 
 const NOT_VALID: WireError = { code: 'bad-request', message: 'The request was not valid.' };
@@ -135,7 +139,12 @@ export function createApp(deps: AppDeps): App {
     source: config.sourceUrl,
     billing: billing.advertised,
     capabilities: { classify: true, sync: false },
-    auth: { methods: [EMAIL_OTP_METHOD], authorizePath: AUTHORIZE_PAGE_PATH, tokenPath: TOKEN_PATH },
+    auth: {
+      // Google only when the operator configured a Google OAuth client.
+      methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : [])],
+      authorizePath: AUTHORIZE_PAGE_PATH,
+      tokenPath: TOKEN_PATH,
+    },
     limits: { maxPostsPerRequest: MAX_POSTS_PER_REQUEST },
   };
   app.get(SERVER_INFO_PATH, (c) => {
@@ -147,7 +156,7 @@ export function createApp(deps: AppDeps): App {
 
   // Better Auth reads a body of any size, and these routes take requests from anyone.
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
-  mountAuth(app, auth);
+  mountAuth(app, auth, config);
   authRoutes(app, deps);
   classifyRoutes(app, deps);
 

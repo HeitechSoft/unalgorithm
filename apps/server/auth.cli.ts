@@ -16,6 +16,8 @@ export const auth = createAuth({
     // A placeholder: the CLI signs nothing.
     authSecret: '0'.repeat(32),
     signupAllowlist: [],
+    // The Google provider adds no tables.
+    google: undefined,
   },
   // A pool opens a connection on its first query, and the CLI makes none.
   db: openPostgres('postgres://auth-cli@localhost:5432/auth-cli'),

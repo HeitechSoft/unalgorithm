@@ -46,6 +46,14 @@ export function sentCode(outbox: readonly MailMessage[], email: string): string 
   return code;
 }
 
+/** The cookies a response sets, as the `Cookie` header a browser sends back. */
+export function cookieHeader(res: Response): string {
+  return res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+}
+
 /** Signs `email` in on the server's own page (code by email, then the code) and returns the session `Cookie` header. */
 export async function signInWeb(app: App, outbox: readonly MailMessage[], email: string): Promise<string> {
   const page = { Origin: TEST_PUBLIC_URL };
@@ -53,10 +61,7 @@ export async function signInWeb(app: App, outbox: readonly MailMessage[], email:
   if (sent.status !== 200) throw new Error(`Sending the sign-in code answered ${sent.status}.`);
   const res = await postJson(app, SIGN_IN, { email, otp: sentCode(outbox, email) }, page);
   if (res.status !== 200) throw new Error(`Signing in answered ${res.status}.`);
-  return res.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .join('; ');
+  return cookieHeader(res);
 }
 
 /** A PKCE verifier and its S256 challenge, computed here rather than by the server's own code. */

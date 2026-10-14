@@ -39,6 +39,8 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'SMTP_PASSWORD',
   'MAIL_FROM',
   'MAIL_FROM_NAME',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
   'AI_PROVIDER',
   'AI_MODEL',
   'AI_API_KEY',
@@ -88,6 +90,11 @@ export interface Config {
     from: string;
     fromName: string;
   };
+  /**
+   * The operator's Google OAuth client, for signing in with Google; set when both variables are. The server asks Google
+   * for the verified address only (openid and email) and keeps no Google token.
+   */
+  google?: { clientId: string; clientSecret: string };
   ai: {
     provider: 'anthropic' | 'openai-compatible';
     model: string;
@@ -279,6 +286,16 @@ export function loadConfig(env: Env = process.env): Config {
   const mailFromNameValue = read('MAIL_FROM_NAME');
   const mailFromName = mailFromNameValue ? displayName('MAIL_FROM_NAME', mailFromNameValue) : instanceName;
 
+  // Sign in with Google (optional)
+  const googleId = read('GOOGLE_CLIENT_ID');
+  const googleSecret = readSecret('GOOGLE_CLIENT_SECRET');
+  if ((googleId === undefined) !== (googleSecret === undefined)) {
+    bad(
+      googleId === undefined ? 'GOOGLE_CLIENT_ID' : 'GOOGLE_CLIENT_SECRET',
+      'set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET together, or neither',
+    );
+  }
+
   // AI provider
   const provider = oneOf('AI_PROVIDER', ['anthropic', 'openai-compatible'] as const);
   const anthropic = provider === 'anthropic';
@@ -350,6 +367,7 @@ export function loadConfig(env: Env = process.env): Config {
       from: mailFrom ?? '',
       fromName: mailFromName,
     },
+    google: googleId !== undefined && googleSecret !== undefined ? { clientId: googleId, clientSecret: googleSecret } : undefined,
     ai: {
       provider: provider ?? 'anthropic',
       model: model ?? '',
