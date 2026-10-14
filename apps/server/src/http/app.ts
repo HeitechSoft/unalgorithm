@@ -38,6 +38,9 @@ import { accountRoutes } from '../routes/account.ts';
 import { authRoutes } from '../routes/auth.ts';
 import { classifyRoutes } from '../routes/classify.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
+import { syncRoutes } from '../routes/sync.ts';
+import type { SpaceNotifier } from '../sync/notifier.ts';
+import type { AccessResolver } from '../sync/spaces.ts';
 import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
@@ -53,6 +56,10 @@ export interface AppDeps {
   ai: { clientFor(route: AiRoute): AIClient };
   /** Tests only: the deadline of a whole classify request. Default: `CLASSIFY_DEADLINE_MS` (25 s). */
   classifyDeadlineMs?: number;
+  /** Who may read or write a sync space. Default: `userSpaceAccess`, the owner of a personal space; CL7 adds org spaces. */
+  syncAccess?: AccessResolver;
+  /** Tests only: the notifier that wakes sync long-polls, to watch its waiters. Default: a new one for the app. */
+  syncNotifier?: SpaceNotifier;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -140,7 +147,7 @@ export function createApp(deps: AppDeps): App {
     version: config.version,
     source: config.sourceUrl,
     billing: billing.advertised,
-    capabilities: { classify: true, sync: false },
+    capabilities: { classify: true, sync: true },
     auth: {
       // Google only when the operator configured a Google OAuth client; passkeys on every server.
       methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : []), PASSKEY_METHOD],
@@ -162,6 +169,7 @@ export function createApp(deps: AppDeps): App {
   authRoutes(app, deps);
   accountRoutes(app, deps);
   classifyRoutes(app, deps);
+  syncRoutes(app, deps);
 
   billing.mount?.(app);
 

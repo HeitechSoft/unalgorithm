@@ -8,6 +8,8 @@ import type { DbHandle } from '../../src/db/client.ts';
 import { type AppDeps, createApp } from '../../src/http/app.ts';
 import { createJobRegistry } from '../../src/jobs/worker.ts';
 import { memoryMailer } from '../../src/mail/mailer.ts';
+import type { SpaceNotifier } from '../../src/sync/notifier.ts';
+import type { AccessResolver } from '../../src/sync/spaces.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
 import { seedPassingRoute } from './routes.ts';
@@ -65,6 +67,10 @@ export interface TestAppOptions {
   ai?: AppDeps['ai'];
   /** The deadline of a whole classify request. Default: the server's own (25 s). */
   classifyDeadlineMs?: number;
+  /** Who may read or write a sync space. Default: the server's own (`userSpaceAccess`). */
+  syncAccess?: AccessResolver;
+  /** The notifier that wakes sync long-polls, so a test can watch its waiters. Default: the app's own. */
+  syncNotifier?: SpaceNotifier;
   /**
    * A migrated database that the caller opened and closes itself, such as a Postgres one. Default: a fresh PGlite
    * database, which `close()` closes.
@@ -107,6 +113,8 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       auth,
       ai: overrides.ai ?? { clientFor: (r) => clientForRoute(r, config) },
       classifyDeadlineMs: overrides.classifyDeadlineMs,
+      syncAccess: overrides.syncAccess,
+      syncNotifier: overrides.syncNotifier,
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

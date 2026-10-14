@@ -77,7 +77,7 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
       version: SERVER_VERSION,
       source: config.sourceUrl,
       billing: false,
-      capabilities: { classify: true, sync: false },
+      capabilities: { classify: true, sync: true },
       auth: { methods: ['email-otp', 'passkey'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
       limits: { maxPostsPerRequest: 12 },
     });
