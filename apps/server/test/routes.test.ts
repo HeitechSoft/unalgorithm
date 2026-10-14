@@ -28,9 +28,7 @@ import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 import { seedPassingRoute } from './support/routes.ts';
 import { testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT, PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 /** The entry point, by absolute path: the test must not depend on the folder Vitest runs in. */
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -386,7 +384,7 @@ describe('provider and secrets', { timeout: PGLITE_TIMEOUT }, () => {
 });
 
 describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () => {
-  it('test_entry_prints_route_config_error', async () => {
+  it('test_entry_prints_route_config_error', { timeout: SPAWN_TIMEOUT }, async () => {
     const pg = await createPostgresTestDb('ua_routes');
     cleanup.push(() => pg.drop());
 
@@ -405,7 +403,7 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () 
       },
       cwd: tmpdir(),
       encoding: 'utf8',
-      timeout: 30_000,
+      timeout: PROCESS_TIMEOUT,
     });
 
     expect(run.status).toBe(1);

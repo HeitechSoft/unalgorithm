@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { type AddressInfo, createServer, type Socket } from 'node:net';
 import { createTransport } from 'nodemailer';
@@ -164,19 +165,22 @@ describe('smtp transport with an injected createTransport spy', () => {
 
 describe('stalled mail server', () => {
   /**
-   * Real nodemailer with every timeout `smtpMailer` sets cut to a hundredth, so a stall fails in milliseconds. A
-   * timeout it leaves out keeps nodemailer's default of minutes, and the test runs out of time instead.
+   * Real nodemailer with the one timeout `smtpMailer` sets for this stall cut to a hundredth, so the stall fails in
+   * milliseconds. The others stay as set (10 s and more, past the test's 5 s), so a loaded machine that pauses this
+   * process cannot end the send with another one first, such as the connection timeout before the socket connects. Had
+   * `smtpMailer` left the timeout out, nodemailer's default (cut short only by the 10 s connection timeout) would run the
+   * test out of time instead.
    */
-  const fastTimeouts = ((options: Record<string, unknown>) => {
-    const scaled = { ...options };
-    for (const key of Object.keys(TIMEOUTS)) {
+  const cutTimeout = (key: keyof typeof TIMEOUTS) =>
+    ((options: Record<string, unknown>) => {
       const ms = options[key];
-      if (typeof ms === 'number') scaled[key] = ms / 100;
-    }
-    return createTransport(scaled);
-  }) as unknown as typeof createTransport;
+      return createTransport(typeof ms === 'number' ? { ...options, [key]: ms / 100 } : options);
+    }) as unknown as typeof createTransport;
 
-  /** A loopback SMTP server that takes the connection and then stops answering, before or after its greeting. */
+  /**
+   * A loopback SMTP server that takes the connection and then stops answering, before or after its greeting.
+   * `connected` resolves once the server has the connection.
+   */
   async function stallingServer(greet: boolean) {
     const sockets = new Set<Socket>();
     const server = createServer((socket) => {
@@ -184,10 +188,12 @@ describe('stalled mail server', () => {
       socket.on('error', () => {});
       if (greet) socket.write('220 stall.example.org ESMTP\r\n');
     });
+    const connected = once(server, 'connection');
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     return {
       port: (server.address() as AddressInfo).port,
       sockets,
+      connected,
       close: () =>
         new Promise((resolve) => {
           for (const socket of sockets) socket.destroy();
@@ -197,14 +203,21 @@ describe('stalled mail server', () => {
   }
 
   it('test_smtp_stalled_server_times_out', async () => {
-    for (const greet of [false, true]) {
+    // No greeting at all, then a greeting and no answer to EHLO.
+    for (const [greet, timeout] of [
+      [false, 'greetingTimeout'],
+      [true, 'socketTimeout'],
+    ] as const) {
       const server = await stallingServer(greet);
       try {
         const { log, lines, events } = captureLog();
         const mailer = smtpMailer({ ...SMTP, host: '127.0.0.1', port: server.port, secure: 'none' }, log, {
-          createTransport: fastTimeouts,
+          createTransport: cutTimeout(timeout),
         });
         await expect(mailer.send(MESSAGE)).rejects.toMatchObject({ code: 'ETIMEDOUT' });
+        // The server takes the connection in a callback of its own, which a loaded machine can run after the send gave
+        // up: wait for it, then check it was the only one.
+        await server.connected;
         expect(server.sockets.size).toBe(1);
         expect(events()).toMatchObject([{ event: 'mail.failed', level: 'error', err_code: 'ETIMEDOUT' }]);
         expectNoMessageContent(lines);

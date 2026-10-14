@@ -5,8 +5,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { AUTHORIZE_API_PATH, chromiumRedirectUri, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Authorize } from '../src/Authorize.tsx';
 import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH } from '../src/api.ts';
@@ -65,15 +65,6 @@ function fakeServer(routes: Record<string, Reply> = {}) {
   return { calls, posts: () => calls.filter((c) => c.method === 'POST') };
 }
 
-/**
- * A user-event session that types without a timer between keys. The default (`delay: 0`) waits a `setTimeout` after
- * every key, which on Windows lasts a whole timer tick (about 15 ms), so each sign-in spent most of its time asleep and
- * the longest tests ran past the 5 s timeout under the full suite's load.
- */
-function setupUser() {
-  return userEvent.setup({ delay: null });
-}
-
 /** Renders `SignIn` on its own, with a spy for `onSignedIn`. */
 function renderSignIn(props: { notice?: string; initialEmail?: string } = {}) {
   const onSignedIn = vi.fn();
@@ -83,7 +74,7 @@ function renderSignIn(props: { notice?: string; initialEmail?: string } = {}) {
 }
 
 /** Sends a code to `email` from the email step and waits for the code field. */
-async function sendCodeTo(user: ReturnType<typeof userEvent.setup>, email = TOM) {
+async function sendCodeTo(user: UserEvent, email = TOM) {
   await user.type(screen.getByLabelText('Email'), email);
   await user.click(screen.getByRole('button', { name: 'Send code' }));
   return screen.findByLabelText('6-digit code');

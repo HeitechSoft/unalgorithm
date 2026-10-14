@@ -25,9 +25,7 @@ import {
   signInWeb,
 } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 const OTHER_ID = 'b'.repeat(32);

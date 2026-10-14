@@ -15,9 +15,7 @@ import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 import { signInDevice, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server again.' };
@@ -142,7 +140,7 @@ async function expectMigrateIntoBillingSchema(host: BillingHost, db: DbHandle, l
   expect(events.filter((e) => e.event === 'db.migrations.done' && e.migrations === 'billing')).toHaveLength(2);
 }
 
-describe('SQL facade', { timeout: TIMEOUT }, () => {
+describe('SQL facade', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_host_query_binds_parameters', async () => {
     await expectQueryBindsParameters((await testHost()).host);
   });
@@ -152,7 +150,7 @@ describe('SQL facade', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe('migrations', { timeout: TIMEOUT }, () => {
+describe('migrations', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_host_migrate_into_billing_schema', async () => {
     const { host, db, lines } = await testHost();
     await expectMigrateIntoBillingSchema(host, db, lines);
@@ -194,7 +192,7 @@ describe('migrations', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe('accounts and auth', { timeout: TIMEOUT }, () => {
+describe('accounts and auth', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_host_accounts_lookup', async () => {
     const t = await tomApp();
     await signInWeb(t.app, t.outbox, TOM);
@@ -237,7 +235,7 @@ describe('accounts and auth', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe('shape', { timeout: TIMEOUT }, () => {
+describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_host_exposes_only_the_contract', async () => {
     const env = { BILLING_STARTER_SECRET: 's3cret' };
     const { host, jobs, lines } = await testHost({ env });
@@ -266,7 +264,7 @@ describe('shape', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: TIMEOUT }, () => {
+describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_host_query_binds_parameters', async () => {
     await expectQueryBindsParameters((await postgresHost()).host);
   });

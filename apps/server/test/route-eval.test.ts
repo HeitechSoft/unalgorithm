@@ -11,9 +11,7 @@ import { aiRoutes } from '../src/db/schema.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 /** Mocks and databases a test opened, closed after it whatever the outcome. */
 const cleanup: (() => Promise<unknown>)[] = [];

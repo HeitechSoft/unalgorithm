@@ -38,9 +38,7 @@ import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 import { signInDevice, signInWeb } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT, PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 /** The public test module (never shipped), by absolute path as `BILLING_MODULE` names it. */
 const FIXTURE = fileURLToPath(new URL('./fixtures/billing-module/index.ts', import.meta.url));
@@ -512,7 +510,7 @@ describe('loader', { timeout: PGLITE_TIMEOUT }, () => {
   });
 });
 
-describe.skipIf(!TEST_DATABASE_URL)('spawned entry', { timeout: PGLITE_TIMEOUT }, () => {
+describe.skipIf(!TEST_DATABASE_URL)('spawned entry', { timeout: SPAWN_TIMEOUT }, () => {
   it('test_entry_prints_billing_load_error', async () => {
     const pg = await createPostgresTestDb('ua_billing');
     cleanup.push(() => pg.drop());
@@ -534,7 +532,7 @@ describe.skipIf(!TEST_DATABASE_URL)('spawned entry', { timeout: PGLITE_TIMEOUT }
       },
       cwd: REPO_ROOT,
       encoding: 'utf8',
-      timeout: 30_000,
+      timeout: PROCESS_TIMEOUT,
     });
 
     expect(run.status).toBe(1);

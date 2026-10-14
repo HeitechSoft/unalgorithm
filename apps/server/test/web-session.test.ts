@@ -6,9 +6,7 @@ import { ownPageOnly, REFUSED, requireWebSession } from '../src/auth/web-session
 import { user } from '../src/db/schema.ts';
 import { authorizeRequest, DEV_EXTENSION_ORIGIN, pkcePair, postAuthorize, postJson, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 /** A test-only route behind `requireWebSession` that answers with the user it set. */

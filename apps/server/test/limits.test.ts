@@ -12,9 +12,7 @@ import { classifyBody, postClassify, serverPost, usageRowOf } from './support/cl
 import { createTestDb } from './support/db.ts';
 import { DEV_EXTENSION_ORIGIN, signInDevice } from './support/sign-in.ts';
 import { createTestApp, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 const ANA = 'ana@example.com';

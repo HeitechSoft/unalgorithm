@@ -6,9 +6,7 @@ import { REFUSED } from '../src/auth/web-session.ts';
 import { session, user } from '../src/db/schema.ts';
 import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 const ANA = 'ana@example.com';

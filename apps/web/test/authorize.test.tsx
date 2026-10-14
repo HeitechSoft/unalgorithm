@@ -6,8 +6,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { AUTHORIZE_API_PATH, chromiumRedirectUri, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Authorize } from '../src/Authorize.tsx';
 import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
@@ -81,13 +81,13 @@ function fakeServer({ session = null, replies = {} }: { session?: string | null;
 function openPage(params: Record<string, string> = PARAMS) {
   const assign = vi.fn();
   vi.stubGlobal('location', { pathname: '/authorize', search: `?${new URLSearchParams(params)}`, assign });
-  const user = userEvent.setup();
+  const user = setupUser();
   render(<Authorize />);
   return { assign, user };
 }
 
 /** Sends a code to `email` from the Email step and waits for the code field. */
-async function sendCodeTo(user: ReturnType<typeof userEvent.setup>, email = TOM) {
+async function sendCodeTo(user: UserEvent, email = TOM) {
   await user.type(await screen.findByLabelText('Email'), email);
   await user.click(screen.getByRole('button', { name: 'Send code' }));
   return screen.findByLabelText('6-digit code');

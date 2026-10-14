@@ -8,9 +8,7 @@ import { join } from 'node:path';
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";

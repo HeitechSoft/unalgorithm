@@ -10,9 +10,7 @@ import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 import { seedPassingRoute } from './support/routes.ts';
 import { DEV_EXTENSION_ID } from './support/sign-in.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom-user-id';
 const OTHER = 'other-user-id';

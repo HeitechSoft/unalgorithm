@@ -3,8 +3,7 @@
  * promotional credit, the history in the server's order, and the links the server gives. Every figure comes from the
  * server's answer to `GET /v1/billing/account`; `fetch` is a fake server per test (support/fake-server.ts).
  */
-import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import {
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
@@ -12,6 +11,7 @@ import {
   type CreditHistoryItem,
   SERVER_INFO_PATH,
 } from '@unalgorithm/protocol';
+import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
 import { SESSION_PATH } from '../src/api.ts';
@@ -42,7 +42,7 @@ function openCredits(reply: Reply, { billing = true }: { billing?: boolean } = {
     info: { ...INFO, billing },
     routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply },
   });
-  const user = userEvent.setup();
+  const user = setupUser();
   const view = render(<Account />);
   return { server, user, ...view };
 }
@@ -211,6 +211,9 @@ describe('errors', () => {
         }),
     );
     let section = await screen.findByRole('region', { name: 'Credits' });
+    // The section's effect asks for the credits after the section is on the page, which on a busy machine can be after
+    // `findByRole` returns: answer once the request is out (an answer before it would go nowhere).
+    await waitFor(() => expect(view.server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1));
     expect(section.getAttribute('aria-busy')).toBe('true');
     expect(figure(section)).toBeNull();
     expect(within(section).queryByRole('alert')).toBeNull();

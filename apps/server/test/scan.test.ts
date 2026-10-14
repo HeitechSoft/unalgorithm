@@ -12,6 +12,7 @@ import {
   isPublicIPv4,
   parseIpAllowlist,
 } from '../../../scripts/scan-public-repo.mjs';
+import { PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 /**
  * Builds a dotted address at runtime. This file needs real public addresses, but holds no public-address literal, so
@@ -49,6 +50,7 @@ function throwawayRepo() {
       cwd: repo,
       env,
       encoding: 'utf8',
+      timeout: PROCESS_TIMEOUT,
     });
   const git = (...args: string[]) => {
     const result = run(...args);
@@ -65,7 +67,7 @@ function throwawayRepo() {
       mkdirSync(dirname(join(repo, file)), { recursive: true });
       writeFileSync(join(repo, file), text);
     },
-    scan: (script = SCRIPT) => spawnSync(process.execPath, [script, repo], { env, encoding: 'utf8' }),
+    scan: (script = SCRIPT) => spawnSync(process.execPath, [script, repo], { env, encoding: 'utf8', timeout: PROCESS_TIMEOUT }),
   };
 }
 
@@ -227,7 +229,7 @@ describe('output and self-check', () => {
     expect(findPublicIPv4(`${RESOLVER_A} ${RESOLVER_B}`)).toEqual([RESOLVER_A, RESOLVER_B]);
   });
 
-  it('test_cli_fails_on_a_committed_public_address', () => {
+  it('test_cli_fails_on_a_committed_public_address', { timeout: SPAWN_TIMEOUT }, () => {
     const repo = throwawayRepo();
     repo.write('notes.md', 'local only: 127.0.0.1\n');
     repo.git('add', '.');
@@ -248,7 +250,7 @@ describe('output and self-check', () => {
     expect(leak.stdout + leak.stderr).not.toContain(RESOLVER_A);
   });
 
-  it('test_cli_scans_merge_resolutions', () => {
+  it('test_cli_scans_merge_resolutions', { timeout: SPAWN_TIMEOUT }, () => {
     // An address added while resolving a conflict, and removed by the next commit, stays in the merge commit.
     const repo = throwawayRepo();
     repo.write('f.txt', 'base\n');
@@ -273,7 +275,7 @@ describe('output and self-check', () => {
     expect(result.stdout).toContain('public repo scan: 1 findings');
   });
 
-  it('test_cli_hides_paths_that_hold_an_address_or_extra_marker', () => {
+  it('test_cli_hides_paths_that_hold_an_address_or_extra_marker', { timeout: SPAWN_TIMEOUT }, () => {
     const repo = throwawayRepo();
     repo.write('deploy/example-host-7.conf', '  server_name example.org;\n');
     repo.write(`deploy/known-host-${RESOLVER_A}.txt`, 'ok\n');
@@ -299,7 +301,7 @@ describe('output and self-check', () => {
     for (const hidden of ['example-host-7', 'known-host', RESOLVER_A]) expect(output).not.toContain(hidden);
   });
 
-  it('test_cli_runs_through_a_linked_path', () => {
+  it('test_cli_runs_through_a_linked_path', { timeout: SPAWN_TIMEOUT }, () => {
     // Node runs the real path of a linked entry script; the scan must still run (and fail) rather than do nothing.
     const repo = throwawayRepo();
     repo.write('notes.md', `the host is ${RESOLVER_A}\n`);

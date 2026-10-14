@@ -9,9 +9,7 @@ import { queryRows } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
 import { testConfig } from './support/test-app.ts';
-
-/** Starting PGlite, or graphile-worker's migrations on a fresh database, takes a moment, more on a busy CI runner. */
-const TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 /** How long a queued job may take to reach its handler (AC 4). */
 const PICKUP_MS = 5_000;
@@ -33,7 +31,7 @@ async function hasWorkerSchema(db: DbHandle): Promise<boolean> {
 /** Keys a line may have. graphile-worker's own lines (`jobs.log`) have no others: never its message. */
 const WORKER_LOG_KEYS = new Set(['t', 'level', 'event', 'task', 'job_id', 'err_name', 'err_code', 'err_stack']);
 
-describe('registry', { timeout: TIMEOUT }, () => {
+describe('registry', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_registry_rejects_bad_names_and_schedules', () => {
     const jobs = createJobRegistry();
     for (const name of [
@@ -83,7 +81,7 @@ describe('registry', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe('pglite', { timeout: TIMEOUT }, () => {
+describe('pglite', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_pglite_disables_jobs', async () => {
     const db = await openPglite();
     cleanup.push(() => db.close());
@@ -103,7 +101,7 @@ describe('pglite', { timeout: TIMEOUT }, () => {
   });
 });
 
-describe.skipIf(!TEST_DATABASE_URL)('runner', { timeout: TIMEOUT }, () => {
+describe.skipIf(!TEST_DATABASE_URL)('runner', { timeout: PGLITE_TIMEOUT }, () => {
   /** A fresh Postgres database and a handle on it, both cleaned up after the test. */
   async function postgres(prefix = 'ua_jobs') {
     const pg = await createPostgresTestDb(prefix);

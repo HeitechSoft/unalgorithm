@@ -4,8 +4,8 @@
  * does: an accepted code starts it and signing out ends it. The Credits section has its own tests (credits.test.tsx).
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { ACCOUNT_PAGE_PATH, CREDIT_ACCOUNT_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
+import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
 import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
@@ -16,7 +16,7 @@ const UNREACHABLE = "Couldn't reach the server. Try again.";
 
 /** Renders the account page. */
 function openAccount() {
-  const user = userEvent.setup();
+  const user = setupUser();
   const view = render(<Account />);
   return { user, ...view };
 }

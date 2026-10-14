@@ -9,9 +9,7 @@ import { CONFIG_VARIABLES, type Config } from '../src/config.ts';
 import type { DbHandle } from '../src/db/client.ts';
 import { createTestDb } from './support/db.ts';
 import { TEST_ENV, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 /** The public test module (never shipped), by absolute path as `BILLING_MODULE` names it. */
 const FIXTURE = fileURLToPath(new URL('./fixtures/billing-module/index.ts', import.meta.url));

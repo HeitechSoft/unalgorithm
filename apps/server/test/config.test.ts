@@ -6,6 +6,7 @@ import pkg from '../package.json' with { type: 'json' };
 import { CONFIG_VARIABLES, ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
 import { errorFields } from '../src/log.ts';
 import { captureLog } from './support/log.ts';
+import { PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 /** Distinctive secret values: none of them may ever appear in an error, a reason or CLI output. */
 const AUTH_SECRET = 'auth-secret-QXZ7-distinctive-0123456789abcdef';
@@ -375,12 +376,10 @@ describe('logger', () => {
 
 /** By absolute path, and run from a folder outside the repository: no CLI test depends on where Vitest runs. */
 const CHECK_CONFIG = fileURLToPath(new URL('../src/cli/check-config.ts', import.meta.url));
-/** Each test starts Node.js several times, which takes seconds on a busy machine. */
-const SPAWN_TIMEOUT = 30_000;
 
 describe('cli', { timeout: SPAWN_TIMEOUT }, () => {
   const run = (env: Record<string, string>) =>
-    spawnSync(process.execPath, [CHECK_CONFIG], { env, cwd: tmpdir(), encoding: 'utf8' });
+    spawnSync(process.execPath, [CHECK_CONFIG], { env, cwd: tmpdir(), encoding: 'utf8', timeout: PROCESS_TIMEOUT });
 
   it('test_check_config_cli_exit_codes', () => {
     const empty = run({});
@@ -432,6 +431,7 @@ describe('node version', { timeout: SPAWN_TIMEOUT }, () => {
   const canTurnOff =
     spawnSync(process.execPath, ['--no-experimental-strip-types', '-p', 'Boolean(process.features.typescript)'], {
       encoding: 'utf8',
+      timeout: PROCESS_TIMEOUT,
     }).stdout.trim() === 'false';
 
   it.skipIf(!canTurnOff)('test_node_without_type_stripping_gets_a_clear_error', () => {
@@ -440,6 +440,7 @@ describe('node version', { timeout: SPAWN_TIMEOUT }, () => {
         env: minimalEnv(),
         cwd: tmpdir(),
         encoding: 'utf8',
+        timeout: PROCESS_TIMEOUT,
       });
 
     const old = run('--no-experimental-strip-types');

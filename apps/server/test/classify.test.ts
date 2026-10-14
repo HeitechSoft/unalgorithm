@@ -19,9 +19,7 @@ import { classifyBody, serverPost as post, postClassify, usageRowOf } from './su
 import { seedPassingRoute } from './support/routes.ts';
 import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
 const INSTANCE = 'Test server';

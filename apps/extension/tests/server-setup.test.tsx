@@ -7,9 +7,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { type AISourceConfig, type Device, defaultDevice, defaultSettings } from '@unalgorithm/core';
 import { AUTHORIZE_PAGE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
+import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AiSetup } from '../src/components/AiSetup.tsx';
@@ -114,13 +114,13 @@ afterEach(() => {
 
 function renderSetup(dev = device()) {
   const onSaved = vi.fn();
-  const user = userEvent.setup();
+  const user = setupUser();
   render(<ServerSetup device={dev} onSaved={onSaved} />);
   return { onSaved, user };
 }
 
 /** From the address step to the consent step for `baseUrl` (the prefilled Cloud address when omitted). */
-async function continueTo(user: ReturnType<typeof userEvent.setup>, baseUrl?: string) {
+async function continueTo(user: UserEvent, baseUrl?: string) {
   const field = await screen.findByLabelText('Server address');
   if (baseUrl !== undefined) {
     await user.clear(field);
@@ -131,7 +131,7 @@ async function continueTo(user: ReturnType<typeof userEvent.setup>, baseUrl?: st
 }
 
 /** Presses Tab until `target` has the focus; fails when it never does. */
-async function tabTo(user: ReturnType<typeof userEvent.setup>, target: HTMLElement) {
+async function tabTo(user: UserEvent, target: HTMLElement) {
   for (let i = 0; i < 20 && document.activeElement !== target; i++) await user.tab();
   expect(document.activeElement).toBe(target);
 }
@@ -328,7 +328,7 @@ describe('flow', () => {
   it('test_signed_in_but_off_turns_on', async () => {
     replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN) });
     const onSaved = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<AiSetup device={device({ kind: 'anthropic', model: null })} onSaved={onSaved} />);
     await user.click(screen.getByRole('radio', { name: /^UnAlgorithm server/ }));
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
@@ -348,7 +348,7 @@ describe('flow', () => {
 
   it('test_keyboard_and_labels', async () => {
     const onSaved = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<AiSetup device={device()} onSaved={onSaved} />);
 
     // Into the card group (on "Off, rules only"), then the arrow keys pick the server card.

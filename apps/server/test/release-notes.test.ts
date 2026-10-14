@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { notesFor } from '../../../scripts/release-notes.mjs';
+import { PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const WORKFLOW = join(REPO_ROOT, '.github/workflows/server-release.yml');
@@ -112,16 +113,21 @@ attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
     );
   });
 
-  it('test_release_notes_import_prints_nothing', () => {
+  it('test_release_notes_import_prints_nothing', { timeout: SPAWN_TIMEOUT }, () => {
     const imported = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('./scripts/release-notes.mjs')"], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
+      timeout: PROCESS_TIMEOUT,
     });
     expect(imported.status, imported.stderr).toBe(0);
     expect(imported.stdout).toBe('');
 
     // Run as a command, it still prints the notes, reading the changelog from the repository.
-    const run = spawnSync(process.execPath, ['scripts/release-notes.mjs', 'server-v9.9.9'], { cwd: REPO_ROOT, encoding: 'utf8' });
+    const run = spawnSync(process.execPath, ['scripts/release-notes.mjs', 'server-v9.9.9'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      timeout: PROCESS_TIMEOUT,
+    });
     expect(run.status, run.stderr).toBe(0);
     const readRepo = (path: string) => {
       const file = join(REPO_ROOT, path);

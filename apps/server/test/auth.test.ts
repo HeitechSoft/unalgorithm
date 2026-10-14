@@ -6,9 +6,7 @@ import { memoryMailer } from '../src/mail/mailer.ts';
 import { captureLog } from './support/log.ts';
 import { postJson, SEND_CODE, SIGN_IN, SIX_DIGITS, sentCode, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, type TestAppOptions, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const GET_SESSION = '/api/auth/get-session';
 const TOM = 'tom@example.com';

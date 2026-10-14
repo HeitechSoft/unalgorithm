@@ -18,9 +18,7 @@ import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, SEND_CODE } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
-
-/** Starting PGlite (Postgres compiled to WebAssembly) takes a moment, more on a busy CI runner. */
-const PGLITE_TIMEOUT = 30_000;
+import { PGLITE_TIMEOUT, PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
 /** The entry point, by absolute path: the test must not depend on the folder Vitest runs in. */
@@ -439,10 +437,10 @@ describe('entry', { timeout: PGLITE_TIMEOUT }, () => {
     await expect(fetch(`${server.url}/health`)).rejects.toThrow();
   });
 
-  it('test_entry_exits_on_missing_config', () => {
+  it('test_entry_exits_on_missing_config', { timeout: SPAWN_TIMEOUT }, () => {
     const run = (env: Record<string, string>) =>
       // From a folder outside the repository, so the entry is shown not to depend on the working directory either.
-      spawnSync(process.execPath, [ENTRY], { env, cwd: tmpdir(), encoding: 'utf8', timeout: 20_000 });
+      spawnSync(process.execPath, [ENTRY], { env, cwd: tmpdir(), encoding: 'utf8', timeout: PROCESS_TIMEOUT });
 
     const empty = run({});
     expect(empty.status).toBe(1);
