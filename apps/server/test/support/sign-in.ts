@@ -90,14 +90,18 @@ export async function codeFrom(res: Response): Promise<string> {
   return code;
 }
 
-/** The exchange the extension makes after `launchWebAuthFlow` returns. */
-export function codeExchange(code: string, verifier: string, clientId = DEV_EXTENSION_ID): TokenRequest {
+/**
+ * The exchange the extension makes after `launchWebAuthFlow` returns. `deviceName` is sent as given (untrimmed, or one
+ * the schema refuses); without it the request carries no `device_name`, like an extension from before CL3.
+ */
+export function codeExchange(code: string, verifier: string, clientId = DEV_EXTENSION_ID, deviceName?: string): TokenRequest {
   return {
     grant_type: 'authorization_code',
     code,
     code_verifier: verifier,
     client_id: clientId,
     redirect_uri: chromiumRedirectUri(clientId),
+    ...(deviceName === undefined ? {} : { device_name: deviceName }),
   };
 }
 
@@ -106,17 +110,21 @@ export function postToken(app: App, body: unknown, origin = DEV_EXTENSION_ORIGIN
   return postJson(app, TOKEN_PATH, body, { Origin: origin });
 }
 
-/** The whole extension sign-in for `email`: web sign-in, authorize, exchange. Returns the device's tokens. */
+/**
+ * The whole extension sign-in for `email`: web sign-in, authorize, exchange, naming the device `deviceName` when given.
+ * Returns the device's tokens.
+ */
 export async function signInDevice(
   app: App,
   outbox: readonly MailMessage[],
   email: string,
   clientId = DEV_EXTENSION_ID,
+  deviceName?: string,
 ): Promise<TokenResponse> {
   const cookie = await signInWeb(app, outbox, email);
   const { verifier, challenge } = pkcePair();
   const code = await codeFrom(await postAuthorize(app, cookie, authorizeRequest(challenge, clientId)));
-  const res = await postToken(app, codeExchange(code, verifier, clientId));
+  const res = await postToken(app, codeExchange(code, verifier, clientId, deviceName));
   if (res.status !== 200) throw new Error(`The code exchange answered ${res.status}.`);
   return TokenResponseSchema.parse(await res.json());
 }

@@ -113,8 +113,15 @@ export function authRoutes(app: App, deps: AppDeps): void {
       ) {
         throw new AIError('auth-required', 'The code was not accepted.');
       }
-      // A new device. Its id goes into the access token, which is signed before the device is stored.
-      const device = { userId: grant.userId, deviceId: crypto.randomUUID(), clientId: grant.clientId };
+      // A new device. Its id goes into the access token, which is signed before the device is stored. Its name is the
+      // one the extension sent, trimmed and checked by the schema (an invalid one got 400 before the code was spent).
+      // Never logged: it can hold a person's own label.
+      const device = {
+        userId: grant.userId,
+        deviceId: crypto.randomUUID(),
+        clientId: grant.clientId,
+        name: req.device_name ?? null,
+      };
       const tokens = await issueTokens({ db: db.db, auth }, device, { newDevice: true });
       log.info('auth.signed_in', { rid: c.get('rid'), device_id: device.deviceId });
       return c.json(tokens, 200);

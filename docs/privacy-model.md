@@ -68,7 +68,8 @@ nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md]
 those a billing module adds of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
 - **Accounts:** the email address, and no name or picture (`user`).
-- **Devices:** one row per signed-in copy of the extension: its extension id, when it signed in and was last used, and
+- **Devices:** one row per signed-in copy of the extension: its extension id, the short name the extension gave itself
+  at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
   whether it was signed out or revoked (`devices`).
 - **Hashed refresh tokens and codes:** refresh tokens and the single-use codes the extension trades for them are kept
   by hash only (`refresh_tokens`, `auth_codes`). An emailed sign-in code is kept by hash under the address it was asked

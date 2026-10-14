@@ -45,6 +45,11 @@ export const devices = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     /** The extension id the device signed in with. */
     clientId: text('client_id').notNull(),
+    /**
+     * What the extension called itself at sign-in (CL3-02 `DeviceNameSchema`), e.g. 'Chrome on Windows'. Never derived
+     * from request headers. Null for devices from before CL3.
+     */
+    name: text('name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),

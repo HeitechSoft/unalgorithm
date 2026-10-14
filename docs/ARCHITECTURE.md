@@ -146,7 +146,7 @@ always show or hide (`sync_items`).
 | `account` | Better Auth's linked sign-in methods; empty while sign-in is by email code only |
 | `verification` | Emailed sign-in codes, by hash, under the address they were asked for |
 | `jwks` | The key pair that signs access tokens, its private half encrypted with the server's secret |
-| `devices` | One row per signed-in extension: account, extension id, last use, revocation |
+| `devices` | One row per signed-in extension: account, extension id, the name it gave itself at sign-in, last use, revocation |
 | `auth_codes` | Single-use codes for the PKCE exchange, by hash, with the extension, redirect address and challenge they are bound to |
 | `refresh_tokens` | Device refresh tokens, by hash, each usable once |
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |

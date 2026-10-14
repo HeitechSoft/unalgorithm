@@ -43,6 +43,13 @@
       "when": 1791988228799,
       "tag": "0005_tough_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791989295347,
+      "tag": "0006_overjoyed_vargas",
+      "breakpoints": true
     }
   ]
 }

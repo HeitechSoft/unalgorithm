@@ -77,6 +77,8 @@ export interface DeviceGrant {
   userId: string;
   deviceId: string;
   clientId: string;
+  /** What the extension called itself at sign-in (`devices.name`). Stored with a new device; a refresh keeps it. */
+  name?: string | null;
 }
 
 export interface TokenDeps {
@@ -126,7 +128,11 @@ export async function issueTokens(
   });
   const refreshToken = newSecret();
   await db.transaction(async (tx) => {
-    if (newDevice) await tx.insert(devices).values({ id: grant.deviceId, userId: grant.userId, clientId: grant.clientId });
+    if (newDevice) {
+      await tx
+        .insert(devices)
+        .values({ id: grant.deviceId, userId: grant.userId, clientId: grant.clientId, name: grant.name ?? null });
+    }
     if (replaces !== undefined) {
       // One statement: of two refreshes racing with one token, exactly one spends it.
       const spent = await tx
