@@ -65,10 +65,20 @@ function fakeServer(routes: Record<string, Reply> = {}) {
   return { calls, posts: () => calls.filter((c) => c.method === 'POST') };
 }
 
+/**
+ * A user-event session that types without a timer between keys. The default (`delay: 0`) waits a `setTimeout` after
+ * every key, which on Windows lasts a whole timer tick (about 15 ms): the six sign-ins of `test_sign_in_error_messages`
+ * spent most of their time asleep, ran past the 5 s timeout under the full suite's load, and the rest of that test then
+ * typed into the next one.
+ */
+function setupUser() {
+  return userEvent.setup({ delay: null });
+}
+
 /** Renders `SignIn` on its own, with a spy for `onSignedIn`. */
 function renderSignIn(props: { notice?: string; initialEmail?: string } = {}) {
   const onSignedIn = vi.fn();
-  const user = userEvent.setup();
+  const user = setupUser();
   render(<SignIn onSignedIn={onSignedIn} {...props} />);
   return { onSignedIn, user };
 }
@@ -239,7 +249,7 @@ describe('errors', () => {
     });
     const assign = vi.fn();
     vi.stubGlobal('location', { pathname: '/authorize', search: `?${new URLSearchParams(params)}`, assign });
-    let user = userEvent.setup();
+    let user = setupUser();
     render(<Authorize />);
     await user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
 
