@@ -570,6 +570,10 @@
     background: var(--ua-warning-tint);
     color: var(--ua-warning);
   }
+  .ua-badge--danger {
+    background: var(--ua-danger-tint);
+    color: var(--ua-danger);
+  }
   .ua-badge--ai {
     background: var(--ua-ai-tint);
     color: var(--ua-ai);

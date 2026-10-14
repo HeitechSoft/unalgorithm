@@ -30,6 +30,8 @@ export const usageItem = storage.defineItem<UsageLedger>('local:usage', { fallba
 export const statsItem = storage.defineItem<Record<string, { hidden: number; seen: number }>>('local:stats', {
   fallback: {},
 });
+/** The local date (`dateKey()`) the popup last showed the low-balance banner: a date only, no amount. */
+export const lowBalanceNoticeItem = storage.defineItem<string | null>('local:lowBalanceNoticeOn', { fallback: null });
 
 /** Dynamic declarativeNetRequest rule that lets a local AI server (Ollama) accept our requests. See ADR 0004. */
 export const ORIGIN_RULE_ID = 1;

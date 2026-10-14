@@ -3,8 +3,10 @@ import { MAX_POST_CHARS } from '@unalgorithm/protocol';
 import { Badge, Banner, Button, ListRow, TextField } from '@unalgorithm/ui';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { useAiStatus } from '../lib/hooks.ts';
 import { type PublicServerAccount, sendToBackground } from '../lib/messages.ts';
 import { isServerAt, PINNED_CLOUD_ORIGIN, recipientText, type ServerLabel } from '../lib/server-label.ts';
+import { BalancePill } from './BalancePill.tsx';
 
 declare global {
   interface ImportMetaEnv {
@@ -37,6 +39,10 @@ type View =
  * the first sign-in to an origin; "Sign in again" (R26) and "Turn on" reuse the account's origin without asking again.
  */
 export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg: AISourceConfig): void }) {
+  // The balance for the account row (R31). First, in every view: its `aiStatus` message then goes out before
+  // `serverAccount`, and the messages after that one stay exactly the sign-in steps (server-setup.test.tsx records
+  // every message and checks them).
+  const ai = useAiStatus(JSON.stringify(device.aiSource));
   const [view, setView] = useState<View>({ step: 'loading' });
   const [address, setAddress] = useState(PINNED_CLOUD_ORIGIN);
   const [busy, setBusy] = useState(false);
@@ -174,6 +180,8 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
 
   const { account } = view;
   const off = !account.needsSignIn && !isServerAt(device.aiSource, account.origin);
+  const balance = ai?.balance;
+  const accountUrl = balance?.accountUrl;
   return (
     <div key={`account:${account.needsSignIn}`} ref={focusStep} tabIndex={-1} className="ua-stack">
       {account.needsSignIn ? (
@@ -194,6 +202,14 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
             </Button>
           }
         />
+        {balance ? (
+          <div style={{ padding: '0 12px 10px' }}>
+            <BalancePill
+              balance={balance}
+              onOpen={accountUrl ? () => void browser.tabs.create({ url: accountUrl }) : undefined}
+            />
+          </div>
+        ) : null}
       </div>
       {off ? (
         <div>
