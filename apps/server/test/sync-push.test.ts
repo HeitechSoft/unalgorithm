@@ -416,6 +416,18 @@ describe('guards', { timeout: PGLITE_TIMEOUT }, () => {
     expect(exact).toMatchObject({ applied: 2 });
     expect(await counters(ctx)).toMatchObject({ bytesUsed: added });
 
+    // Bytes alone are held to the limit too, with no new live item: a tombstone for a key the space never held, and a
+    // larger value for a key it holds.
+    const full = await state(ctx);
+    for (const grows of [
+      [tombstone('interests.more.never')],
+      [live('interests.more.climate', topic('Climate and weather'), at(-45_000))],
+    ]) {
+      const atLimit = push(ctx, grows, { limits: { maxItems: SYNC_SPACE_MAX_ITEMS, maxBytes: added } });
+      expect(await refusal(atLimit)).toEqual(QUOTA_EXCEEDED);
+      expect(await state(ctx)).toStrictEqual(full);
+    }
+
     // A smaller value goes through even under a limit the space is already over.
     const smaller = await push(ctx, [live('interests.more.climate', topic('C'), at(-30_000))], {
       limits: { maxItems: SYNC_SPACE_MAX_ITEMS, maxBytes: 10 },
@@ -464,6 +476,57 @@ describe('privacy', { timeout: PGLITE_TIMEOUT }, () => {
     // The same search finds the marker where values belong.
     const values = await queryRows(ctx.h, sql`select value::text as text from sync_items`);
     expect(values.filter((v) => String(v.text).includes(MARKER))).toHaveLength(2);
+  });
+
+  it('test_push_record_holds_no_refused_keys', async () => {
+    const ctx = await aliceSpace();
+    const anthropic = `sk-ant-api03-${'A'.repeat(20)}`;
+    const groq = `gsk_${'B'.repeat(52)}`;
+    const openai = `sk-proj-${'c'.repeat(20)}`;
+    const pushId = randomUUID();
+    const items = [
+      live('display.showReason', false),
+      // Refused for the key itself, live and deleted.
+      live(`display.${groq}`, true),
+      tombstone(`display.${anthropic}`),
+      // Refused before the key is checked: a non-canonical key, and a collection the server does not sync.
+      live(`interests.more.x.${anthropic}`, 'AI'),
+      live(`topics.${groq}`, true, at(-60_000), openai),
+    ];
+    const first = await push(ctx, items, { pushId });
+    expect(first.response.results).toStrictEqual([
+      applied('display.showReason', 1),
+      rejected(`display.${groq}`, 'credential'),
+      rejected(`display.${anthropic}`, 'credential'),
+      rejected(`interests.more.x.${anthropic}`, 'invalid'),
+      rejected(`topics.${groq}`, 'unknown-collection', openai),
+    ]);
+
+    const [record] = await queryRows(ctx.h, sql`select response::text as text from sync_pushes`);
+    const text = String(record?.text);
+    for (const secret of [anthropic, groq, openai]) expect(text).not.toContain(secret);
+    expect(text).toContain('display.showReason');
+
+    // A retry carries the same items, so it gets the same answer, refused keys included.
+    expect(await push(ctx, items, { pushId })).toStrictEqual<PushOutcome>({
+      response: first.response,
+      applied: 0,
+      stale: 0,
+      rejected: 0,
+      replayed: true,
+    });
+    // One with fewer items still gets an answer a client can parse.
+    const short = await push(ctx, items.slice(0, 2), { pushId });
+    const withheld = (reason: SyncRejectReason) => rejected('withheld', reason, 'withheld');
+    expect(SyncPushResponseSchema.parse(short.response)).toStrictEqual({
+      v: 1,
+      results: [
+        ...first.response.results.slice(0, 2),
+        withheld('credential'),
+        withheld('invalid'),
+        withheld('unknown-collection'),
+      ],
+    });
   });
 });
 

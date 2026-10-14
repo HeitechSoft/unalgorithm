@@ -240,7 +240,7 @@ export const syncPushes = pgTable(
       .references(() => syncSpaces.id, { onDelete: 'cascade' }),
     pushId: uuid('push_id').notNull(),
     deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
-    /** Keys, statuses and seqs; never a value. */
+    /** Statuses, seqs and reasons, and the keys of items not refused; never a value, never a refused key (CL3-07). */
     response: jsonb('response').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

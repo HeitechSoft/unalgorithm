@@ -155,7 +155,7 @@ always show or hide (`sync_items`).
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
 | `sync_spaces` | One personal sync space per account: its epoch, the last seq handed out, item and byte counts, and the tombstone cleanup floor |
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
-| `sync_pushes` | One record per sync push, by push id, with the keys, statuses and seqs the server answered; never a value |
+| `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and a server whose
 module registers jobs also has graphile-worker's `graphile_worker` schema ([Jobs](#jobs)).

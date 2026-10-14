@@ -74,6 +74,21 @@ type ItemRow = typeof syncItems.$inferInsert;
 /** Collection and key in one string: neither can hold U+0000 (`SyncCollectionSchema`, `SyncKeySchema`). */
 const heldKey = (collection: string, key: string) => `${collection}\u0000${key}`;
 
+type Rejected = Extract<SyncPushResult, { status: 'rejected' }>;
+
+/**
+ * What `sync_pushes.response` keeps of an answer: every result, without a refused item's collection and key. The server
+ * never stores a refused item, and its key or collection may be the very thing refused (a provider key as a field name,
+ * R17), so the record does not hold them either. Values never reach it.
+ */
+interface PushRecord {
+  v: 1;
+  results: (Exclude<SyncPushResult, Rejected> | Omit<Rejected, 'collection' | 'key'>)[];
+}
+
+/** Names a refused item in a replayed answer when the retry has no item at its place; valid as a collection and a key. */
+const WITHHELD = 'withheld';
+
 /**
  * Applies a push in one transaction and answers one result per item, in order. The caller has checked that `who` may
  * write the space (`findSpace(...).access === 'read-write'`, CL3-08) and parsed `req` with `SyncPushRequestSchema`, so
@@ -102,7 +117,8 @@ export async function applyPush(
       .from(syncPushes)
       .where(and(eq(syncPushes.spaceId, space.id), eq(syncPushes.pushId, req.pushId)));
     if (recorded) {
-      return { response: recorded.response as SyncPushResponse, applied: 0, stale: 0, rejected: 0, replayed: true };
+      const response = fromRecord(recorded.response as PushRecord, req.items);
+      return { response, applied: 0, stale: 0, rejected: 0, replayed: true };
     }
     if (req.epoch !== space.epoch) throw new SyncRefusal('resync-required', 410, 'epoch');
 
@@ -185,13 +201,32 @@ export async function applyPush(
         });
       await tx.update(syncSpaces).set({ seq, itemCount, bytesUsed }).where(eq(syncSpaces.id, space.id));
     }
-    // Collections, keys, statuses, seqs and reasons: never a value.
     const response: SyncPushResponse = { v: 1, results };
-    await tx
-      .insert(syncPushes)
-      .values({ spaceId: space.id, pushId: req.pushId, deviceId: who.deviceId, response, createdAt: new Date(now) });
+    await tx.insert(syncPushes).values({
+      spaceId: space.id,
+      pushId: req.pushId,
+      deviceId: who.deviceId,
+      response: toRecord(response),
+      createdAt: new Date(now),
+    });
     return { response, ...count(results), replayed: false };
   });
+}
+
+function toRecord({ v, results }: SyncPushResponse): PushRecord {
+  return { v, results: results.map((r) => (r.status === 'rejected' ? { status: r.status, reason: r.reason } : r)) };
+}
+
+/** The recorded answer again. A retry carries the same items, so each refused item is named by the item at its place. */
+function fromRecord({ v, results }: PushRecord, items: readonly SyncItem[]): SyncPushResponse {
+  return {
+    v,
+    results: results.map((r, i) =>
+      r.status === 'rejected'
+        ? { collection: items[i]?.collection ?? WITHHELD, key: items[i]?.key ?? WITHHELD, status: r.status, reason: r.reason }
+        : r,
+    ),
+  };
 }
 
 /**
