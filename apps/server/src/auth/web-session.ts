@@ -1,7 +1,8 @@
 /**
  * Who is signed in on the server's own pages (R10, R31): the sign-in page asking for an extension's code today, the
- * account page and the billing module's routes next (CL2-04), the device list later (CL3). `requireWebSession` reads
- * the Better Auth web session from the request's cookie here, once; no route looks the session up itself.
+ * account page and the billing module's routes next (CL2-04), the device list later (CL3). `webUserFrom` reads the
+ * Better Auth web session from the request's cookie here, once, for `requireWebSession` and for `requireAccount` (routes
+ * that also take a device token, CL3); no route looks the session up itself.
  *
  * The rule for a route behind it: a GET needs nothing more. Better Auth's cookie is `SameSite=Lax`, so another site's
  * `fetch` carries no session, and `/v1/*` CORS answers only extension origins, so no page elsewhere can read the
@@ -11,7 +12,7 @@
  */
 import { AIError } from '@unalgorithm/ai';
 import type { WireError } from '@unalgorithm/protocol';
-import type { Env, MiddlewareHandler } from 'hono';
+import type { Context, Env, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { AppDeps } from '../http/app.ts';
 
@@ -30,16 +31,30 @@ export interface WebSessionEnv {
 export const REFUSED: WireError = { code: 'permission', message: "This server doesn't accept sign-ins from here." };
 
 /** 401 `auth-required` (an AIError, so the app's error mapping answers) unless the request carries a live web session. */
-export function requireWebSession({ auth }: Pick<AppDeps, 'auth'>): MiddlewareHandler<WebSessionEnv> {
+export function requireWebSession(deps: Pick<AppDeps, 'auth'>): MiddlewareHandler<WebSessionEnv> {
   return createMiddleware<WebSessionEnv>(async (c, next) => {
     // First, so the 401 below carries it too: every answer behind this check is about one person.
     c.header('Cache-Control', 'no-store');
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    const web = await webUserFrom(c, deps);
     // No `WWW-Authenticate`: this is cookie auth, not bearer.
-    if (!session) throw new AIError('auth-required', 'No web session.');
-    c.set('webUser', { userId: session.user.id, email: session.user.email });
+    if (!web) throw new AIError('auth-required', 'No web session.');
+    c.set('webUser', { userId: web.userId, email: web.email });
     await next();
   });
+}
+
+/**
+ * The one session lookup, for `requireWebSession` and for routes that also take a device token (`requireAccount`):
+ * who the request's cookie signs in, and when that session began (for "signed in recently" checks), or `null`. The
+ * session time stays out of `webUser`, which the billing host hands to modules as it is.
+ */
+export async function webUserFrom(
+  c: Context,
+  { auth }: Pick<AppDeps, 'auth'>,
+): Promise<(WebUser & { sessionCreatedAt: Date }) | null> {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return null;
+  return { userId: session.user.id, email: session.user.email, sessionCreatedAt: session.session.createdAt };
 }
 
 /**

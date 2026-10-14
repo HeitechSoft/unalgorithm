@@ -35,29 +35,40 @@ const BEARER = /^Bearer ([\w.~+/-]+=*)$/i;
 /** The claims `issueTokens` signs: the account, the device (a uuid, as the column is) and the extension. */
 const DeviceClaims = z.object({ sub: z.string().min(1), did: z.uuid(), cid: z.string().min(1), aud: z.string() });
 
-export function requireDevice({ config, db, auth }: Pick<AppDeps, 'config' | 'db' | 'auth'>) {
+export function requireDevice(deps: Pick<AppDeps, 'config' | 'db' | 'auth'>) {
   return createMiddleware<DeviceEnv>(async (c, next) => {
-    const token = BEARER.exec(c.req.header('authorization') ?? '')?.[1];
-    if (!token) throw refused(c);
-    const { payload } = await auth.api.verifyJWT({ body: { token } });
-    // Better Auth accepts an `aud` list that includes this server; a token for this server alone is required here.
-    const claims = DeviceClaims.safeParse(payload);
-    if (!claims.success || claims.data.aud !== config.publicOrigin) throw refused(c);
-    const { sub, did, cid } = claims.data;
-
-    const [device] = await db.db.select().from(devices).where(eq(devices.id, did)).limit(1);
-    if (!device || device.userId !== sub || device.clientId !== cid || device.revokedAt !== null) throw refused(c);
-    const now = Date.now();
-    if (device.lastUsedAt === null || now - device.lastUsedAt.getTime() >= LAST_USED_EVERY_MS) {
-      await db.db
-        .update(devices)
-        .set({ lastUsedAt: new Date(now) })
-        .where(eq(devices.id, did));
-    }
-
-    c.set('account', { userId: sub, deviceId: did, clientId: cid });
+    c.set('account', await deviceFromBearer(c, deps));
     await next();
   });
+}
+
+/**
+ * The bearer check itself, for `requireDevice` and for routes that also take the web session (`requireAccount`):
+ * the device behind the request's `Authorization` header, or a thrown 401 `auth-required` with `WWW-Authenticate: Bearer`.
+ */
+export async function deviceFromBearer(
+  c: Context,
+  { config, db, auth }: Pick<AppDeps, 'config' | 'db' | 'auth'>,
+): Promise<DeviceAccount> {
+  const token = BEARER.exec(c.req.header('authorization') ?? '')?.[1];
+  if (!token) throw refused(c);
+  const { payload } = await auth.api.verifyJWT({ body: { token } });
+  // Better Auth accepts an `aud` list that includes this server; a token for this server alone is required here.
+  const claims = DeviceClaims.safeParse(payload);
+  if (!claims.success || claims.data.aud !== config.publicOrigin) throw refused(c);
+  const { sub, did, cid } = claims.data;
+
+  const [device] = await db.db.select().from(devices).where(eq(devices.id, did)).limit(1);
+  if (!device || device.userId !== sub || device.clientId !== cid || device.revokedAt !== null) throw refused(c);
+  const now = Date.now();
+  if (device.lastUsedAt === null || now - device.lastUsedAt.getTime() >= LAST_USED_EVERY_MS) {
+    await db.db
+      .update(devices)
+      .set({ lastUsedAt: new Date(now) })
+      .where(eq(devices.id, did));
+  }
+
+  return { userId: sub, deviceId: did, clientId: cid };
 }
 
 /** The error to throw for a refused token; the app's error mapping answers it with 401 `auth-required`. */
