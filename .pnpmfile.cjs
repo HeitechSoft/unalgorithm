@@ -1,12 +1,21 @@
-// better-auth declares vitest as an optional peer, and pnpm resolves optional peers from the workspace root's
-// devDependencies. That pulled vitest, vite and lightningcss (MPL-2.0) into the server's production tree. The
-// server never uses better-auth's test helpers, so drop the peer.
+// pnpm resolves optional peers from the workspace root's devDependencies, which pulls them into the server's production
+// tree. Two such peers are dropped here:
+// - better-auth's vitest pulled in vitest, vite and lightningcss (MPL-2.0). The server never uses better-auth's test
+//   helpers.
+// - cosmiconfig's (graphile-worker's) typescript pulled the TypeScript compiler into the server image. cosmiconfig needs
+//   it only to load a graphile-worker config file written in TypeScript, and the server has no config file.
+const DROPPED_PEERS = new Map([
+  ['better-auth', 'vitest'],
+  ['cosmiconfig', 'typescript'],
+]);
+
 module.exports = {
   hooks: {
     readPackage(pkg) {
-      if (pkg.name === 'better-auth') {
-        if (pkg.peerDependencies) delete pkg.peerDependencies.vitest;
-        if (pkg.peerDependenciesMeta) delete pkg.peerDependenciesMeta.vitest;
+      const peer = DROPPED_PEERS.get(pkg.name);
+      if (peer) {
+        if (pkg.peerDependencies) delete pkg.peerDependencies[peer];
+        if (pkg.peerDependenciesMeta) delete pkg.peerDependenciesMeta[peer];
       }
       return pkg;
     },

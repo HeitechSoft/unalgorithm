@@ -1,7 +1,8 @@
 /**
  * The server process. `startServer` opens the database, applies migrations, brings the AI route in line with the
- * configuration, and serves the app; run directly (`node apps/server/src/index.ts`, or `pnpm start`), this module
- * reads the configuration from the environment, starts the server, and stops it gracefully on SIGTERM or SIGINT.
+ * configuration, starts the background jobs, and serves the app; run directly (`node apps/server/src/index.ts`, or
+ * `pnpm start`), this module reads the configuration from the environment, starts the server, and stops it gracefully
+ * on SIGTERM or SIGINT.
  */
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -15,6 +16,7 @@ import { type Config, ConfigError, loadConfig } from './config.ts';
 import { type DbHandle, openPostgres } from './db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from './db/migrate.ts';
 import { type App, createApp } from './http/app.ts';
+import { createJobRegistry, type RunningJobs, startJobs } from './jobs/worker.ts';
 import { createLogger, errorFields, type Logger } from './log.ts';
 import { smtpMailer } from './mail/mailer.ts';
 
@@ -33,7 +35,10 @@ export interface StartOptions {
 export interface RunningServer {
   /** `http://<host>:<port>` as bound. */
   url: string;
-  /** Stops accepting, waits up to 10 s for requests in flight, then closes the database. Safe to call twice. */
+  /**
+   * Stops accepting, waits up to 10 s for requests in flight, stops the jobs (waiting for running ones), then closes the
+   * database. Safe to call twice.
+   */
   close(): Promise<void>;
 }
 
@@ -41,6 +46,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   const log = opts.log ?? createLogger({ level: config.logLevel });
   const db = opts.db ?? openPostgres(config.databaseUrl, log);
   let server: Server;
+  let running: RunningJobs | undefined;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
@@ -48,10 +54,13 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // The rate limit stays at its default (on): only tests turn it off.
     const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
     const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
+    // Modules register their tasks here, before the jobs start. With none, no worker runs.
+    const jobs = createJobRegistry();
     const app = createApp({ config, db, log, billing: selectBilling(config), auth, ai });
+    running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
-    await db.close();
+    await closeAll(running, db);
     throw err;
   }
 
@@ -60,7 +69,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let closing: Promise<void> | undefined;
   return {
     url: `http://${config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`,
-    close: () => (closing ??= stop(server, db)),
+    close: () => (closing ??= stop(server, running, db)),
   };
 }
 
@@ -76,7 +85,7 @@ function listen(app: App, hostname: string, port: number): Promise<Server> {
   });
 }
 
-async function stop(server: Server, db: DbHandle): Promise<void> {
+async function stop(server: Server, running: RunningJobs | undefined, db: DbHandle): Promise<void> {
   await new Promise<void>((resolve) => {
     // close() stops accepting and ends idle keep-alive connections; busy ones get the grace period.
     const grace = setTimeout(() => server.closeAllConnections(), STOP_GRACE_MS);
@@ -85,7 +94,16 @@ async function stop(server: Server, db: DbHandle): Promise<void> {
       resolve();
     });
   });
-  await db.close();
+  await closeAll(running, db);
+}
+
+/** The jobs first: they share the database's pool. */
+async function closeAll(running: RunningJobs | undefined, db: DbHandle): Promise<void> {
+  try {
+    await running?.stop();
+  } finally {
+    await db.close();
+  }
 }
 
 async function main(): Promise<void> {

@@ -45,6 +45,9 @@ export interface PostgresOptions {
 /**
  * A pooled Postgres connection. Nothing connects until the first query. `log` receives errors of idle connections (the
  * database restarted, say): the pool drops such a connection and opens a new one on demand, so they are not fatal.
+ * A connection that is checked out reports an error on itself instead, and node-postgres raises it again on that
+ * connection's next query. The listener on every connection keeps such an error from ending the process: the job
+ * worker (CL2-03) holds one connection for as long as it runs.
  */
 export function openPostgres(databaseUrl: string, log?: Logger, opts: PostgresOptions = {}): DbHandle {
   const pool = new Pool({
@@ -53,6 +56,7 @@ export function openPostgres(databaseUrl: string, log?: Logger, opts: PostgresOp
     connectionTimeoutMillis: opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
   });
   pool.on('error', (err) => log?.warn('db.pool.error', errorFields(err)));
+  pool.on('connect', (client) => client.on('error', (err) => log?.warn('db.client.error', errorFields(err))));
   return { kind: 'postgres', db: drizzle({ client: pool, schema }), pool, close: once(() => pool.end()) };
 }
 
