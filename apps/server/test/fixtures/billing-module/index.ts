@@ -4,8 +4,9 @@
  * private code. It keeps the rule the private module keeps: only types come from the server, and every value it uses
  * arrives through `host`.
  *
- * Balances live in memory, per provider: each account starts at `BILLING_FIXTURE_START_MICROS` (default $1, all of it
- * starter credit), a classify costs 100 micro-dollars a post (never more than is left), and an empty balance is refused.
+ * Balances live in memory, in one map per process: each account starts at `BILLING_FIXTURE_START_MICROS` (default $1, all
+ * of it starter credit), a classify costs 100 micro-dollars a post (never more than is left), and an empty balance is
+ * refused. One command, `balance --user <id>`, runs through the server's billing CLI (CL2-06).
  */
 import type { CreditAccount, CreditBalance } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
@@ -15,6 +16,14 @@ import type { AppEnv } from '../../../src/http/app.ts';
 
 const MICROS_PER_POST = 100;
 const DEFAULT_START_MICROS = 1_000_000;
+const USAGE = 'usage: balance --user <id>';
+
+/**
+ * What each account has left, by user id: shared by every provider this module makes in a process and by `runCli`. A
+ * CLI process makes no provider, so there the map is empty and every account shows the start balance. Keys are the
+ * server's random user ids, so tests that share a process never see each other's balances.
+ */
+const balances = new Map<string, number>();
 
 /** The module's own configuration error: by contract its message names variables, never their values. */
 class BillingConfigError extends Error {
@@ -27,7 +36,6 @@ class BillingConfigError extends Error {
 export async function createBillingProvider(host: BillingHost): Promise<BillingProvider> {
   const { protocol } = host;
   const start = startMicros(host.env.BILLING_FIXTURE_START_MICROS);
-  const balances = new Map<string, number>();
   const balanceOf = (userId: string) => balances.get(userId) ?? start;
   /** All of it promotional: the starter credit, still held, with no expiry here. */
   const creditBalance = (userId: string): CreditBalance => {
@@ -75,6 +83,17 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
       });
     },
   };
+}
+
+/** The module's commands: `balance --user <id>` prints `balance <micros>`; anything else prints the usage (exit code 2). */
+export async function runCli(args: readonly string[], host: BillingHost, out: (line: string) => void): Promise<number> {
+  const [command, flag, userId, ...rest] = args;
+  if (command !== 'balance' || flag !== '--user' || !userId || rest.length > 0) {
+    out(USAGE);
+    return 2;
+  }
+  out(`balance ${balances.get(userId) ?? startMicros(host.env.BILLING_FIXTURE_START_MICROS)}`);
+  return 0;
 }
 
 /** The start balance: a whole number of micro-dollars, 0 or more. */
