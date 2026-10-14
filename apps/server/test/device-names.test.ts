@@ -30,18 +30,13 @@ type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
 /** Apps a test opened, closed after it whatever the outcome. */
 const cleanup: (() => Promise<unknown>)[] = [];
-/** Every log line of every app in this file, for the log test at the end (AC 6). */
-const allLines: string[] = [];
 afterEach(async () => {
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
 async function namesApp() {
   const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: TOM }) });
-  cleanup.push(async () => {
-    allLines.push(...t.lines);
-    await t.close();
-  });
+  cleanup.push(() => t.close());
   return t;
 }
 
@@ -129,21 +124,21 @@ describe('storing the name', { timeout: PGLITE_TIMEOUT }, () => {
 describe('privacy and schema', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_device_name_not_logged', async () => {
     const t = await namesApp();
-    // Every outcome once: stored, trimmed, refused for its name, then a refresh.
+    // Every outcome of AC 1 to 5 once, in this app: stored, unnamed, trimmed, refused for its name and retried, then a
+    // refresh that sends a name.
     const named = await signInDevice(t.app, t.outbox, TOM, DEV_EXTENSION_ID, WINDOWS);
+    await signInDevice(t.app, t.outbox, TOM);
     await signInDevice(t.app, t.outbox, TOM, DEV_EXTENSION_ID, `  ${LINUX}  `);
     const { code, verifier } = await authorized(t);
     expect((await postToken(t.app, codeExchange(code, verifier, DEV_EXTENSION_ID, NOT_A_NAME))).status).toBe(400);
+    expect((await postToken(t.app, codeExchange(code, verifier, DEV_EXTENSION_ID, WINDOWS))).status).toBe(200);
     await refreshed(t, named);
 
     // The sign-in line names the device by its id only.
     const signedIn = t.events().filter((e) => e.event === 'auth.signed_in');
-    expect(signedIn).toHaveLength(2);
+    expect(signedIn).toHaveLength(4);
     for (const line of signedIn) expect(Object.keys(line).sort()).toEqual(['device_id', 'event', 'level', 'rid', 't']);
-    // This test's lines and every line the earlier tests in this file wrote (AC 1 to 5).
-    const lines = [...t.lines, ...allLines];
-    expect(lines.length).toBeGreaterThan(t.lines.length);
-    for (const line of lines) {
+    for (const line of t.lines) {
       for (const name of [WINDOWS, LINUX, NOT_A_NAME, 'Another name']) expect(line).not.toContain(name);
     }
   });
