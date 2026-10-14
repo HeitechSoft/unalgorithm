@@ -156,6 +156,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@unalgorithm/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@unalgorithm/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

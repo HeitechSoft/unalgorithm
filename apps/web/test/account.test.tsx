@@ -1,87 +1,18 @@
 /**
  * The account page every server serves at `/account`: who is signed in here and signing out, or the email-code sign-in
  * when nobody is, and the home page's link to it. `fetch` is a fake server per test that keeps a session as the real one
- * does: an accepted code starts it and signing out ends it.
+ * does: an accepted code starts it and signing out ends it. The Credits section has its own tests (credits.test.tsx).
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ACCOUNT_PAGE_PATH, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, CREDIT_ACCOUNT_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
 import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
 import { Home } from '../src/main.tsx';
+import { fakeServer, INFO, SIGNED_IN, TOM } from './support/fake-server.ts';
 
-const TOM = 'tom@example.com';
-const SIGNED_IN = `Signed in as ${TOM}`;
 const UNREACHABLE = "Couldn't reach the server. Try again.";
-
-const INFO: ServerInfo = {
-  v: 1,
-  name: 'Example AI',
-  version: '0.1.0',
-  source: 'https://example.org/source/server-v0.1.0',
-  billing: false,
-  capabilities: { classify: true, sync: false },
-  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
-  limits: { maxPostsPerRequest: 12 },
-};
-
-type Answer = { status: number; body?: unknown };
-/** An answer, `'offline'` for none at all (`fetch` rejects), or a function for one that arrives when the test says. */
-type Reply = Answer | 'offline' | (() => Answer | Promise<Answer>);
-interface Call {
-  method: string;
-  path: string;
-  body: unknown;
-}
-
-/**
- * Stubs `fetch` with the server's routes (keyed `METHOD path`; `routes` replaces any of them). `session` is the address
- * signed in at the start, or null for none; an accepted code signs in as TOM and signing out ends the session.
- */
-function fakeServer({
-  session = null,
-  info = INFO,
-  routes = {},
-}: {
-  session?: string | null;
-  info?: ServerInfo;
-  routes?: Record<string, Reply>;
-} = {}) {
-  const calls: Call[] = [];
-  let current = session;
-  const all: Record<string, Reply> = {
-    [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: info },
-    [`GET ${SESSION_PATH}`]: () => ({
-      status: 200,
-      body: current ? { session: { userId: 'u1' }, user: { email: current } } : null,
-    }),
-    [`POST ${SEND_CODE_PATH}`]: { status: 200, body: { success: true } },
-    [`POST ${SIGN_IN_PATH}`]: () => {
-      current = TOM;
-      return { status: 200, body: { token: 'session-token', user: { email: TOM } } };
-    },
-    [`POST ${SIGN_OUT_PATH}`]: () => {
-      current = null;
-      return { status: 200, body: { success: true } };
-    },
-    ...routes,
-  };
-  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    const path = String(input);
-    calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-    const route = all[`${method} ${path}`] ?? { status: 404, body: { code: 'bad-request', message: 'Not found.' } };
-    if (route === 'offline') throw new TypeError('Failed to fetch');
-    const reply = typeof route === 'function' ? await route() : route;
-    return new Response(JSON.stringify(reply.body ?? null), {
-      status: reply.status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  });
-  vi.stubGlobal('fetch', fetch);
-  return { calls, count: (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path).length };
-}
 
 /** Renders the account page. */
 function openAccount() {
@@ -208,14 +139,20 @@ describe('signed out and errors', () => {
   });
 
   it('test_account_same_without_billing', async () => {
+    // Billing adds the Credits section (CL2-09) below the account row and changes nothing else on the page.
     const pages: string[] = [];
     for (const billing of [false, true]) {
       const server = fakeServer({ session: TOM, info: { ...INFO, billing } });
       const { container } = openAccount();
       await screen.findByText(SIGNED_IN);
       await new Promise((resolve) => setTimeout(resolve, 0));
+      const credits = screen.queryByRole('region', { name: 'Credits' });
+      expect(credits !== null).toBe(billing);
+      credits?.remove();
       pages.push(container.innerHTML);
-      expect(server.calls.map((c) => c.path)).toEqual([SERVER_INFO_PATH, SESSION_PATH]);
+      expect(server.calls.map((c) => c.path)).toEqual(
+        billing ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH] : [SERVER_INFO_PATH, SESSION_PATH],
+      );
       cleanup();
     }
     expect(pages[1]).toBe(pages[0]);

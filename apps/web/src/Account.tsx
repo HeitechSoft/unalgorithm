@@ -1,12 +1,14 @@
 /**
  * The account page every server serves at `/account`, Cloud or self-hosted: who is signed in on this server, and signing
  * out, or the email-code sign-in (`SignIn`) when nobody is. The page names the server only by its discovery document.
- * Later sections (credits when the server advertises billing, devices, export and delete) go below the account row.
+ * Sections go below the account row: the credits when the server advertises billing (`Credits`), and later devices,
+ * export and delete.
  */
 import type { ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getSession, serverInfo, signOut } from './api.ts';
+import { Credits } from './Credits.tsx';
 import { Page } from './Page.tsx';
 import { failureMessage, SignIn } from './SignIn.tsx';
 
@@ -85,6 +87,7 @@ export function Account() {
           }
         />
       </ListGroup>
+      {info.billing ? <Credits onSignedOut={toSignedOut} /> : null}
     </Page>
   );
 }

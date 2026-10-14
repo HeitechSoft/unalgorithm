@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
     "react": "^19.3.0",

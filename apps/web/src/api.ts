@@ -1,12 +1,16 @@
 /**
- * The page's calls to its own server: the discovery document, Better Auth's email-code sign-in, and the authorize
- * endpoint that hands the extension a single-use code. All same-origin, so the browser sends the session cookie and the
- * `Origin` header Better Auth checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all).
+ * The page's calls to its own server: the discovery document, Better Auth's email-code sign-in, the authorize endpoint
+ * that hands the extension a single-use code, and the account's credits where the server bills. All same-origin, so the
+ * browser sends the session cookie and the `Origin` header Better Auth checks. Every failure is an `ApiError` carrying
+ * the HTTP status (0: no answer at all).
  */
 import {
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
+  CREDIT_ACCOUNT_PATH,
+  type CreditAccount,
+  CreditAccountSchema,
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
@@ -81,4 +85,9 @@ export async function signOut(): Promise<void> {
 /** Asks for the extension's single-use code; returns where to send the browser (the extension's redirect address). */
 export async function authorize(req: AuthorizeRequest): Promise<string> {
   return (await request(AUTHORIZE_API_PATH, AuthorizeResponseSchema, req)).redirect;
+}
+
+/** The signed-in person's balance and credit history; only a server that advertises billing answers it. */
+export async function creditAccount(): Promise<CreditAccount> {
+  return request(CREDIT_ACCOUNT_PATH, CreditAccountSchema);
 }

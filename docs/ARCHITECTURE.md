@@ -11,7 +11,7 @@ apps/extension ──► packages/platforms ──► packages/core ──► pa
        └──────────► packages/ui (React components, tokens, in-feed parts)
 
 apps/server ─────► packages/ai, packages/core, packages/protocol   (never ui, platforms or wxt)
-apps/web ────────► packages/ui, packages/protocol                  (the server's sign-in and account pages)
+apps/web ────────► packages/ui, packages/core, packages/protocol   (the server's sign-in and account pages)
 ```
 
 | Package | Responsibility | Rules |
@@ -23,7 +23,7 @@ apps/web ────────► packages/ui, packages/protocol             
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
 | `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core` and `ai`; never `ui`, `platforms` or `wxt`. Logs no request body |
-| `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol` and `ui`; never `platforms` or `wxt` |
+| `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui` and `core`'s wording helpers; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
 are consumed as TypeScript source (`exports` points at `src/index.ts`); there is no separate build step for them.
@@ -159,7 +159,9 @@ call it allows the call, holds an amount, or refuses with `insufficient-credits`
 or releases the hold. It also reports a balance and may mount its own routes and pages. The open server ships the
 no-op provider (`BILLING=off`): usage is recorded and admins set caps, but nobody is charged. A provider sees account
 ids, amounts and usage counts, never posts. UnAlgorithm Cloud's billing module lives in HeitechSoft's private
-repository and reaches the server only through this interface.
+repository and reaches the server only through this interface. Where the discovery document advertises billing, the
+account page (`apps/web`, public) shows the balance and credit history the module answers at `GET /v1/billing/account`,
+in the extension's wording.
 
 ## Testing
 
