@@ -44,7 +44,7 @@ export class SyncRefusal extends Error {
 }
 
 /** A uuid in any case, as Postgres reads one. Anything else names no space, and comparing it with a uuid column throws. */
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The account's personal space, created on first use. Requests that create it at once insert one row between them: the

@@ -11,7 +11,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Db, type DbHandle, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
-import { devices, syncItems, syncPushes, syncSpaces, user } from '../src/db/schema.ts';
+import { syncItems, syncPushes, syncSpaces, user } from '../src/db/schema.ts';
 import {
   type AccessResolver,
   ensureUserSpace,
@@ -19,17 +19,13 @@ import {
   listSpaces,
   readChanges,
   type SpaceRow,
-  type SyncPrincipal,
-  SyncRefusal,
+  type SyncRefusal,
 } from '../src/sync/spaces.ts';
 import { createTestDb, queryRows } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
-import { DEV_EXTENSION_ID } from './support/sign-in.ts';
+import { ALICE, BOB, type People, refusal, seedPeople } from './support/sync.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
-
-const ALICE = 'alice-user-id';
-const BOB = 'bob-user-id';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -56,28 +52,6 @@ async function postgresDb(): Promise<Db> {
   cleanup.push(() => handle.close());
   await runMigrations(handle, { migrationsFolder: MIGRATIONS_FOLDER, log: captureLog().log });
   return handle.db;
-}
-
-interface People {
-  alice: SyncPrincipal;
-  bob: SyncPrincipal;
-}
-
-/** Two accounts with a device each, inserted directly (sign-in is not under test here). */
-async function seedPeople(db: Db): Promise<People> {
-  const now = new Date();
-  await db
-    .insert(user)
-    .values([ALICE, BOB].map((id) => ({ id, name: '', email: `${id}@example.com`, createdAt: now, updatedAt: now })));
-  const [a, b] = await db
-    .insert(devices)
-    .values([
-      { userId: ALICE, clientId: DEV_EXTENSION_ID },
-      { userId: BOB, clientId: DEV_EXTENSION_ID },
-    ])
-    .returning();
-  if (!a || !b) throw new Error('The devices were not inserted.');
-  return { alice: { userId: ALICE, deviceId: a.id }, bob: { userId: BOB, deviceId: b.id } };
 }
 
 /** One stored item: live unless `deleted`; `expiresAt` only for `ttl-cache` items. */
@@ -138,17 +112,6 @@ const read = (db: Db, space: SpaceRow, q: { since: number; limit?: number; snaps
     { epoch: q.epoch ?? space.epoch, since: q.since, limit: q.limit ?? 500, snapshot: q.snapshot ?? false },
     NOW,
   );
-
-/** The `SyncRefusal` a call threw; fails the test when it resolved or threw anything else. */
-async function refusal(call: Promise<unknown>): Promise<Pick<SyncRefusal, 'code' | 'status' | 'reason'>> {
-  const err = await call.then(
-    () => undefined,
-    (e: unknown) => e,
-  );
-  expect(err).toBeInstanceOf(SyncRefusal);
-  const { code, status, reason } = err as SyncRefusal;
-  return { code, status, reason };
-}
 
 describe('schema', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_sync_tables_created_by_migrations', async () => {
