@@ -19,7 +19,8 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
   };
 
   const bridge: Bridge = {
-    classify: (items) => sendToBackground({ type: 'classify', platform: adapter.id, items }),
+    classify: (items, opts) =>
+      sendToBackground({ type: 'classify', platform: adapter.id, items, cacheOnly: opts?.cacheOnly === true }),
     pushTabState: (patch) => {
       if (ctx.isValid) void sendToBackground({ type: 'tabState', patch }).catch(() => undefined);
     },

@@ -89,7 +89,7 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'context-overflow':
       return 'The post was too long for this model.';
     case 'insufficient-credits':
-      return provider ? `Your ${provider} balance is empty.` : 'Your balance on this AI server is empty.';
+      return `${provider ? `Your ${provider} balance is empty.` : 'Your balance on this AI server is empty.'} Add credit, or switch to on-device or your own key.`;
     case 'auth-required':
       return provider ? `Sign in to ${provider} again.` : 'Sign in to your AI server again.';
     case 'no-model':

@@ -56,7 +56,8 @@ export interface Runtime {
 
 /** How the controller talks to the rest of the extension (mocked in tests). */
 export interface Bridge {
-  classify(items: ClassifyItem[]): Promise<BgResponses['classify']>;
+  /** `cacheOnly`: AI is paused, so only the background's cache answers (no network). */
+  classify(items: ClassifyItem[], opts?: { cacheOnly?: boolean }): Promise<BgResponses['classify']>;
   pushTabState(patch: Partial<TabState>): void;
   /** `shareable`: a server may receive the rated post, and so its summary (R23). */
   vote(
@@ -469,10 +470,6 @@ export class FeedController {
 
   // ---------- deciding & applying ----------
 
-  private aiActive(): boolean {
-    return !!this.rt?.device.aiSource && !this.aiPause;
-  }
-
   private decideAndApply(e: Entry): void {
     const rt = this.rt;
     if (!rt) return;
@@ -481,7 +478,9 @@ export class FeedController {
         item: { kind: 'post', post: e.post },
         settings: rt.settings,
         ...(e.classification ? { classification: e.classification } : {}),
-        aiActive: this.aiActive(),
+        // A configured source, paused or not: what is already known about a post keeps applying while AI is paused
+        // (R27); only new AI calls stop.
+        aiActive: !!rt.device.aiSource,
         learned: rt.learned,
         ...(e.vote ? { vote: e.vote } : {}),
         degraded: this.degraded,
@@ -765,7 +764,8 @@ export class FeedController {
 
   private maybeQueue(e: Entry): void {
     const rt = this.rt;
-    if (!rt || !this.aiActive() || e.kind !== 'post' || !e.post || e.aiStatus !== 'idle') return;
+    // Queued while AI is paused too: the batch then asks the cache only (see flush).
+    if (!rt?.device.aiSource || e.kind !== 'post' || !e.post || e.aiStatus !== 'idle') return;
     if (e.retryAt && Date.now() < e.retryAt) return;
     // Posts already hidden by a rule or the user's own lists never cost an AI call.
     if (e.decision.filter && e.decision.filter.source !== 'ai') return;
@@ -783,9 +783,11 @@ export class FeedController {
     this.flushTimer = undefined;
     // Nearest to the viewport first.
     this.queue.sort((a, b) => Number(b.onScreen) - Number(a.onScreen));
-    while (this.queue.length && this.rt && !this.aiPause) {
+    while (this.queue.length && this.rt) {
       const batch = this.queue.splice(0, BATCH_SIZE).filter((e) => e.aiStatus === 'queued' && e.post);
       if (!batch.length) continue;
+      // While AI is paused the background answers from its cache only: no AI call, no network (R27).
+      const cacheOnly = !!this.aiPause;
       const redactMentions = this.rt.settings.ai.redactMentions;
       const items: ClassifyItem[] = batch.map((e) => {
         const { ref: _ref, ...input } = toPostForAI(e.post as PostData, { ref: 'x', redactMentions });
@@ -797,7 +799,7 @@ export class FeedController {
       this.schedulePush();
       let res: BgResponses['classify'];
       try {
-        res = await this.bridge.classify(items);
+        res = await this.bridge.classify(items, { cacheOnly });
       } catch (err) {
         res = { results: [], pause: undefined };
         for (const e of batch) {
@@ -820,7 +822,9 @@ export class FeedController {
           e.classification = r.classification;
           e.aiStatus = 'done';
         } else if (r.status === 'skipped') {
-          e.aiStatus = 'skipped';
+          // Not in the cache while AI is paused: update() queues it again on resume. If AI resumed while this lookup
+          // was on its way, it is asked again now.
+          e.aiStatus = r.reason === 'paused' && !this.aiPause ? 'idle' : 'skipped';
           e.aiMessage =
             r.reason === 'cap-reached' ? 'Daily limit reached' : r.reason === 'declined' ? 'The AI declined this post' : '';
         } else if (r.retryable) {
@@ -831,12 +835,10 @@ export class FeedController {
           e.aiMessage = r.message;
         }
         this.decideAndApply(e);
+        if (e.aiStatus === 'idle' && e.near) this.maybeQueue(e);
       }
-      if (res.pause && BLOCKING_AI_ERRORS.has(res.pause.code)) {
-        this.aiPause = res.pause;
-        for (const e of this.queue) e.aiStatus = 'idle';
-        this.queue = [];
-      }
+      // The rest of the queue stays: the next batches go out as cache-only lookups.
+      if (res.pause && BLOCKING_AI_ERRORS.has(res.pause.code)) this.aiPause = res.pause;
       this.recomputeRuns();
       this.schedulePush();
     }

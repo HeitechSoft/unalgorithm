@@ -412,14 +412,22 @@ describe('error messages', () => {
     // The extension passes its own label for the pinned hosted origin; a server passes its INSTANCE_NAME.
     expect(describeError('auth-required', 'UnAlgorithm Cloud')).toBe('Sign in to UnAlgorithm Cloud again.');
     expect(describeError('auth-required', 'ai.example.org')).toBe('Sign in to ai.example.org again.');
-    expect(describeError('insufficient-credits', 'My Server')).toBe('Your My Server balance is empty.');
     expect(describeError('auth-required')).toBe('Sign in to your AI server again.');
-    expect(describeError('insufficient-credits')).toBe('Your balance on this AI server is empty.');
     expect(describeError('auth', '')).toBe(describeError('auth'));
     for (const code of AI_ERROR_CODES) {
       expect(describeError(code)).not.toMatch(/UnAlgorithm\s+Cloud/i);
       expect(describeError(code, 'My Server')).not.toMatch(/UnAlgorithm\s+Cloud/i);
     }
+  });
+
+  it('test_insufficient_credits_text', () => {
+    // R27: at a zero balance AI pauses, and the text says how to go on. It names only the server it is given.
+    expect(describeError('insufficient-credits', 'UnAlgorithm Cloud')).toBe(
+      'Your UnAlgorithm Cloud balance is empty. Add credit, or switch to on-device or your own key.',
+    );
+    expect(describeError('insufficient-credits')).toBe(
+      'Your balance on this AI server is empty. Add credit, or switch to on-device or your own key.',
+    );
   });
 
   it('no source file hardcodes the hosted service name', async () => {

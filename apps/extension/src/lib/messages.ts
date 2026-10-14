@@ -11,7 +11,7 @@ export interface ClassifyItem {
 
 export type ClassifyItemResult =
   | { key: PostKey; status: 'ok'; classification: Classification; model: string; cached: boolean }
-  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' | 'not-public' }
+  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' | 'not-public' | 'paused' }
   | { key: PostKey; status: 'failed'; code: AIErrorCode; message: string; retryable: boolean };
 
 export interface BgError {
@@ -58,7 +58,8 @@ export interface PublicServerAccount {
 }
 
 export type BgRequest =
-  | { type: 'classify'; platform: PlatformId; items: ClassifyItem[] }
+  /** `cacheOnly`: AI is paused, so only the cache answers (nothing is sent, nothing is metered). */
+  | { type: 'classify'; platform: PlatformId; items: ClassifyItem[]; cacheOnly?: boolean }
   | { type: 'tabState'; patch: Partial<TabState> }
   | {
       type: 'vote';

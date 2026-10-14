@@ -167,9 +167,10 @@ function toBgError(e: AIError, cfg: AISourceConfig): BgError {
 
 /**
  * Classify posts with the chosen source: cache first, then the daily cap (paid sources only), then the AI.
- * Rules-only (no source) never touches the network.
+ * Rules-only (no source) never touches the network. `cacheOnly` (AI is paused, R27) stops after the cache: a miss is
+ * skipped as `paused`, with no daily cap, no AI call, no network and no usage.
  */
-export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses['classify']> {
+export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: boolean } = {}): Promise<BgResponses['classify']> {
   const [device, settings, learned] = await Promise.all([readDevice(), readSettings(), learnedItem.getValue()]);
   const cfg = device.aiSource;
   if (!cfg) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'ai-off' })) };
@@ -251,6 +252,10 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
     return !hit;
   });
   if (!misses.length) return { results };
+  if (opts.cacheOnly) {
+    for (const p of misses) results.push({ key: p.item.key, status: 'skipped', reason: 'paused' });
+    return { results };
+  }
 
   let pause: BgError | undefined;
   if (!isLocalSource(cfg)) {

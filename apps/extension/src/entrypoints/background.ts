@@ -83,7 +83,7 @@ async function resumeFeedTabs(): Promise<void> {
 export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   classify: async (msg, sender) => {
     if (!fromFeedTab(sender)) deny('classify');
-    return classifyItems(msg.items.slice(0, 8));
+    return classifyItems(msg.items.slice(0, 8), { cacheOnly: msg.cacheOnly === true });
   },
   tabState: async (msg, sender) => {
     if (sender.tab?.id !== undefined && fromFeedTab(sender)) await mergeTabState(sender.tab.id, msg.patch);

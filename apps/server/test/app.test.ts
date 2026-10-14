@@ -289,7 +289,9 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
     }
     // The two codes whose text used to name the hosted service now name this server.
     expect(describeError('auth-required', 'My Server')).toBe('Sign in to My Server again.');
-    expect(describeError('insufficient-credits', 'My Server')).toBe('Your My Server balance is empty.');
+    expect(describeError('insufficient-credits', 'My Server')).toBe(
+      'Your My Server balance is empty. Add credit, or switch to on-device or your own key.',
+    );
   });
 
   it('test_non_error_throw_is_500_json', async () => {
