@@ -446,6 +446,8 @@ describe('loader', { timeout: PGLITE_TIMEOUT }, () => {
       [await write('off-id.mjs', providerModule("provider.id = 'off';")), invalid],
       [await write('advertised.mjs', providerModule("provider.advertised = 'yes';")), invalid],
       [await write('mount.mjs', providerModule("provider.mount = '/routes';")), invalid],
+      [await write('export.mjs', providerModule('provider.exportAccount = {};')), invalid],
+      [await write('delete.mjs', providerModule('provider.deleteAccount = true;')), invalid],
     ];
     for (const [path, message] of cases) {
       const err = await rejection(loadBilling(moduleConfig(path), t.host, log));
@@ -464,6 +466,11 @@ describe('loader', { timeout: PGLITE_TIMEOUT }, () => {
     const complete = await loadBilling(moduleConfig(await write('complete.mjs', providerModule(''))), t.host, log);
     expect(complete.id).toBe('probe');
     expect(lines).toHaveLength(1);
+    // And with the account export and deletion members (CL3-15).
+    const account = providerModule('provider.exportAccount = fn; provider.deleteAccount = fn;');
+    const withAccount = await loadBilling(moduleConfig(await write('account.mjs', account)), t.host, log);
+    expect([typeof withAccount.exportAccount, typeof withAccount.deleteAccount]).toEqual(['function', 'function']);
+    expect(lines).toHaveLength(2);
   });
 
   it('test_start_server_runs_billing_module', async () => {

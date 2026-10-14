@@ -1,9 +1,10 @@
 /**
  * The one seam between the open server and a billing module (ADR 0007). A provider is asked before every AI call
  * (allow, hold, or refuse) and told after it (settle what succeeded, or release the hold), reports a balance, and may
- * mount its own routes and pages. The built-in provider is a no-op (`BILLING=off`): usage is still recorded and admins
- * set caps, but nobody is charged. With `BILLING=module`, `loadBilling` imports the module at `BILLING_MODULE` at boot,
- * and a module that cannot be used stops the start: a server meant to charge never serves AI for free.
+ * mount its own routes and pages, add its records to an account's export and hear of the account's deletion first
+ * (CL3-15). The built-in provider is a no-op (`BILLING=off`): usage is still recorded and admins set caps, but nobody
+ * is charged. With `BILLING=module`, `loadBilling` imports the module at `BILLING_MODULE` at boot, and a module that
+ * cannot be used stops the start: a server meant to charge never serves AI for free.
  *
  * A provider sees account ids, amounts and usage counts, never posts: `BillingContext` and `SettleInput` have no field
  * that could carry post text, a name or a prompt, and none may be added.
@@ -72,7 +73,26 @@ export interface BillingProvider {
   balance(userId: string): Promise<{ balanceMicros: number } | null>;
   /** Mounts the module's own routes and pages on the server's app, behind its middleware and after its routes. */
   mount?(app: Hono<AppEnv>): void;
+  /**
+   * What the module holds about this account (balances, ledger entries), for the account export. No post content.
+   * Amounts as integer numbers, times as ISO strings.
+   */
+  exportAccount?(userId: string): Promise<{ [key: string]: JsonValue } | null>;
+  /**
+   * Called before the account is deleted; a rejection stops the deletion (for example, records a module must keep). It
+   * may be called more than once for the same user (a double submit, two tabs, a retry after the server's delete
+   * failed), and the server deletes only after it resolves, so the deletion can still fail. It must be idempotent per
+   * userId (for example, a fixed ledger idempotency key `account-delete:<userId>`).
+   */
+  deleteAccount?(userId: string): Promise<void>;
 }
+
+/**
+ * A value that survives `JSON.stringify` and `z.json()` unchanged (no bigint, no Date, no undefined): what
+ * `exportAccount` answers, so a module converts ledger rows read as they are (bigint amounts and ids, `Date` times)
+ * instead of failing every export.
+ */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export const noopBilling: BillingProvider = Object.freeze({
   id: 'off',
@@ -123,7 +143,10 @@ export async function loadBilling(config: Config, host: BillingHost, log: Logger
   return provider;
 }
 
-/** A module's provider: an id of its own (`off` is the no-op's), the flag, the four calls, and `mount` if any. */
+/**
+ * A module's provider: an id of its own (`off` is the no-op's), the flag, the four calls, and `mount`, `exportAccount`
+ * and `deleteAccount` if any.
+ */
 function isProvider(value: unknown): value is BillingProvider {
   if (typeof value !== 'object' || value === null) return false;
   const p = value as Record<keyof BillingProvider, unknown>;
@@ -133,7 +156,7 @@ function isProvider(value: unknown): value is BillingProvider {
     p.id !== noopBilling.id &&
     typeof p.advertised === 'boolean' &&
     [p.check, p.settle, p.release, p.balance].every((fn) => typeof fn === 'function') &&
-    (p.mount === undefined || typeof p.mount === 'function')
+    [p.mount, p.exportAccount, p.deleteAccount].every((fn) => fn === undefined || typeof fn === 'function')
   );
 }
 

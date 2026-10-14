@@ -11,15 +11,15 @@
 import { format } from 'node:util';
 import { describeError } from '@unalgorithm/ai';
 import { CLASSIFY_PATH, ClassifyResponseSchema } from '@unalgorithm/protocol';
-import { sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { type DbHandle, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
 import { CANARY, canaryPosts, canaryProfile, FRIENDS_ONLY } from './support/canary.ts';
 import { classifyBody, postClassify } from './support/classify.ts';
-import { createTestDb, queryRows } from './support/db.ts';
+import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
+import { scanAllTables as scanTables } from './support/scan-tables.ts';
 import { DEV_EXTENSION_ORIGIN, signInDevice } from './support/sign-in.ts';
 import { createTestApp, testConfig } from './support/test-app.ts';
 
@@ -156,24 +156,6 @@ function captureOutput(): { output: string[]; stop(): void } {
       }
     },
   };
-}
-
-/** Every base table of the `public` and `drizzle` schemas, read whole. */
-async function scanTables(h: DbHandle): Promise<Map<string, string>> {
-  const tables = await queryRows(
-    h,
-    sql`select table_schema, table_name from information_schema.tables
-        where table_schema in ('public', 'drizzle') and table_type = 'BASE TABLE'`,
-  );
-  const scanned = new Map<string, string>();
-  for (const { table_schema, table_name } of tables) {
-    const [schema, table] = [String(table_schema), String(table_name)];
-    // Quoted and schema-qualified: an unquoted `user` is the SQL keyword, the current role, not Better Auth's table.
-    const rows = await queryRows(h, sql`select * from ${sql.identifier(schema)}.${sql.identifier(table)}`);
-    const json = JSON.stringify(rows, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value));
-    scanned.set(`${schema}.${table}`, json);
-  }
-  return scanned;
 }
 
 /** The eight paths against one app on `open`'s database, then the scan of every table. */
