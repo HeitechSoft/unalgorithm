@@ -58,6 +58,7 @@ no changelog section gets the heading "UnAlgorithm Feed server X.Y.Z".
 4. `server-release.yml` verifies (lint, typecheck, tests, the server licence check), checks the tag matches the version
    in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and pushes the image,
    attests its build provenance and creates the GitHub Release.
+5. First server release only: make the image public before announcing it (see *What is published*).
 
 ### The `release` environment
 
@@ -65,9 +66,11 @@ Both trains deploy through the same protected `release` environment. Its deploym
 → release → Deployment branches and tags) must list both patterns, each of type tag:
 
 - `v*.*.*` for the extension;
-- `server-v*.*.*` for the server. Without it, the server job is rejected before any step runs.
+- `server-v*.*.*` for the server. Without it, the server job is rejected before any step runs instead of waiting for
+  approval.
 
-Check them with:
+Add the server rule before pushing the first server tag, then check that this call lists both patterns, each with
+`"type": "tag"`:
 
 ```bash
 gh api repos/HeitechSoft/unalgorithm/environments/release/deployment-branch-policies
@@ -84,10 +87,18 @@ gh api repos/HeitechSoft/unalgorithm/environments/release/deployment-branch-poli
 - A GitHub Release titled "UnAlgorithm Feed server X.Y.Z" with the changelog section and install notes. It is never
   marked Latest, so the repository's Latest release stays the extension, which is what store users look for.
 
-**After the first release, once:** the image must be pullable without signing in. Check with
-`docker logout ghcr.io && docker pull ghcr.io/heitechsoft/unalgorithm-server:0.1.0`. If GHCR created the package as
-private, a HeitechSoft organization owner sets it to public in the package settings (Danger Zone → Change visibility;
-the organization's package creation settings must allow public packages).
+**After the first release, once:** GHCR creates `ghcr.io/heitechsoft/unalgorithm-server` as a private package on the
+first push, because a package takes its repository's access permissions but not its visibility. The GitHub Release
+from the same run already tells self-hosters to pull the image, so right after the first `server-v0.1.0` run a
+HeitechSoft organization owner makes it public: the organization's Packages tab → `unalgorithm-server` → Package
+settings → Danger Zone → Change visibility (the organization's package creation settings must allow public packages).
+Before announcing the release, check that it pulls without signing in:
+
+```bash
+docker logout ghcr.io && docker pull ghcr.io/heitechsoft/unalgorithm-server:0.1.0
+```
+
+A public package cannot be made private again, and later releases push to the same package, so this is needed once.
 
 ### Pinning a release
 
