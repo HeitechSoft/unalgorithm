@@ -71,23 +71,37 @@ nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md]
   whether it was signed out or revoked (`devices`).
 - **Hashed refresh tokens and codes:** refresh tokens and the single-use codes the extension trades for them are kept
   by hash only (`refresh_tokens`, `auth_codes`). An emailed sign-in code is kept by hash under the address it was asked
-  for (`verification`), whether or not that address may sign in. A code works for five minutes, and its row goes when
-  the code is used or replaced; rows of codes never used are not purged automatically yet.
+  for (`verification`), whether or not that address may sign in. A code works for five minutes, and each new code adds
+  a row. Trying a code deletes every row for that address; a wrong code puts the newest one back to count the attempt.
+  Whenever anyone tries a code on the server, the rows of codes past their five minutes are deleted, so a code nobody
+  tries keeps its row until someone next tries a code there.
 - **Sign-in page sessions:** signing in on the server's own page starts a session that records the browser's IP
   address and user agent (`session`). The session expires after one day, but expired rows are not purged
   automatically yet, so a row can stay until the account is deleted.
 - **AI routes:** which provider and model serve classification, and their eval results (`ai_routes`). No user data.
-- **Usage counts and costs:** one row per AI request with the number of posts, token counts, the model, the outcome
-  and the cost (`usage_events`).
+- **Usage counts and costs:** one row per AI request with the account, the device, the time and the request id, and the
+  number of posts, token counts, the model, the outcome and the cost (`usage_events`). Together the rows show when each
+  device used AI; they stay until the account is deleted.
 - **Per-user limits:** a daily post cap the server's admin set for an account with `user-cap` (`user_limits`).
 - **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
 
 Never stored or logged: post text, link titles, interest profiles, classification results, prompts or model answers.
-A classify request is handled in memory and answered with `Cache-Control: no-store`. The server's log lines carry a
-request id, method, path, status and timing, and never a request body, a query string or an IP address
-(`apps/server/src/log.ts`, `requestLog`). A web server or proxy in front of a server keeps logs of its own, under its
-operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses or query strings, and its error log can
-record the IP address and requested address of a request that fails.
+A classify request is handled in memory and answered with `Cache-Control: no-store`.
+
+The server logs one JSON line per event (`apps/server/src/log.ts`). Each request's `http` line carries its request id,
+method, path, status and timing (`requestLog`). Other lines name an event and a few facts about it, among them:
+
+- `auth.*`: the request id and the device id when a device signs in, refreshes its token (as often as every 15 minutes
+  while it is in use), is signed out, or reuses a refresh token. These lines show roughly when each device was in use.
+- `classify.done`: the request id, the number of posts asked for, answered and declined (Facebook posts that aren't
+  public), the model, the outcome and the time taken.
+- `limits.spend_breaker`: the day's AI spend and the limit, once per UTC day, when the daily spend limit
+  (`DAILY_SPEND_LIMIT_USD`) stops classification for everyone.
+- Failures: an error's name, code and top stack frames, with the request id when there is one, never its message.
+
+No line carries a request body, a query string, an IP address or an email address. A web server or proxy in front of a
+server keeps logs of its own, under its operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses
+or query strings, and its error log can record the IP address and requested address of a request that fails.
 
 The canary test (`apps/server/test/canary.test.ts`) proves the rule for the server's own code. It puts a marker in
 post text, link titles and the interest profile, and sends it down every classify path: a success, provider errors

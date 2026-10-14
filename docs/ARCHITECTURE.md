@@ -124,7 +124,8 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
    token. There is no prompt field.
 2. `requireDevice` checks the token and that its device exists and isn't revoked.
 3. Facebook posts that aren't public are declined without a call. The rest pass the limits (`ai/limits.ts`): the
-   per-user rate limit, the server's daily spend breaker and the per-user daily post cap.
+   per-user rate limit, the server's daily spend breaker (`DAILY_SPEND_LIMIT_USD`, logged as `limits.spend_breaker`
+   once per UTC day when it trips) and the per-user daily post cap.
 4. The enabled `classify` route that passed its eval for the current prompt version names the provider and model.
 5. Inside the billing seam, `classifyPosts` from `packages/ai` builds the prompts with the same `packages/core`
    builders the extension uses, and calls the model under a 25-second deadline.
@@ -146,7 +147,7 @@ post text, names or prompts.
 | `auth_codes` | Single-use codes for the PKCE exchange, by hash, with the extension, redirect address and challenge they are bound to |
 | `refresh_tokens` | Device refresh tokens, by hash, each usable once |
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |
-| `usage_events` | One row per AI request: post and token counts, model, outcome and cost |
+| `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
 
 ### Billing seam

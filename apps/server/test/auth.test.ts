@@ -174,6 +174,37 @@ describe('code security', { timeout: PGLITE_TIMEOUT }, () => {
       expect(JSON.stringify(row)).not.toContain(code);
     }
   });
+
+  // How long a code's row stays, as privacy-model.md's "What a server stores" says (Better Auth's own behaviour).
+  it('test_code_rows_go_when_tried_or_expired', async () => {
+    const t = await authApp();
+    const rowsFor = async (email: string) =>
+      (await t.deps.db.db.select().from(verification)).filter((row) => row.identifier.endsWith(email));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Each code adds a row, mailed or not, and a newer code leaves the older one in place.
+    await sendCode(t, STRANGER);
+    vi.advanceTimersByTime(200_000);
+    await sendCode(t, TOM);
+    vi.advanceTimersByTime(1_000);
+    await sendCode(t, TOM);
+    expect(await rowsFor(STRANGER)).toHaveLength(1);
+    expect(await rowsFor(TOM)).toHaveLength(2);
+
+    // Once STRANGER's code is past its five minutes, anyone trying any code deletes its row.
+    vi.advanceTimersByTime(100_000);
+    expect((await signIn(t, 'nobody@example.com', '123456')).status).toBe(400);
+    expect(await rowsFor(STRANGER)).toHaveLength(0);
+    expect(await rowsFor(TOM)).toHaveLength(2);
+
+    // Trying a code deletes every row for the address; a wrong one puts the newest code back with the attempt counted.
+    const code = codeFor(t, TOM);
+    expect((await signIn(t, TOM, wrong(code))).status).toBe(400);
+    const left = await rowsFor(TOM);
+    expect(left).toHaveLength(1);
+    expect(left[0]?.value).toMatch(/:1$/);
+    expect((await signIn(t, TOM, code)).status).toBe(200);
+    expect(await rowsFor(TOM)).toHaveLength(0);
+  });
 });
 
 describe('keys and sessions', { timeout: PGLITE_TIMEOUT }, () => {

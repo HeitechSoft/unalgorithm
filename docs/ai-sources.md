@@ -16,7 +16,7 @@ AI is optional. Rules handle ads, suggested posts, activity and people you don't
 | **Google Gemini, OpenRouter, Groq** | Pay the provider | Post text goes to the provider | Paste a key; UnAlgorithm recognizes it by prefix |
 | **Local: Ollama, LM Studio** | Free | Stays on your machine or network | Run the server and pick a model |
 | **Self-hosted or private** (any OpenAI-compatible server, HeitechSoft Private AI) | Your infrastructure | Goes to your server | Enter the base URL and, if needed, a key |
-| **UnAlgorithm Cloud** | Pay-as-you-go credits (Phase 2) | HeitechSoft gateway, zero retention | Coming soon |
+| **UnAlgorithm Cloud** | Pay-as-you-go credits (Phase 2) | Goes to HeitechSoft's gateway (nothing logged or stored), then Anthropic; see the [privacy model](privacy-model.md#where-post-text-goes) | Coming soon |
 
 Set it up in onboarding or **Settings → AI**. **Test and save** asks for permission to reach that one server,
 lists its models, picks a small default and runs a one-post probe: "Connected · Claude Haiku 5.5 · 640 ms". To use
