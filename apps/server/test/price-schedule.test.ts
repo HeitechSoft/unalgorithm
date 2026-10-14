@@ -202,8 +202,10 @@ describe('ci', () => {
     });
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
-    // Before this ticket's commit, HEAD has no schedule.
-    expect(result.stdout).toMatch(/No price in effect changed|nothing to compare/);
+    // HEAD has the schedule: the real git read it and compared it, never the "nothing to compare" fallback, which
+    // would also exit 0 if `git show` failed.
+    expect(result.stdout).toMatch(/^No price in effect changed \(\d+ of \d+ entries in effect\)\.$/m);
+    expect(result.stdout).not.toContain('nothing to compare');
   });
 
   it('test_server_release_checks_prices_in_effect', () => {

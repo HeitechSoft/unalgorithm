@@ -165,7 +165,9 @@ export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
 
     const cards = cardsOf(entry);
     const tasks = Object.keys(cards);
-    if (tasks.length !== CREDIT_TASKS.length || !CREDIT_TASKS.every((task) => Object.hasOwn(cards, task))) {
+    // A task key whose card is missing (null, undefined) prices nothing: the readers would crash on it.
+    const priced = (task: string) => Object.hasOwn(cards, task) && typeof cards[task] === 'object' && cards[task] !== null;
+    if (tasks.length !== CREDIT_TASKS.length || !CREDIT_TASKS.every(priced)) {
       problems.push(`${at}: cards must price exactly ${CREDIT_TASKS.join(', ')}`);
     }
     for (const [task, card] of Object.entries(cards)) {

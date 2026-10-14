@@ -144,6 +144,9 @@ describe('price schedule', () => {
     const cards = 'entry 1 (2026-11-15T00:00:00Z): cards must price exactly classify';
     bad(cards, withCards({}));
     bad(cards, withCards({ ...B.cards, factcheck: B.cards.classify }));
+    // A task key without a card prices nothing: every reader would crash on it, and the CI rule would compare nothing.
+    bad(cards, withCards({ classify: null }));
+    bad(cards, withCards({ classify: undefined }));
     const multiplier = 'entry 1 (2026-11-15T00:00:00Z): classify multiplier must be positive, in whole basis points';
     bad(multiplier, [A, entry(B.effectiveFrom, 1.00001)]);
     bad(multiplier, [A, entry(B.effectiveFrom, 0)]);
