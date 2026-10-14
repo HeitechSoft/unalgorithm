@@ -27,6 +27,7 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 | `isReshare` | Whether the post shares another post |
 | `media` | The kind of media only (image, video, document, link…) |
 | `link` | Domain and title of a shared link, never the URL |
+| `audience` | Facebook only: who can see the post; servers never receive non-public posts, and refuse them if sent |
 
 It never includes author names, profile links, group names, comments, images, the user's identity or browsing
 history. Web addresses inside the text are reduced to `[link: site]`.
@@ -50,16 +51,60 @@ and the E2E AI test checks the body received by the mock server.
 |---|---|---|
 | Rules only | — | — |
 | On this device | Chrome's built-in model, in process | Nobody |
-| Local / self-hosted | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
+| Local or self-hosted model (OpenAI-compatible) | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
 | Own key | The provider's API, directly from the browser | The provider, under their terms. OpenAI calls send `store: false` |
-| UnAlgorithm Cloud (Phase 2) | HeitechSoft's gateway | HeitechSoft (zero retention, no request bodies logged); Facebook posts that are not public are excluded by default |
+| An UnAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
+| UnAlgorithm Cloud | HeitechSoft's gateway in Canada, then Anthropic | HeitechSoft (nothing logged or stored; the canary test) and Anthropic, under its commercial API terms (zero retention only once that agreement is signed) |
+
+For both kinds of UnAlgorithm server, Facebook posts that aren't public are never sent: the background leaves them out
+(`serverMayReceive`), and a server declines any that reach it without calling a model. The extension names each server
+by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
+(`apps/extension/src/lib/server-label.ts`).
+
+## What a server stores
+
+An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
+nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database).
+
+- **Accounts:** the email address, and no name or picture (`user`).
+- **Devices:** one row per signed-in copy of the extension: its extension id, when it signed in and was last used, and
+  whether it was signed out or revoked (`devices`).
+- **Hashed refresh tokens and codes:** refresh tokens and the single-use codes the extension trades for them are kept
+  by hash only (`refresh_tokens`, `auth_codes`). An emailed sign-in code is kept by hash under the address it was asked
+  for (`verification`), whether or not that address may sign in. A code works for five minutes, and its row goes when
+  the code is used or replaced; rows of codes never used are not purged automatically yet.
+- **Sign-in page sessions:** signing in on the server's own page starts a session that records the browser's IP
+  address and user agent (`session`). The session expires after one day, but expired rows are not purged
+  automatically yet, so a row can stay until the account is deleted.
+- **AI routes:** which provider and model serve classification, and their eval results (`ai_routes`). No user data.
+- **Usage counts and costs:** one row per AI request with the number of posts, token counts, the model, the outcome
+  and the cost (`usage_events`).
+- **Per-user limits:** a daily post cap the server's admin set for an account with `user-cap` (`user_limits`).
+- **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
+
+Never stored or logged: post text, link titles, interest profiles, classification results, prompts or model answers.
+A classify request is handled in memory and answered with `Cache-Control: no-store`. The server's log lines carry a
+request id, method, path, status and timing, and never a request body, a query string or an IP address
+(`apps/server/src/log.ts`, `requestLog`). A web server or proxy in front of a server keeps logs of its own, under its
+operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses or query strings, and its error log can
+record the IP address and requested address of a request that fails.
+
+The canary test (`apps/server/test/canary.test.ts`) proves the rule for the server's own code. It puts a marker in
+post text, link titles and the interest profile, and sends it down every classify path: a success, provider errors
+that echo it back, invalid and unauthenticated requests, and a Facebook post that isn't public. The marker must then be
+in no log line, nothing the process wrote to standard output or standard error, no error answer and no row of any
+table. The test also checks that the marker did reach the mock model, and never from the non-public post. It runs on
+PGlite in every `pnpm test` and on Postgres 17 in the CI `server` job.
 
 ## Storage
 
-See the storage table in [ARCHITECTURE.md](ARCHITECTURE.md#storage). API keys live in the extension origin's
-IndexedDB (`secrets`). Content scripts run in the page's origin and cannot open it; they also never receive keys
-through messages. Keys are never synced, exported or included in diagnostics. "Erase everything" in Privacy & Data
-clears settings, statistics, votes, the classification cache and keys.
+See the storage table in [ARCHITECTURE.md](ARCHITECTURE.md#storage). API keys, and the refresh token of the server
+the user signed in to, live in the extension origin's IndexedDB (`secrets`); the server's 15-minute access token lives
+only in session memory. Content scripts run in the page's origin and cannot open either; they also never receive keys
+or tokens through messages. Keys and tokens are never synced, exported or included in diagnostics. "Erase everything"
+in Privacy & Data clears settings, statistics, votes, the classification cache and keys. When the user is signed in to
+a server, it first signs this browser out of that server, which ends its device and refresh token there, and then
+removes the account from the extension.
 
 ## Diagnostics
 

@@ -1,5 +1,19 @@
 # Releasing
 
+## Two release trains
+
+UnAlgorithm Feed ships from this repository on two trains, versioned independently. Neither train's tags trigger the
+other's workflow.
+
+| Train | Tag | Workflow | What it publishes |
+|---|---|---|---|
+| Extension | `vX.Y.Z` | `.github/workflows/release.yml` | The Chrome zip on a GitHub Release, then the Chrome Web Store (the steps below) |
+| Server | `server-vX.Y.Z` | `.github/workflows/server-release.yml` | The image `ghcr.io/heitechsoft/unalgorithm-server` and a GitHub Release ([Server releases](#server-releases)) |
+
+UnAlgorithm Cloud, HeitechSoft's hosted server, is not released from here: its private repository pins a server
+release and builds the Cloud image from that tag (ADR 0007, [Pinning a release](#pinning-a-release)). Security fixes
+follow their own rule: see [Security fixes](#security-fixes).
+
 ## Versioning
 
 The extension version lives in `apps/extension/package.json` and follows semver. Changes are described with
@@ -32,6 +46,32 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 - **Website, support and privacy policy URLs:** `https://unalgorithm.app`, its help page and its privacy page once the
   website is live; until then the GitHub repo, SUPPORT.md and PRIVACY.md on GitHub. Update the store's data-use
   disclosures whenever PRIVACY.md changes.
+
+## Before a store build carries the Cloud card
+
+Store builds show the UnAlgorithm Cloud card only as "Coming soon". The working card, which signs in to UnAlgorithm
+Cloud or another UnAlgorithm server (Settings → AI and onboarding), and the `identity` permission it signs in with
+are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in `apps/extension/wxt.config.ts`; development and e2e
+builds always have them). A store build may carry them only when all six of these are done:
+
+1. The UnAlgorithm Cloud beta privacy notice and beta terms are live on unalgorithm.app.
+2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
+   submit with this release.
+3. PRIVACY.md describes the server source (what is sent, to whom, what UnAlgorithm Cloud keeps), in the same release.
+4. The store extension's id is in `EXTENSION_IDS` on UnAlgorithm Cloud, so the Cloud accepts its sign-in.
+5. Invitees are still limited to the sign-up allowlist (`SIGNUP_ALLOWLIST`) until the public launch.
+6. The privacy impact assessment for UnAlgorithm Cloud (Quebec Law 25) is started, in HeitechSoft's private
+   repository.
+
+Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zip" step of
+`release.yml`. Until that PR, `release.yml` never sets it.
+
+```yaml
+      - name: Build zip
+        run: pnpm zip
+        env:
+          UA_CLOUD: "1"
+```
 
 ## Server releases
 
@@ -109,3 +149,16 @@ A running server reports its release as `version` in `/.well-known/unalgorithm.j
 
 UnAlgorithm Cloud, HeitechSoft's hosted server, pins a server release in its private repository and builds its image
 from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the public release it runs.
+
+## Security fixes
+
+Vulnerabilities are reported privately ([SECURITY.md](../SECURITY.md)), and their fixes stay private until they are
+released.
+
+- **Extension:** the fix ships in the next `vX.Y.Z` release.
+- **Server:** the fix may reach UnAlgorithm Cloud before the public server release, as in any coordinated disclosure
+  (ADR 0007). The public `server-vX.Y.Z` release with the fix follows within 30 days of the Cloud fix, or at once if
+  the issue is already public.
+- The GitHub security advisory is published with the public release and names the server release that fixes the issue
+  (and the extension release, when the extension changed too), so self-hosters know which `UNALGORITHM_VERSION` to
+  pin.

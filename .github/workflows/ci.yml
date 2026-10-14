@@ -208,3 +208,44 @@ jobs:
         # Reviewed false positives are listed in .gitleaksignore, which gitleaks reads from the repository root.
         run: |
           "$RUNNER_TEMP/gitleaks" git --redact --exit-code 1 .
+
+  cla-gate:
+    # No outside pull request merges before the final CLA is signed (CONTRIBUTING.md). Until the CLA bot is on, this job
+    # fails outside pull requests that change code shipped in the server image, which HeitechSoft must be able to
+    # license (ADR 0007). Remove it when cla.yml is switched on.
+    #
+    # It runs only for pull requests from a fork whose author is not an owner, member or collaborator, and never for the
+    # bots on cla.yml's allowlist, so Dependabot updates pass. A branch in this repository needs write access; checking
+    # for a fork as well matters because author_association can read CONTRIBUTOR for an organization member whose
+    # membership is private. It reads the changed file names through the API and never checks out pull request code.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.login != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Server paths need the signed CLA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # There is no checkout, so gh needs the repository named.
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          changed=$(gh pr diff "$PR_NUMBER" --name-only)
+          # Everything the server image is built from (apps/server/Dockerfile, CL1-25), and packages/sync, which the
+          # server will import. Keep this list in step with the Dockerfile.
+          server_paths='^(apps/server|apps/web|packages/sync|packages/protocol|packages/core|packages/ai|packages/ui)/'
+          if blocked=$(grep -E "$server_paths" <<<"$changed"); then
+            echo "::error::Server paths need the signed CLA, which is not live yet."
+            echo "Changed server paths:"
+            echo "$blocked"
+            exit 1
+          fi
+          echo "No server paths changed."

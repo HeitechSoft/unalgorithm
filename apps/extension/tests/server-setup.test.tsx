@@ -8,12 +8,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { type AISourceConfig, type Device, defaultDevice } from '@unalgorithm/core';
+import { type AISourceConfig, type Device, defaultDevice, defaultSettings } from '@unalgorithm/core';
 import { AUTHORIZE_PAGE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AiSetup } from '../src/components/AiSetup.tsx';
 import { ServerSetup } from '../src/components/ServerSetup.tsx';
+import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
 import { type BgRequest, type BgResponses, type PublicServerAccount, sendToBackground } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN, recipientText, serverLabel } from '../src/lib/server-label.ts';
 import { manifestFor } from '../wxt.config.ts';
@@ -173,6 +174,24 @@ describe('flag', () => {
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
     expect(screen.queryByText('UnAlgorithm Cloud')).toBeNull();
     for (const claim of ['Pay only', 'all your devices']) expect(document.body.textContent).not.toContain(claim);
+  });
+
+  it('test_erase_dialog_names_server_sign_out', async () => {
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockResolvedValue({ origins: [], permissions: [] } as never);
+    const keys = 'stats, AI usage history and saved API keys from this browser';
+    for (const [cloud, description] of [
+      [true, `${keys}, and signs it out of any UnAlgorithm server. This can't be undone.`],
+      // Store builds have no server card, so nobody can be signed in to a server.
+      [false, `${keys}. This can't be undone.`],
+    ] as const) {
+      flag.cloud = cloud;
+      render(<PrivacyPane settings={defaultSettings()} device={device()} />);
+      // The dialog stays in the page while closed (jsdom has no `showModal`).
+      const dialog = screen.getByRole('alertdialog', { hidden: true });
+      expect(dialog.textContent).toContain(description);
+      cleanup();
+    }
   });
 });
 

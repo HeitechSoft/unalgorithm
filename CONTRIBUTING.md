@@ -58,8 +58,9 @@ Useful commands:
 - Contributions are accepted under a [Contributor License Agreement](CLA.md). HeitechSoft needs it to keep offering
   the project under AGPL-3.0 and to license it commercially, for example to organizations running private
   deployments. **The CLA is still being finalized:** pull requests from outside contributors are welcome and will be
-  reviewed, and they will be merged once the final CLA is published and signed. A bot will then ask you to sign it
-  with a comment.
+  reviewed, and they will be merged once the final CLA is published and signed. CI enforces this for code that ships
+  in the server image (`apps/server`, `apps/web`, and `packages/sync`, `protocol`, `core`, `ai` and `ui`). A bot will
+  then ask you to sign it with a comment.
 
 ## Style
 

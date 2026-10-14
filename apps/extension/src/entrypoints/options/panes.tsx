@@ -44,6 +44,7 @@ import {
 import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
+import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { useStorageItem } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
@@ -852,7 +853,9 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
         onOpenChange={setErase}
         alert
         title="Erase everything?"
-        description="This removes your settings, exceptions, what UnAlgorithm learned, stats, AI usage history and saved API keys from this browser. This can't be undone."
+        // The background ends the device on the server before it erases the refresh token. Store builds have no
+        // server card yet, so nobody can be signed in to a server there.
+        description={`This removes your settings, exceptions, what UnAlgorithm learned, stats, AI usage history and saved API keys from this browser${CLOUD_ENABLED ? ', and signs it out of any UnAlgorithm server' : ''}. This can't be undone.`}
         actions={
           <>
             <Button onClick={() => setErase(false)} autoFocus>

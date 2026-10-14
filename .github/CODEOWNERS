@@ -12,3 +12,10 @@
 /PRIVACY.md                         @TomHeiber
 /CLA.md                             @TomHeiber
 /.github/                           @TomHeiber
+
+# The server: it handles post content and accounts, and HeitechSoft must be able to license all of it (ADR 0007).
+# The reviewed licence exceptions decide which dependencies may ship in it.
+/apps/server/                       @TomHeiber
+/apps/web/                          @TomHeiber
+/packages/sync/                     @TomHeiber
+/scripts/license-review.json        @TomHeiber
