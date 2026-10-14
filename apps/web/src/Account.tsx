@@ -2,19 +2,26 @@
  * The account page every server serves at `/account`, Cloud or self-hosted: who is signed in on this server, and signing
  * out, or the sign-in (`SignIn`) when nobody is, which Google comes back to. The page names the server only by its
  * discovery document. Sections go below the account row: the credits when the server advertises billing (`Credits`),
- * and later devices, export and delete.
+ * the devices signed in (`Devices`) and the passkeys (`Passkeys`). A section that finds the session gone sends the
+ * person back to the sign-in, saying so.
  */
 import { ACCOUNT_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getSession, serverInfo, signOut } from './api.ts';
 import { Credits } from './Credits.tsx';
+import { Devices } from './Devices.tsx';
 import { Page } from './Page.tsx';
-import { failureMessage, googleSignInFailed, SignIn } from './SignIn.tsx';
+import { Passkeys } from './Passkeys.tsx';
+import { failureMessage, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const UNREACHABLE = "Couldn't reach the server. Try again.";
 
-type Step = { name: 'loading' } | { name: 'unavailable' } | { name: 'signed-out' } | { name: 'signed-in'; email: string };
+type Step =
+  | { name: 'loading' }
+  | { name: 'unavailable' }
+  | { name: 'signed-out'; notice?: string }
+  | { name: 'signed-in'; email: string };
 
 export function Account() {
   const [info, setInfo] = useState<ServerInfo | null>(null);
@@ -42,12 +49,14 @@ export function Account() {
     void load();
   }, [load]);
 
-  /** The one way to the sign-in step: after "Sign out", and for any section that finds the session gone. */
-  const toSignedOut = useCallback(() => {
+  /** The one way to the sign-in step: after "Sign out", and (with `notice`) for any section that finds the session gone. */
+  const toSignedOut = useCallback((notice?: string) => {
     setError(null);
     setGoogleFailed(false);
-    setStep({ name: 'signed-out' });
+    setStep({ name: 'signed-out', notice });
   }, []);
+  /** A section's request found the session gone (401): the one-day session ended, or it was signed out elsewhere. */
+  const sessionEnded = useCallback(() => toSignedOut(SIGNED_OUT), [toSignedOut]);
 
   async function onSignOut() {
     setBusy(true);
@@ -77,6 +86,7 @@ export function Account() {
           methods={info.auth.methods}
           returnTo={ACCOUNT_PAGE_PATH}
           googleFailed={googleFailed}
+          notice={step.notice}
           onSignedIn={() => void load()}
         />
       </Page>
@@ -95,7 +105,9 @@ export function Account() {
           }
         />
       </ListGroup>
-      {info.billing ? <Credits onSignedOut={toSignedOut} /> : null}
+      {info.billing ? <Credits onSignedOut={sessionEnded} /> : null}
+      <Devices onSignedOut={sessionEnded} />
+      <Passkeys onSignedOut={sessionEnded} />
     </Page>
   );
 }

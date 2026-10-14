@@ -5,6 +5,7 @@
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import {
+  ACCOUNT_DEVICES_PATH,
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
   type CreditBalance,
@@ -14,7 +15,7 @@ import {
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
-import { SESSION_PATH } from '../src/api.ts';
+import { PASSKEY_LIST_PATH, SESSION_PATH } from '../src/api.ts';
 import { type Answer, fakeServer, INFO, type Reply, SIGNED_IN, TOM } from './support/fake-server.ts';
 
 const PAUSED = 'AI is paused while the balance is empty. Filters and results already saved keep working.';
@@ -71,7 +72,10 @@ describe('visibility', () => {
     await screen.findByText(SIGNED_IN);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(0);
-    expect(server.calls.map((c) => c.path)).toEqual([SERVER_INFO_PATH, SESSION_PATH]);
+    // Only the Devices and Passkeys sections ask for theirs (account-devices.test.tsx).
+    await waitFor(() =>
+      expect(server.calls.map((c) => c.path)).toEqual([SERVER_INFO_PATH, SESSION_PATH, ACCOUNT_DEVICES_PATH, PASSKEY_LIST_PATH]),
+    );
     expect(screen.queryByRole('heading', { name: 'Credits' })).toBeNull();
     expect(screen.queryByText(/\$/)).toBeNull();
     cleanup();

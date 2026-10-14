@@ -172,10 +172,11 @@ export function Dialog({
       ref={ref}
       className="ua-dialog"
       role={alert ? 'alertdialog' : 'dialog'}
-      aria-labelledby="ua-dialog-title"
+      // Named by its title without an id, which two dialogs on one page (open or closed) would share.
+      aria-label={title}
       onClose={() => onOpenChange(false)}
     >
-      <h2 id="ua-dialog-title">{title}</h2>
+      <h2>{title}</h2>
       {description ? <p>{description}</p> : null}
       {children}
       {actions ? <div className="ua-dialog-actions">{actions}</div> : null}

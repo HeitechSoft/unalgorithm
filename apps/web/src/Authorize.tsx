@@ -10,12 +10,11 @@ import { Banner, Button, ListGroup } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, authorize, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
-import { failureMessage, googleSignInFailed, SignIn } from './SignIn.tsx';
+import { failureMessage, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const INTRO = 'Sign in to use AI in the UnAlgorithm Feed extension.';
 
 const INVALID_LINK = "This sign-in link isn't valid. Start again from the UnAlgorithm extension.";
-const SIGNED_OUT = 'You were signed out. Sign in again.';
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
 
 type Step =

@@ -10,6 +10,9 @@ import { Banner, Button, ListGroup, TextField } from '@unalgorithm/ui';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, getSession, googleSignInUrl, PasskeyCancelled, sendCode, signInWithPasskey, verifyCode } from './api.ts';
 
+/** What a page says when it sends the person back to sign in because the server no longer knows the session. */
+export const SIGNED_OUT = 'You were signed out. Sign in again.';
+
 const OFFLINE = "Couldn't reach the server. Try again.";
 const TOO_MANY = 'Too many tries. Wait a minute and try again.';
 const FAILED = 'Something went wrong. Try again.';

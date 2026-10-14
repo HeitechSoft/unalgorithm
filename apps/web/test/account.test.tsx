@@ -4,15 +4,23 @@
  * does: an accepted code starts it and signing out ends it. The Credits section has its own tests (credits.test.tsx).
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { ACCOUNT_PAGE_PATH, CREDIT_ACCOUNT_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
+import { ACCOUNT_DEVICES_PATH, ACCOUNT_PAGE_PATH, CREDIT_ACCOUNT_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
-import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
+import { PASSKEY_LIST_PATH, SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
 import { Home } from '../src/main.tsx';
 import { fakeServer, INFO, SIGNED_IN, TOM } from './support/fake-server.ts';
 
 const UNREACHABLE = "Couldn't reach the server. Try again.";
+/** What the signed-in page's Devices and Passkeys sections ask for on their own (account-devices.test.tsx). */
+const SECTIONS = [ACCOUNT_DEVICES_PATH, PASSKEY_LIST_PATH];
+
+/** Waits until the Devices and Passkeys sections have loaded their lists (none, from the fake server). */
+async function sectionsLoaded() {
+  await screen.findByText('No devices are signed in.');
+  await screen.findByText('No passkeys yet.');
+}
 
 /** Renders the account page. */
 function openAccount() {
@@ -42,6 +50,7 @@ describe('signed in', () => {
   it('test_account_sign_out', async () => {
     const server = fakeServer({ session: TOM });
     const { user } = openAccount();
+    await sectionsLoaded();
     await user.click(await screen.findByRole('button', { name: 'Sign out' }));
 
     expect(await screen.findByLabelText('Email')).toBeTruthy();
@@ -53,6 +62,7 @@ describe('signed in', () => {
     expect(server.calls).toEqual([
       { method: 'GET', path: SERVER_INFO_PATH, body: undefined },
       { method: 'GET', path: SESSION_PATH, body: undefined },
+      ...SECTIONS.map((path) => ({ method: 'GET', path, body: undefined })),
       { method: 'POST', path: SIGN_OUT_PATH, body: {} },
     ]);
   });
@@ -73,7 +83,8 @@ describe('signed out and errors', () => {
     expect(screen.queryByLabelText('Email')).toBeNull();
     // The address shown is the one the server reports for the new session, asked for again.
     expect(server.count('GET', SESSION_PATH)).toBe(2);
-    expect(server.calls.map((c) => `${c.method} ${c.path}`).slice(2)).toEqual([
+    // Then the sections' own requests.
+    expect(server.calls.map((c) => `${c.method} ${c.path}`).slice(2, 6)).toEqual([
       `POST ${SEND_CODE_PATH}`,
       `POST ${SIGN_IN_PATH}`,
       `GET ${SERVER_INFO_PATH}`,
@@ -99,7 +110,8 @@ describe('signed out and errors', () => {
     expect(screen.queryByRole('heading')).toBeNull();
     answerInfo();
     expect(await screen.findByText(SIGNED_IN)).toBeTruthy();
-    expect(view.container.querySelector('[aria-busy="true"]')).toBeNull();
+    // Nothing stays busy once the sections have their lists.
+    await waitFor(() => expect(view.container.querySelector('[aria-busy="true"]')).toBeNull());
     cleanup();
 
     // The discovery document fails, then answers: "Try again" asks for both again.
@@ -145,13 +157,16 @@ describe('signed out and errors', () => {
       const server = fakeServer({ session: TOM, info: { ...INFO, billing } });
       const { container } = openAccount();
       await screen.findByText(SIGNED_IN);
+      await sectionsLoaded();
       await new Promise((resolve) => setTimeout(resolve, 0));
       const credits = screen.queryByRole('region', { name: 'Credits' });
       expect(credits !== null).toBe(billing);
       credits?.remove();
       pages.push(container.innerHTML);
       expect(server.calls.map((c) => c.path)).toEqual(
-        billing ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH] : [SERVER_INFO_PATH, SESSION_PATH],
+        billing
+          ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH, ...SECTIONS]
+          : [SERVER_INFO_PATH, SESSION_PATH, ...SECTIONS],
       );
       cleanup();
     }

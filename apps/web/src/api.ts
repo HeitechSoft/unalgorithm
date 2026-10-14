@@ -1,22 +1,29 @@
 /**
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
- * passkey), the authorize endpoint that hands the extension a single-use code, and the account's credits where the
- * server bills. All same-origin, so the browser sends the session cookie and the `Origin` header Better Auth checks.
- * Every failure is an `ApiError` carrying the HTTP status (0: no answer at all), except a cancelled passkey prompt
- * (`PasskeyCancelled`).
+ * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
+ * bills, and the account's devices and passkeys. All same-origin, so the browser sends the session cookie and the
+ * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all),
+ * except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`, and its other errors keep their name.
  */
 import {
   type AuthenticationResponseJSON,
+  type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
   startAuthentication,
+  startRegistration,
 } from '@simplewebauthn/browser';
 import {
+  ACCOUNT_DEVICE_REVOKE_PATH,
+  ACCOUNT_DEVICES_PATH,
+  type AccountDevice,
+  AccountDevicesResponseSchema,
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
   CreditAccountSchema,
+  OkResponseSchema,
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
@@ -32,6 +39,11 @@ export const SIGN_OUT_PATH = '/api/auth/sign-out';
 export const SOCIAL_SIGN_IN_PATH = '/api/auth/sign-in/social';
 export const PASSKEY_AUTH_OPTIONS_PATH = '/api/auth/passkey/generate-authenticate-options';
 export const PASSKEY_AUTH_VERIFY_PATH = '/api/auth/passkey/verify-authentication';
+/** The account page's passkeys (CL3-14): adding one (options, then verify), listing them and removing one. */
+export const PASSKEY_REGISTER_OPTIONS_PATH = '/api/auth/passkey/generate-register-options';
+export const PASSKEY_REGISTER_VERIFY_PATH = '/api/auth/passkey/verify-registration';
+export const PASSKEY_LIST_PATH = '/api/auth/passkey/list-user-passkeys';
+export const PASSKEY_DELETE_PATH = '/api/auth/passkey/delete-passkey';
 
 /** `get-session` answers `null` without a session; the page only needs the address. */
 const SessionSchema = z.object({ user: z.object({ email: z.string() }) }).nullable();
@@ -46,6 +58,29 @@ const GoogleRedirectSchema = z.object({ url: z.url({ protocol: /^https$/, hostna
 const PasskeyOptionsSchema = z.custom<PublicKeyCredentialRequestOptionsJSON>(
   (value) => z.looseObject({ challenge: z.string().min(1) }).safeParse(value).success,
 );
+
+/** The registration options `startRegistration` takes, read the same way. */
+const PasskeyRegistrationOptionsSchema = z.custom<PublicKeyCredentialCreationOptionsJSON>(
+  (value) =>
+    z.looseObject({ challenge: z.string().min(1), user: z.looseObject({ id: z.string().min(1) }) }).safeParse(value).success,
+);
+
+/**
+ * One of the account's passkeys. `list-user-passkeys` answers whole rows; only what the page shows is kept, never the
+ * public key or the credential id. Better Auth leaves out a name it was never given.
+ */
+const PasskeySchema = z.object({
+  id: z.string().min(1),
+  name: z
+    .string()
+    .nullish()
+    .transform((name) => name ?? null),
+  createdAt: z.iso
+    .datetime()
+    .nullish()
+    .transform((at) => at ?? null),
+});
+export type Passkey = z.output<typeof PasskeySchema>;
 
 export class ApiError extends Error {
   /** The HTTP status (a 2xx one when the answer could not be used), or 0 when the server could not be reached. */
@@ -111,27 +146,33 @@ export async function googleSignInUrl(returnTo: string): Promise<string> {
 /** The person closed the browser's passkey prompt, or it timed out: the server was told nothing. */
 export class PasskeyCancelled extends Error {
   constructor() {
-    super('The passkey sign-in was cancelled.');
+    super('The passkey prompt was cancelled.');
     this.name = 'PasskeyCancelled';
   }
 }
 
 /**
- * Signs in with a passkey: the server's challenge, the browser's passkey prompt, then the signed answer back to the
- * server, which sets the session cookie. A cancelled prompt is told apart by the error's name, never its class: the
- * library rethrows the browser's `DOMException` as its own `WebAuthnError`, an `Error` that keeps the name.
+ * Runs the browser's passkey prompt. A cancelled prompt is told apart by the error's name, never its class: the library
+ * rethrows the browser's `DOMException` as its own `WebAuthnError`, an `Error` that keeps the name.
  */
-export async function signInWithPasskey(): Promise<void> {
-  const optionsJSON = await request(PASSKEY_AUTH_OPTIONS_PATH, PasskeyOptionsSchema);
-  let response: AuthenticationResponseJSON;
+async function passkeyPrompt<T>(prompt: () => Promise<T>): Promise<T> {
   try {
-    response = await startAuthentication({ optionsJSON });
+    return await prompt();
   } catch (err) {
     if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
       throw new PasskeyCancelled();
     }
     throw err;
   }
+}
+
+/**
+ * Signs in with a passkey: the server's challenge, the browser's passkey prompt, then the signed answer back to the
+ * server, which sets the session cookie.
+ */
+export async function signInWithPasskey(): Promise<void> {
+  const optionsJSON = await request(PASSKEY_AUTH_OPTIONS_PATH, PasskeyOptionsSchema);
+  const response: AuthenticationResponseJSON = await passkeyPrompt(() => startAuthentication({ optionsJSON }));
   await request(PASSKEY_AUTH_VERIFY_PATH, z.unknown(), { response });
 }
 
@@ -147,4 +188,34 @@ export async function authorize(req: AuthorizeRequest): Promise<string> {
 /** The signed-in person's balance and credit history; only a server that advertises billing answers it. */
 export async function creditAccount(): Promise<CreditAccount> {
   return request(CREDIT_ACCOUNT_PATH, CreditAccountSchema);
+}
+
+/** The devices signed in to the account now, most recently used first. */
+export async function listDevices(): Promise<AccountDevice[]> {
+  return (await request(ACCOUNT_DEVICES_PATH, AccountDevicesResponseSchema)).devices;
+}
+
+/** Signs one of the account's devices out: it has to sign in again to use this server. */
+export async function revokeDevice(id: string): Promise<void> {
+  await request(ACCOUNT_DEVICE_REVOKE_PATH, OkResponseSchema, { device_id: id });
+}
+
+/** The account's passkeys, in the server's order. */
+export async function listPasskeys(): Promise<Passkey[]> {
+  return request(PASSKEY_LIST_PATH, z.array(PasskeySchema));
+}
+
+/**
+ * Adds a passkey: the server's options, the browser's passkey prompt, then the authenticator's answer back. No name is
+ * sent: the server labels the passkey from the authenticator's model (CL3-14).
+ */
+export async function addPasskey(): Promise<void> {
+  const optionsJSON = await request(PASSKEY_REGISTER_OPTIONS_PATH, PasskeyRegistrationOptionsSchema);
+  const response = await passkeyPrompt(() => startRegistration({ optionsJSON }));
+  await request(PASSKEY_REGISTER_VERIFY_PATH, z.unknown(), { response });
+}
+
+/** Removes one of the account's passkeys; signing in with an emailed code still works. */
+export async function removePasskey(id: string): Promise<void> {
+  await request(PASSKEY_DELETE_PATH, z.unknown(), { id });
 }

@@ -1,7 +1,7 @@
 import '@unalgorithm/ui/styles.css';
 import './web.css';
 import { ACCOUNT_PAGE_PATH, AUTHORIZE_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
-import { Banner } from '@unalgorithm/ui';
+import { Banner, ToastProvider } from '@unalgorithm/ui';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
@@ -45,7 +45,9 @@ if (root) {
   const { pathname } = window.location;
   createRoot(root).render(
     <StrictMode>
-      {pathname === AUTHORIZE_PAGE_PATH ? <Authorize /> : pathname === ACCOUNT_PAGE_PATH ? <Account /> : <Home />}
+      <ToastProvider>
+        {pathname === AUTHORIZE_PAGE_PATH ? <Authorize /> : pathname === ACCOUNT_PAGE_PATH ? <Account /> : <Home />}
+      </ToastProvider>
     </StrictMode>,
   );
 }

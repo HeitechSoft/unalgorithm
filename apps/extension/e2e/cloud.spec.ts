@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import {
+  ACCOUNT_DEVICE_REVOKE_PATH,
+  ACCOUNT_PAGE_PATH,
   AUTHORIZE_PAGE_PATH,
   CLASSIFY_PATH,
   ClassifyRequestSchema,
@@ -58,6 +60,9 @@ test.describe('a self-hosted server', () => {
     await signInFromSettings(context, extensionId, url, EMAIL, (step, page) =>
       test.step(`test_authorize_page_accessibility (${step} step)`, () => expectAccessible(page)),
     );
+
+    // The sign-in left a web session in this browser: the account page's confirm dialogs, as only a browser runs them.
+    await test.step('test_account_dialogs_trap_focus', () => expectAccountDialogsTrapFocus(context, url));
 
     // Privacy & Data names the server by its host, with the self-hosted recipient text.
     const options = await context.newPage();
@@ -141,6 +146,56 @@ test.describe('UnAlgorithm Cloud', () => {
     await expect(popup.getByText('UnAlgorithm Cloud · Needs attention', { exact: true })).toBeVisible();
   });
 });
+
+/**
+ * The account page's revoke dialog in Chromium, where jsdom has no modal dialog (CL3-17): opened from the row of the
+ * device the extension just signed in as, it is a modal that keeps Tab inside and closes on the Escape key, and no
+ * revoke request leaves the page.
+ */
+async function expectAccountDialogsTrapFocus(context: BrowserContext, serverUrl: string): Promise<void> {
+  const page = await context.newPage();
+  const posted: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST') posted.push(new URL(request.url()).pathname);
+  });
+  await page.goto(`${serverUrl}${ACCOUNT_PAGE_PATH}`);
+  await expect(page.getByText(`Signed in as ${EMAIL}`)).toBeVisible();
+  // The extension's device is the one signed in; a closed dialog's buttons are hidden, so these are the rows'.
+  const revoke = page.getByRole('button', { name: 'Revoke', exact: true });
+  await expect(revoke).toHaveCount(1);
+
+  await expectDialogTrapsFocus(page, revoke, 2);
+  expect(posted).not.toContain(ACCOUNT_DEVICE_REVOKE_PATH);
+  await expect(revoke).toHaveCount(1);
+  await page.close();
+}
+
+/**
+ * Opens a confirm dialog with `opener` and checks it as a modal: the focus starts on "Cancel"; pressing Tab as many
+ * times as the dialog has `controls`, plus one, never focuses anything behind it (past its last control a browser may
+ * hand the focus to its own toolbar, which leaves the page with no focused element, and the next Tab comes back into
+ * the dialog); the Escape key closes it.
+ */
+async function expectDialogTrapsFocus(page: Page, opener: Locator, controls: number): Promise<void> {
+  await opener.click();
+  const dialog = page.locator('dialog[open]');
+  await expect(dialog).toHaveCount(1);
+  await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  /** Where the focus is: in the dialog, on nothing in the page, or on something behind the dialog. */
+  const focus = () =>
+    dialog.evaluate((d) => {
+      const active = document.activeElement;
+      if (active === null || active === document.body) return 'nothing';
+      return d.contains(active) ? 'dialog' : 'behind';
+    });
+  for (let press = 0; press <= controls; press++) {
+    await page.keyboard.press('Tab');
+    expect(await focus()).not.toBe('behind');
+  }
+  expect(await focus()).toBe('dialog');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+}
 
 /** No serious or critical axe violations, as `a11y.spec.ts` checks the extension's own pages. Soft, so sign-in goes on. */
 async function expectAccessible(page: Page): Promise<void> {

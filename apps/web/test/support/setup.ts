@@ -5,7 +5,10 @@
  * suites at once) the first query of a test file alone has taken just over 1 s, so this project waits up to 3 s, the
  * same for every test rather than per call. A wait that succeeds still returns as soon as it does: only a failing one
  * takes longer to fail, and within the 5 s a test may take.
+ *
+ * jsdom has no `showModal` or `close`, so the shared `Dialog` runs on the stand-in from `@unalgorithm/ui/test-support/dialog`.
  */
+import '@unalgorithm/ui/test-support/dialog';
 import { configure } from '@testing-library/react';
 
 configure({ asyncUtilTimeout: 3_000 });
