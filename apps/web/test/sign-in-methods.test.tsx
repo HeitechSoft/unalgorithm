@@ -6,7 +6,7 @@
  */
 
 import { type AuthenticationResponseJSON, browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   ACCOUNT_PAGE_PATH,
   AUTHORIZE_API_PATH,
@@ -163,6 +163,41 @@ describe('Google', () => {
     await page.user.click(screen.getByRole('button', { name: GOOGLE }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith(GOOGLE_URL));
     expect(server.calls).toEqual([{ method: 'POST', path: SOCIAL_SIGN_IN_PATH, body: googleBody(ACCOUNT_PAGE_PATH) }]);
+  });
+
+  it('test_google_stays_busy_while_leaving', async () => {
+    const server = fakeServer();
+    const assign = stubLocation(ACCOUNT_PAGE_PATH);
+    const { user, onSignedIn } = renderSignIn({ methods: ALL_METHODS });
+    await user.type(screen.getByLabelText('Email'), TOM);
+    await user.click(screen.getByRole('button', { name: GOOGLE }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(GOOGLE_URL));
+    await settle();
+
+    // The page stays on screen until Google answers: the spinner stays, and no second try replaces the first.
+    const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+    expect(button(GOOGLE).getAttribute('aria-busy')).toBe('true');
+    expect([GOOGLE, PASSKEY, 'Send code'].map((name) => button(name).disabled)).toEqual([true, true, true]);
+    fireEvent.submit(button('Send code').form as HTMLFormElement);
+    // Only a return from the back-forward cache frees the buttons, not some other page show.
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+    });
+    await settle();
+    expect(button(GOOGLE).getAttribute('aria-busy')).toBe('true');
+    expect(server.calls).toEqual([{ method: 'POST', path: SOCIAL_SIGN_IN_PATH, body: googleBody(ACCOUNT_PAGE_PATH) }]);
+
+    // Back from Google with the Back button: the page is as it was left, and every way in works again.
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    expect(button(GOOGLE).getAttribute('aria-busy')).toBeNull();
+    expect([GOOGLE, PASSKEY, 'Send code'].map((name) => button(name).disabled)).toEqual([false, false, false]);
+    await user.click(button(GOOGLE));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(2));
+    expect(server.count('POST', SOCIAL_SIGN_IN_PATH)).toBe(2);
+    expect(server.count('POST', SEND_CODE_PATH)).toBe(0);
+    expect(onSignedIn).not.toHaveBeenCalled();
   });
 
   describe('test_google_url_must_be_google', () => {
@@ -393,7 +428,10 @@ describe('accessibility', () => {
     await user.keyboard('{Enter}');
     await waitFor(() => expect(assign).toHaveBeenCalledWith(GOOGLE_URL));
 
-    // Space on the passkey signs in.
+    // Back from Google with the Back button (the page stays busy until then), and Space on the passkey signs in.
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: PASSKEY }));
     await user.keyboard(' ');

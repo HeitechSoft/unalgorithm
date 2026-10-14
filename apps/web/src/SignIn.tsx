@@ -7,7 +7,7 @@
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { EMAIL_OTP_METHOD, GOOGLE_METHOD, PASSKEY_METHOD } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, TextField } from '@unalgorithm/ui';
-import { type FormEvent, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, getSession, googleSignInUrl, PasskeyCancelled, sendCode, signInWithPasskey, verifyCode } from './api.ts';
 
 const OFFLINE = "Couldn't reach the server. Try again.";
@@ -77,6 +77,11 @@ export function SignIn({
   const [notice, setNotice] = useState<string | null>(null);
   /** Set while a request is out, so a second submit before the busy buttons render sends nothing. */
   const inFlight = useRef(false);
+  /**
+   * Set once the browser is on its way to Google: the page stays on screen until Google answers, so its buttons stay
+   * busy until it is gone. A second try would replace the first one's state cookie and fail it on the way back.
+   */
+  const leaving = useRef(false);
   /** Asked once: a browser without WebAuthn gets no passkey button. */
   const [webAuthn] = useState(browserSupportsWebAuthn);
   const google = methods.includes(GOOGLE_METHOD);
@@ -102,10 +107,24 @@ export function SignIn({
       setError(describe(err));
       return false;
     } finally {
+      if (!leaving.current) {
+        inFlight.current = false;
+        setBusy(null);
+      }
+    }
+  }
+
+  // Back from Google out of the back-forward cache, the page is as it was left: its buttons work again.
+  useEffect(() => {
+    function onPageShow(event: PageTransitionEvent) {
+      if (!event.persisted || !leaving.current) return;
+      leaving.current = false;
       inFlight.current = false;
       setBusy(null);
     }
-  }
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
 
   async function onSendCode(event: FormEvent) {
     event.preventDefault();
@@ -129,10 +148,16 @@ export function SignIn({
     if (await run(() => verifyCode(address, code), { describe })) onSignedIn(address);
   }
 
-  /** Off to Google; the browser comes back to `returnTo`, signed in or with `?error=`. */
+  /** Off to Google, busy until the page is gone; the browser comes back to `returnTo`, signed in or with `?error=`. */
   async function onGoogle() {
     const back = returnTo ?? window.location.pathname;
-    await run(async () => window.location.assign(await googleSignInUrl(back)), { by: 'google' });
+    await run(
+      async () => {
+        window.location.assign(await googleSignInUrl(back));
+        leaving.current = true;
+      },
+      { by: 'google' },
+    );
   }
 
   /** The browser's passkey prompt, then the address the new session belongs to. */
