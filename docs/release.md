@@ -157,7 +157,8 @@ The credit price cards (`CREDIT_PRICE_CARDS`) and the starter credit (`STARTER_C
 `packages/protocol/src/billing.ts`. Each reader takes them from its own build: the server release UnAlgorithm Cloud
 runs (its account page included), the Cloud's billing module, whose multipliers must equal that release's cards, the
 extension, which bundles them for its "about N posts" estimates, and the website's "How credits work" page. A change
-goes out in this order, so the website never publishes a multiplier the running Cloud does not charge:
+goes out in this order, so the website never shows prices or a starter credit before the running Cloud uses them; it
+trails the Cloud only between steps 4 and 6:
 
 1. Change `CREDIT_PRICE_CARDS` (or `STARTER_CREDIT`) in `packages/protocol`, with the code owner's sign-off
    (@TomHeiber) and changesets for the server and the extension, and merge it.
@@ -174,15 +175,19 @@ Keep steps 4 to 6 close together: until step 6 the website still shows the previ
 
 The website is not released from a tag. It is built from the checkout it is deployed from (`main`), and its page is
 computed from that checkout's `packages/protocol`. So from the merge in step 1 until step 4 is done, nobody deploys the
-website, unless from a commit whose `CREDIT_PRICE_CARDS` equal those of the release the Cloud runs.
+website, unless from a commit whose `CREDIT_PRICE_CARDS` and `STARTER_CREDIT` equal those of the release the Cloud
+runs.
 
-**Rollback** runs the whole order reversed, the extension included:
+**Rollback** puts the readers back in the reverse order, the website first, then the extension, then the Cloud. During
+a rollback the website is deployed only from a commit with the previous price cards and starter credit. From step 1
+until step 4 is done it shows them while the Cloud still uses the new ones, so keep steps 1 to 4 close together.
 
-1. Deploy the website from a commit with the previous price cards.
-2. Release the extension built with the previous price cards.
-3. HeitechSoft puts the Cloud back on the previous server release and its previous multipliers, and deploys it.
-4. Revert the change in `packages/protocol`. Between steps 3 and 4, `main` holds price cards the Cloud no longer
-   charges, so the website is not deployed from it.
+1. Deploy the website from a commit with the previous price cards and starter credit.
+2. Revert the change in `packages/protocol` on `main`, with changesets for the server and the extension. The extension
+   is tagged on `main` ([Steps](#steps)) and the Chrome Web Store takes only a higher version, so its rollback is a new
+   release built from this revert.
+3. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit that includes step 2's revert.
+4. HeitechSoft puts the Cloud back on the previous server release and its previous multipliers, and deploys it.
 
 ## Security fixes
 

@@ -64,8 +64,8 @@ by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 ## What a server stores
 
 An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
-nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database); a
-billing module adds tables of its own ([What a billing module sees](#what-a-billing-module-sees)).
+nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database), except
+those a billing module adds of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
 - **Accounts:** the email address, and no name or picture (`user`).
 - **Devices:** one row per signed-in copy of the extension: its extension id, when it signed in and was last used, and
@@ -84,6 +84,11 @@ billing module adds tables of its own ([What a billing module sees](#what-a-bill
   number of posts, token counts, the model, the outcome and the cost (`usage_events`). Together the rows show when each
   device used AI; they stay until the account is deleted.
 - **Per-user limits:** a daily post cap the server's admin set for an account with `user-cap` (`user_limits`).
+- **Background jobs:** only on a server whose billing module registers jobs
+  ([ARCHITECTURE.md → Jobs](ARCHITECTURE.md#jobs)). graphile-worker's queue (schema `graphile_worker`) holds each job's
+  task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
+  and after a failure the error's name and code, never its message. A job's row is deleted once it succeeds; one that
+  fails every attempt stays.
 - **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
 
 Never stored or logged: post text, link titles, interest profiles, classification results, prompts or model answers.

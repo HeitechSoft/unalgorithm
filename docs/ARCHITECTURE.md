@@ -152,6 +152,9 @@ post text, names or prompts.
 | `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
 
+A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and a server whose
+module registers jobs also has graphile-worker's `graphile_worker` schema ([Jobs](#jobs)).
+
 ### Billing seam
 
 Billing sits behind one interface, `BillingProvider` (`apps/server/src/billing/provider.ts`); why the server is open
@@ -189,7 +192,9 @@ the account page (`apps/web`) shows the balance and history the module answers a
 Background jobs run on graphile-worker inside the server process, on the server's own pool, one at a time
 (`apps/server/src/jobs/worker.ts`). A billing module registers named tasks and UTC cron schedules on the job registry
 while the server starts, and the worker starts only when a task is registered: a server without a module runs none and
-never creates the `graphile_worker` schema. Payloads hold ids and numbers only. PGlite, in tests, runs no worker.
+never creates the `graphile_worker` schema. graphile-worker keeps its queue there: each job's task name, payload, run
+time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
+only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
 
 ## Testing
 
