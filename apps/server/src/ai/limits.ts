@@ -21,7 +21,7 @@ export type RateDecision = { ok: true } | { ok: false; retryAfterMs: number };
 export interface RateLimiter {
   /** Takes one request from `key`'s bucket at `now` (ms since the epoch), or says how long until one is there. */
   take(key: string, now?: number): RateDecision;
-  /** Gives one request back to `key`'s bucket, up to its maximum; nothing when it has none. */
+  /** Gives one request back to `key`'s bucket, up to its maximum (a bucket full again is dropped); nothing when it has none. */
   refund(key: string, now?: number): void;
   /** How many buckets are held. */
   readonly size: number;
@@ -80,7 +80,10 @@ export function createRateLimiter(rate: Rate): RateLimiter {
     },
     refund(key, now = Date.now()) {
       const bucket = refill(key, now);
-      if (bucket) bucket.units = Math.min(capacity, bucket.units + windowMs);
+      if (!bucket) return;
+      bucket.units = Math.min(capacity, bucket.units + windowMs);
+      // Full again: the same as no bucket, so it is dropped. Keys whose requests were all given back hold no memory.
+      if (bucket.units >= capacity) buckets.delete(key);
     },
     get size() {
       return buckets.size;

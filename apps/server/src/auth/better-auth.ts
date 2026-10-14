@@ -9,6 +9,7 @@
  * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
  * only.
  */
+import { createHash } from 'node:crypto';
 import { getAuthenticatorName, PASSKEY_ERROR_CODES, passkey } from '@better-auth/passkey';
 import { AIError } from '@unalgorithm/ai';
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
@@ -308,7 +309,12 @@ export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'g
   for (const [method, path] of authRoutesFor(config)) app.on(method, path, limited.get(path) ?? forward);
 }
 
-/** The two emailed-code routes, each behind its per-address limit. The address is the counter's key, never logged. */
+/**
+ * The two emailed-code routes, each behind its per-address limit. The counter's key is a hash of the address, never
+ * logged and of one size whatever the request holds. A request Better Auth refuses (its per-client limit, a malformed
+ * address) is given back, and a counter given everything back is dropped, so only codes sent and wrong codes tried hold
+ * memory: no more than Better Auth's per-client limits let through.
+ */
 function perEmailLimits(forward: Forward): Map<string, Forward> {
   const sends = createRateLimiter(CODE_SENDS_PER_EMAIL);
   const failures = createRateLimiter(FAILED_SIGN_INS_PER_EMAIL);
@@ -316,38 +322,45 @@ function perEmailLimits(forward: Forward): Map<string, Forward> {
     [
       SEND_CODE_PATH,
       async (c) => {
-        const email = await emailOf(c);
+        const key = await emailKeyOf(c);
+        if (key === undefined) return forward(c);
         // Past the limit: Better Auth's answer to a code sent, with no code made or mailed. It says nothing about
         // whether the address may sign in.
-        if (email !== undefined && !sends.take(email).ok) return c.json({ success: true });
-        return forward(c);
+        if (!sends.take(key).ok) return c.json({ success: true });
+        const res = await forward(c);
+        // Every valid address gets 200 whether a code goes out or not, so another answer made no code.
+        if (!res.ok) sends.refund(key);
+        return res;
       },
     ],
     [
       SIGN_IN_CODE_PATH,
       async (c) => {
-        const email = await emailOf(c);
-        if (email === undefined) return forward(c);
+        const key = await emailKeyOf(c);
+        if (key === undefined) return forward(c);
         // Taken before the code is checked, so requests sent at once cannot all pass; given back unless the code failed.
-        const rate = failures.take(email);
+        const rate = failures.take(key);
         if (!rate.ok)
           throw new AIError('rate-limit', 'Too many wrong codes for this address.', { retryAfterMs: rate.retryAfterMs });
         const res = await forward(c);
-        if (res.ok || res.status === 429) failures.refund(email);
+        if (res.ok || res.status === 429) failures.refund(key);
         return res;
       },
     ],
   ]);
 }
 
-/** The body's `email`, lowercased as Better Auth compares it, or undefined. The request's body stays unread. */
-async function emailOf(c: Context<AppEnv>): Promise<string | undefined> {
+/**
+ * The counter's key for the body's `email`, lowercased as Better Auth compares it (a SHA-256 hash), or undefined. The
+ * request's body stays unread.
+ */
+async function emailKeyOf(c: Context<AppEnv>): Promise<string | undefined> {
   const body: unknown = await c.req.raw
     .clone()
     .json()
     .catch(() => undefined);
   const email = typeof body === 'object' && body !== null ? (body as { email?: unknown }).email : undefined;
-  return typeof email === 'string' ? email.toLowerCase() : undefined;
+  return typeof email === 'string' ? createHash('sha256').update(email.toLowerCase()).digest('base64url') : undefined;
 }
 
 function withClientIp(c: Context<AppEnv>): Request {

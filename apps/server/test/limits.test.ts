@@ -183,6 +183,23 @@ describe('rate limit', { timeout: PGLITE_TIMEOUT }, () => {
     expect(limiter.size).toBe(2);
   });
 
+  it('test_rate_limiter_refund_to_full_drops_bucket', () => {
+    // A refund that fills a bucket drops it, so a key whose requests were all given back holds no memory.
+    const limiter = createRateLimiter({ max: 5, windowMs: 15 * MINUTE_MS });
+    const t0 = Date.parse('2026-10-13T12:00:00.000Z');
+    expect(limiter.take('a', t0)).toEqual({ ok: true });
+    expect(limiter.size).toBe(1);
+    limiter.refund('a', t0);
+    expect(limiter.size).toBe(0);
+    // A bucket still short of its maximum stays.
+    limiter.take('a', t0);
+    limiter.take('a', t0);
+    limiter.refund('a', t0);
+    expect(limiter.size).toBe(1);
+    for (let i = 0; i < 4; i++) expect(limiter.take('a', t0)).toEqual({ ok: true });
+    expect(limiter.take('a', t0)).toMatchObject({ ok: false });
+  });
+
   it('test_rate_limiter_window_and_refund', () => {
     // 5 in 15 minutes: one more every 3 minutes once they are spent.
     const limiter = createRateLimiter({ max: 5, windowMs: 15 * MINUTE_MS });

@@ -292,6 +292,17 @@ describe('rate limit and IP', { timeout: PGLITE_TIMEOUT }, () => {
     // Another address is not held back.
     expect((await signInFrom(TOM, codeFor(t, TOM))).status).toBe(200);
   });
+
+  it('test_otp_refused_sends_not_counted_per_address', async () => {
+    const t = await authApp({ TRUST_PROXY: 'one-hop' }, { authRateLimit: true });
+    // One client six times: Better Auth's per-client limit answers the last three as before, and they send nothing...
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) statuses.push((await sendCode(t, TOM, { 'X-Forwarded-For': '198.51.100.50' })).status);
+    expect(statuses).toEqual([200, 200, 200, 429, 429, 429]);
+    // ...so they take nothing from the address's five: two more go out from other clients, and then none.
+    for (let i = 0; i < 3; i++) expect((await sendCode(t, TOM, { 'X-Forwarded-For': `192.0.2.${101 + i}` })).status).toBe(200);
+    expect(t.outbox.filter((m) => m.to === TOM)).toHaveLength(5);
+  });
 });
 
 describe('mounted surface', { timeout: PGLITE_TIMEOUT }, () => {
