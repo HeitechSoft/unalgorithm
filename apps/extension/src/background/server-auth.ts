@@ -62,6 +62,8 @@ export type SignInResult = { ok: true; account: ServerAccount } | { ok: false; e
 
 /** Tokens must not cross the network in clear, except to a server on this computer. */
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** A server's discovery document is read again (`refreshServerInfo`) at most this often. */
+export const REDISCOVER_MIN_INTERVAL_MS = 5 * 60_000;
 const TIMEOUT_MS = 10_000;
 const REVOKE_TIMEOUT_MS = 5_000;
 /** An access token this close to expiry is refreshed first, so it cannot run out in flight. */
@@ -79,6 +81,14 @@ function toBgError(e: unknown): BgError {
   return isAIError(e) ? { code: e.code, message: e.message } : { code: 'unknown', message: describeError('unknown') };
 }
 
+/**
+ * Where tokens may go and links may point: https, or http to a server on this computer. The one place this rule lives
+ * (discovery, and the account page link next to a balance).
+ */
+export function isTrustedServerOrigin(url: URL): boolean {
+  return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
+}
+
 /** Checks that an address is an UnAlgorithm server this extension can sign in to, and reads its discovery document. */
 export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}): Promise<DiscoverResult> {
   const href = safeExternalUrl(input);
@@ -86,7 +96,7 @@ export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}
     return { ok: false, error: { code: 'bad-request', message: "Enter the server's address, like https://ai.example.org" } };
   }
   const url = new URL(href);
-  if (url.protocol !== 'https:' && !LOOPBACK.has(url.hostname)) {
+  if (!isTrustedServerOrigin(url)) {
     return { ok: false, error: { code: 'bad-request', message: 'Use an https:// address.' } };
   }
   try {
@@ -174,6 +184,43 @@ async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise
   });
   if (replaced) await revoke(replaced.origin, replaced.refreshToken, d);
   return account;
+}
+
+const rediscovering = new Map<string, Promise<void>>();
+const rediscoveredAt = new Map<string, number>();
+
+/**
+ * Reads the discovery document of the account at `origin` again and keeps it in the account: an account that signed in
+ * before its server advertised billing (every CL1-era Cloud account) still has `billing: false` stored. One attempt per
+ * server at a time and at most one per `REDISCOVER_MIN_INTERVAL_MS`. Only `info` changes (the next token refresh checks
+ * the new `tokenPath` through `tokenEndpoint`), and any failure leaves the account as it was. Never rejects.
+ */
+export function refreshServerInfo(origin: string, deps: Partial<AuthDeps> = {}): Promise<void> {
+  const d = withDefaults(deps);
+  const pending = rediscovering.get(origin);
+  if (pending) return pending;
+  const last = rediscoveredAt.get(origin);
+  if (last !== undefined && d.now() - last < REDISCOVER_MIN_INTERVAL_MS) return Promise.resolve();
+  rediscoveredAt.set(origin, d.now());
+  const run = rediscover(origin, d)
+    .catch(() => undefined)
+    .finally(() => rediscovering.delete(origin));
+  rediscovering.set(origin, run);
+  return run;
+}
+
+async function rediscover(origin: string, d: AuthDeps): Promise<void> {
+  const before = await serverAccountItem.getValue();
+  if (before?.origin !== origin) return;
+  const found = await discoverServer(origin, d);
+  if (!found.ok || found.origin !== origin) return;
+  await exclusive(async () => {
+    // Signed out, or signed in again (a new device) while the server answered: the document is nobody's to keep.
+    const account = await serverAccountItem.getValue();
+    if (account?.origin === origin && account.deviceId === before.deviceId) {
+      await serverAccountItem.setValue({ ...account, info: found.info });
+    }
+  });
 }
 
 /** One refresh per origin at a time: a second refresh with the same token would look like theft and revoke the device. */

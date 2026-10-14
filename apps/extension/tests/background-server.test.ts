@@ -4,7 +4,7 @@
  * itself is stubbed (`server-auth.test.ts` covers it); extension storage is the WXT fake browser.
  */
 import { type AISourceConfig, defaultDevice, emptyDay } from '@unalgorithm/core';
-import { AUTHORIZE_PAGE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
+import { AUTHORIZE_PAGE_PATH, CREDIT_BALANCE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   discoverServer: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
+  getAccessToken: vi.fn(),
   clearSecrets: vi.fn(),
 }));
 vi.mock('../src/background/server-auth.ts', async (importOriginal) => ({
@@ -24,6 +25,7 @@ vi.mock('../src/background/server-auth.ts', async (importOriginal) => ({
   discoverServer: mocks.discoverServer,
   signIn: mocks.signIn,
   signOut: mocks.signOut,
+  getAccessToken: mocks.getAccessToken,
 }));
 // The real erase, watched for its order.
 vi.mock('../src/background/idb.ts', async (importOriginal) => {
@@ -85,10 +87,12 @@ beforeEach(() => {
   mocks.discoverServer.mockReset();
   mocks.signIn.mockReset();
   mocks.signOut.mockReset();
+  mocks.getAccessToken.mockReset();
   mocks.clearSecrets.mockClear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('sender validation', () => {
@@ -116,6 +120,39 @@ describe('sender validation', () => {
     expect(mocks.signIn).not.toHaveBeenCalled();
     expect(mocks.signOut).not.toHaveBeenCalled();
     expect(getAccount).not.toHaveBeenCalled();
+  });
+
+  it('test_ai_status_only_from_extension_pages', async () => {
+    // A server that bills, so an `aiStatus` that ran would ask for the balance.
+    await setSource({ kind: 'server', baseUrl: ORIGIN });
+    await serverAccountItem.setValue(account({ info: { ...INFO, billing: true } }));
+    mocks.getAccessToken.mockResolvedValue('access-1');
+    const balance = {
+      v: 1,
+      balanceMicros: 970_000,
+      promoMicros: 970_000,
+      purchasedMicros: 0,
+      promoExpiresAt: null,
+      starter: 'active',
+    };
+    const fetch = vi.fn(async () => new Response(JSON.stringify(balance), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+
+    for (const sender of [
+      feedTab(),
+      feedTab('https://www.facebook.com/'),
+      { tab: tab(5, 'https://example.com/'), url: 'https://example.com/' },
+    ]) {
+      await expect(handlers.aiStatus({ type: 'aiStatus' }, sender)).rejects.toThrow('aiStatus is not accepted from this sender');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.getAccessToken).not.toHaveBeenCalled();
+
+    // The popup (no tab) and Settings get the answer.
+    const popup = await handlers.aiStatus({ type: 'aiStatus' }, { url: fakeBrowser.runtime.getURL('/popup.html') });
+    expect(popup).toMatchObject({ kind: 'server', state: 'ready', balance: { balanceMicros: 970_000 } });
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(`${ORIGIN}${CREDIT_BALANCE_PATH}`, expect.anything());
+    expect(await handlers.aiStatus({ type: 'aiStatus' }, page())).toStrictEqual(popup);
   });
 });
 

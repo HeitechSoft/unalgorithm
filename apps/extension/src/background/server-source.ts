@@ -11,7 +11,8 @@ import {
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import { serverLabel } from '../lib/server-label.ts';
-import { getAccessToken, markNeedsSignIn } from './server-auth.ts';
+import { getAccessToken, markNeedsSignIn, refreshServerInfo, type ServerAccount, serverAccountItem } from './server-auth.ts';
+import { noteRefused, noteSettlement } from './server-balance.ts';
 
 /**
  * The `server` AI source (R25): one `POST /v1/classify` per batch to an UnAlgorithm server, with the signed-in device's
@@ -32,10 +33,19 @@ export async function classifyViaServer(
   cfg: ServerSource,
   posts: PostForAI[],
   opts: { profile: InterestProfile; profileHash: string; locale: string },
-  deps: { fetch?: typeof fetch; getAccessToken?: typeof getAccessToken } = {},
+  deps: {
+    fetch?: typeof fetch;
+    getAccessToken?: typeof getAccessToken;
+    /** The signed-in account (null: none) when the caller has read it already; otherwise it is read here. */
+    account?: ServerAccount | null;
+    noteBalance?: { settlement: typeof noteSettlement; refused: typeof noteRefused };
+    rediscover?: typeof refreshServerInfo;
+  } = {},
 ): Promise<ClassifyOutcome> {
   const doFetch = deps.fetch ?? ((input: string | URL, init?: RequestInit) => fetch(input, init));
   const token = deps.getAccessToken ?? getAccessToken;
+  const note = deps.noteBalance ?? { settlement: noteSettlement, refused: noteRefused };
+  const rediscover = deps.rediscover ?? refreshServerInfo;
   const outcome = (byRef: Map<string, PostOutcome>, model: string, failed: boolean): ClassifyOutcome => ({
     byRef,
     usage: ZERO_USAGE,
@@ -51,6 +61,22 @@ export async function classifyViaServer(
     const request = ClassifyRequestSchema.safeParse({ v: 1, posts, ...opts });
     if (!request.success) throw new AIError('bad-request', describeError('bad-request', title));
     const body = JSON.stringify(request.data);
+    // Read before the request goes out: a balance that comes back after someone else signed in is this account's.
+    const account = deps.account !== undefined ? deps.account : await serverAccountItem.getValue().catch(() => null);
+    const owner = account?.origin === base.origin ? account : undefined;
+    /**
+     * Keeps the balance a billing server reported (CL2-10). A stored discovery document that doesn't advertise billing
+     * predates it (CL1-era accounts), so it is read again. Never fails the posts.
+     */
+    const recordBalance = async (record: (deviceId: string) => Promise<void>) => {
+      if (!owner) return;
+      try {
+        await record(owner.deviceId);
+        if (owner.info.billing !== true) void rediscover(base.origin).catch(() => undefined);
+      } catch {
+        // A balance is a convenience; the posts' results stand.
+      }
+    };
 
     /** One attempt with `bearer`, read to the end within the source's timeout. */
     const send = async (bearer: string) => {
@@ -80,10 +106,16 @@ export async function classifyViaServer(
         throw new AIError('auth-required', describeError('auth-required', title));
       }
     }
-    if (!reply.res.ok) throw errorFor(reply.res, reply.text, base, title);
+    if (!reply.res.ok) {
+      const error = errorFor(reply.res, reply.text, base, title);
+      if (error.code === 'insufficient-credits') await recordBalance((id) => note.refused(base.origin, id));
+      throw error;
+    }
 
     const answer = ClassifyResponseSchema.safeParse(parseJson(reply.text));
     if (!answer.success) throw new AIError('unknown', describeError('unknown'));
+    const { billing } = answer.data;
+    if (billing) await recordBalance((id) => note.settlement(base.origin, id, billing));
     return outcome(resultsByRef(posts, answer.data), answer.data.source.model, false);
   } catch (err) {
     const e = isAIError(err) ? err : new AIError('unknown', describeError('unknown'), { cause: err });

@@ -118,7 +118,7 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     return { ok: true };
   },
   aiStatus: async (_msg, sender) => {
-    if (!fromOwnUi(sender)) deny('aiStatus');
+    if (!fromExtensionPage(sender)) deny('aiStatus');
     return aiStatus();
   },
   testSource: async (msg, sender) => {

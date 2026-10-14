@@ -1,6 +1,7 @@
 import type { AISourceConfig, FilterKey, HealthReport, PersonRule, Preset, TabState, Topic } from '@unalgorithm/core';
 import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, PostKey, ServerInfo } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
+import type { PublicBalance } from '../background/server-balance.ts';
 import type { ServerLabel } from './server-label.ts';
 
 /** A post to classify: its local key and exactly what the AI may see (no names, no URLs). */
@@ -42,6 +43,8 @@ export interface AiStatus {
   dailyCap: number;
   capApplies: boolean;
   costTodayMicros?: number;
+  /** The server account's credit balance, only for a server that advertises billing (CL2-10). Extension pages only. */
+  balance?: PublicBalance;
 }
 
 export type TestSourceResult =

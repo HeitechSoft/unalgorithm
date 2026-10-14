@@ -74,6 +74,7 @@ that page (fail open). The toolbar icon says so, and the popup shows a banner wi
 | `storage.session` `tab:<id>` | Live per-tab state for the popup and side panel: counts, health, and for each hidden or highlighted post its author, a short snippet and its link. Memory only; cleared when the tab closes or on Erase everything | Never |
 | `storage.local` `serverAccount` | The UnAlgorithm server the user signed in to: its origin and discovery answer, the email address, the device id, when it signed in, and whether it needs a new sign-in. No tokens. Removed on sign-out and on Erase everything | Never |
 | `storage.session` `serverAccess` | That server's 15-minute access token. Memory only, closed to content scripts | Never |
+| `storage.session` `serverBalance` | The signed-in account's latest credit balance, from a classify answer, a 402 or the balance endpoint, with the server's origin and the device id it belongs to. Only for a server that advertises billing. Memory only, closed to content scripts, cleared on Erase everything | Never |
 | IndexedDB `secrets` | API keys, and the server's refresh token under `server-refresh:<origin>` | **Never**; not exported, not in diagnostics |
 | IndexedDB `classifications` | Cached verdicts keyed by post + input hash + profile hash + source:model + prompt version; no text, no names | Never |
 
@@ -84,8 +85,8 @@ defaults and repair broken sections.
 
 `lib/messages.ts` defines `BgRequest` and `BgResponses`. The background's handler map is typed so a missing handler is
 a compile error. Every handler checks the sender: feed messages only from LinkedIn/Facebook tabs, in-feed actions
-from those tabs or extension pages, privileged ones (keys, AI setup, model lists, data deletion) only from extension
-pages. Content scripts never see API keys or build prompts; the background re-validates each post against
+from those tabs or extension pages, privileged ones (keys, AI setup and status, model lists, data deletion) only from
+extension pages. Content scripts never see API keys or build prompts; the background re-validates each post against
 `PostForAISchema` before it is sent to a model.
 
 ## AI

@@ -45,6 +45,7 @@ import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from '../lib/storage.ts';
 import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
+import { balanceStatus } from './server-balance.ts';
 import { classifyViaServer } from './server-source.ts';
 
 // ---------- capability learning, persisted across service-worker restarts ----------
@@ -491,18 +492,28 @@ export async function aiStatus(): Promise<AiStatus> {
   }
   // R26: a server source works only while this device is signed in to that server.
   const signInAgain = cfg?.kind === 'server' && !signedInTo(cfg, account);
+  // R5, R31: a balance only for a server that advertises billing, and none while the account must sign in again (that
+  // message comes first). Never throws; waits at most BALANCE_WAIT_MS.
+  const balance = await balanceStatus(cfg, account);
+  // R27: an empty balance pauses AI until credit is added or another source is chosen.
+  const message = signInAgain
+    ? describeError('auth-required', label)
+    : balance?.empty
+      ? describeError('insufficient-credits', label)
+      : undefined;
   const cost = dayCostMicros(day);
   return {
     configured: !!cfg,
     kind: cfg?.kind ?? null,
     label,
     ...(model ? { model } : {}),
-    state: !cfg ? 'off' : signInAgain ? 'needs-attention' : 'ready',
-    ...(signInAgain ? { message: describeError('auth-required', label) } : {}),
+    state: !cfg ? 'off' : message ? 'needs-attention' : 'ready',
+    ...(message ? { message } : {}),
     postsToday: day.posts,
     dailyCap: settings.ai.dailyCap,
     capApplies: !!cfg && !isLocalSource(cfg),
     ...(cost !== undefined ? { costTodayMicros: cost } : {}),
+    ...(balance ? { balance } : {}),
   };
 }
 
