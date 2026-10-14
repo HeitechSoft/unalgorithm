@@ -9,6 +9,7 @@ import {
 import { storage } from 'wxt/utils/storage';
 import { isServerAt } from '../lib/server-label.ts';
 import { getAccessToken, isTrustedServerOrigin, type ServerAccount } from './server-auth.ts';
+import { serverRequest } from './server-http.ts';
 
 /**
  * The signed-in account's credit balance (R5, R31): the latest value a classify answer, a 402 or
@@ -132,18 +133,14 @@ async function fetchBalance(account: ServerAccount, d: BalanceDeps): Promise<Sto
   try {
     if (account.info.billing !== true || account.needsSignIn) return await storedFor(account);
     const before = await serverBalanceItem.getValue();
-    const url = new URL(CREDIT_BALANCE_PATH, account.origin).href;
-    const get = (token: string) =>
-      d.fetch(url, {
-        headers: { authorization: `Bearer ${token}` },
-        credentials: 'omit',
-        redirect: 'error',
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-    let res = await get(await d.getAccessToken(account.origin));
-    // The access token was revoked or ran out early: one refresh, one retry.
-    if (res.status === 401) res = await get(await d.getAccessToken(account.origin, { forceRefresh: true }));
-    const body = res.ok ? CreditBalanceSchema.safeParse(await res.json().catch(() => null)) : undefined;
+    // A 401 twice leaves the account as it is: the classify path decides about signing in again (CL1-17).
+    const res = await serverRequest(
+      account.origin,
+      CREDIT_BALANCE_PATH,
+      { timeoutMs: TIMEOUT_MS, markNeedsSignIn: false },
+      { fetch: d.fetch, getAccessToken: d.getAccessToken },
+    );
+    const body = res.ok ? CreditBalanceSchema.safeParse(res.body) : undefined;
     if (!body?.success) return await storedFor(account);
     const value: StoredBalance = {
       origin: account.origin,
