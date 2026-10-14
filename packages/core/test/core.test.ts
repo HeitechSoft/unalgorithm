@@ -4,6 +4,7 @@ import {
   adjustRelevance,
   applyFeedback,
   applyPreset,
+  balanceLine,
   buildInterestProfile,
   buildSystemPrompt,
   buildUserPrompt,
@@ -13,6 +14,9 @@ import {
   EMPTY_LEARNED,
   evaluateHealth,
   findKeyword,
+  formatBalance,
+  formatCreditAmount,
+  formatPostsEstimate,
   migrateSettings,
   NO_SIGNALS,
   neutralize,
@@ -345,5 +349,38 @@ describe('usage', () => {
     expect(ledger['2026-01-01']).toMatchObject({ posts: 6, calls: 2, failedCalls: 1 });
     ledger = recordUsage(ledger, { model: 'm', usage: z, posts: 1, now: new Date(2026, 2, 1) });
     expect(Object.keys(ledger)).toEqual(['2026-03-01']);
+  });
+});
+
+describe('credit wording', () => {
+  const MINUS = String.fromCodePoint(0x2212); // MINUS SIGN, not a hyphen
+  const DOT = String.fromCodePoint(0x00b7); // MIDDLE DOT
+
+  it('test_format_balance_floors_to_cent', () => {
+    expect(formatBalance(0)).toBe('$0.00');
+    expect(formatBalance(-1)).toBe('$0.00');
+    expect(formatBalance(9_999)).toBe('<$0.01');
+    expect(formatBalance(10_000)).toBe('$0.01');
+    expect(formatBalance(979_999)).toBe('$0.97');
+    expect(formatBalance(1_234_569_999)).toBe('$1,234.56');
+  });
+
+  it('test_format_credit_amount_signs_and_rounding', () => {
+    expect(formatCreditAmount(1_000_000)).toBe('+$1.00');
+    expect(formatCreditAmount(-60_000)).toBe(`${MINUS}$0.06`);
+    expect(formatCreditAmount(-5_000)).toBe(`${MINUS}$0.01`);
+    expect(formatCreditAmount(-4_999)).toBe(`${MINUS}<$0.01`);
+    expect(formatCreditAmount(4_999)).toBe('+<$0.01');
+    expect(formatCreditAmount(0)).toBe('$0.00');
+  });
+
+  it('test_balance_line', () => {
+    expect(balanceLine(970_000)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    expect(balanceLine(146)).toBe(`<$0.01 left ${DOT} about 1 post`);
+    expect(balanceLine(0)).toBe('$0.00 left');
+    expect(balanceLine(-5)).toBe('$0.00 left');
+    expect(formatPostsEstimate(0)).toBe('no posts');
+    expect(formatPostsEstimate(1)).toBe('about 1 post');
+    expect(formatPostsEstimate(33_000)).toBe('about 33,000 posts');
   });
 });

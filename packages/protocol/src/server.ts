@@ -34,6 +34,7 @@ const OriginPath = z
   .string()
   .max(200)
   .regex(/^\/(?!\/)[\w\-.~!$&'()*+,;=:@%/]*$/);
+export const OriginPathSchema = OriginPath;
 
 export const ServerInfoSchema = z.object({
   v: z.literal(1),
