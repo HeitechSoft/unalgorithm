@@ -276,11 +276,17 @@ async function ensureOnceCase(db: Db): Promise<void> {
   expect(rows[0]?.epoch).not.toBe(rows[1]?.epoch);
 }
 
-/** AC 5: every item after the cursor in seq order, tombstones included, a page at a time. */
+/**
+ * AC 5: every item after the cursor in seq order, tombstones included, a page at a time. Bob's space holds items at
+ * seqs that overlap Alice's: each read answers its own space's items only.
+ */
 async function pagesCase(db: Db): Promise<void> {
   const people = await seedPeople(db);
   const space = await fiveItems(db, people);
   const d = people.alice.deviceId;
+  const bobSpace = await ensureUserSpace(db, BOB);
+  const b = people.bob.deviceId;
+  await store(db, bobSpace, b, [{ seq: 1 }, { seq: 2, deleted: true }, { seq: 4 }, { seq: 7 }]);
 
   const all = await read(db, space, { since: 0 });
   expect(SyncChangesResponseSchema.parse(all)).toEqual(all);
@@ -309,6 +315,13 @@ async function pagesCase(db: Db): Promise<void> {
   expect(last.items).toStrictEqual([change(5, d)]);
   const none = await read(db, space, { since: last.cursor, limit: 2 });
   expect(none).toMatchObject({ cursor: 5, more: false, items: [] });
+
+  const bobs = await read(db, bobSpace, { since: 0 });
+  expect(bobs).toMatchObject({ spaceId: bobSpace.id, epoch: bobSpace.epoch, cursor: 7, more: false });
+  expect(bobs.items).toStrictEqual([change(1, b), change(2, b, true), change(4, b), change(7, b)]);
+  const bobsPage = await read(db, bobSpace, { since: 1, limit: 2 });
+  expect(bobsPage).toMatchObject({ cursor: 4, more: true });
+  expect(bobsPage.items).toStrictEqual([change(2, b, true), change(4, b)]);
 }
 
 describe('spaces', { timeout: PGLITE_TIMEOUT }, () => {

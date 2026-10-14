@@ -136,7 +136,8 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
 ### Database
 
 Postgres 17 (PGlite in tests), migrated at startup under an advisory lock from `apps/server/drizzle`. No table holds
-post text, names or prompts.
+post text or prompts. The only names are in each person's synced settings: the labels of people that person chose to
+always show or hide (`sync_items`).
 
 | Table | What it holds |
 |---|---|
@@ -151,6 +152,9 @@ post text, names or prompts.
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |
 | `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
+| `sync_spaces` | One personal sync space per account: its epoch, the last seq handed out, item and byte counts, and the tombstone cleanup floor |
+| `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
+| `sync_pushes` | One record per sync push, by push id, with the keys, statuses and seqs the server answered; never a value |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and a server whose
 module registers jobs also has graphile-worker's `graphile_worker` schema ([Jobs](#jobs)).
