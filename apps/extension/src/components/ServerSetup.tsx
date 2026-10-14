@@ -39,10 +39,13 @@ type View =
  * the first sign-in to an origin; "Sign in again" (R26) and "Turn on" reuse the account's origin without asking again.
  */
 export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg: AISourceConfig): void }) {
-  // The balance for the account row (R31). First, in every view: its `aiStatus` message then goes out before
+  // Counts sign-ins to a server that bills, so the balance is asked for again: "Sign in again" (R26), or a first sign-in
+  // while AI already uses that server, leaves the source unchanged, and the status from before has no balance.
+  const [billedSignIns, setBilledSignIns] = useState(0);
+  // The balance for the account row (R31). The first message, in every view: `aiStatus` then goes out before
   // `serverAccount`, and the messages after that one stay exactly the sign-in steps (server-setup.test.tsx records
-  // every message and checks them).
-  const ai = useAiStatus(JSON.stringify(device.aiSource));
+  // every message and checks them; its server doesn't bill, so no `aiStatus` follows the sign-in).
+  const ai = useAiStatus(`${JSON.stringify(device.aiSource)} ${billedSignIns}`);
   const [view, setView] = useState<View>({ step: 'loading' });
   const [address, setAddress] = useState(PINNED_CLOUD_ORIGIN);
   const [busy, setBusy] = useState(false);
@@ -102,6 +105,7 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
       const res = await sendToBackground({ type: 'serverSignIn', baseUrl: origin });
       if (!res.ok) return setError(res.error.message);
       go({ step: 'account', account: res.account });
+      if (res.account.billing) setBilledSignIns((n) => n + 1);
       onSaved?.({ kind: 'server', baseUrl: res.account.origin });
     });
 

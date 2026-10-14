@@ -93,9 +93,12 @@ const account: PublicServerAccount = {
   signedInAt: TODAY.getTime(),
   needsSignIn: false,
   label: serverLabel(PINNED_CLOUD_ORIGIN),
+  billing: true,
 };
 
 let aiReply: () => AiStatus | Promise<AiStatus>;
+/** What `serverAccount` reports; `serverSignIn` answers with the same account, signed in. */
+let serverAccount: PublicServerAccount;
 let activeTab: typeof FEED_TAB | null;
 let created: MockInstance;
 let closed: MockInstance;
@@ -108,10 +111,12 @@ beforeEach(async () => {
   vi.setSystemTime(TODAY);
   activeTab = null;
   aiReply = () => cloudStatus();
+  serverAccount = account;
   vi.mocked(sendToBackground).mockReset();
   vi.mocked(sendToBackground).mockImplementation(async (msg: BgRequest) => {
     if (msg.type === 'aiStatus') return (await aiReply()) as never;
-    if (msg.type === 'serverAccount') return { account } as never;
+    if (msg.type === 'serverAccount') return { account: serverAccount } as never;
+    if (msg.type === 'serverSignIn') return { ok: true, account: { ...serverAccount, needsSignIn: false } } as never;
     throw new Error(`No reply to ${msg.type}`);
   });
   // `as never`: spyOn picks the callback overloads. The fake browser has no focused window to answer `query` from.
@@ -406,6 +411,35 @@ describe('settings', () => {
       expect(found.querySelector(`.ua-badge--${tone}`)).not.toBeNull();
       expect(screen.queryByText('AI is paused')).toBeNull();
       expect(screen.queryByText(LOW_TITLE)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('test_settings_pill_after_sign_in_again', async () => {
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => true) as never);
+    const afterSignIn = () => sentTypes().slice(sentTypes().indexOf('serverSignIn') + 1);
+    // R26: the source stays the Cloud throughout, so the device never changes. While the account must sign in again,
+    // `aiStatus` has no balance (CL2-10); once signed in, a server that bills has one.
+    for (const billing of [true, false]) {
+      vi.mocked(sendToBackground).mockClear();
+      serverAccount = { ...account, needsSignIn: true, billing };
+      aiReply = () =>
+        !sentTypes().includes('serverSignIn')
+          ? { ...cloudStatus(), state: 'needs-attention', message: describeError('auth-required', LABEL) }
+          : cloudStatus(billing ? balance(970_000) : undefined);
+      render(<ServerSetup device={device()} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Sign in again' }));
+      await screen.findByText(`Signed in as ${EMAIL}`);
+      if (billing) {
+        expect(await screen.findByRole('button', { name: pillName(FULL_TEXT) })).toBeTruthy();
+        expect(afterSignIn()).toEqual(['aiStatus']);
+      } else {
+        // No balance to show, so nothing more is asked (server-setup.test.tsx checks the same order).
+        await settle();
+        expect(afterSignIn()).toEqual([]);
+        expect(screen.queryByRole('button', { name: /^Credit balance/ })).toBeNull();
+      }
       cleanup();
     }
   });

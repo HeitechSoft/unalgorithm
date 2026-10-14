@@ -58,6 +58,8 @@ export interface PublicServerAccount {
   signedInAt: number;
   needsSignIn: boolean;
   label: ServerLabel;
+  /** Present (true) when the server's discovery advertises billing, so `aiStatus` reports a balance once signed in. */
+  billing?: boolean;
 }
 
 export type BgRequest =

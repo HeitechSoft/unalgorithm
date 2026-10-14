@@ -286,6 +286,11 @@ describe('sign-out and account', () => {
     await serverAccountItem.setValue(account({ origin: PINNED_CLOUD_ORIGIN, needsSignIn: true }));
     const cloud = await handlers.serverAccount({ type: 'serverAccount' }, page());
     expect(cloud.account).toMatchObject({ needsSignIn: true, label: { title: 'UnAlgorithm Cloud', isCloud: true } });
+    expect(cloud.account).not.toHaveProperty('billing');
+
+    // A server that bills says so: Settings asks for the balance again after signing in (CL2-12).
+    await serverAccountItem.setValue(account({ info: { ...INFO, billing: true } }));
+    expect((await handlers.serverAccount({ type: 'serverAccount' }, page())).account?.billing).toBe(true);
 
     // The account sits where content scripts can write: a broken discovery document still gives a label.
     await serverAccountItem.setValue({ ...account(), info: { name: 42 } } as unknown as ServerAccount);

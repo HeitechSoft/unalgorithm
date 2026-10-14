@@ -66,6 +66,7 @@ function publicAccount(account: ServerAccount): PublicServerAccount {
     signedInAt: account.signedInAt,
     needsSignIn: account.needsSignIn,
     label: serverLabel(account.origin, info.success ? info.data : undefined),
+    ...(info.success && info.data.billing ? { billing: true } : {}),
   };
 }
 
