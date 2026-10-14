@@ -22,6 +22,7 @@ COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/sync/package.json packages/sync/
 COPY packages/ui/package.json packages/ui/
 RUN pnpm install --frozen-lockfile --filter @unalgorithm/server... --filter @unalgorithm/web...
 COPY tsconfig.base.json ./
@@ -43,10 +44,12 @@ COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/sync/package.json packages/sync/
 COPY packages/ui/package.json packages/ui/
 RUN pnpm install --frozen-lockfile --prod --filter @unalgorithm/server...
 COPY packages/protocol/src packages/protocol/src
 COPY packages/core/src packages/core/src
+COPY packages/sync/src packages/sync/src
 COPY packages/ai/src packages/ai/src
 # route-eval imports @unalgorithm/ai/eval: the Cloud opens its eval gate inside the container.
 COPY packages/ai/eval packages/ai/eval

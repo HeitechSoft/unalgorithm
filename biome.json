@@ -108,6 +108,29 @@
       }
     },
     {
+      "includes": ["packages/sync/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@unalgorithm/ai": "Import @unalgorithm/ai/presets: the package root pulls in the vendor SDKs."
+                },
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui", "@unalgorithm/platforms"],
+                    "message": "sync is shared by the server and the extension: protocol, core, zod and the SDK-free @unalgorithm/ai/presets only."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/core/**"],
       "linter": {
         "rules": {
