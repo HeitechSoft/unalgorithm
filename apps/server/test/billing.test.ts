@@ -468,6 +468,33 @@ describe('loader', { timeout: PGLITE_TIMEOUT }, () => {
     expect(lines).toHaveLength(1);
   });
 
+  it('test_start_server_runs_billing_module', async () => {
+    const { log, events } = captureLog();
+    const server = await startServer(moduleConfig(FIXTURE), { db: await createTestDb(), port: 0, log });
+    cleanup.push(() => server.close());
+
+    // The loaded provider is the one the app serves: discovery advertises it, and its routes are mounted (a missing
+    // route would answer 404, not the device check's 401).
+    const info = await fetch(`${server.url}${SERVER_INFO_PATH}`);
+    expect(await info.json()).toMatchObject({ billing: true });
+    const balance = await fetch(`${server.url}${CREDIT_BALANCE_PATH}`);
+    expect(balance.status).toBe(401);
+    expect(await balance.json()).toMatchObject({ code: 'auth-required' });
+    const order = events().map((e) => e.event);
+    expect(order).toContain('billing.loaded');
+    expect(order.indexOf('billing.loaded')).toBeLessThan(order.indexOf('server.started'));
+    await expect(server.close()).resolves.toBeUndefined();
+
+    // The module gets the config's BILLING_* variables: one it refuses stops the start, and the database is closed.
+    const db = await createTestDb();
+    cleanup.push(() => db.close());
+    const badStart = moduleConfig(FIXTURE, { BILLING_FIXTURE_START_MICROS: 'QXZ7' });
+    const err = await rejection(startServer(badStart, { db, port: 0, log }));
+    expect(err).toMatchObject({ name: 'BillingConfigError' });
+    await expect(db.db.execute(sql`select 1`)).rejects.toThrow();
+    expect(events().filter((e) => e.event === 'server.started')).toHaveLength(1);
+  });
+
   it('test_start_fails_closed_on_bad_module', async () => {
     const { log, events } = captureLog();
     const db = await createTestDb();
