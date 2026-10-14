@@ -48,6 +48,24 @@ function clockOf(record: Readonly<Record<string, string>>, key: string): string 
 }
 
 /**
+ * The item for `key` at `hlc` as the server would get it (no local value: a tombstone), or why it is never sent:
+ * `invalid` (it fails `validateSettingsItem`) or `withheld` (its key or value holds what looks like a provider's API
+ * key, R17). One rule for `changedItems` and `dropAfterResync`, so what is sent and what counts as sent cannot drift.
+ */
+function outgoingItem(settings: Settings, key: string, hlc: string): SyncItem | 'invalid' | 'withheld' {
+  const value = getAtKey(settings, key);
+  const item: SyncItem =
+    value === undefined
+      ? { collection: SETTINGS_COLLECTION, key, hlc, deleted: true }
+      : { collection: SETTINGS_COLLECTION, key, hlc, deleted: false, value: value as SyncValue };
+  // Validation bounds the value's depth before the credential walk reads it.
+  if (!validateSettingsItem(item)) return 'invalid';
+  // An unknown field's key segment can hold a whole provider key, so the key is checked for tombstones too.
+  if (containsCredential(key.split('.')) || (!item.deleted && containsCredential(item.value))) return 'withheld';
+  return item;
+}
+
+/**
  * Items whose local HLC is newer than what the server is known to hold (`known`: item key → HLC). Untouched defaults
  * carry no clock, so they are never sent. An item whose key or value holds what looks like a provider's API key is
  * `withheld` (by key only) and never returned (R17); invalid items are left out.
@@ -61,19 +79,9 @@ export function changedItems(
   const withheld: string[] = [];
   for (const [key, hlc] of Object.entries(normalizeClocks(settings, clocks))) {
     if (compareHlc(hlc, clockOf(known, key)) <= 0) continue;
-    const value = getAtKey(settings, key);
-    const item: SyncItem =
-      value === undefined
-        ? { collection: SETTINGS_COLLECTION, key, hlc, deleted: true }
-        : { collection: SETTINGS_COLLECTION, key, hlc, deleted: false, value: value as SyncValue };
-    // Validation bounds the value's depth before the credential walk reads it.
-    if (!validateSettingsItem(item)) continue;
-    // An unknown field's key segment can hold a whole provider key, so the key is checked for tombstones too.
-    if (containsCredential(key.split('.')) || (!item.deleted && containsCredential(item.value))) {
-      withheld.push(key);
-      continue;
-    }
-    items.push(item);
+    const item = outgoingItem(settings, key, hlc);
+    if (item === 'withheld') withheld.push(key);
+    else if (item !== 'invalid') items.push(item);
   }
   return { items, withheld };
 }
@@ -146,6 +154,8 @@ export function applyRemoteItems(
  * its clock. Its tombstone was cleaned up after 90 days, so the entry was deleted on another device, and sending it
  * again would bring it back. An entry edited after the newest cleaned-up deletion cannot be the one deleted, so it
  * stays and is pushed, as are plain settings. A brand-new space has `gcFloorHlc = HLC_ZERO`: nothing is dropped.
+ * An entry `changedItems` never sends (`invalid` or `withheld`) never reached the server, so no other device deleted
+ * it: it stays, local only.
  */
 export function dropAfterResync(
   settings: Settings,
@@ -158,7 +168,9 @@ export function dropAfterResync(
   const dropped: string[] = [];
   for (const [key, hlc] of Object.entries(norm)) {
     if (!isSettingsEntryKey(key) || serverKeys.has(key) || compareHlc(hlc, gcFloorHlc) > 0) continue;
-    if (getAtKey(next, key) === undefined) continue;
+    // A tombstone has nothing to drop, and an entry that is never sent was never on the server.
+    const item = outgoingItem(next, key, hlc);
+    if (typeof item === 'string' || item.deleted) continue;
     deleteAtKey(next, key);
     delete norm[key];
     dropped.push(key);

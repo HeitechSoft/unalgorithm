@@ -1,4 +1,4 @@
-import { defaultSettings, type Settings, type SettingsClocks, type Topic } from '@unalgorithm/core';
+import { defaultSettings, type Settings, type SettingsClocks, SettingsSchema, type Topic } from '@unalgorithm/core';
 import { formatHlc, HLC_ZERO, type SyncItem } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { applyRemoteItems, changedItems, dropAfterResync, normalizeClocks, SETTINGS_COLLECTION } from '../src/index.ts';
@@ -116,6 +116,18 @@ describe('changed items', () => {
     expect(changedItems(s, deleted, { 'display.mode': hlc(1), 'interests.more.X': hlc(2) }).items).toEqual([
       tombstone('interests.more.X', hlc(3)),
     ]);
+  });
+
+  it('test_changed_items_leaves_out_invalid_items', () => {
+    // Settings the schema accepts but Postgres jsonb cannot store: U+0000 and a lone surrogate.
+    const s = defaultSettings();
+    s.interests.about = 'a\u0000b';
+    s.interests.more.X = topic('x\uD83D');
+    s.display.mode = 'hide';
+    expect(SettingsSchema.safeParse(s).success).toBe(true);
+    const clocks: SettingsClocks = { 'interests.about': hlc(1), 'interests.more.X': hlc(2), 'display.mode': hlc(3) };
+
+    expect(changedItems(s, clocks, {})).toEqual({ items: [live('display.mode', 'hide', hlc(3))], withheld: [] });
   });
 
   it('test_changed_items_withholds_credentials', () => {
@@ -342,6 +354,9 @@ describe('resync', () => {
     s.interests.more.recent = topic('Recent');
     s.interests.more.onServer = topic('On the server');
     s.platforms.facebook.alwaysHide.rule = { label: 'Ann Example', match: 'fb:ann', addedAt: 1 };
+    // Entries changedItems never sends never reached the server, so no other device deleted them.
+    s.interests.muteWords.withheld = { label: `mute ${ANT_KEY}`, addedAt: 1 };
+    s.interests.less.invalid = topic('Ann \uD83D');
     const clocks: SettingsClocks = {
       'display.mode': day(10),
       'interests.more.old.label': day(10),
@@ -350,6 +365,8 @@ describe('resync', () => {
       'platforms.facebook.alwaysHide.rule': day(100),
       // A local delete the server never saw: a tombstone, re-sent.
       'interests.more.deleted': day(10),
+      'interests.muteWords.withheld': day(10),
+      'interests.less.invalid': day(10),
     };
     const serverKeys = new Set(['interests.more.onServer', 'interests.less.cleaned']);
 
@@ -358,19 +375,25 @@ describe('resync', () => {
     expect(Object.keys(result.settings.interests.more).sort()).toEqual(['onServer', 'recent']);
     expect(result.settings.platforms.facebook.alwaysHide).toEqual({});
     expect(result.settings.display.mode).toBe('hide');
+    expect(result.settings.interests.muteWords.withheld).toEqual(s.interests.muteWords.withheld);
+    expect(result.settings.interests.less.invalid).toEqual(topic('Ann \uD83D'));
     expect(result.clocks).toEqual({
       'display.mode': day(10),
       'interests.more.recent': day(120),
       'interests.more.onServer': day(10),
       'interests.more.deleted': day(10),
+      'interests.muteWords.withheld': day(10),
+      'interests.less.invalid': day(10),
     });
-    // Dropped entries are neither kept nor sent; the rest still is.
-    expect(changedItems(result.settings, result.clocks, {}).items.map((item) => item.key)).toEqual([
+    // Dropped entries are neither kept nor sent; the rest still is, and the kept local-only entries stay unsent.
+    const after = changedItems(result.settings, result.clocks, {});
+    expect(after.items.map((item) => item.key)).toEqual([
       'display.mode',
       'interests.more.recent',
       'interests.more.onServer',
       'interests.more.deleted',
     ]);
+    expect(after.withheld).toEqual(['interests.muteWords.withheld']);
     // Pure: the inputs are left as they were.
     expect(s.interests.more.old).toEqual(topic('Old'));
 
