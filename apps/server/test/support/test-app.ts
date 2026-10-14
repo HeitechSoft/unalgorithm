@@ -71,6 +71,8 @@ export interface TestAppOptions {
   syncAccess?: AccessResolver;
   /** The notifier that wakes sync long-polls, so a test can watch its waiters. Default: the app's own. */
   syncNotifier?: SpaceNotifier;
+  /** Aborted to stop the app as `startServer` does. Default: never. */
+  stopping?: AbortSignal;
   /**
    * A migrated database that the caller opened and closes itself, such as a Postgres one. Default: a fresh PGlite
    * database, which `close()` closes.
@@ -115,6 +117,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       classifyDeadlineMs: overrides.classifyDeadlineMs,
       syncAccess: overrides.syncAccess,
       syncNotifier: overrides.syncNotifier,
+      stopping: overrides.stopping,
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

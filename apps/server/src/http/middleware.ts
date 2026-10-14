@@ -64,6 +64,18 @@ export function nonErrorsAsErrors(): MiddlewareHandler {
 }
 
 /**
+ * Once `stopping` is aborted, every answer says `Connection: close`, and Node closes the connection after it. Without
+ * that, a stopping server keeps a connection open while its client sends the next request on it (the extension's sync
+ * loop does, every few seconds), and the stop waits its whole grace period.
+ */
+export function closeWhenStopping(stopping: AbortSignal): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (stopping.aborted) c.header('Connection', 'close');
+  };
+}
+
+/**
  * Stores the client's address for `getClientIp`. With `none` it is the socket's address and `X-Forwarded-For` is
  * ignored entirely. With `one-hop` (behind our nginx, which sets the header to the address it saw) it is the right-most
  * `X-Forwarded-For` entry: anything left of it was written by the client. The socket address stands in when that entry

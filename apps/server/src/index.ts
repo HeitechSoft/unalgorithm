@@ -37,8 +37,8 @@ export interface RunningServer {
   /** `http://<host>:<port>` as bound. */
   url: string;
   /**
-   * Stops accepting, waits up to 10 s for requests in flight, stops the jobs (waiting for running ones), then closes the
-   * database. Safe to call twice.
+   * Stops accepting, answers sync long-polls at once, waits up to 10 s for requests in flight (each answer closes its
+   * connection), stops the jobs (waiting for running ones), then closes the database. Safe to call twice.
    */
   close(): Promise<void>;
 }
@@ -48,6 +48,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   const db = opts.db ?? openPostgres(config.databaseUrl, log);
   let server: Server;
   let running: RunningJobs | undefined;
+  const stopping = new AbortController();
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
@@ -61,7 +62,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
     const billing = await loadBilling(config, host, log);
-    const app = createApp({ config, db, log, billing, auth, ai });
+    const app = createApp({ config, db, log, billing, auth, ai, stopping: stopping.signal });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
@@ -74,7 +75,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let closing: Promise<void> | undefined;
   return {
     url: `http://${config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`,
-    close: () => (closing ??= stop(server, running, db)),
+    close: () => (closing ??= stop(server, stopping, running, db)),
   };
 }
 
@@ -90,7 +91,9 @@ function listen(app: App, hostname: string, port: number): Promise<Server> {
   });
 }
 
-async function stop(server: Server, running: RunningJobs | undefined, db: DbHandle): Promise<void> {
+async function stop(server: Server, stopping: AbortController, running: RunningJobs | undefined, db: DbHandle): Promise<void> {
+  // First: a sync long-poll would otherwise wait up to 20 s, past the grace period.
+  stopping.abort();
   await new Promise<void>((resolve) => {
     // close() stops accepting and ends idle keep-alive connections; busy ones get the grace period.
     const grace = setTimeout(() => server.closeAllConnections(), STOP_GRACE_MS);

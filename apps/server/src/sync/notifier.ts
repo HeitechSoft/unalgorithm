@@ -28,6 +28,11 @@ export interface SpaceNotifier {
   wait(spaceId: string, ms: number, signal?: AbortSignal): Promise<boolean>;
   /** Registered subscriptions of that space. */
   waiting(spaceId: string): number;
+  /**
+   * The server is stopping: ends every wait in progress with false, registered or not, and every later wait resolves at
+   * once (false, unless a notify had already arrived), so no long-poll holds the stop open. Idempotent.
+   */
+  close(): void;
 }
 
 /** One subscription's state. `settle` is set while its wait is in progress. */
@@ -47,6 +52,9 @@ interface Waiter {
 export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}): SpaceNotifier {
   const max = opts.maxWaitersPerSpace ?? DEFAULT_MAX_WAITERS_PER_SPACE;
   const spaces = new Map<string, Set<Waiter>>();
+  /** Every wait in progress, registered or not, for `close`. */
+  const pending = new Set<Waiter>();
+  let closed = false;
 
   const unregister = (spaceId: string, waiter: Waiter) => {
     const waiters = spaces.get(spaceId);
@@ -58,7 +66,7 @@ export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}):
     const waiter: Waiter = { notified: false, done: false, settle: undefined };
     const waiters = spaces.get(spaceId) ?? new Set<Waiter>();
     // Decided now: a full space leaves this one out for good, even once others leave.
-    if (waiters.size < max) spaces.set(spaceId, waiters.add(waiter));
+    if (!closed && waiters.size < max) spaces.set(spaceId, waiters.add(waiter));
 
     const finish = () => {
       waiter.done = true;
@@ -66,7 +74,7 @@ export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}):
     };
     return {
       wait(ms, signal) {
-        if (waiter.done || waiter.notified || signal?.aborted) {
+        if (closed || waiter.done || waiter.notified || signal?.aborted) {
           finish();
           return Promise.resolve(waiter.notified);
         }
@@ -75,6 +83,7 @@ export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}):
             clearTimeout(timer);
             signal?.removeEventListener('abort', onAbort);
             waiter.settle = undefined;
+            pending.delete(waiter);
             finish();
             resolve(woken);
           };
@@ -82,6 +91,7 @@ export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}):
           const timer = setTimeout(onAbort, ms);
           signal?.addEventListener('abort', onAbort, { once: true });
           waiter.settle = settle;
+          pending.add(waiter);
         });
       },
       cancel() {
@@ -102,5 +112,11 @@ export function createSpaceNotifier(opts: { maxWaitersPerSpace?: number } = {}):
     subscribe,
     wait: (spaceId, ms, signal) => subscribe(spaceId).wait(ms, signal),
     waiting: (spaceId) => spaces.get(spaceId)?.size ?? 0,
+    close() {
+      closed = true;
+      // A copy: each waiter leaves the set as it settles. Subscriptions not yet waiting resolve at once when they do.
+      for (const waiter of [...pending]) waiter.settle?.(false);
+      spaces.clear();
+    },
   };
 }

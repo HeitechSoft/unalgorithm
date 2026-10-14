@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { serve } from '@hono/node-server';
 import { describeError } from '@unalgorithm/ai';
 import {
   formatHlc,
@@ -44,10 +48,11 @@ const WAITED_AT_MOST_MS = WAIT_S * 1000 + 3_000;
 
 type TestApp = Awaited<ReturnType<typeof syncApp>>;
 
-/** Apps a test opened, closed after it whatever the outcome; fake timers are put back too. */
+/** Apps a test opened, closed after it whatever the outcome; fake timers and spies are put back too. */
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
@@ -75,10 +80,27 @@ interface ChangesQuery {
   wait?: number;
 }
 
+/** The changes route's path with this query. */
+function changesPath(q: ChangesQuery): string {
+  const query = new URLSearchParams(Object.entries(q).map(([k, v]): [string, string] => [k, String(v)]));
+  return `${SYNC_CHANGES_PATH}?${query}`;
+}
+
 /** `GET /v1/sync/changes` with this device's token, or none; `signal` stands for the client's connection. */
 function changes(t: TestApp, tokens: TokenResponse | null, q: ChangesQuery, signal?: AbortSignal): Promise<Response> {
-  const query = new URLSearchParams(Object.entries(q).map(([k, v]): [string, string] => [k, String(v)]));
-  return Promise.resolve(t.app.request(`${SYNC_CHANGES_PATH}?${query}`, { headers: bearer(tokens), signal }));
+  return Promise.resolve(t.app.request(changesPath(q), { headers: bearer(tokens), signal }));
+}
+
+/** The app on a loopback port, served as `startServer` serves it; closed after the test. */
+async function serveOnLoopback(t: TestApp): Promise<{ server: Server; url: string }> {
+  // Without `createServer` options, serve() builds a node:http server.
+  const server = serve({ fetch: t.app.fetch, hostname: '127.0.0.1', port: 0 }) as Server;
+  await once(server, 'listening');
+  cleanup.push(async () => {
+    server.closeAllConnections();
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
+  });
+  return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 /** `POST /v1/sync/push` with this device's token, or none. */
@@ -290,16 +312,55 @@ describe('long-poll and refusals', { timeout: PGLITE_TIMEOUT }, () => {
     expect(body.items).toEqual([{ ...item, seq: 1 }]);
     expect(notifier.waiting(space.id)).toBe(0);
 
+    // A push that commits and notifies between the request's read and its wait still wakes it: the route subscribed
+    // before it read. Made certain here: the push runs as soon as the read's transaction ends, before the route goes on.
+    const second = live('interests.more.climate', topic('Climate'));
+    const db = t.deps.db.db;
+    const transaction = db.transaction.bind(db);
+    let between: Promise<Response> | undefined;
+    vi.spyOn(db, 'transaction').mockImplementation(async (run, config) => {
+      const result = await transaction(run, config);
+      // `readChanges` is the changes route's one transaction, and the only read-only one.
+      if (config?.accessMode === 'read only' && !between) {
+        between = push(t, t.laptop, pushBody(space, [second]));
+        expect((await between).status).toBe(200);
+      }
+      return result;
+    });
+    const raced = await timed(changes(t, t.desktop, since(space, body.cursor, WAIT_S)));
+    vi.mocked(db.transaction).mockRestore();
+    expect(between).toBeDefined();
+    expect(raced.res.status).toBe(200);
+    const racedBody = SyncChangesResponseSchema.parse(await raced.res.json());
+    expect(racedBody.items).toEqual([{ ...second, seq: 2 }]);
+    expect(raced.ms).toBeLessThan(WAITED_MS);
+    expect(notifier.waiting(space.id)).toBe(0);
+    const { cursor } = racedBody;
+
+    // Requests that never wait unregister too: one that finds items at once, and one refused with 410. Each registers
+    // as it begins; left behind, four of them would fill the space, and no later long-poll on it would be woken.
+    const otherEpoch = { ...space, epoch: randomUUID() };
+    for (let i = 0; i < 2; i++) {
+      const found = await timed(changes(t, t.desktop, since(space, 0, WAIT_S)));
+      expect(found.res.status).toBe(200);
+      expect(SyncChangesResponseSchema.parse(await found.res.json()).items).toHaveLength(2);
+      expect(found.ms).toBeLessThan(WAITED_MS);
+      const refused = await timed(changes(t, t.laptop, since(otherEpoch, 0, WAIT_S)));
+      expect(refused.res.status).toBe(410);
+      expect(refused.ms).toBeLessThan(WAITED_MS);
+    }
+    expect(notifier.waiting(space.id)).toBe(0);
+
     // Nothing pushed: each answers after the wait, with nothing. Four fill the space; the fifth, sent once they wait, is
     // not registered, and still waits its time instead of answering at once.
     const devices = [t.laptop, t.desktop, t.laptop, t.desktop];
-    const four = devices.map((device) => timed(changes(t, device, since(space, body.cursor, WAIT_S))));
+    const four = devices.map((device) => timed(changes(t, device, since(space, cursor, WAIT_S))));
     await vi.waitUntil(() => notifier.waiting(space.id) === 4, { timeout: PGLITE_TIMEOUT, interval: 5 });
-    const fifth = timed(changes(t, t.laptop, since(space, body.cursor, WAIT_S)));
+    const fifth = timed(changes(t, t.laptop, since(space, cursor, WAIT_S)));
 
     for (const { res, ms } of await Promise.all([...four, fifth])) {
       expect(res.status).toBe(200);
-      expect(SyncChangesResponseSchema.parse(await res.json())).toMatchObject({ cursor: 1, items: [] });
+      expect(SyncChangesResponseSchema.parse(await res.json())).toMatchObject({ cursor, items: [] });
       expect(ms).toBeGreaterThanOrEqual(WAITED_MS);
       expect(ms).toBeLessThan(WAITED_AT_MOST_MS);
     }
@@ -307,11 +368,49 @@ describe('long-poll and refusals', { timeout: PGLITE_TIMEOUT }, () => {
 
     // A client that goes away frees its place at once instead of holding it for the whole wait.
     const connection = new AbortController();
-    const gone = timed(changes(t, t.desktop, since(space, body.cursor, WAIT_S), connection.signal));
+    const gone = timed(changes(t, t.desktop, since(space, cursor, WAIT_S), connection.signal));
     await vi.waitUntil(() => notifier.waiting(space.id) === 1, { timeout: PGLITE_TIMEOUT, interval: 5 });
     connection.abort();
     const { ms } = await gone;
     expect(ms).toBeLessThan(WAITED_MS);
+    expect(notifier.waiting(space.id)).toBe(0);
+  });
+
+  it('test_changes_wait_ends_when_server_stops', async () => {
+    const stopping = new AbortController();
+    const notifier = createSpaceNotifier();
+    const t = await syncApp({ syncNotifier: notifier, stopping: stopping.signal });
+    const space = await spaceOf(t, t.desktop);
+    // Over a real socket: its connection outlives an answer unless the answer closes it.
+    const { server, url } = await serveOnLoopback(t);
+    const before = await fetch(`${url}${SYNC_SPACES_PATH}`, { headers: bearer(t.desktop) });
+    expect(before.status).toBe(200);
+    expect(before.headers.get('connection')).not.toBe('close');
+    await before.body?.cancel();
+
+    const waiting = fetch(`${url}${changesPath(since(space, 0, WAIT_S))}`, { headers: bearer(t.desktop) });
+    await vi.waitUntil(() => notifier.waiting(space.id) === 1, { timeout: PGLITE_TIMEOUT, interval: 5 });
+
+    // As `startServer` stops: the signal first, then no new connections.
+    const stoppedAt = performance.now();
+    stopping.abort();
+    const closed = new Promise<number>((resolve) => server.close(() => resolve(performance.now() - stoppedAt)));
+    // The long-poll answers its first, empty read at once, and closes its connection, so the stop is not held open.
+    const res = await waiting;
+    expect(performance.now() - stoppedAt).toBeLessThan(1_000);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('connection')).toBe('close');
+    expect(SyncChangesResponseSchema.parse(await res.json())).toMatchObject({ cursor: 0, items: [] });
+    // Well before a kept-alive connection would go idle (4 s in Node's fetch, 5 s in its server).
+    expect(await closed).toBeLessThan(2_000);
+    expect(notifier.waiting(space.id)).toBe(0);
+
+    // A request still arriving on an open connection is answered at once, and closes it too.
+    const late = await timed(changes(t, t.desktop, since(space, 0, WAIT_S)));
+    expect(late.res.status).toBe(200);
+    expect(late.res.headers.get('connection')).toBe('close');
+    expect(late.ms).toBeLessThan(WAITED_MS);
+    expect((await spaces(t, t.laptop)).headers.get('connection')).toBe('close');
     expect(notifier.waiting(space.id)).toBe(0);
   });
 
@@ -440,6 +539,37 @@ describe('notifier', () => {
     // Every waiter has finished: none is registered, and no timer is left behind.
     expect(notifier.waiting(SPACE)).toBe(0);
     expect(notifier.waiting(OTHER)).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('test_notifier_close_ends_waits', async () => {
+    vi.useFakeTimers();
+    const notifier = createSpaceNotifier({ maxWaitersPerSpace: 1 });
+    const flush = () => vi.advanceTimersByTimeAsync(0);
+
+    // A registered wait, one on a full space, and a subscription whose wait has not started.
+    const registered = track(notifier.wait(SPACE, 10_000));
+    const unregistered = track(notifier.wait(SPACE, 10_000));
+    const reading = notifier.subscribe(OTHER);
+    expect(notifier.waiting(SPACE)).toBe(1);
+    expect(notifier.waiting(OTHER)).toBe(1);
+    notifier.close();
+    notifier.close();
+    await flush();
+    expect(registered).toEqual({ settled: true, value: false });
+    expect(unregistered).toEqual({ settled: true, value: false });
+    expect(notifier.waiting(SPACE)).toBe(0);
+    expect(notifier.waiting(OTHER)).toBe(0);
+
+    // From now on every wait resolves false at once, and nothing is registered or woken.
+    const late = track(reading.wait(10_000));
+    const fresh = notifier.subscribe(SPACE);
+    expect(notifier.waiting(SPACE)).toBe(0);
+    const freshWait = track(fresh.wait(10_000));
+    notifier.notify(SPACE);
+    await flush();
+    expect(late).toEqual({ settled: true, value: false });
+    expect(freshWait).toEqual({ settled: true, value: false });
     expect(vi.getTimerCount()).toBe(0);
   });
 

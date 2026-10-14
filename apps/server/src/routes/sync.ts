@@ -54,6 +54,8 @@ const principal = ({ userId, deviceId }: DeviceAccount): SyncPrincipal => ({ use
 export function syncRoutes(app: App, deps: AppDeps): void {
   const { db, log, syncAccess } = deps;
   const notifier = deps.syncNotifier ?? createSpaceNotifier();
+  // A stopping server answers its long-polls at once (their first, empty read) instead of holding the stop open.
+  deps.stopping?.addEventListener('abort', () => notifier.close(), { once: true });
   // One per app, so the buckets last as long as the server process; apart from classify's, so sync never uses up AI.
   const limiter = createRateLimiter({ perMinute: SYNC_REQUESTS_PER_MINUTE });
 

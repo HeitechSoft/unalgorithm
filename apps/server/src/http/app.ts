@@ -41,7 +41,7 @@ import { NOT_FOUND } from '../routes/openapi.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
 import type { AccessResolver } from '../sync/spaces.ts';
-import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
+import { type AppEnv, clientIp, closeWhenStopping, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
 
@@ -60,6 +60,11 @@ export interface AppDeps {
   syncAccess?: AccessResolver;
   /** Tests only: the notifier that wakes sync long-polls, to watch its waiters. Default: a new one for the app. */
   syncNotifier?: SpaceNotifier;
+  /**
+   * Aborted when the server begins to stop (`startServer`): sync long-polls answer at once, and every answer from then on
+   * closes its connection, so neither holds the stop open. Default: never.
+   */
+  stopping?: AbortSignal;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -125,6 +130,7 @@ export function createApp(deps: AppDeps): App {
   app.use(clientIp(config.trustProxy));
   app.use(requestLog(log));
   app.use(secureHeaders({ referrerPolicy: 'no-referrer' }));
+  if (deps.stopping) app.use(closeWhenStopping(deps.stopping));
   // CORS before the body limit, so the extension can read a 413 too.
   app.use('/v1/*', extensionCors(config.extensionIds));
   app.use('/v1/*', bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
