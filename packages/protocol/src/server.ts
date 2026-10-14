@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DeviceNameSchema } from './account.ts';
 import { MAX_POSTS_PER_REQUEST } from './classify.ts';
 import { AI_ERROR_CODES, type WireError } from './errors.ts';
 
@@ -14,6 +15,10 @@ export const CLASSIFY_PATH = '/v1/classify';
 
 /** The sign-in method every server offers today, and the one the extension uses: a 6-digit code sent by email. */
 export const EMAIL_OTP_METHOD = 'email-otp';
+/** Listed only when the server has a Google OAuth client (CL3-13). */
+export const GOOGLE_METHOD = 'google';
+/** Listed by every server that runs the passkey plugin (CL3-14). */
+export const PASSKEY_METHOD = 'passkey';
 
 /** Access tokens live 15 minutes; the extension refreshes them with its refresh token. */
 export const ACCESS_TOKEN_TTL_SECONDS = 900;
@@ -96,6 +101,8 @@ export const TokenRequestSchema = z.discriminatedUnion('grant_type', [
     client_id: ExtensionIdSchema,
     /** Bound at authorize time; the server compares it with the stored one after burning the code. */
     redirect_uri: z.string().url(),
+    /** What the extension calls itself, shown in the account's devices list. A refresh never renames a device. */
+    device_name: DeviceNameSchema.optional(),
   }),
   z.object({
     grant_type: z.literal('refresh_token'),
