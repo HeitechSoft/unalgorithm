@@ -1,6 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   AUTHORIZE_PAGE_PATH,
   CLASSIFY_PATH,
@@ -13,7 +12,7 @@ import {
 } from '@unalgorithm/protocol';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { expect, test } from './fixtures.ts';
-import { databaseExists, type LocalServer, startLocalServer } from './server-harness.ts';
+import { useLocalServer } from './server-lifecycle.ts';
 import { signInFromSettings } from './server-sign-in.ts';
 
 /**
@@ -36,33 +35,12 @@ const BALANCE_PILL = /^Credit balance:/;
 test.describe('a self-hosted server', () => {
   test.skip(SKIP, NEEDS);
 
-  let ai: MockOpenAI | undefined;
-  let server: LocalServer | undefined;
-
-  test.beforeAll(async () => {
-    test.setTimeout(120_000);
-    ai = await startMockOpenAI();
-    server = await startLocalServer({ aiBaseUrl: ai.baseUrl });
-  });
-
-  // test_harness_cleans_up: afterAll runs when a test failed too.
-  test.afterAll(async () => {
-    test.setTimeout(60_000);
-    try {
-      await server?.stop();
-    } finally {
-      await ai?.close();
-    }
-    if (!server) return;
-    expect(server.exited()).toBe(true);
-    expect(server.database).toMatch(/^ua_e2e_[0-9a-f]{12}$/);
-    expect(new URL(server.env.DATABASE_URL ?? '').pathname).toBe(`/${server.database}`);
-    expect(await databaseExists(server.database)).toBe(false);
-  });
+  // test_harness_cleans_up: useLocalServer's afterAll, also when a test failed.
+  const started = useLocalServer();
 
   test('test_self_hosted_sign_in_and_labels', async ({ context, extensionId, feed }) => {
     test.setTimeout(120_000);
-    if (!server || !ai) throw new Error('beforeAll did not start the server');
+    const { ai, server } = started();
     const { url, logs } = server;
     const host = new URL(url).host;
     expect(FIRST_DEGREE_POST).toContain(POST_TEXT);

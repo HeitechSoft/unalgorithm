@@ -1,9 +1,9 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import type { TabState } from '@unalgorithm/core';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { expect, test } from './fixtures.ts';
-import { BILLING_FIXTURE_MODULE, databaseExists, type LocalServer, startLocalServer } from './server-harness.ts';
+import { BILLING_FIXTURE_MODULE } from './server-harness.ts';
+import { useLocalServer } from './server-lifecycle.ts';
 import { signInFromSettings } from './server-sign-in.ts';
 
 /**
@@ -29,7 +29,8 @@ const PAUSED_WATCH_MS = 10_000;
 
 test.describe('a server that bills', () => {
   test.skip(SKIP, NEEDS);
-  const started = billingServer(1_000_000);
+  // test_credits_harness_cleans_up: useLocalServer's afterAll, also when the test failed.
+  const started = useLocalServer(billingEnv(1_000_000));
 
   test('test_billing_server_shows_and_lowers_balance', async ({ context, extensionId, feed }) => {
     test.setTimeout(120_000);
@@ -60,7 +61,8 @@ test.describe('a server that bills', () => {
 
 test.describe('a server whose balance is empty', () => {
   test.skip(SKIP, NEEDS);
-  const started = billingServer(0);
+  // test_credits_harness_cleans_up: useLocalServer's afterAll, also when the test failed.
+  const started = useLocalServer(billingEnv(0));
 
   test('test_empty_balance_pauses_ai_and_keeps_rules', async ({ context, extensionId, feed }) => {
     test.setTimeout(120_000);
@@ -98,45 +100,12 @@ test.describe('a server whose balance is empty', () => {
   });
 });
 
-/**
- * A server with the fixture billing module, every account starting at `startMicros`, and its mock AI provider: started
- * before the group's test and stopped after it, also when the test failed. Returns the running pair.
- */
-function billingServer(startMicros: number): () => { ai: MockOpenAI; server: LocalServer } {
-  let ai: MockOpenAI | undefined;
-  let server: LocalServer | undefined;
-
-  test.beforeAll(async () => {
-    test.setTimeout(120_000);
-    ai = await startMockOpenAI();
-    server = await startLocalServer({
-      aiBaseUrl: ai.baseUrl,
-      env: {
-        BILLING: 'module',
-        BILLING_MODULE: BILLING_FIXTURE_MODULE,
-        BILLING_FIXTURE_START_MICROS: String(startMicros),
-      },
-    });
-  });
-
-  // test_credits_harness_cleans_up: afterAll runs when a test failed too.
-  test.afterAll(async () => {
-    test.setTimeout(60_000);
-    try {
-      await server?.stop();
-    } finally {
-      await ai?.close();
-    }
-    if (!server) return;
-    expect(server.exited()).toBe(true);
-    expect(server.database).toMatch(/^ua_e2e_[0-9a-f]{12}$/);
-    expect(new URL(server.env.DATABASE_URL ?? '').pathname).toBe(`/${server.database}`);
-    expect(await databaseExists(server.database)).toBe(false);
-  });
-
-  return () => {
-    if (!ai || !server) throw new Error('beforeAll did not start the server');
-    return { ai, server };
+/** The server's variables for the fixture billing module, every account starting at `startMicros`. */
+function billingEnv(startMicros: number): Record<string, string> {
+  return {
+    BILLING: 'module',
+    BILLING_MODULE: BILLING_FIXTURE_MODULE,
+    BILLING_FIXTURE_START_MICROS: String(startMicros),
   };
 }
 
