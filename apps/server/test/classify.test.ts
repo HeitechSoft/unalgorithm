@@ -611,13 +611,8 @@ describe('classify: billing seam', { timeout: PGLITE_TIMEOUT }, () => {
 });
 
 describe('classify: graceful stop', { timeout: PGLITE_TIMEOUT }, () => {
-  it('test_stop_waits_for_a_slow_classify_to_write_its_usage_row', async () => {
-    // The model answers after the grace period has closed the connection, and ignores the abort that closing sends.
-    const SLOW_MS = 800;
-    const ai = fakeAi(async (req) => {
-      await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
-      return answer(req);
-    });
+  /** Serves a classify app as `startServer` does and sends one request, which is in flight once this resolves. */
+  async function classifyInFlight(ai: AppDeps['ai']) {
     const stopping = new AbortController();
     const inFlight = inFlightRequests();
     const t = await classifyApp({ ai, stopping: stopping.signal, inFlight });
@@ -627,7 +622,6 @@ describe('classify: graceful stop', { timeout: PGLITE_TIMEOUT }, () => {
       if (server.listening) await new Promise((resolve) => server.close(resolve));
     });
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
     const answered = fetch(`${url}${CLASSIFY_PATH}`, {
       method: 'POST',
       headers: {
@@ -641,14 +635,51 @@ describe('classify: graceful stop', { timeout: PGLITE_TIMEOUT }, () => {
       () => 'connection closed',
     );
     await expect.poll(() => inFlight.count).toBe(1);
+    return {
+      t,
+      server,
+      inFlight,
+      answered,
+      stop: (o: { graceMs: number; drainMs?: number }) => stopServing(server, { stopping, inFlight, log: t.deps.log, ...o }),
+    };
+  }
+
+  it('test_stop_waits_for_a_slow_classify_to_write_its_usage_row', async () => {
+    // The model answers after the grace period has closed the connection, and ignores the abort that closing sends.
+    const SLOW_MS = 800;
+    const { t, answered, stop } = await classifyInFlight(
+      fakeAi(async (req) => {
+        await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+        return answer(req);
+      }),
+    );
 
     const started = performance.now();
-    await stopServing(server, { stopping, inFlight, log: t.deps.log, graceMs: 50 });
+    await stop({ graceMs: 50 });
     expect(await answered).toBe('connection closed');
     expect(performance.now() - started).toBeGreaterThan(SLOW_MS / 2);
     // Written before the stop returned, so before the database would close.
     expect(await usageRows(t)).toMatchObject([{ outcome: 'ok', postsOk: 2, calls: 1 }]);
     expect(t.events().filter((e) => e.event === 'usage.record_failed')).toEqual([]);
+  });
+
+  it('test_stop_gives_up_on_a_stuck_handler_after_the_drain_limit', async () => {
+    let finish!: () => void;
+    const stuck = new Promise<void>((resolve) => (finish = resolve));
+    const { t, inFlight, stop } = await classifyInFlight(
+      fakeAi(async (req) => {
+        await stuck;
+        return answer(req);
+      }),
+    );
+
+    // Bounded: the stop goes on (to stop the jobs and close the database) while the handler still runs, and says so.
+    await stop({ graceMs: 20, drainMs: 100 });
+    expect(inFlight.count).toBe(1);
+    expect(t.events().filter((e) => e.event === 'server.stop_drain_timeout')).toMatchObject([{ in_flight: 1 }]);
+
+    finish();
+    expect(await inFlight.drained(PGLITE_TIMEOUT)).toBe(true);
   });
 });
 
