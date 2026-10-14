@@ -15,6 +15,7 @@ import {
   SYNC_MAX_KEY_LENGTH,
   SYNC_MAX_PUSH_BYTES,
   SYNC_MAX_PUSH_ITEMS,
+  SYNC_MAX_VALUE_DEPTH,
   SYNC_MAX_WAIT_SECONDS,
   SYNC_PULL_LIMIT,
   SYNC_PUSH_PATH,
@@ -33,6 +34,7 @@ import {
   SyncPushResultSchema,
   SyncSpaceSchema,
   SyncSpacesResponseSchema,
+  SyncValueSchema,
   TOMBSTONE_TTL_DAYS,
   tickHlc,
 } from '../src/index.ts';
@@ -117,6 +119,44 @@ describe('items and changes', () => {
     }
   });
 
+  it('test_sync_value_depth_is_bounded', () => {
+    const arraysText = (depth: number) => `${'['.repeat(depth)}${']'.repeat(depth)}`;
+    const arrays = (depth: number): unknown => JSON.parse(arraysText(depth));
+    const objects = (depth: number): unknown => JSON.parse(`${'{"a":'.repeat(depth - 1)}{}${'}'.repeat(depth - 1)}`);
+    for (const nest of [arrays, objects]) {
+      expect(SyncItemSchema.safeParse({ ...live, value: nest(SYNC_MAX_VALUE_DEPTH) }).success).toBe(true);
+      expect(SyncItemSchema.safeParse({ ...live, value: nest(SYNC_MAX_VALUE_DEPTH + 1) }).success).toBe(false);
+    }
+    // Width is not depth: a long, shallow value still parses.
+    const wide = Array.from({ length: 1000 }, (_, i) => ({ id: i, tags: ['x'] }));
+    expect(SyncValueSchema.parse(wide)).toEqual(wide);
+    // The depth is checked first, so the JSON check still refuses what is not JSON.
+    for (const bad of [undefined, Number.NaN, () => 1, [[1n]]]) expect(SyncValueSchema.safeParse(bad).success).toBe(false);
+
+    // Well under SYNC_MAX_ITEM_BYTES, and deep enough to overflow a recursive check: a failed parse, never a throw.
+    expect(arraysText(2_500).length).toBeLessThan(SYNC_MAX_ITEM_BYTES);
+    const deep = arrays(2_500);
+    const deepItem = { ...live, value: deep };
+    const parses = [
+      SyncItemSchema.safeParse(deepItem),
+      SyncChangeSchema.safeParse({ ...deepItem, seq: 1 }),
+      SyncPushRequestSchema.safeParse({ v: 1, spaceId: SPACE, epoch: EPOCH, pushId: PUSH, items: [deepItem] }),
+      SyncChangesResponseSchema.safeParse({
+        v: 1,
+        spaceId: SPACE,
+        epoch: EPOCH,
+        cursor: 1,
+        more: false,
+        gcFloorHlc: HLC_ZERO,
+        items: [{ ...deepItem, seq: 1 }],
+      }),
+    ];
+    for (const parsed of parses) expect(parsed.success).toBe(false);
+    expect(SyncItemSchema.safeParse(deepItem).error?.issues[0]?.path).toEqual(['value']);
+    // A tombstone never looks at a value: it is dropped.
+    expect(SyncItemSchema.parse({ ...tombstone, value: deep })).toEqual(tombstone);
+  });
+
   it('test_sync_key_rejects_prototype_segments', () => {
     for (const key of ['a.__proto__.b', 'constructor.prototype.x', 'prototype', '__proto__', 'constructor', 'a.b.constructor']) {
       expect(SyncKeySchema.safeParse(key).success, key).toBe(false);
@@ -142,6 +182,7 @@ describe('requests and answers', () => {
       SYNC_MAX_PUSH_BYTES,
       SYNC_MAX_KEY_LENGTH,
       SYNC_MAX_ITEM_BYTES,
+      SYNC_MAX_VALUE_DEPTH,
       SYNC_SPACE_MAX_ITEMS,
       SYNC_SPACE_MAX_BYTES,
       SYNC_MAX_HLC_AHEAD_MS,
@@ -152,6 +193,7 @@ describe('requests and answers', () => {
       SYNC_MAX_PUSH_BYTES: 98_304,
       SYNC_MAX_KEY_LENGTH: 200,
       SYNC_MAX_ITEM_BYTES: 8_192,
+      SYNC_MAX_VALUE_DEPTH: 32,
       SYNC_SPACE_MAX_ITEMS: 5_000,
       SYNC_SPACE_MAX_BYTES: 2_097_152,
       SYNC_MAX_HLC_AHEAD_MS: 600_000,

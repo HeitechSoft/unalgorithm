@@ -25,6 +25,11 @@ export const SYNC_MAX_PUSH_BYTES = 96 * 1024;
 export const SYNC_MAX_KEY_LENGTH = 200;
 /** UTF-8 bytes of `JSON.stringify(value)`. */
 export const SYNC_MAX_ITEM_BYTES = 8 * 1024;
+/**
+ * Arrays and objects nest at most this deep in a live value. zod's JSON check recurses, so a value of a few KiB nested
+ * a thousand levels deep would overflow the stack and throw instead of failing to parse.
+ */
+export const SYNC_MAX_VALUE_DEPTH = 32;
 /** Live items per space; tombstones count toward `SYNC_SPACE_MAX_BYTES` instead. */
 export const SYNC_SPACE_MAX_ITEMS = 5_000;
 export const SYNC_SPACE_MAX_BYTES = 2 * 1024 * 1024;
@@ -44,12 +49,32 @@ export const SyncKeySchema = z
 /** A collection name from the registry (CL3-03), such as `settings`. */
 export const SyncCollectionSchema = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 
+/** True when no array or object in `value` nests deeper than `SYNC_MAX_VALUE_DEPTH`. Walks a stack: never recurses. */
+function withinValueDepth(value: unknown): boolean {
+  // Each entry: a value and how many arrays or objects enclose it.
+  const stack: [unknown, number][] = [[value, 0]];
+  for (let next = stack.pop(); next; next = stack.pop()) {
+    const [node, enclosing] = next;
+    if (typeof node !== 'object' || node === null) continue;
+    if (enclosing >= SYNC_MAX_VALUE_DEPTH) return false;
+    for (const child of Array.isArray(node) ? node : Object.values(node)) stack.push([child, enclosing + 1]);
+  }
+  return true;
+}
+
+/** Any JSON value, null included, nested at most `SYNC_MAX_VALUE_DEPTH` deep: the depth is checked before `z.json()`. */
+export const SyncValueSchema = z
+  .unknown()
+  .refine(withinValueDepth, { message: 'value nested too deep', abort: true })
+  .pipe(z.json());
+export type SyncValue = z.infer<typeof SyncValueSchema>;
+
 const Live = z.object({
   collection: SyncCollectionSchema,
   key: SyncKeySchema,
   hlc: HlcSchema,
   deleted: z.literal(false),
-  value: z.json(),
+  value: SyncValueSchema,
 });
 /** A deletion. Any `value` sent with it is dropped when parsed. */
 const Tombstone = z.object({
