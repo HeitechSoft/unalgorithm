@@ -95,10 +95,12 @@ no changelog section gets the heading "UnAlgorithm Feed server X.Y.Z".
    ```bash
    git tag server-v0.1.0 && git push origin server-v0.1.0
    ```
-3. Approve the deployment: the job runs in the protected `release` environment and waits for a reviewer.
-4. `server-release.yml` verifies (lint, typecheck, tests, the server licence check), checks the tag matches the version
-   in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and pushes the image,
-   attests its build provenance and creates the GitHub Release.
+3. `server-release.yml`'s `verify` job installs the dependencies and runs lint, typecheck, tests and the server
+   licence check with a read-only token.
+4. Approve the deployment: the `publish` job runs in the protected `release` environment and waits for a reviewer. It
+   holds the write, OIDC and attestation rights and runs no pnpm or project dependency on the runner. It checks the tag
+   matches the version in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and
+   pushes the image, attests its build provenance and creates the GitHub Release.
 5. First server release only: make the image public before announcing it (see *What is published*).
 
 ### The `release` environment

@@ -146,13 +146,13 @@ interface Step {
   with?: Record<string, unknown>;
 }
 
-/** The workflow's text, the parsed workflow, its one job and that job's steps. */
+/** The workflow's text, the parsed workflow, its two jobs and the publish job's steps. */
 function loadWorkflow() {
   const text = readFileSync(WORKFLOW, 'utf8');
   const workflow = parse(text);
-  const release = workflow.jobs.release;
-  const steps: Step[] = release.steps;
-  return { text, workflow, release, steps };
+  const { verify, publish } = workflow.jobs;
+  const steps: Step[] = publish.steps;
+  return { text, workflow, verify, publish, steps };
 }
 
 /** `${{ expression }}` as a workflow writes it (a template literal, so it is not read as a mistyped placeholder). */
@@ -162,26 +162,52 @@ const shellVar = (name: string) => `$\{${name}}`;
 
 describe('workflow file', () => {
   it('test_server_release_workflow_pins_and_triggers', () => {
-    const { text, workflow, release, steps } = loadWorkflow();
+    const { text, workflow, verify, publish } = loadWorkflow();
     // Server tags only: no branches, no pull requests, no other event.
     expect(workflow.on).toEqual({ push: { tags: ['server-v*.*.*'] } });
     expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(Object.keys(workflow.jobs)).toEqual(['release']);
-    expect(release.environment).toBe('release');
-    expect(release.permissions).toEqual({
+    expect(Object.keys(workflow.jobs)).toEqual(['verify', 'publish']);
+
+    // Every action is pinned to a full commit SHA, with the version it was in a comment.
+    const uses = [...verify.steps, ...publish.steps].flatMap((step: Step) => (step.uses ? [step.uses] : []));
+    expect(uses.length).toBeGreaterThanOrEqual(9);
+    for (const action of uses) expect(action).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
+    const usesLines = text.split('\n').filter((line) => /^\s*(- )?uses:/.test(line));
+    expect(usesLines).toHaveLength(uses.length);
+    for (const line of usesLines) expect(line).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+\s*$/);
+  });
+
+  it('test_server_release_runs_dependencies_only_without_write_rights', () => {
+    const { verify, publish } = loadWorkflow();
+    const verifySteps: Step[] = verify.steps;
+    const publishSteps: Step[] = publish.steps;
+    const runs = (steps: Step[]) => steps.flatMap((step) => (step.run ? [step.run] : [])).join('\n');
+    const checkouts = (steps: Step[]) => steps.filter((step) => step.uses?.startsWith('actions/checkout@'));
+
+    // verify: a read-only token and no environment; it installs the dependencies and runs every check.
+    expect(verify.permissions).toEqual({ contents: 'read' });
+    expect(verify.environment).toBeUndefined();
+    expect(runs(verifySteps)).toContain('pnpm install --frozen-lockfile');
+    expect(runs(verifySteps)).toContain('pnpm check && pnpm licenses:server');
+
+    // publish: after verify, in the protected environment, with the write rights; no pnpm, no dependency code.
+    expect(publish.needs).toBe('verify');
+    expect(publish.environment).toBe('release');
+    expect(publish.permissions).toEqual({
       contents: 'write',
       packages: 'write',
       'id-token': 'write',
       attestations: 'write',
     });
+    expect(runs(publishSteps)).not.toMatch(/\b(pnpm|npm|npx|yarn|corepack)\b/);
+    expect(publishSteps.some((step) => step.uses?.startsWith('pnpm/'))).toBe(false);
 
-    // Every action is pinned to a full commit SHA, with the version it was in a comment.
-    const uses = steps.flatMap((step) => (step.uses ? [step.uses] : []));
-    expect(uses.length).toBeGreaterThanOrEqual(7);
-    for (const action of uses) expect(action).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
-    const usesLines = text.split('\n').filter((line) => /^\s*(- )?uses:/.test(line));
-    expect(usesLines).toHaveLength(uses.length);
-    for (const line of usesLines) expect(line).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+\s*$/);
+    // Neither job keeps the token in the git config or restores a dependency cache.
+    for (const steps of [verifySteps, publishSteps]) {
+      expect(checkouts(steps)).toHaveLength(1);
+      for (const step of checkouts(steps)) expect(step.with?.['persist-credentials']).toBe(false);
+      for (const step of steps) expect(step.with?.cache).toBeUndefined();
+    }
   });
 
   it('test_server_release_checks_the_tag_before_pushing', () => {
@@ -191,13 +217,12 @@ describe('workflow file', () => {
       expect(index).toBeGreaterThanOrEqual(0);
       return index;
     };
-    const verify = at((step) => step.run?.includes('pnpm check') === true);
     const tagCheck = at((step) => step.id === 'version');
     const login = at((step) => step.uses?.startsWith('docker/login-action@') === true);
     const build = at((step) => step.uses?.startsWith('docker/build-push-action@') === true);
     const attest = at((step) => step.uses?.startsWith('actions/attest-build-provenance@') === true);
     const publish = at((step) => step.run?.includes('gh release create') === true);
-    const order = [verify, tagCheck, login, build, attest, publish];
+    const order = [tagCheck, login, build, attest, publish];
     expect(order).toEqual(order.toSorted((a, b) => a - b));
 
     // The tag check compares the tag with the server's package version and fails the job otherwise.

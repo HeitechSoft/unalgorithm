@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
+  decodeText,
   findHostMarkers,
   findPublicIPv4,
   findSecretPaths,
@@ -24,6 +25,12 @@ const RESOLVER_B = pub(9, 9, 9, 9);
 
 /** A private-key header, built at runtime so no secret scanner reads this file as holding a key. */
 const keyHeader = (type: string) => `${'-'.repeat(5)}BEGIN ${type}PRIVATE KEY${'-'.repeat(5)}`;
+
+/** `text` as UTF-16: little-endian unless `bigEndian`, with a byte order mark when `bom`. */
+function utf16(text: string, { bom = false, bigEndian = false } = {}) {
+  const bytes = Buffer.from(`${bom ? '\uFEFF' : ''}${text}`, 'utf16le');
+  return bigEndian ? bytes.swap16() : bytes;
+}
 
 const SCRIPT = fileURLToPath(new URL('../../../scripts/scan-public-repo.mjs', import.meta.url));
 
@@ -63,7 +70,7 @@ function throwawayRepo() {
     dir,
     run,
     git,
-    write(file: string, text: string) {
+    write(file: string, text: string | Uint8Array) {
       mkdirSync(dirname(join(repo, file)), { recursive: true });
       writeFileSync(join(repo, file), text);
     },
@@ -203,6 +210,62 @@ describe('host markers', () => {
       'apps/server/src/env.ts',
     ];
     expect(findSecretPaths(paths)).toEqual(paths.slice(0, 7));
+  });
+});
+
+describe('file content', () => {
+  it('test_decode_text_reads_utf16_with_and_without_bom', () => {
+    const text = `host ${RESOLVER_A}\r\nnext ${RESOLVER_B}\r\n`;
+    expect(decodeText(Buffer.from(text))).toBe(text);
+    // What Windows PowerShell 5.1's `>` and Out-File write: UTF-16LE with a byte order mark.
+    expect(decodeText(utf16(text, { bom: true }))).toBe(text);
+    expect(decodeText(utf16(text))).toBe(text);
+    expect(decodeText(utf16(text, { bom: true, bigEndian: true }))).toBe(text);
+    expect(decodeText(utf16(text, { bigEndian: true }))).toBe(text);
+    // Text in Latin scripts keeps a NUL in every code unit, accents included.
+    expect(decodeText(utf16(`Grüße ${RESOLVER_A}`))).toBe(`Grüße ${RESOLVER_A}`);
+
+    // Other bytes holding a NUL are binary, even UTF-8 text with a stray NUL: its lines must not be decoded away.
+    expect(decodeText(Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52))).toBeUndefined();
+    expect(decodeText(Buffer.from(`host ${RESOLVER_A}\0 and more text after it\n`))).toBeUndefined();
+    expect(decodeText(Uint8Array.of(1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0))).toBeUndefined();
+    // NULs on one side, but control characters once decoded.
+    expect(decodeText(Uint8Array.of(0, 1, 2, 0xff, 0, 7))).toBeUndefined();
+  });
+
+  it('test_cli_scans_utf16_and_flags_unknown_binaries', { timeout: SPAWN_TIMEOUT }, () => {
+    const repo = throwawayRepo();
+    const png = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52);
+    repo.write('logo.png', png);
+    repo.write('ps.log', utf16('ok\n'));
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'clean');
+    const clean = repo.scan();
+    expect(clean.status, clean.stdout + clean.stderr).toBe(0);
+
+    repo.write('notes.txt', utf16(`deploy notes\r\nhost ${RESOLVER_A}\r\nssh to example-host-7\r\n`, { bom: true }));
+    repo.write('ps.log', utf16(`ok\nhost ${RESOLVER_B}\n`));
+    repo.write('data.bin', Uint8Array.of(0, 1, 2, 0xff, 0, 7));
+    repo.git('add', '.');
+    repo.git('commit', '-q', '-m', 'leak');
+    const commit = repo.git('rev-parse', 'HEAD');
+    const result = repo.scan();
+    expect(result.status).toBe(1);
+    // git shows no lines for these (`Binary files ... differ`), so history scans the commit's version of each file.
+    expect(result.stdout.trim().split(/\r?\n/)).toEqual([
+      'extra markers: 1',
+      'data.bin  binary-file',
+      'notes.txt:2  public-ipv4',
+      'notes.txt:3  extra-marker #1',
+      'ps.log:2  public-ipv4',
+      `${commit} data.bin  binary-file`,
+      `${commit} notes.txt:2  public-ipv4`,
+      `${commit} notes.txt:3  extra-marker #1`,
+      `${commit} ps.log:2  public-ipv4`,
+      'public repo scan: 8 findings',
+    ]);
+    const output = (result.stdout + result.stderr).toLowerCase();
+    for (const hidden of ['example-host-7', RESOLVER_A, RESOLVER_B]) expect(output).not.toContain(hidden);
   });
 });
 

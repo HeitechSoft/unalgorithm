@@ -7,7 +7,11 @@
  * - generic host markers: SSH logins on the host, PuTTY and PEM private keys, the Cloud deployment's env file and
  *   nginx server-block syntax;
  * - extra markers: host-specific names and addresses from PUBLIC_SCAN_EXTRA_PATTERNS (a CI secret, one per line);
- * - key files by path (tracked files only).
+ * - key files by path (tracked files only);
+ * - binary files: a file holding a NUL byte is read as UTF-16 (with or without a byte order mark, as Windows PowerShell
+ *   5.1's `>` and Out-File write it) when it looks like it, and is otherwise a finding unless its type is a known
+ *   binary one, so a new binary needs a review instead of passing unseen. History reads such a file from the commit,
+ *   as git shows no lines for it.
  * File paths are checked for public IPv4 addresses and extra markers too, in the tree and in history.
  * Findings never print an address or an extra marker, so CI logs cannot republish what this scan keeps out of the
  * repository: read the reported line locally. A path that holds either is printed as `path #<n>`: the n-th path of
@@ -60,6 +64,9 @@ const HOST_MARKERS = [
 
 /** These two contain the generic markers, so they skip those (only those) in the tree and in history. */
 const SELF = new Set(['scripts/scan-public-repo.mjs', 'apps/server/test/scan.test.ts']);
+
+/** The types .gitattributes marks binary: their content is not scanned, in the tree or in history. */
+const KNOWN_BINARY = /\.(png|ico|zip)$/i;
 
 const SECRET_PATH = /\.ppk$|\.p12$|\.pfx$|\.pem$|(^|\/)id_(rsa|ecdsa|ed25519)$|(^|\/)\.env(\..+)?$/i;
 const ENV_EXAMPLE = /(^|\/)\.env\.example$/;
@@ -161,6 +168,54 @@ function textFindings(text, { allowlist, extra }, generic) {
   return found.concat(markersIn(text, generic, extra));
 }
 
+/**
+ * The text of a file's bytes, or undefined for binary bytes. Bytes without a NUL in their first 8 KiB are UTF-8. UTF-16
+ * is read by its byte order mark, or without one when a NUL fills at least half its code units, nearly all on one side
+ * (text in a Latin script), and the result has no control characters. Anything else holding a NUL is binary, UTF-8 text
+ * with a stray NUL included, so its lines are never decoded away.
+ */
+export function decodeText(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes);
+  const sample = bytes.subarray(0, 8192);
+  if (!sample.includes(0)) return new TextDecoder().decode(bytes);
+  let even = 0;
+  let odd = 0;
+  for (let i = 0; i + 1 < sample.length; i += 2) {
+    if (sample[i] === 0) even++;
+    if (sample[i + 1] === 0) odd++;
+  }
+  const units = Math.floor(sample.length / 2);
+  const encoding = odd * 2 >= units && even * 10 < odd ? 'utf-16le' : even * 2 >= units && odd * 10 < even ? 'utf-16be' : '';
+  const text = encoding ? new TextDecoder(encoding).decode(bytes) : '';
+  return encoding && looksLikeText(text) ? text : undefined;
+}
+
+/** True when `text` has no control character other than whitespace in its first 4096 code units. */
+function looksLikeText(text) {
+  for (let i = 0; i < Math.min(text.length, 4096); i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x20 && (c < 0x09 || c > 0x0d)) return false;
+  }
+  return true;
+}
+
+/**
+ * Findings in one file's content: every content rule per line, with 1-based line numbers, or one binary-file finding
+ * for binary bytes. A known binary type is not read.
+ */
+function* contentFindings(bytes, file, rules) {
+  if (KNOWN_BINARY.test(file)) return;
+  const text = decodeText(bytes);
+  if (text === undefined) {
+    yield { kind: 'binary-file' };
+    return;
+  }
+  for (const [i, content] of text.split(/\r?\n/).entries()) {
+    for (const f of textFindings(content, rules, !SELF.has(file))) yield { line: i + 1, ...f };
+  }
+}
+
 function* trackedFindings(root, rules) {
   const paths = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
     .split('\0')
@@ -182,11 +237,7 @@ function* trackedFindings(root, rules) {
       if (err.code === 'ENOENT' || err.code === 'EISDIR') continue;
       throw err;
     }
-    if (bytes.subarray(0, 8192).includes(0)) continue; // binary
-    const lines = bytes.toString('utf8').split(/\r?\n/);
-    for (const [i, content] of lines.entries()) {
-      for (const f of textFindings(content, rules, !SELF.has(file))) yield { file: shown.get(file), line: i + 1, ...f };
-    }
+    for (const f of contentFindings(bytes, file, rules)) yield { file: shown.get(file), ...f };
   }
 }
 
@@ -212,14 +263,16 @@ function headerPath(header) {
  * Added lines in every commit of every ref, streamed: the patch output of all refs is far above execFileSync's
  * default buffer. Hunk headers give each added line's number in the commit's version of the file. A merge shows the
  * lines that differ from git's own automatic merge (`--diff-merges=remerge`, git 2.36 or later), so an address added
- * while resolving a conflict is scanned too.
+ * while resolving a conflict is scanned too. For a file git shows as binary (`Binary files ... differ`, UTF-16 text
+ * included), the commit's version of it is read by its blob id.
  */
 async function* historyFindings(root, rules) {
   const git = spawn(
     'git',
     [
       ...['-c', 'core.quotePath=false', '-c', 'log.showRoot=true', 'log', '--all', '-p', '--diff-merges=remerge'],
-      ...['--no-color', '--no-ext-diff', '--no-textconv', '--no-decorate', '--src-prefix=a/', '--dst-prefix=b/'],
+      ...['--no-color', '--no-ext-diff', '--no-textconv', '--no-decorate', '--full-index'],
+      ...['--src-prefix=a/', '--dst-prefix=b/'],
     ],
     { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] },
   );
@@ -231,6 +284,7 @@ async function* historyFindings(root, rules) {
   let file = '';
   let shown = '';
   let fileNo = 0;
+  let blob = '';
   let line = 0;
   let oldLeft = 0;
   let newLeft = 0;
@@ -262,7 +316,17 @@ async function* historyFindings(root, rules) {
       const found = textFindings(text.slice(11), rules, false);
       shown = found.length ? `path #${fileNo}` : '';
       file = '';
+      blob = '';
       for (const f of found) yield { commit, file: shown, ...f };
+    } else if (text.startsWith('index ')) {
+      blob = /^index [0-9a-f]+\.\.([0-9a-f]+)/.exec(text)?.[1] ?? '';
+    } else if (text.startsWith('Binary files ') && /[1-9a-f]/.test(blob)) {
+      // The new side's path (after the last " and "). A deleted file's new blob id is all zeros: nothing to read.
+      const path = headerPath(/^Binary files .* and (.*) differ$/.exec(text)?.[1] ?? '');
+      if (!KNOWN_BINARY.test(path)) {
+        const bytes = execFileSync('git', ['cat-file', 'blob', blob], { cwd: root, maxBuffer: 256 * 1024 * 1024 });
+        for (const f of contentFindings(bytes, path, rules)) yield { commit, file: shown || path, ...f };
+      }
     } else if (text.startsWith('+++ ')) {
       file = headerPath(text.slice(4));
     } else {

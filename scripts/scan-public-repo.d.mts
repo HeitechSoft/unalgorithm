@@ -1,6 +1,6 @@
 /** Types for scan-public-repo.mjs, so the strict server tsconfig (no allowJs) accepts its test's import. */
 
-export type FindingKind = 'public-ipv4' | 'host-marker' | 'extra-marker' | 'secret-path';
+export type FindingKind = 'public-ipv4' | 'host-marker' | 'extra-marker' | 'secret-path' | 'binary-file';
 
 /** One scan finding, as formatFinding prints it. */
 export interface Finding {
@@ -28,3 +28,5 @@ export function parseIpAllowlist(text: string): Set<string>;
 export function findHostMarkers(text: string, options?: { generic?: boolean }): MarkerFinding[];
 export function findSecretPaths(paths: readonly string[]): string[];
 export function formatFinding(finding: Finding): string;
+/** The text of a file's bytes (UTF-8, or UTF-16 with or without a byte order mark), or undefined for binary bytes. */
+export function decodeText(bytes: Uint8Array): string | undefined;
