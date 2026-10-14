@@ -20,6 +20,7 @@
     "auth:generate": "auth generate --config auth.cli.ts --output src/db/auth-schema.ts --adapter drizzle --dialect postgresql --yes && pnpm run db:generate"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.7",
     "@hono/node-server": "^2.1.4",
     "@hono/zod-openapi": "^1.6.3",
     "@unalgorithm/ai": "workspace:*",

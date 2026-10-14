@@ -1,14 +1,15 @@
 /**
- * Sign-in with Better Auth (pinned exactly; its advisories are watched): a six-digit code sent by email, or Google when
- * the operator configures a Google OAuth client; a one-day web session for the server's own sign-in page; and the EdDSA
- * key that signs the extension's 15-minute access tokens. Only the routes `authRoutesFor` lists are reachable over
- * HTTP; everything else Better Auth offers stays unmounted.
+ * Sign-in with Better Auth (pinned exactly; its advisories are watched): a six-digit code sent by email, Google when
+ * the operator configures a Google OAuth client, or a passkey the signed-in person added; a one-day web session for the
+ * server's own sign-in page; and the EdDSA key that signs the extension's 15-minute access tokens. Only the routes
+ * `authRoutesFor` lists are reachable over HTTP; everything else Better Auth offers stays unmounted.
  *
  * The server's operator pays for its AI, so accounts are created only for allow-listed addresses their provider
  * verified. Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
  * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
  * only.
  */
+import { getAuthenticatorName, passkey } from '@better-auth/passkey';
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -42,8 +43,11 @@ export type AuthRoute = readonly ['GET' | 'POST', string];
  * The Better Auth routes reachable over HTTP, each for one method. Not `/api/auth/*`: Better Auth has many more routes,
  * among them `/token` (a JWT signed with the device tokens' key for any web session), `/update-user` (a name and an
  * image the privacy notice does not cover), the other email-otp routes and the ones that link, list or unlink accounts.
- * Those stay unreachable, and `signJWT` and `verifyJWT` are server-only calls. With a Google client, the two routes of
- * its sign-in join them: starting it (the redirect flow only, `SOCIAL_SIGN_IN_FIELDS`), and Google's redirect back.
+ * Those stay unreachable, and `signJWT` and `verifyJWT` are server-only calls. Every server has the six passkey routes
+ * the account page and the sign-in page use: adding a passkey (options, then verify; only the response and a label,
+ * `PASSKEY_REGISTRATION_FIELDS`), signing in with one (options, then verify), listing and removing them; not renaming
+ * one. With a Google client, the two routes of its sign-in join them: starting it (the redirect flow only,
+ * `SOCIAL_SIGN_IN_FIELDS`), and Google's redirect back.
  */
 export function authRoutesFor(config: Pick<Config, 'google'>): AuthRoute[] {
   const google: AuthRoute[] = [
@@ -56,6 +60,12 @@ export function authRoutesFor(config: Pick<Config, 'google'>): AuthRoute[] {
     ['GET', '/api/auth/get-session'],
     ['POST', '/api/auth/sign-out'],
     ['GET', '/api/auth/jwks'],
+    ['GET', '/api/auth/passkey/generate-register-options'],
+    ['POST', '/api/auth/passkey/verify-registration'],
+    ['GET', '/api/auth/passkey/generate-authenticate-options'],
+    ['POST', '/api/auth/passkey/verify-authentication'],
+    ['GET', '/api/auth/passkey/list-user-passkeys'],
+    ['POST', '/api/auth/passkey/delete-passkey'],
     ...(config.google ? google : []),
   ];
 }
@@ -84,6 +94,19 @@ const SOCIAL_SIGN_IN_FIELDS: ReadonlySet<string> = new Set([
   'errorCallbackURL',
   'newUserCallbackURL',
   'disableRedirect',
+]);
+
+/**
+ * The fields `POST /api/auth/passkey/verify-registration` accepts: the authenticator's response and the label the
+ * account page may give it. Better Auth also takes `createSession`, which would start another session from the one
+ * adding the passkey; a passkey only signs in later, through its own sign-in.
+ */
+const PASSKEY_REGISTRATION_FIELDS: ReadonlySet<string> = new Set(['response', 'name']);
+
+/** The routes, by Better Auth path, whose body may hold only these fields; a request with any other is refused. */
+const BODY_FIELDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['/sign-in/social', SOCIAL_SIGN_IN_FIELDS],
+  ['/passkey/verify-registration', PASSKEY_REGISTRATION_FIELDS],
 ]);
 
 export interface AuthDeps {
@@ -161,12 +184,13 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     // page that started it with an `error` parameter; when the page is unknown (a state never issued), to the account page.
     onAPIError: { throw: true, errorURL: `${config.publicOrigin}${ACCOUNT_PAGE_PATH}` },
     hooks: {
-      // Refuses a sign-in/social body with a field beyond `SOCIAL_SIGN_IN_FIELDS`. Runs after Better Auth's Origin check
-      // and before it validates the body.
+      // Refuses a sign-in/social or passkey registration body with a field beyond its `BODY_FIELDS`. Runs after Better
+      // Auth's Origin check and before it validates the body.
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== '/sign-in/social') return;
+        const fields = BODY_FIELDS.get(ctx.path);
+        if (!fields) return;
         const body: unknown = ctx.body;
-        if (typeof body === 'object' && body !== null && Object.keys(body).some((k) => !SOCIAL_SIGN_IN_FIELDS.has(k))) {
+        if (typeof body === 'object' && body !== null && Object.keys(body).some((k) => !fields.has(k))) {
           throw new APIError('BAD_REQUEST', {
             code: 'VALIDATION_ERROR',
             message: 'The request has a field this server does not accept.',
@@ -181,6 +205,25 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
         jwt: { issuer: config.publicOrigin, audience: config.publicOrigin, expirationTime: '15m' },
         // Web sessions never receive a JWT: access tokens are for devices only.
         disableSettingJwtHeader: true,
+      }),
+      passkey({
+        // Passkeys belong to the PUBLIC_URL host. Browsers refuse an IP address as a relying party id, so passkeys work
+        // on a domain name or localhost, not on an address such as http://127.0.0.1.
+        rpID: new URL(config.publicUrl).hostname,
+        rpName: config.instanceName,
+        // What the browser signed (`clientDataJSON.origin`) must be this; it is never taken from the request.
+        origin: config.publicOrigin,
+        // Discoverable credentials: the sign-in page signs in without asking for an address.
+        authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+        // Adding one needs a fresh web session (`requireSession`, on by default; fresh for a day, as long as a session
+        // lasts), so a passkey never creates an account and the allowlist keeps deciding who has one.
+        registration: {
+          // When the page sends no name, the authenticator's model as a label ("Google Password Manager"), from the
+          // package's table; none for an unknown or anonymous model. A name the page sends wins.
+          afterVerification: async ({ verification }) => ({
+            name: getAuthenticatorName(verification.registrationInfo?.aaguid),
+          }),
+        },
       }),
     ],
     databaseHooks: {

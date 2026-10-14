@@ -21,11 +21,10 @@ import {
   stubGoogle,
   TEST_GOOGLE_CLIENT_ID,
 } from './support/google-stub.ts';
-import { cookieHeader, postJson, signInWeb } from './support/sign-in.ts';
+import { postJson, sessionCookie, sessionOf, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
-const GET_SESSION = '/api/auth/get-session';
 const ANN = 'ann@example.org';
 const BOB = 'bob@example.org';
 const STRANGER = 'stranger@example.com';
@@ -71,19 +70,6 @@ const accountsOf = (t: TestApp, userId: string) => t.deps.db.db.select().from(ac
 const allUsers = (t: TestApp) => t.deps.db.db.select().from(user);
 const allAccounts = (t: TestApp) => t.deps.db.db.select().from(account);
 const allSessions = (t: TestApp) => t.deps.db.db.select().from(session);
-
-/** The session cookie a response sets, as a `Cookie` header, or '' when it sets none. */
-function sessionCookie(res: Response): string {
-  return cookieHeader(res)
-    .split('; ')
-    .filter((c) => c.startsWith('better-auth.session_token=') && c.length > 'better-auth.session_token='.length)
-    .join('; ');
-}
-
-async function sessionOf(t: TestApp, cookie: string) {
-  const res = await t.app.request(GET_SESSION, { headers: { Cookie: cookie } });
-  return (await res.json()) as { user?: { id: string; email: string } } | null;
-}
 
 /** The `error` parameter of a redirect to the account page; fails when the redirect is anywhere else. */
 function errorOf(res: Response): string | null {
@@ -150,7 +136,7 @@ describe('configuration', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_google_sign_in_url_minimal_scopes', async () => {
     const t = await googleApp();
     const info = ServerInfoSchema.parse(await (await t.app.request(SERVER_INFO_PATH)).json());
-    expect(info.auth.methods).toEqual(['email-otp', 'google']);
+    expect(info.auth.methods).toEqual(['email-otp', 'google', 'passkey']);
 
     const res = await startGoogleSignIn(t.app);
     expect(res.status).toBe(200);
@@ -228,7 +214,7 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     expect(res.headers.get('location')).toBe('/account');
     const cookie = sessionCookie(res);
     expect(cookie).not.toBe('');
-    expect((await sessionOf(t, cookie))?.user?.email).toBe(ANN);
+    expect((await sessionOf(t.app, cookie))?.user?.email).toBe(ANN);
 
     // The code went to Google once, with the PKCE verifier and this server's client.
     expect(stub.tokenRequests).toHaveLength(1);
@@ -255,7 +241,7 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     // Signing in again finds the same account, and its update keeps no tokens either.
     const again = await signInWithGoogle(t.app);
     expect(again.headers.get('location')).toBe('/account');
-    expect((await sessionOf(t, sessionCookie(again)))?.user?.id).toBe(users[0]?.id);
+    expect((await sessionOf(t.app, sessionCookie(again)))?.user?.id).toBe(users[0]?.id);
     expect(await allUsers(t)).toHaveLength(1);
     const after = await allAccounts(t);
     expect(after).toHaveLength(1);
@@ -273,7 +259,7 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     const res = await signInWithGoogle(t.app);
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/account');
-    expect((await sessionOf(t, sessionCookie(res)))?.user?.id).toBe(bob?.id);
+    expect((await sessionOf(t.app, sessionCookie(res)))?.user?.id).toBe(bob?.id);
 
     expect(await usersWithEmail(t, BOB)).toHaveLength(1);
     const accounts = await accountsOf(t, bob?.id ?? '');
@@ -350,7 +336,7 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_email_code_sign_up_still_works', async () => {
     const t = await googleApp();
     const cookie = await signInWeb(t.app, t.outbox, ANN);
-    expect((await sessionOf(t, cookie))?.user?.email).toBe(ANN);
+    expect((await sessionOf(t.app, cookie))?.user?.email).toBe(ANN);
     const users = await usersWithEmail(t, ANN);
     expect(users).toHaveLength(1);
     expect(users[0]).toMatchObject({ emailVerified: true, name: '', image: null });

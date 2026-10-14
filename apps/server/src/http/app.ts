@@ -16,6 +16,7 @@ import {
   EMAIL_OTP_METHOD,
   GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
+  PASSKEY_METHOD,
   SERVER_INFO_PATH,
   type ServerInfo,
   TOKEN_PATH,
@@ -46,7 +47,7 @@ export interface AppDeps {
   db: DbHandle;
   log: Logger;
   billing: BillingProvider;
-  /** Better Auth: email-code and Google sign-in, web sessions and the access-token signing key. */
+  /** Better Auth: email-code, Google and passkey sign-in, web sessions and the access-token signing key. */
   auth: Auth;
   /** The AI client for a route: `clientForRoute(route, config)` in production; tests answer from the mock or a fake. */
   ai: { clientFor(route: AiRoute): AIClient };
@@ -59,8 +60,8 @@ export type App = OpenAPIHono<AppEnv>;
 /** Larger `/v1` request bodies are refused before any route reads them. */
 const MAX_BODY_BYTES = 128 * 1024;
 /**
- * The same for `/api/auth`, whose bodies hold an address, a code and a type, or the pages a Google sign-in comes back
- * to: well under a kilobyte.
+ * The same for `/api/auth`, whose bodies hold an address, a code and a type, the pages a Google sign-in comes back to,
+ * or an authenticator's passkey response without attestation: a few kilobytes at most.
  */
 const MAX_AUTH_BODY_BYTES = 16 * 1024;
 
@@ -141,8 +142,8 @@ export function createApp(deps: AppDeps): App {
     billing: billing.advertised,
     capabilities: { classify: true, sync: false },
     auth: {
-      // Google only when the operator configured a Google OAuth client.
-      methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : [])],
+      // Google only when the operator configured a Google OAuth client; passkeys on every server.
+      methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : []), PASSKEY_METHOD],
       authorizePath: AUTHORIZE_PAGE_PATH,
       tokenPath: TOKEN_PATH,
     },

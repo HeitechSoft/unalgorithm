@@ -25,6 +25,8 @@ export const DEV_EXTENSION_ORIGIN = `chrome-extension://${DEV_EXTENSION_ID}`;
 /** Better Auth's two mounted sign-in endpoints: email a code, then sign in with it. */
 export const SEND_CODE = '/api/auth/email-otp/send-verification-otp';
 export const SIGN_IN = '/api/auth/sign-in/email-otp';
+/** The signed-in user of a web session. */
+export const GET_SESSION = '/api/auth/get-session';
 /** A sign-in code as the email shows it. */
 export const SIX_DIGITS = /\b\d{6}\b/;
 
@@ -52,6 +54,20 @@ export function cookieHeader(res: Response): string {
     .getSetCookie()
     .map((c) => c.split(';')[0])
     .join('; ');
+}
+
+/** The session cookie a response sets, as a `Cookie` header, or '' when it sets none. */
+export function sessionCookie(res: Response): string {
+  return cookieHeader(res)
+    .split('; ')
+    .filter((c) => c.startsWith('better-auth.session_token=') && c.length > 'better-auth.session_token='.length)
+    .join('; ');
+}
+
+/** What `get-session` answers for this `Cookie` header: the session's user, or null without a session. */
+export async function sessionOf(app: App, cookie: string) {
+  const res = await app.request(GET_SESSION, { headers: { Cookie: cookie } });
+  return (await res.json()) as { user?: { id: string; email: string } } | null;
 }
 
 /** Signs `email` in on the server's own page (code by email, then the code) and returns the session `Cookie` header. */
