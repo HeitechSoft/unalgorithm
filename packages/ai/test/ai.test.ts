@@ -22,6 +22,7 @@ import {
   originPattern,
   pickModel,
   type StructuredRequest,
+  type StructuredResult,
   toStrictJsonSchema,
 } from '../src/index.ts';
 
@@ -289,6 +290,52 @@ describe('classify orchestrator', () => {
     expect([out.calls, out.failedCalls]).toEqual([2, 2]);
     expect(out.usage).toEqual({ ...ZERO_USAGE, uncachedInput: 1000, cacheRead: 100, output: 10 });
     expect(out.okUsage).toEqual(ZERO_USAGE);
+  });
+
+  /** A client that answers call i with `script[i]`: the refs to classify, or an error to throw. */
+  function scriptedClient(script: Array<{ refs: string[]; input: number } | AIError>) {
+    let i = 0;
+    return {
+      kind: 'fake',
+      listModels: async () => [],
+      structured: async (): Promise<StructuredResult> => {
+        const step = script[i++];
+        if (!step) throw new Error('no more answers');
+        if (step instanceof AIError) throw step;
+        const text = JSON.stringify({ results: step.refs.map((r) => result(r)) });
+        return { text, usage: { ...ZERO_USAGE, uncachedInput: step.input }, model: 'claude-haiku-5-5', mode: 'json-schema' };
+      },
+    };
+  }
+
+  it('keeps posts that succeeded when the retry of a skipped post stops the run', async () => {
+    const client = scriptedClient([
+      { refs: ['p1', 'p2'], input: 1000 }, // skips p3
+      new AIError('overloaded', 'Busy.', { usage: { ...ZERO_USAGE, uncachedInput: 7 } }), // the retry of p3
+    ]);
+    const out = await classifyPosts(client, [post('p1'), post('p2'), post('p3')], { model: 'claude-haiku-5-5', profile });
+    expect(['p1', 'p2', 'p3'].map((r) => out.byRef.get(r)?.ok)).toEqual([true, true, false]);
+    const p3 = out.byRef.get('p3');
+    expect(p3 && !p3.ok && p3.error.code).toBe('overloaded');
+    expect([out.calls, out.failedCalls]).toEqual([2, 1]);
+    expect(out.usage).toEqual({ ...ZERO_USAGE, uncachedInput: 1007 });
+    expect(out.okUsage).toEqual({ ...ZERO_USAGE, uncachedInput: 1000 });
+  });
+
+  it('keeps a split half that succeeded when the retry of its skipped post stops the run', async () => {
+    const client = scriptedClient([
+      new AIError('refusal', 'Declined.', { usage: { ...ZERO_USAGE, uncachedInput: 1 } }), // a+b+c+d
+      { refs: ['a', 'b'], input: 100 }, // a+b
+      { refs: ['c'], input: 200 }, // c+d, skips d
+      new AIError('rate-limit', 'Slow down.'), // the retry of d
+    ]);
+    const out = await classifyPosts(client, [post('a'), post('b'), post('c'), post('d')], { model: 'claude-haiku-5-5', profile });
+    expect(['a', 'b', 'c', 'd'].map((r) => out.byRef.get(r)?.ok)).toEqual([true, true, true, false]);
+    const d = out.byRef.get('d');
+    expect(d && !d.ok && d.error.code).toBe('rate-limit');
+    expect([out.calls, out.failedCalls]).toEqual([4, 2]);
+    expect(out.usage).toEqual({ ...ZERO_USAGE, uncachedInput: 301 });
+    expect(out.okUsage).toEqual({ ...ZERO_USAGE, uncachedInput: 300 });
   });
 });
 

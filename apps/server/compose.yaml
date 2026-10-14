@@ -29,6 +29,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    # A stop lets requests finish (up to 30 s) and handlers end (up to 10 s more) before the database closes; Docker's
+    # default of 10 s would kill it first.
+    stop_grace_period: 45s
     # The server writes nothing to disk.
     read_only: true
     tmpfs:

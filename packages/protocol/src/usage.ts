@@ -53,12 +53,24 @@ export const PRICE_CARDS: Record<string, PriceCard> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5, webSearch: 0.01 },
 };
 
-/** Cost in micro-dollars (1e-6 USD), or undefined when the model has no known price card. */
+/**
+ * A $/MTok price as whole thousandths of a micro-dollar per token. List prices have at most 3 decimals, so the
+ * rounding only removes binary floating-point noise and the result is exact.
+ */
+const milliMicrosPerToken = (dollarsPerMTok: number) => Math.round(dollarsPerMTok * 1000);
+
+/**
+ * Cost in micro-dollars (1e-6 USD), rounded up, or undefined when the model has no known price card. Computed in
+ * integer thousandths of a micro-dollar so an exact whole cost is never rounded up by float error.
+ */
 export function costMicros(model: string, u: NormalizedUsage): number | undefined {
   const p = PRICE_CARDS[model];
   if (!p) return undefined;
-  const dollars =
-    (u.uncachedInput * p.input + u.output * p.output + u.cacheRead * p.cacheRead + u.cacheWrite * p.cacheWrite) / 1e6 +
-    u.webSearches * (p.webSearch ?? 0);
-  return Math.ceil(dollars * 1e6);
+  const milli =
+    u.uncachedInput * milliMicrosPerToken(p.input) +
+    u.output * milliMicrosPerToken(p.output) +
+    u.cacheRead * milliMicrosPerToken(p.cacheRead) +
+    u.cacheWrite * milliMicrosPerToken(p.cacheWrite) +
+    u.webSearches * Math.round((p.webSearch ?? 0) * 1e9);
+  return Math.ceil(milli / 1000);
 }

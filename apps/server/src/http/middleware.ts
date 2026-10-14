@@ -63,6 +63,51 @@ export function nonErrorsAsErrors(): MiddlewareHandler {
   };
 }
 
+/** Counts the requests whose handlers are still running, so a stopping server can wait for them. */
+export interface InFlightRequests {
+  /** The middleware that counts; registered first, so a request counts until every handler and middleware is done. */
+  readonly track: MiddlewareHandler;
+  readonly count: number;
+  /** Resolves true once no request is in flight, or false when `limitMs` runs out first. */
+  drained(limitMs: number): Promise<boolean>;
+}
+
+/**
+ * A handler can outlive its connection: when a stopping server closes it, the classify route still releases or settles
+ * the hold and writes its usage row. The server waits for this count to reach 0 before it closes the database.
+ */
+export function inFlightRequests(): InFlightRequests {
+  let count = 0;
+  const waiters = new Set<() => void>();
+  return {
+    track: async (_c, next) => {
+      count++;
+      try {
+        await next();
+      } finally {
+        if (--count === 0) for (const wake of waiters) wake();
+      }
+    },
+    get count() {
+      return count;
+    },
+    drained: (limitMs) =>
+      new Promise<boolean>((resolve) => {
+        if (count === 0) return resolve(true);
+        const wake = () => {
+          clearTimeout(timer);
+          waiters.delete(wake);
+          resolve(true);
+        };
+        const timer = setTimeout(() => {
+          waiters.delete(wake);
+          resolve(false);
+        }, limitMs);
+        waiters.add(wake);
+      }),
+  };
+}
+
 /**
  * Once `stopping` is aborted, every answer says `Connection: close`, and Node closes the connection after it. Without
  * that, a stopping server keeps a connection open while its client sends the next request on it (the extension's sync

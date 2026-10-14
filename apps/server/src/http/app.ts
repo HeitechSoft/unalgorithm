@@ -41,7 +41,15 @@ import { NOT_FOUND } from '../routes/openapi.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
 import type { AccessResolver } from '../sync/spaces.ts';
-import { type AppEnv, clientIp, closeWhenStopping, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
+import {
+  type AppEnv,
+  clientIp,
+  closeWhenStopping,
+  extensionCors,
+  type InFlightRequests,
+  nonErrorsAsErrors,
+  requestLog,
+} from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
 
@@ -65,6 +73,8 @@ export interface AppDeps {
    * closes its connection, so neither holds the stop open. Default: never.
    */
   stopping?: AbortSignal;
+  /** Counts the requests in flight, so a stopping server (`startServer`) waits for them to end. Default: not counted. */
+  inFlight?: InFlightRequests;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -127,6 +137,7 @@ export function createApp(deps: AppDeps): App {
     },
   });
 
+  if (deps.inFlight) app.use(deps.inFlight.track);
   app.use(clientIp(config.trustProxy));
   app.use(requestLog(log));
   app.use(secureHeaders({ referrerPolicy: 'no-referrer' }));

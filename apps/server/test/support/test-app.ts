@@ -6,6 +6,7 @@ import { type BillingProvider, noopBilling } from '../../src/billing/provider.ts
 import { type Config, loadConfig } from '../../src/config.ts';
 import type { DbHandle } from '../../src/db/client.ts';
 import { type AppDeps, createApp } from '../../src/http/app.ts';
+import type { InFlightRequests } from '../../src/http/middleware.ts';
 import { createJobRegistry } from '../../src/jobs/worker.ts';
 import { memoryMailer } from '../../src/mail/mailer.ts';
 import type { SpaceNotifier } from '../../src/sync/notifier.ts';
@@ -73,6 +74,8 @@ export interface TestAppOptions {
   syncNotifier?: SpaceNotifier;
   /** Aborted to stop the app as `startServer` does. Default: never. */
   stopping?: AbortSignal;
+  /** Counts the app's requests in flight, as `startServer` does. Default: not counted. */
+  inFlight?: InFlightRequests;
   /**
    * A migrated database that the caller opened and closes itself, such as a Postgres one. Default: a fresh PGlite
    * database, which `close()` closes.
@@ -118,6 +121,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       syncAccess: overrides.syncAccess,
       syncNotifier: overrides.syncNotifier,
       stopping: overrides.stopping,
+      inFlight: overrides.inFlight,
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

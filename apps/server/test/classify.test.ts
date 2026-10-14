@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import { AIError, describeError, type StructuredRequest, type StructuredResult } from '@unalgorithm/ai';
 import { buildSystemPrompt, PROMPT_VERSION } from '@unalgorithm/core';
 import {
@@ -14,6 +15,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { BillingDecision, BillingProvider, ReleaseInput, SettleInput, Settlement } from '../src/billing/provider.ts';
 import { usageEvents } from '../src/db/schema.ts';
 import type { AppDeps } from '../src/http/app.ts';
+import { inFlightRequests } from '../src/http/middleware.ts';
+import { listen, stopServing } from '../src/index.ts';
 import { excludeNonPublic, wireCodeFor } from '../src/routes/classify.ts';
 import { classifyBody, serverPost as post, postClassify, usageRowOf } from './support/classify.ts';
 import { seedPassingRoute } from './support/routes.ts';
@@ -491,6 +494,47 @@ describe('classify: failures', { timeout: PGLITE_TIMEOUT }, () => {
 });
 
 describe('classify: billing seam', { timeout: PGLITE_TIMEOUT }, () => {
+  /** An AI whose call i answers the first `answer` posts it is sent (all when undefined), or throws `fail`. */
+  function scriptedAi(script: Array<{ answer?: number } | AIError>) {
+    let i = 0;
+    return fakeAi(async (req) => {
+      const step = script[i++];
+      if (!step) throw new Error('no more answers');
+      if (step instanceof AIError) throw step;
+      const full = answer(req);
+      const { results } = JSON.parse(full.text) as { results: unknown[] };
+      const kept = results.slice(0, step.answer ?? results.length);
+      return { ...full, text: JSON.stringify({ results: kept }), usage: { ...ZERO_USAGE, uncachedInput: 100 * (i + 1) } };
+    });
+  }
+
+  it('test_failed_retry_keeps_settled_posts', async () => {
+    // Call 1 skips C; the retry of C is overloaded. A and B are kept, settled and charged for call 1 only.
+    const one = recordingBilling();
+    const t = await classifyApp({ ai: scriptedAi([{ answer: 2 }, new AIError('overloaded', 'Busy.')]), billing: one.provider });
+    const posts = [await post('A', 'AI agents'), await post('B', 'Coffee'), await post('C', 'Hiring')];
+    const res = await classify(t, request(posts));
+    expect(res.status).toBe(200);
+    const { results } = ClassifyResponseSchema.parse(await res.json());
+    expect(results.map((r) => r.status)).toEqual(['ok', 'ok', 'error']);
+    expect(one.seen.settled).toMatchObject([{ posts: 2, chargeableUsage: { ...ZERO_USAGE, uncachedInput: 200 } }]);
+    expect(await usageRow(t, res)).toMatchObject({ postsOk: 2, calls: 2, failedCalls: 1 });
+
+    // Inside a refusal split: the call that answered C but skipped D is still kept when D's retry is rate-limited.
+    const two = recordingBilling();
+    const t2 = await classifyApp({
+      ai: scriptedAi([new AIError('refusal', 'Declined.'), {}, { answer: 1 }, new AIError('rate-limit', 'Slow down.')]),
+      billing: two.provider,
+    });
+    const four = [...posts, await post('D', 'Travel')];
+    const res2 = await classify(t2, request(four));
+    expect(res2.status).toBe(200);
+    const body2 = ClassifyResponseSchema.parse(await res2.json());
+    expect(body2.results.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'error']);
+    expect(two.seen.settled).toMatchObject([{ posts: 3, chargeableUsage: { ...ZERO_USAGE, uncachedInput: 300 + 400 } }]);
+    expect(await usageRow(t2, res2)).toMatchObject({ postsOk: 3, calls: 4, failedCalls: 2 });
+  });
+
   it('test_billing_refusal_402', async () => {
     const { provider, seen } = recordingBilling({
       decision: { kind: 'refuse', code: 'insufficient-credits', message: 'No credits left.' },
@@ -563,6 +607,48 @@ describe('classify: billing seam', { timeout: PGLITE_TIMEOUT }, () => {
     const releaseFailed = t3.events().filter((e) => e.event === 'billing.release.failed');
     expect(releaseFailed).toHaveLength(1);
     expect(releaseFailed[0]?.rid).toBe(busy.headers.get('x-request-id'));
+  });
+});
+
+describe('classify: graceful stop', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_stop_waits_for_a_slow_classify_to_write_its_usage_row', async () => {
+    // The model answers after the grace period has closed the connection, and ignores the abort that closing sends.
+    const SLOW_MS = 800;
+    const ai = fakeAi(async (req) => {
+      await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+      return answer(req);
+    });
+    const stopping = new AbortController();
+    const inFlight = inFlightRequests();
+    const t = await classifyApp({ ai, stopping: stopping.signal, inFlight });
+    const server = await listen(t.app, '127.0.0.1', 0);
+    cleanup.push(async () => {
+      server.closeAllConnections();
+      if (server.listening) await new Promise((resolve) => server.close(resolve));
+    });
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const answered = fetch(`${url}${CLASSIFY_PATH}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: DEV_EXTENSION_ORIGIN,
+        Authorization: `Bearer ${t.tokens.access_token}`,
+      },
+      body: JSON.stringify(request([await post('A', 'AI agents'), await post('B', 'Coffee')])),
+    }).then(
+      (res) => res.status,
+      () => 'connection closed',
+    );
+    await expect.poll(() => inFlight.count).toBe(1);
+
+    const started = performance.now();
+    await stopServing(server, { stopping, inFlight, log: t.deps.log, graceMs: 50 });
+    expect(await answered).toBe('connection closed');
+    expect(performance.now() - started).toBeGreaterThan(SLOW_MS / 2);
+    // Written before the stop returned, so before the database would close.
+    expect(await usageRows(t)).toMatchObject([{ outcome: 'ok', postsOk: 2, calls: 1 }]);
+    expect(t.events().filter((e) => e.event === 'usage.record_failed')).toEqual([]);
   });
 });
 

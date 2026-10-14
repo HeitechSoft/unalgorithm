@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { NormalizedUsage } from '../src/index.ts';
 import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
@@ -71,6 +72,56 @@ describe('cost', () => {
     expect(
       costMicros('unknown-model', { uncachedInput: 1, cacheRead: 0, cacheWrite: 0, output: 0, webSearches: 0, estimated: false }),
     ).toBeUndefined();
+  });
+
+  const usage = (u: Partial<NormalizedUsage>): NormalizedUsage => ({
+    uncachedInput: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    output: 0,
+    webSearches: 0,
+    estimated: false,
+    ...u,
+  });
+
+  it('never rounds an exact whole micro-dollar up', () => {
+    expect(costMicros('claude-haiku-5-5', usage({ output: 246 }))).toBe(123);
+    expect(costMicros('claude-sonnet-5-5', usage({ uncachedInput: 23, cacheRead: 1000 }))).toBe(246);
+    expect(costMicros('claude-haiku-5-5', usage({ uncachedInput: 1856, cacheRead: 440, cacheWrite: 1728, output: 208 }))).toBe(
+      510,
+    );
+    expect(costMicros('claude-haiku-5-5', usage({ webSearches: 3 }))).toBe(30_000);
+    // A fraction of a micro-dollar still rounds up.
+    expect(costMicros('claude-haiku-5-5', usage({ uncachedInput: 1 }))).toBe(1);
+  });
+
+  it('matches exact integer arithmetic on random usage', () => {
+    // Thousandths of a micro-dollar per token: input, output, cache read, cache write. A web search is 10,000 µ$.
+    const milli: Record<string, readonly number[]> = {
+      'claude-haiku-5-5': [100, 500, 10, 125],
+      'claude-sonnet-5-5': [2000, 10_000, 200, 2500],
+      'claude-opus-5-5': [4000, 20_000, 200, 5000],
+    };
+    let seed = 42;
+    const rand = (n: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % n;
+    };
+    for (const [model, [inp = 0, out = 0, read = 0, write = 0]] of Object.entries(milli)) {
+      for (let i = 0; i < 20_000; i++) {
+        const u = usage({
+          uncachedInput: rand(4000),
+          cacheRead: rand(3000),
+          cacheWrite: rand(3000),
+          output: rand(3000),
+          webSearches: rand(3),
+        });
+        const exact =
+          u.uncachedInput * inp + u.output * out + u.cacheRead * read + u.cacheWrite * write + u.webSearches * 10_000_000;
+        if (costMicros(model, u) !== Math.ceil(exact / 1000))
+          expect({ model, u, got: costMicros(model, u) }).toBe(Math.ceil(exact / 1000));
+      }
+    }
   });
 });
 

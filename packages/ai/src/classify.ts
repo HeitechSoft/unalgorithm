@@ -114,20 +114,9 @@ export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: 
 
   async function run(group: PostForAI[], retryMissing: boolean): Promise<void> {
     out.calls++;
+    let res: Awaited<ReturnType<typeof callOnce>>;
     try {
-      const res = await callOnce(client, group, opts);
-      out.usage = addUsage(out.usage, res.usage);
-      out.okUsage = addUsage(out.okUsage, res.usage);
-      out.model = res.model;
-      out.mode = res.mode;
-      for (const [ref, c] of res.byRef) out.byRef.set(ref, { ok: true, classification: c });
-      const missing = group.filter((p) => !res.byRef.has(p.ref));
-      if (missing.length) {
-        if (retryMissing) for (const p of missing) await run([p], false);
-        else
-          for (const p of missing)
-            out.byRef.set(p.ref, { ok: false, error: new AIError('refusal', 'The AI skipped this post.') });
-      }
+      res = await callOnce(client, group, opts);
     } catch (err) {
       const e = err instanceof AIError ? err : new AIError('unknown', String(err));
       out.failedCalls++;
@@ -141,6 +130,18 @@ export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: 
       for (const p of group) out.byRef.set(p.ref, { ok: false, error: e });
       // Errors that affect every request (bad key, no credit) should not be retried per post.
       if (!POST_ERROR_CODES.has(e.code)) throw e;
+      return;
+    }
+    out.usage = addUsage(out.usage, res.usage);
+    out.okUsage = addUsage(out.okUsage, res.usage);
+    out.model = res.model;
+    out.mode = res.mode;
+    for (const [ref, c] of res.byRef) out.byRef.set(ref, { ok: true, classification: c });
+    // Outside the `try`: a retry that stops the run must not turn this call's results into errors.
+    for (const p of group) {
+      if (res.byRef.has(p.ref)) continue;
+      if (retryMissing) await run([p], false);
+      else out.byRef.set(p.ref, { ok: false, error: new AIError('refusal', 'The AI skipped this post.') });
     }
   }
 
