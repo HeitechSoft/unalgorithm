@@ -64,7 +64,8 @@ by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 ## What a server stores
 
 An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
-nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database).
+nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database); a
+billing module adds tables of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
 - **Accounts:** the email address, and no name or picture (`user`).
 - **Devices:** one row per signed-in copy of the extension: its extension id, when it signed in and was last used, and
@@ -109,6 +110,30 @@ that echo it back, invalid and unauthenticated requests, and a Facebook post tha
 in no log line, nothing the process wrote to standard output or standard error, no error answer and no row of any
 table. The test also checks that the marker did reach the mock model, and never from the non-public post. It runs on
 PGlite in every `pnpm test` and on Postgres 17 in the CI `server` job.
+
+## What a billing module sees
+
+A server started with `BILLING=module` loads a billing module into its own process
+([ARCHITECTURE.md → Billing seam](ARCHITECTURE.md#billing-seam)). UnAlgorithm Cloud runs HeitechSoft's module. A
+self-hosted server with `BILLING=off`, the default, loads none and keeps no ledger.
+
+What the seam passes to a module:
+
+- **The account:** its id, its email address, whether that address is verified, and when the account was created.
+- **Each AI request:** the account, device and request ids; after the call, the model, the token usage, the cost and
+  the number of posts counted. The module keeps its own ledger of amounts from these, in tables of its own.
+
+A module's own routes (`mount`), such as the balance route the extension reads, receive each request like any route of
+the server, the client's IP address and headers included. The module also runs inside the server process with the
+server's database access, so what it reads beyond the seam is limited by review of the module, not by the seam.
+
+Never post text, prompts, interests or author data: the server neither stores nor passes them, so they are neither in
+what the seam passes nor in any server table a module could read.
+
+The extension reads the balance from `GET /v1/billing/balance` with the access token it already sends to that server,
+and sends nothing else. That is why PRIVACY.md does not change with credits: the balance request carries no data from
+the browser beyond the token the extension already sends. The answer is kept in session memory only
+([Storage](#storage)).
 
 ## Storage
 

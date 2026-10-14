@@ -154,14 +154,42 @@ post text, names or prompts.
 
 ### Billing seam
 
-Billing sits behind one interface, `BillingProvider` (`apps/server/src/billing/provider.ts`, ADR 0007). Before an AI
-call it allows the call, holds an amount, or refuses with `insufficient-credits`; after it, it settles what succeeded
-or releases the hold. It also reports a balance and may mount its own routes and pages. The open server ships the
-no-op provider (`BILLING=off`): usage is recorded and admins set caps, but nobody is charged. A provider sees account
-ids, amounts and usage counts, never posts. UnAlgorithm Cloud's billing module lives in HeitechSoft's private
-repository and reaches the server only through this interface. Where the discovery document advertises billing, the
-account page (`apps/web`, public) shows the balance and credit history the module answers at `GET /v1/billing/account`,
-in the extension's wording.
+Billing sits behind one interface, `BillingProvider` (`apps/server/src/billing/provider.ts`); why the server is open
+and billing may be private is in [ADR 0007](adr/0007-open-server-private-billing.md). A provider has four calls and
+an optional fifth:
+
+- `check`, in each classify request once the limits pass and a route is chosen (step 5 above), with the account,
+  device and request ids: allow the call, hold an amount, or refuse with `insufficient-credits` (402, no model called).
+- `settle` after the model call, with the model, token usage, cost and post count of the calls that succeeded; or
+  `release` when none succeeded or the call failed, so a failed request is never charged.
+- `balance`: an account's balance, or none. Classify does not call it; a classify answer carries the balance `settle`
+  returned.
+- `mount`, once at start: adds the provider's own routes and pages, behind the server's middleware and after its API
+  routes.
+
+`BILLING=off`, the default, is the no-op provider: usage is recorded and admins set caps, but nobody is charged, no
+ledger is kept and discovery advertises no billing. `BILLING=module` with `BILLING_MODULE=<absolute path>` imports that
+file at start, hands its `createBillingProvider` the host and checks the provider it returns; the module reads its own
+settings from the other `BILLING_*` variables, and the `billing` command runs its admin commands. A module that fails
+to load, throws or returns no valid provider stops the start, so a server meant to charge never serves AI for free.
+
+The host (`BillingHost`, `apps/server/src/billing/host.ts`) is all a module is offered: SQL on the server's database,
+for the module's own `billing` schema; its own migrations, under a lock of their own; an account's id, email address,
+verified flag and creation time; the two auth checks for its routes (the extension's bearer token and the server
+pages' session); the job registry; the logger; the server's origin, name and version; and the running release's
+`packages/protocol`. It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
+reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
+(its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests
+as any server route does. Adding to `BillingHost` is a reviewed public change. UnAlgorithm Cloud's billing module lives
+in HeitechSoft's private repository and reaches the server only through this seam. Where discovery advertises billing,
+the account page (`apps/web`) shows the balance and history the module answers at `GET /v1/billing/account`.
+
+### Jobs
+
+Background jobs run on graphile-worker inside the server process, on the server's own pool, one at a time
+(`apps/server/src/jobs/worker.ts`). A billing module registers named tasks and UTC cron schedules on the job registry
+while the server starts, and the worker starts only when a task is registered: a server without a module runs none and
+never creates the `graphile_worker` schema. Payloads hold ids and numbers only. PGlite, in tests, runs no worker.
 
 ## Testing
 

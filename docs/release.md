@@ -12,7 +12,8 @@ other's workflow.
 
 UnAlgorithm Cloud, HeitechSoft's hosted server, is not released from here: its private repository pins a server
 release and builds the Cloud image from that tag (ADR 0007, [Pinning a release](#pinning-a-release)). Security fixes
-follow their own rule: see [Security fixes](#security-fixes).
+follow their own rule: see [Security fixes](#security-fixes). A change to the credit price cards moves both trains,
+the Cloud and the website in one order: see [Changing a price card](#changing-a-price-card).
 
 ## Versioning
 
@@ -149,6 +150,39 @@ A running server reports its release as `version` in `/.well-known/unalgorithm.j
 
 UnAlgorithm Cloud, HeitechSoft's hosted server, pins a server release in its private repository and builds its image
 from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the public release it runs.
+
+## Changing a price card
+
+The credit price cards (`CREDIT_PRICE_CARDS`) and the starter credit (`STARTER_CREDIT`) live in
+`packages/protocol/src/billing.ts`. Each reader takes them from its own build: the server release UnAlgorithm Cloud
+runs (its account page included), the Cloud's billing module, whose multipliers must equal that release's cards, the
+extension, which bundles them for its "about N posts" estimates, and the website's "How credits work" page. A change
+goes out in this order, so the website never publishes a multiplier the running Cloud does not charge:
+
+1. Change `CREDIT_PRICE_CARDS` (or `STARTER_CREDIT`) in `packages/protocol`, with the code owner's sign-off
+   (@TomHeiber) and changesets for the server and the extension, and merge it.
+2. Cut a `server-vX.Y.Z` release that includes the change ([Server releases](#server-releases)).
+3. HeitechSoft updates the Cloud module's multipliers and pins that release. The module's CI and its start-up check
+   refuse a release whose price cards differ from its multipliers, so neither side can change alone.
+4. Deploy UnAlgorithm Cloud. It charges the new prices from here on.
+5. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit that includes step 1's change: it bundles the
+   price cards for its "about N posts" estimates. Versions already installed show estimates at the old price until
+   Chrome updates them; the balance itself always comes from the server.
+6. Only then deploy the website.
+
+Keep steps 4 to 6 close together: until step 6 the website still shows the previous price cards.
+
+The website is not released from a tag. It is built from the checkout it is deployed from (`main`), and its page is
+computed from that checkout's `packages/protocol`. So from the merge in step 1 until step 4 is done, nobody deploys the
+website, unless from a commit whose `CREDIT_PRICE_CARDS` equal those of the release the Cloud runs.
+
+**Rollback** runs the whole order reversed, the extension included:
+
+1. Deploy the website from a commit with the previous price cards.
+2. Release the extension built with the previous price cards.
+3. HeitechSoft puts the Cloud back on the previous server release and its previous multipliers, and deploys it.
+4. Revert the change in `packages/protocol`. Between steps 3 and 4, `main` holds price cards the Cloud no longer
+   charges, so the website is not deployed from it.
 
 ## Security fixes
 
