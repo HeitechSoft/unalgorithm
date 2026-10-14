@@ -114,7 +114,7 @@ export function App() {
       ) : null}
       {lowBalance && balance?.low ? (
         <Banner tone="info" title="Your balance is low" action={addCredit} onDismiss={dismissLowBalance}>
-          {balanceLine(balance.balanceMicros)}
+          {balanceLine(balance.balanceMicros, new Date())}
         </Banner>
       ) : null}
     </>

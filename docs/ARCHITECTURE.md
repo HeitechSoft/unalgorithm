@@ -16,7 +16,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 
 | Package | Responsibility | Rules |
 |---|---|---|
-| `protocol` | Wire contracts (zod): ids, `PostForAI`, classify request/response, AI error codes, usage + price cards, hybrid logical clock, server discovery and sign-in | zod only; additive changes only. The server imports the same files |
+| `protocol` | Wire contracts (zod): ids, `PostForAI`, classify request/response, AI error codes, usage and model price cards, the dated credit price schedule, hybrid logical clock, server discovery and sign-in | zod only; additive changes only. The server imports the same files |
 | `core` | Post model, rules and `decide()`, presets, settings schema/defaults/migration/clocks, the classification prompt and fence, cache policy, health evaluation | No `chrome.*`, no DOM |
 | `platforms` | `PlatformAdapter` contract and the LinkedIn and Facebook adapters, per-locale markers, anonymized fixtures, `checkAdapterContract` | DOM reads only; never mutate, click, scroll or focus |
 | `ai` | Vendor clients (Anthropic, OpenAI Responses, OpenAI-compatible, Chrome built-in), strict JSON schema helper, `classifyPosts` orchestrator, key detection, provider presets | No `chrome.*` except the `chrome-builtin` subpath |
@@ -169,8 +169,11 @@ and billing may be private is in [ADR 0007](adr/0007-open-server-private-billing
 an optional fifth:
 
 - `check`, in each classify request once the limits pass and a route is chosen (step 5 above), with the account,
-  device and request ids: allow the call, hold an amount, or refuse with `insufficient-credits` (402, no model called).
-- `settle` after the model call, with the model, token usage, cost and post count of the calls that succeeded; or
+  device and request ids and `checkedAt`, the instant of the check, which prices the request (the card in effect then,
+  also for its settlement): allow the call, hold an amount, or refuse with `insufficient-credits` (402, no model
+  called).
+- `settle` after the model call, with the model, token usage, cost and post count of the calls that succeeded, and the
+  same `checkedAt`; or
   `release` when none succeeded or the call failed, so a failed request is never charged.
 - `balance`: an account's balance, or none. Classify does not call it; a classify answer carries the balance `settle`
   returned.
@@ -187,7 +190,7 @@ The host (`BillingHost`, `apps/server/src/billing/host.ts`) is all a module is o
 for the module's own `billing` schema; its own migrations, under a lock of their own; an account's id, email address,
 verified flag and creation time; the two auth checks for its routes (the extension's bearer token and the server
 pages' session); the job registry; the logger; the server's origin, name and version; and the running release's
-`packages/protocol`. It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
+`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
 reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
 (its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests
 as any server route does. Adding to `BillingHost` is a reviewed public change. UnAlgorithm Cloud's billing module lives

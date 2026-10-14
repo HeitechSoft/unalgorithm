@@ -1,4 +1,13 @@
-import { addUsage, costMicros, estimatePosts, MAX_MODEL_CHARS, type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
+import {
+  addUsage,
+  CREDIT_PRICE_SCHEDULE,
+  type CreditPriceSchedule,
+  costMicros,
+  estimatePosts,
+  MAX_MODEL_CHARS,
+  type NormalizedUsage,
+  ZERO_USAGE,
+} from '@unalgorithm/protocol';
 import { clipText, dateKey } from './util.ts';
 
 export interface ModelUsage {
@@ -93,12 +102,18 @@ export function formatBalance(micros: number): string {
   return dollars(wholeCents(Math.floor(micros)));
 }
 
+/** A price, rounded half up to the cent: "$0.15" for 146,000; "<$0.01" when above 0 but under half a cent; "$0.00" for 0 or less. */
+export function formatPrice(micros: number): string {
+  if (!(micros > 0)) return '$0.00';
+  const cents = wholeCents(Math.floor(micros) + MICROS_PER_CENT / 2);
+  return cents === 0 ? '<$0.01' : dollars(cents);
+}
+
 /** A history amount, rounded half up to the cent: "+$1.00", "−$0.06", "−<$0.01", "$0.00". */
 export function formatCreditAmount(micros: number): string {
   if (micros === 0) return '$0.00';
   const sign = micros > 0 ? '+' : '−'; // MINUS SIGN, not a hyphen
-  const cents = wholeCents(Math.floor(Math.abs(micros)) + MICROS_PER_CENT / 2);
-  return `${sign}${cents === 0 ? '<$0.01' : dollars(cents)}`;
+  return `${sign}${formatPrice(Math.abs(micros))}`;
 }
 
 /** "no posts", "about 1 post", "about 6,600 posts". */
@@ -108,8 +123,11 @@ export function formatPostsEstimate(posts: number): string {
   return `about ${GROUPED.format(posts)} posts`;
 }
 
-/** The balance wording every surface shows: "$0.97 left · about 6,600 posts", or "$0.00 left". */
-export function balanceLine(balanceMicros: number): string {
+/**
+ * The balance wording every surface shows: "$0.97 left · about 6,600 posts", or "$0.00 left". The estimate uses the
+ * price card in effect at `at` (the surface passes the time it shows the line).
+ */
+export function balanceLine(balanceMicros: number, at: Date, schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE): string {
   if (!(balanceMicros > 0)) return '$0.00 left';
-  return `${formatBalance(balanceMicros)} left · ${formatPostsEstimate(estimatePosts(balanceMicros))}`;
+  return `${formatBalance(balanceMicros)} left · ${formatPostsEstimate(estimatePosts(balanceMicros, at, 'classify', schedule))}`;
 }

@@ -1,4 +1,4 @@
-import { type Classification, MAX_MODEL_CHARS, ZERO_USAGE as ZERO } from '@unalgorithm/protocol';
+import { type Classification, type CreditPriceSchedule, MAX_MODEL_CHARS, ZERO_USAGE as ZERO } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   adjustRelevance,
@@ -18,6 +18,7 @@ import {
   formatBalance,
   formatCreditAmount,
   formatPostsEstimate,
+  formatPrice,
   migrateSettings,
   NO_SIGNALS,
   neutralize,
@@ -405,11 +406,30 @@ describe('credit wording', () => {
     expect(formatCreditAmount(0)).toBe('$0.00');
   });
 
+  it('test_format_price_rounds_half_up', () => {
+    expect(formatPrice(146_000)).toBe('$0.15');
+    expect(formatPrice(182_500)).toBe('$0.18');
+    expect(formatPrice(145_000)).toBe('$0.15');
+    expect(formatPrice(144_999)).toBe('$0.14');
+    expect(formatPrice(5_000)).toBe('$0.01');
+    expect(formatPrice(4_999)).toBe('<$0.01');
+    expect(formatPrice(0)).toBe('$0.00');
+    expect(formatPrice(-1)).toBe('$0.00');
+  });
+
   it('test_balance_line', () => {
-    expect(balanceLine(970_000)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
-    expect(balanceLine(146)).toBe(`<$0.01 left ${DOT} about 1 post`);
-    expect(balanceLine(0)).toBe('$0.00 left');
-    expect(balanceLine(-5)).toBe('$0.00 left');
+    // A fixed instant: no test reads a price from the real schedule at the real clock.
+    const at = new Date('2026-10-14T12:00:00Z');
+    expect(balanceLine(970_000, at)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    expect(balanceLine(146, at)).toBe(`<$0.01 left ${DOT} about 1 post`);
+    expect(balanceLine(0, at)).toBe('$0.00 left');
+    expect(balanceLine(-5, at)).toBe('$0.00 left');
+    const card = (multiplier: number) => ({ multiplier, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73_000 });
+    const S: CreditPriceSchedule = [
+      { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
+      { effectiveFrom: '2026-11-15T00:00:00Z', cards: { classify: card(2.5) } },
+    ];
+    expect(balanceLine(970_000, new Date('2026-11-15T00:00:00Z'), S)).toBe(`$0.97 left ${DOT} about 5,300 posts`);
     expect(formatPostsEstimate(0)).toBe('no posts');
     expect(formatPostsEstimate(1)).toBe('about 1 post');
     expect(formatPostsEstimate(33_000)).toBe('about 33,000 posts');

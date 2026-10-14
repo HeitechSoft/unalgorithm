@@ -10,17 +10,36 @@ import {
   type CreditAccount,
   type CreditBalance,
   type CreditHistoryItem,
+  type CreditPriceSchedule,
+  nextPriceChange,
   SERVER_INFO_PATH,
 } from '@unalgorithm/protocol';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
 import { PASSKEY_LIST_PATH, SESSION_PATH } from '../src/api.ts';
+import { Credits } from '../src/Credits.tsx';
 import { type Answer, fakeServer, INFO, type Reply, SIGNED_IN, TOM } from './support/fake-server.ts';
 
 const PAUSED = 'AI is paused while the balance is empty. Filters and results already saved keep working.';
 const LOAD_FAILED = "Couldn't load your credits.";
 const EXPIRES = '2027-01-11T15:00:00.000Z';
+/** The fixed instant the price tests run at: no test reads a price from the real schedule at the real clock. */
+const NOW = new Date('2026-10-14T12:00:00Z');
+const PRICE_NOW = 'AI costs about $0.15 per 1,000 posts.';
+
+/** A stub schedule: the launch card, then a raise to 2.5 from 15 November. */
+const card = (multiplier: number) => ({ multiplier, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73_000 });
+const S: CreditPriceSchedule = [
+  { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
+  { effectiveFrom: '2026-11-15T00:00:00Z', cards: { classify: card(2.5) } },
+];
+
+/** Fakes `Date` (only) at `instant` for the rest of the test; `afterEach` restores the real clock. */
+function clockAt(instant: Date) {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(instant);
+}
 
 /** The starter credit as granted, less one day of AI: $0.97, all of it promotional. */
 const BALANCE: CreditBalance = {
@@ -62,6 +81,7 @@ function figure(section: HTMLElement): string | null {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   document.title = '';
 });
@@ -92,6 +112,7 @@ describe('visibility', () => {
 
 describe('content', () => {
   it('test_credits_balance_and_starter', async () => {
+    clockAt(NOW);
     // The starter credit alone, with its expiry.
     openCredits({ status: 200, body: account() });
     let section = await loadedCredits();
@@ -155,7 +176,8 @@ describe('content', () => {
     const section = await loadedCredits();
     expect(figure(section)).toBe('$0.00');
     expect(within(section).getByText(PAUSED)).toBeTruthy();
-    expect(section.textContent).not.toMatch(/posts?\b/);
+    // No estimate of posts (the price line is per 1,000 posts, not what this balance buys).
+    expect(section.textContent).not.toMatch(/about [\d,]+ posts?\b/);
   });
 
   it('test_credits_starter_states', async () => {
@@ -201,6 +223,55 @@ describe('content', () => {
     expect(pricing.getAttribute('href')).toBe(pricingUrl);
     expect(pricing.getAttribute('target')).toBe('_blank');
     expect(pricing.getAttribute('rel')).toBe('noreferrer');
+  });
+});
+
+describe('price', () => {
+  const signedOut = () => {};
+  const routes = { [`GET ${CREDIT_ACCOUNT_PATH}`]: { status: 200, body: account() } };
+
+  it('test_credits_price_in_effect', async () => {
+    clockAt(NOW);
+    openCredits({ status: 200, body: account() });
+    const section = await loadedCredits();
+    expect(within(section).getByText(PRICE_NOW)).toBeTruthy();
+    // A scheduled change shows, from the real schedule, exactly when there is one (none while only the launch entry is).
+    expect(within(section).queryByText(/^From /) !== null).toBe(nextPriceChange(NOW) !== null);
+    cleanup();
+
+    // While loading, and after an error: no price.
+    let answer: (reply: Answer) => void = () => {};
+    const view = openCredits(
+      () =>
+        new Promise<Answer>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const loading = await screen.findByRole('region', { name: 'Credits' });
+    await waitFor(() => expect(view.server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1));
+    expect(loading.textContent).not.toContain('AI costs');
+    answer({ status: 500, body: { code: 'unknown', message: 'Something went wrong.' } });
+    expect((await within(loading).findByRole('alert')).textContent).toContain(LOAD_FAILED);
+    expect(screen.queryByText(/AI costs/)).toBeNull();
+  });
+
+  it('test_credits_scheduled_change', async () => {
+    clockAt(NOW);
+    fakeServer({ session: TOM, info: { ...INFO, billing: true }, routes });
+    render(<Credits schedule={S} onSignedOut={signedOut} />);
+    let section = await loadedCredits();
+    expect(within(section).getByText(PRICE_NOW)).toBeTruthy();
+    expect(within(section).getByText('From Nov 15, 2026 (UTC): about $0.18 per 1,000 posts.')).toBeTruthy();
+    expect(within(section).getByText('about 6,600 posts')).toBeTruthy();
+    cleanup();
+
+    // On the date the new card is the price in effect, and nothing further is scheduled.
+    vi.setSystemTime(new Date('2026-11-15T00:00:00Z'));
+    render(<Credits schedule={S} onSignedOut={signedOut} />);
+    section = await loadedCredits();
+    expect(within(section).getByText('AI costs about $0.18 per 1,000 posts.')).toBeTruthy();
+    expect(within(section).getByText('about 5,300 posts')).toBeTruthy();
+    expect(within(section).queryByText(/^From /)).toBeNull();
   });
 });
 

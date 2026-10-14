@@ -7,6 +7,10 @@
  * Balances live in memory, in one map per process: each account starts at `BILLING_FIXTURE_START_MICROS` (default $1, all
  * of it starter credit), a classify costs 100 micro-dollars a post (never more than is left), and an empty balance is
  * refused. One command, `balance --user <id>`, runs through the server's billing CLI (CL2-06).
+ *
+ * A real module prices a request with `host.protocol.priceCardsAt(checkedAt)`; this one charges a flat 100 micro-dollars
+ * a post. It settles only with the instant its check received, so every test that classifies through it proves the
+ * instant arrives.
  */
 import type { CreditAccount, CreditBalance } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
@@ -37,6 +41,8 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
   const { protocol } = host;
   const start = startMicros(host.env.BILLING_FIXTURE_START_MICROS);
   const balanceOf = (userId: string) => balances.get(userId) ?? start;
+  /** The instant each allowed request's check received, by request id (unique), until it is settled or released. */
+  const checkedAtByRequest = new Map<string, number>();
   /** All of it promotional: the starter credit, still held, with no expiry here. */
   const creditBalance = (userId: string): CreditBalance => {
     const micros = balanceOf(userId);
@@ -53,17 +59,25 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
   return {
     id: 'fixture',
     advertised: true,
-    async check({ userId }): Promise<BillingDecision> {
+    async check({ userId, requestId, checkedAt }): Promise<BillingDecision> {
       if (balanceOf(userId) <= 0) return { kind: 'refuse', code: 'insufficient-credits', message: 'The balance is empty.' };
+      checkedAtByRequest.set(requestId, checkedAt.getTime());
       return { kind: 'allow' };
     },
-    async settle({ userId, posts }): Promise<Settlement> {
+    async settle({ userId, requestId, posts, checkedAt }): Promise<Settlement> {
+      const checked = checkedAtByRequest.get(requestId);
+      checkedAtByRequest.delete(requestId);
+      if (checked === undefined || checked !== checkedAt.getTime()) {
+        throw new Error('settle without the instant its check received');
+      }
       const balance = balanceOf(userId);
       const chargedMicros = Math.min(posts * MICROS_PER_POST, balance);
       balances.set(userId, balance - chargedMicros);
       return { chargedMicros, balanceMicros: balance - chargedMicros };
     },
-    async release() {},
+    async release({ requestId }) {
+      checkedAtByRequest.delete(requestId);
+    },
     async balance(userId) {
       return { balanceMicros: balanceOf(userId) };
     },

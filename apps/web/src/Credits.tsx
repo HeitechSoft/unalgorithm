@@ -1,11 +1,22 @@
 /**
  * The account page's Credits section, on a server that advertises billing: the balance and about how many posts it
  * classifies, the promotional credit with the starter credit's state, the history newest first, and the links the server
- * gives (adding credit, how credits work). Every figure is the server's answer (`CreditAccountSchema`); the wording is
- * the extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product or price of its own.
+ * gives (adding credit, how credits work), and the price in effect with the next scheduled change. Every figure on the
+ * account is the server's answer (`CreditAccountSchema`); the wording is the extension's (`@unalgorithm/core`), so both
+ * say the same thing, and the page names no product; its price line is the published schedule of the release this
+ * server runs.
  */
-import { formatBalance, formatCreditAmount, formatPostsEstimate } from '@unalgorithm/core';
-import { type CreditAccount, type CreditBalance, type CreditHistoryItem, estimatePosts } from '@unalgorithm/protocol';
+import { formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice } from '@unalgorithm/core';
+import {
+  CREDIT_PRICE_SCHEDULE,
+  type CreditAccount,
+  type CreditBalance,
+  type CreditHistoryItem,
+  type CreditPriceSchedule,
+  estimatePosts,
+  nextPriceChange,
+  retailMicrosPer1000Posts,
+} from '@unalgorithm/protocol';
 import { Banner, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiError, creditAccount } from './api.ts';
@@ -28,21 +39,25 @@ const HISTORY: Record<Exclude<CreditHistoryItem['reason'], 'classify'>, string> 
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 const COUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
-type State = { name: 'loading' } | { name: 'failed' } | { name: 'loaded'; account: CreditAccount };
+/** `at`: when the account answer arrived, the instant the price and the estimate are read at. */
+type State = { name: 'loading' } | { name: 'failed' } | { name: 'loaded'; account: CreditAccount; at: Date };
 
 export interface CreditsProps {
   /** Called when the server no longer knows the session (401): the page goes back to sign-in. Keep it stable. */
   onSignedOut(): void;
+  /** The price schedule shown; the page passes none (the bundled `CREDIT_PRICE_SCHEDULE`), tests pass a stub. */
+  schedule?: CreditPriceSchedule;
 }
 
-export function Credits({ onSignedOut }: CreditsProps) {
+export function Credits({ onSignedOut, schedule = CREDIT_PRICE_SCHEDULE }: CreditsProps) {
   const [state, setState] = useState<State>({ name: 'loading' });
   const headingId = useId();
 
   const load = useCallback(async () => {
     setState({ name: 'loading' });
     try {
-      setState({ name: 'loaded', account: await creditAccount() });
+      const account = await creditAccount();
+      setState({ name: 'loaded', account, at: new Date() });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onSignedOut();
       else setState({ name: 'failed' });
@@ -59,22 +74,41 @@ export function Credits({ onSignedOut }: CreditsProps) {
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      {state.name === 'loaded' ? <CreditDetails account={state.account} /> : null}
+      {state.name === 'loaded' ? <CreditDetails account={state.account} at={state.at} schedule={schedule} /> : null}
     </section>
   );
 }
 
-function CreditDetails({ account: { balance, history, addCreditPath, pricingUrl } }: { account: CreditAccount }) {
+function CreditDetails({
+  account: { balance, history, addCreditPath, pricingUrl },
+  at,
+  schedule,
+}: {
+  account: CreditAccount;
+  at: Date;
+  schedule: CreditPriceSchedule;
+}) {
   const promotional = promotionalLine(balance);
+  const next = nextPriceChange(at, schedule);
   return (
     <>
       <div className="web-balance">
         <p className="ua-stat">{formatBalance(balance.balanceMicros)}</p>
         <p className="ua-secondary">
-          {balance.balanceMicros > 0 ? formatPostsEstimate(estimatePosts(balance.balanceMicros)) : PAUSED}
+          {balance.balanceMicros > 0
+            ? formatPostsEstimate(estimatePosts(balance.balanceMicros, at, 'classify', schedule))
+            : PAUSED}
         </p>
         {promotional ? <p className="ua-footnote">{promotional}</p> : null}
         {balance.starter === 'active' ? null : <p className="ua-footnote">{STARTER[balance.starter]}</p>}
+        <p className="ua-footnote">AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</p>
+        {next ? (
+          // In UTC, as the change starts at 00:00 UTC: west of UTC it is the previous evening.
+          <p className="ua-footnote">
+            From {DATE.format(new Date(next.effectiveFrom))} (UTC): about {per1000Posts(new Date(next.effectiveFrom), schedule)}{' '}
+            per 1,000 posts.
+          </p>
+        ) : null}
       </div>
       <ListGroup header="History">
         {history.length === 0 ? (
@@ -108,6 +142,11 @@ function CreditDetails({ account: { balance, history, addCreditPath, pricingUrl 
       </div>
     </>
   );
+}
+
+/** The published price of 1,000 classified posts at `at`, "about" because it is the reference model's, warm cache. */
+function per1000Posts(at: Date, schedule: CreditPriceSchedule): string {
+  return formatPrice(retailMicrosPer1000Posts(at, 'classify', schedule));
 }
 
 /**

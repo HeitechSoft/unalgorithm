@@ -15,18 +15,20 @@ import {
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BillingHost } from '../src/billing/host.ts';
 import {
   type BillingContext,
   type BillingDecision,
   BillingLoadError,
   type BillingProvider,
+  type CheckRequest,
   loadBilling,
   noopBilling,
   type ReleaseInput,
   runWithBilling,
   type SettleInput,
+  type SettleRequest,
 } from '../src/billing/provider.ts';
 import { type Config, loadConfig } from '../src/config.ts';
 import { startFailureMessage, startServer } from '../src/index.ts';
@@ -51,12 +53,23 @@ const TOM = 'tom@example.com';
 /** Hosts, apps, folders and databases a test opened, closed or removed after it whatever the outcome. */
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
-const CTX: BillingContext = { userId: 'user-1', deviceId: 'device-1', task: 'classify', requestId: 'req-1' };
+/** Fakes `Date` (only) at `instant`; `afterEach` restores the real clock. */
+function clockAt(instant: string): Date {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(instant));
+  return new Date(instant);
+}
 
-function settleInput(): SettleInput {
+/** The fake clock's instant for the runWithBilling cases. */
+const CHECKED = '2026-10-14T12:00:00.000Z';
+
+const CTX: CheckRequest = { userId: 'user-1', deviceId: 'device-1', task: 'classify', requestId: 'req-1' };
+
+function settleInput(): SettleRequest {
   return {
     userId: CTX.userId,
     requestId: CTX.requestId,
@@ -188,8 +201,9 @@ describe('no-op provider', () => {
     expect(noopBilling.id).toBe('off');
     expect(noopBilling.advertised).toBe(false);
     expect(noopBilling.mount).toBeUndefined();
-    await expect(noopBilling.check(CTX)).resolves.toEqual({ kind: 'allow' });
-    await expect(noopBilling.settle(settleInput())).resolves.toBeNull();
+    const checkedAt = new Date('2026-10-14T12:00:00Z');
+    await expect(noopBilling.check({ ...CTX, checkedAt })).resolves.toEqual({ kind: 'allow' });
+    await expect(noopBilling.settle({ ...settleInput(), checkedAt })).resolves.toBeNull();
     await expect(noopBilling.release({ userId: CTX.userId, requestId: CTX.requestId })).resolves.toBeUndefined();
     await expect(noopBilling.balance(CTX.userId)).resolves.toBeNull();
   });
@@ -226,6 +240,7 @@ describe('no-op provider', () => {
 
 describe('runWithBilling with a recording fake', () => {
   it('test_refusal_never_calls_ai', async () => {
+    const checkedAt = clockAt(CHECKED);
     const { provider, calls } = recordingFake({ kind: 'refuse', code: 'insufficient-credits', message: 'Balance is empty.' });
     const { call, counter } = countingCall('answer');
 
@@ -235,7 +250,7 @@ describe('runWithBilling with a recording fake', () => {
     expect((err as AIError).code).toBe('insufficient-credits');
     expect((err as AIError).message).toBe('Balance is empty.');
     expect(counter.calls).toBe(0);
-    expect(calls.check).toEqual([CTX]);
+    expect(calls.check).toEqual([{ ...CTX, checkedAt }]);
     expect(calls.settle).toHaveLength(0);
     expect(calls.release).toHaveLength(0);
   });
@@ -281,6 +296,7 @@ describe('runWithBilling with a recording fake', () => {
   });
 
   it('test_success_is_settled_once', async () => {
+    const checkedAt = clockAt(CHECKED);
     const { provider, calls } = recordingFake();
     const input = settleInput();
 
@@ -292,7 +308,10 @@ describe('runWithBilling with a recording fake', () => {
     );
 
     expect(calls.settle).toHaveLength(1);
-    expect(calls.settle[0]).toBe(input);
+    expect(calls.settle[0]).toEqual({ ...input, checkedAt });
+    // A new object: the caller's input is never changed.
+    expect(calls.settle[0]).not.toBe(input);
+    expect(input).not.toHaveProperty('checkedAt');
     expect(calls.release).toHaveLength(0);
     expect(out.result).toBe('answer');
     expect(out.billing).toEqual(SETTLED);
@@ -302,9 +321,10 @@ describe('runWithBilling with a recording fake', () => {
     const hold: BillingDecision = { kind: 'hold', holdId: 'hold-7', amountMicros: 5_000 };
     const released = { userId: CTX.userId, requestId: CTX.requestId, holdId: 'hold-7' };
 
+    const checkedAt = clockAt(CHECKED);
     const settled = recordingFake(hold);
     await runWithBilling(settled.provider, CTX, async () => 'answer', settleInput);
-    expect(settled.calls.settle).toEqual([{ ...settleInput(), holdId: 'hold-7' }]);
+    expect(settled.calls.settle).toEqual([{ ...settleInput(), checkedAt, holdId: 'hold-7' }]);
     expect(settled.calls.release).toHaveLength(0);
 
     const nothingChargeable = recordingFake(hold);
@@ -332,6 +352,34 @@ describe('runWithBilling with a recording fake', () => {
     expect(err).toBe(failure);
     expect(failed.calls.release).toEqual([released]);
     expect(failed.calls.settle).toHaveLength(0);
+  });
+
+  it('test_check_and_settle_share_the_check_instant', async () => {
+    // A request checked just before 00:00 UTC whose AI call ends after it is priced at the check's instant.
+    const checkedAt = clockAt('2026-11-14T23:59:59.900Z');
+    const { provider, calls } = recordingFake();
+    await runWithBilling(
+      provider,
+      CTX,
+      async () => {
+        vi.setSystemTime(new Date('2026-11-15T00:00:00.100Z'));
+        return 'answer';
+      },
+      settleInput,
+    );
+    expect(calls.check[0]?.checkedAt.getTime()).toBe(checkedAt.getTime());
+    expect(calls.settle[0]?.checkedAt.getTime()).toBe(checkedAt.getTime());
+
+    // A released request is told no instant: `ReleaseInput` is unchanged.
+    const released = recordingFake();
+    await runWithBilling(
+      released.provider,
+      CTX,
+      async () => 'every post failed',
+      () => null,
+    );
+    expect(released.calls.release).toEqual([{ userId: CTX.userId, requestId: CTX.requestId }]);
+    expect(released.calls.release[0]).not.toHaveProperty('checkedAt');
   });
 
   it('test_release_failure_keeps_the_outcome', async () => {
@@ -419,6 +467,38 @@ describe('loader', { timeout: PGLITE_TIMEOUT }, () => {
     expect(err).toMatchObject({ name: 'BillingConfigError' });
     expect(startFailureMessage(err)).toBe('BILLING_FIXTURE_START_MICROS must be a whole number of micro-dollars');
     expect(events()).toHaveLength(1);
+  });
+
+  it('test_fixture_settle_needs_its_check_instant', async () => {
+    const t = await createTestHost();
+    cleanup.push(() => t.close());
+    const provider = await fixtureModule.createBillingProvider(t.host);
+    const checkedAt = new Date('2026-10-14T12:00:00Z');
+    const request = (requestId: string): BillingContext => ({ ...CTX, userId: `user-${requestId}`, requestId, checkedAt });
+    const settle = (ctx: BillingContext, at: Date): SettleInput => ({
+      ...settleInput(),
+      userId: ctx.userId,
+      requestId: ctx.requestId,
+      checkedAt: at,
+    });
+
+    // The instant its check received: charged 100 micro-dollars a post.
+    const ok = request('req-ok');
+    await expect(provider.check(ok)).resolves.toEqual({ kind: 'allow' });
+    await expect(provider.settle(settle(ok, new Date(checkedAt.getTime())))).resolves.toEqual({
+      chargedMicros: 300,
+      balanceMicros: 999_700,
+    });
+
+    // One millisecond off, or no check at all: refused.
+    const off = request('req-off');
+    await provider.check(off);
+    await expect(provider.settle(settle(off, new Date(checkedAt.getTime() + 1)))).rejects.toThrow(
+      'settle without the instant its check received',
+    );
+    await expect(provider.settle(settle(request('req-unchecked'), checkedAt))).rejects.toThrow(
+      'settle without the instant its check received',
+    );
   });
 
   it('test_load_billing_refuses_bad_modules', async () => {

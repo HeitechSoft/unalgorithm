@@ -30,7 +30,7 @@ import { checkLimits, createRateLimiter, type LimitDeps } from '../ai/limits.ts'
 import { recordUsageEvent, type UsageOutcome } from '../ai/metering.ts';
 import { type AiRoute, resolveRoute } from '../ai/routes.ts';
 import { requireDevice } from '../auth/bearer.ts';
-import { runWithBilling, type SettleInput } from '../billing/provider.ts';
+import { runWithBilling, type SettleRequest } from '../billing/provider.ts';
 import type { App, AppDeps } from '../http/app.ts';
 import { errorResponse, json } from './openapi.ts';
 
@@ -182,7 +182,7 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
             signal: AbortSignal.any([c.req.raw.signal, deadline]),
           }));
         // Nothing to charge when no post succeeded: billing releases the request instead.
-        const toSettle = (o: ClassifyOutcome): SettleInput | null => {
+        const toSettle = (o: ClassifyOutcome): SettleRequest | null => {
           const ok = okCount(o);
           if (ok === 0) return null;
           return {

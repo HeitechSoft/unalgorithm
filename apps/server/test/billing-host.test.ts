@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CREDIT_PRICE_CARDS } from '@unalgorithm/protocol';
+import { CREDIT_PRICE_SCHEDULE, priceCardsAt } from '@unalgorithm/protocol';
 import { type SQL, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { BILLING_MIGRATION_LOCK_KEY, BILLING_SCHEMA, type BillingHost } from '../src/billing/host.ts';
@@ -246,7 +246,11 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
     expect(Object.keys(host.accounts)).toEqual(['get', 'findByEmail']);
     expect(Object.keys(host.auth)).toEqual(['device', 'webSession']);
 
-    expect(host.protocol.CREDIT_PRICE_CARDS).toBe(CREDIT_PRICE_CARDS);
+    // The running release's dated price schedule, never a copy, and no undated cards.
+    expect(host.protocol.CREDIT_PRICE_SCHEDULE).toBe(CREDIT_PRICE_SCHEDULE);
+    expect(host.protocol.priceCardsAt).toBe(priceCardsAt);
+    // The undated cards CL2-26 removed, spelled in parts so that `git grep` finds the name in no tracked file.
+    expect(['CREDIT', 'PRICE', 'CARDS'].join('_') in host.protocol).toBe(false);
     expect(host.config).toStrictEqual({ publicOrigin: TEST_PUBLIC_URL, instanceName: 'Test server', version: SERVER_VERSION });
     expect(host.jobs).toBe(jobs);
 

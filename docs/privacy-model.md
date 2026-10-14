@@ -134,8 +134,9 @@ self-hosted server with `BILLING=off`, the default, loads none and keeps no ledg
 What the seam passes to a module:
 
 - **The account:** its id, its email address, whether that address is verified, and when the account was created.
-- **Each AI request:** the account, device and request ids; after the call, the model, the token usage, the cost and
-  the number of posts counted. The module keeps its own ledger of amounts from these, in tables of its own.
+- **Each AI request:** the account, device and request ids and the time the server checked it; after the call, the
+  model, the token usage, the cost and the number of posts counted. The module keeps its own ledger of amounts from
+  these, in tables of its own.
 
 A module's own routes (`mount`), such as the balance route the extension reads, receive each request like any route of
 the server, the client's IP address and headers included. The module also runs inside the server process with the

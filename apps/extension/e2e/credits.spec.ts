@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import type { TabState } from '@unalgorithm/core';
+import { balanceLine, type TabState } from '@unalgorithm/core';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { expect, test } from './fixtures.ts';
 import { BILLING_FIXTURE_MODULE } from './server-harness.ts';
@@ -40,7 +40,8 @@ test.describe('a server that bills', () => {
     // Before any post is classified: the whole starter balance, read from the server.
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(footerPill(popup)).toHaveText('$1.00 left · about 6,800 posts');
+    // The estimate is at the price card in effect now (the real clock), as the popup reads it.
+    await expect(footerPill(popup)).toHaveText(balanceLine(1_000_000, new Date()));
 
     // The feed, classified through the server, which charges the fixture's 100 micro-dollars a post.
     const page = await feed();

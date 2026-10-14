@@ -223,6 +223,33 @@ jobs:
         run: |
           "$RUNNER_TEMP/gitleaks" git --redact --exit-code 1 .
 
+  price-schedule:
+    # A price in effect never changes, a raise gives PRICE_NOTICE_DAYS of notice, and a cut may start at the next
+    # 00:00 UTC (docs/release.md → Changing a price card). Compares the schedule with the base commit's, read from this
+    # checkout's git history.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The base commit must be in the checkout: every ref, as the public-scan job fetches.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prices in effect never change
+        env:
+          # A pull request's base commit; on a push to main, the commit main pointed at before the push.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node --import ./apps/server/src/require-node.js scripts/check-price-schedule.mjs --base "$BASE_SHA"
+
   cla-gate:
     # No outside pull request merges before the final CLA is signed (CONTRIBUTING.md). Until the CLA bot is on, this job
     # fails outside pull requests that change code shipped in the server image, which HeitechSoft must be able to

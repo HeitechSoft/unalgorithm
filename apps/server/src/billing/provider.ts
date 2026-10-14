@@ -25,6 +25,11 @@ export interface BillingContext {
   deviceId: string;
   task: BillingTask;
   requestId: string;
+  /**
+   * The instant `runWithBilling` called `check`. It prices the request: the price card in effect then (CL2-26), for a
+   * hold and its settlement alike, even across 00:00 UTC. Set by `runWithBilling`.
+   */
+  checkedAt: Date;
 }
 
 export type BillingDecision =
@@ -45,7 +50,14 @@ export interface SettleInput {
   costMicros: number | null;
   /** Posts classified successfully. */
   posts: number;
+  /** The request's `BillingContext.checkedAt`: a settlement is priced at its check's instant. Set by `runWithBilling`. */
+  checkedAt: Date;
 }
+
+/** What callers hand `runWithBilling`; it adds `checkedAt`. */
+export type CheckRequest = Omit<BillingContext, 'checkedAt'>;
+/** What a caller's `toSettle` answers; `runWithBilling` adds `checkedAt` (and a hold's id). */
+export type SettleRequest = Omit<SettleInput, 'checkedAt' | 'holdId'>;
 
 /** What a settled request cost and the balance left: the `billing` field of the classify response. */
 export type Settlement = NonNullable<ClassifyResponse['billing']>;
@@ -166,8 +178,8 @@ function isProvider(value: unknown): value is BillingProvider {
  * 1. `check`; a refusal throws `insufficient-credits` and the call never runs.
  * 2. `call`, then `toSettle` on its result. When either throws, the request is released and the original error is
  *    rethrown unchanged: a failed request is never charged.
- * 3. `toSettle` answering null (no post succeeded) releases the request; anything else is settled exactly as given,
- *    plus the hold id of a `hold` decision.
+ * 3. `toSettle` answering null (no post succeeded) releases the request; anything else is settled as given, plus the
+ *    check's instant (`checkedAt`, read once just before `check`) and the hold id of a `hold` decision, in a new object.
  *
  * A `settle` error propagates and fails the request; the provider owns its own idempotency by `requestId`. A `release`
  * error never does: nothing is charged on either release path, so it neither replaces the error of a failed call (the
@@ -177,12 +189,13 @@ function isProvider(value: unknown): value is BillingProvider {
  */
 export async function runWithBilling<T>(
   provider: BillingProvider,
-  ctx: BillingContext,
+  ctx: CheckRequest,
   call: () => Promise<T>,
-  toSettle: (result: T) => SettleInput | null,
+  toSettle: (result: T) => SettleRequest | null,
   log?: Logger,
 ): Promise<{ result: T; billing: Settlement | null }> {
-  const decision = await provider.check(ctx);
+  const checkedAt = new Date();
+  const decision = await provider.check({ ...ctx, checkedAt });
   if (decision.kind === 'refuse') throw new AIError('insufficient-credits', decision.message);
 
   const holdId = decision.kind === 'hold' ? decision.holdId : undefined;
@@ -195,7 +208,7 @@ export async function runWithBilling<T>(
   };
 
   let result: T;
-  let input: SettleInput | null;
+  let input: SettleRequest | null;
   try {
     result = await call();
     input = toSettle(result);
@@ -208,5 +221,8 @@ export async function runWithBilling<T>(
     await release();
     return { result, billing: null };
   }
-  return { result, billing: await provider.settle(holdId === undefined ? input : { ...input, holdId }) };
+  return {
+    result,
+    billing: await provider.settle(holdId === undefined ? { ...input, checkedAt } : { ...input, checkedAt, holdId }),
+  };
 }

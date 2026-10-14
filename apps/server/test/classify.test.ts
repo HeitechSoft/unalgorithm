@@ -570,6 +570,7 @@ describe('classify: billing seam', { timeout: PGLITE_TIMEOUT }, () => {
         chargeableUsage: okUsage,
         costMicros: null,
         posts: 2,
+        checkedAt: expect.any(Date),
       },
     ]);
     expect(settling.seen.released).toEqual([]);

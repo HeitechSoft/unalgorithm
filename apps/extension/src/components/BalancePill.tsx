@@ -7,7 +7,7 @@ import type { PublicBalance } from '../background/server-balance.ts';
  * opens the server's account page, the `accountUrl` the background allows (CL2-10); without one it only shows.
  */
 export function BalancePill({ balance, onOpen }: { balance: PublicBalance; onOpen?(): void }) {
-  const text = balanceLine(balance.balanceMicros);
+  const text = balanceLine(balance.balanceMicros, new Date());
   const opens = !!onOpen && balance.accountUrl !== null;
   return (
     <button

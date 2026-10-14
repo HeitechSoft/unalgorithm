@@ -9,9 +9,9 @@
  * database access: `db.query` runs any statement on the server's pool as the server's database role, so it can read
  * every server table, not only schema `billing`. Routes it adds through `mount` receive the request like any server
  * route, the client address (`clientIp`) and raw headers included. What the seam passes: account id, email, verified
- * flag and account creation time (`accounts`); device id, request id, model, token usage, cost and posts counted
- * (`BillingProvider`). What the host does not offer: the server's Drizzle schema, `AppDeps`, the AI clients, the
- * classify request body or any post field. No post text, prompt or interest reaches a module, because the server
+ * flag and account creation time (`accounts`); device id, request id, model, token usage, cost and posts counted, and
+ * the instant the server checked the request (`checkedAt`) (`BillingProvider`). What the host does not offer: the
+ * server's Drizzle schema, `AppDeps`, the AI clients, the classify request body or any post field. No post text, prompt or interest reaches a module, because the server
  * neither stores nor passes them (ADR 0007). Adding to `BillingHost` is a reviewed public change.
  *
  * Driver differences a module must not rely on (node-postgres in production, PGlite in tests): a `bigint` column may
@@ -50,7 +50,10 @@ export interface BillingUser {
 }
 
 export interface BillingHost {
-  /** The running release's `@unalgorithm/protocol`: price cards, schemas and paths. A module never bundles its own. */
+  /**
+   * The running release's `@unalgorithm/protocol`: the dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`),
+   * schemas and paths. A module never bundles its own.
+   */
   readonly protocol: typeof protocol;
   readonly db: BillingSql;
   /**

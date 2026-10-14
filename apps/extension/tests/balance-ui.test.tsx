@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describeError } from '@unalgorithm/ai';
-import { type AISourceConfig, type Device, dateKey, defaultDevice } from '@unalgorithm/core';
+import { type AISourceConfig, balanceLine, type Device, dateKey, defaultDevice } from '@unalgorithm/core';
 import { LOW_BALANCE_MICROS } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -19,6 +19,12 @@ import { App as Popup } from '../src/entrypoints/popup/App.tsx';
 import { type AiStatus, type BgRequest, type PublicServerAccount, sendToBackground } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN, serverLabel } from '../src/lib/server-label.ts';
 import { deviceItem, lowBalanceNoticeItem } from '../src/lib/storage.ts';
+
+// A pass-through spy: every case sees the real text, and the price-instant test sees the instant each surface passes.
+vi.mock('@unalgorithm/core', async (importOriginal) => {
+  const core = await importOriginal<typeof import('@unalgorithm/core')>();
+  return { ...core, balanceLine: vi.fn(core.balanceLine) };
+});
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
@@ -442,6 +448,26 @@ describe('settings', () => {
       }
       cleanup();
     }
+  });
+});
+
+describe('price instant', () => {
+  it('test_balance_estimates_use_current_time', async () => {
+    // The pill and the low-balance banner estimate at the time they render: the card in effect now.
+    vi.mocked(balanceLine).mockClear();
+    render(<BalancePill balance={balance(970_000)} onOpen={() => undefined} />);
+    expect(screen.getByRole('button', { name: pillName(FULL_TEXT) }).textContent).toBe(FULL_TEXT);
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(970_000, TODAY);
+    cleanup();
+
+    vi.mocked(balanceLine).mockClear();
+    aiReply = () => cloudStatus(balance(150_000));
+    await openPopup();
+    const banner = (await screen.findByText(LOW_TITLE)).closest('.ua-banner') as HTMLElement;
+    expect(within(banner).getByText(LOW_TEXT)).toBeTruthy();
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(150_000, TODAY);
+    for (const [, instant] of vi.mocked(balanceLine).mock.calls) expect(instant).toEqual(TODAY);
+    await settle();
   });
 });
 
