@@ -13,7 +13,7 @@ import {
   type SoftAuthenticator,
   softAuthenticator,
 } from './support/soft-authenticator.ts';
-import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
+import { createTestApp, TEST_PUBLIC_URL, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const REGISTER_OPTIONS = '/api/auth/passkey/generate-register-options';
@@ -39,6 +39,8 @@ const BOB = 'bob@example.org';
 const RP_ID = '127.0.0.1';
 /** Another site, whose page a phishing attempt would run the ceremony on. */
 const EVIL = 'https://evil.example';
+/** An authenticator model the passkey package names: Google Password Manager's AAGUID. */
+const GOOGLE_PASSWORD_MANAGER = 'ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4';
 const NOT_FOUND = { code: 'bad-request', message: 'Not found.' };
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -54,8 +56,8 @@ afterEach(async () => {
 });
 
 /** A test server whose allowlist holds Ann and Bob. */
-async function passkeyApp() {
-  const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: `${ANN},${BOB}` }) });
+async function passkeyApp(env: Record<string, string> = {}, options: Omit<TestAppOptions, 'config'> = {}) {
+  const t = await createTestApp({ config: testConfig({ SIGNUP_ALLOWLIST: `${ANN},${BOB}`, ...env }), ...options });
   cleanup.push(async () => {
     allLines.push(...t.lines);
     await t.close();
@@ -65,9 +67,9 @@ async function passkeyApp() {
 
 /**
  * A new credential on a software authenticator for this server's own page, or for `origin`; with `credentialId`, a new
- * key that claims that credential.
+ * key that claims that credential; with `aaguid`, of that authenticator model.
  */
-function authenticator(options: { origin?: string; credentialId?: string } = {}): SoftAuthenticator {
+function authenticator(options: { origin?: string; credentialId?: string; aaguid?: string } = {}): SoftAuthenticator {
   const created = softAuthenticator({ rpId: RP_ID, origin: TEST_PUBLIC_URL, ...options });
   authenticators.push(created);
   return created;
@@ -114,6 +116,10 @@ const passkeysOf = (t: TestApp, id: string) => t.deps.db.db.select().from(passke
 const allPasskeys = (t: TestApp) => t.deps.db.db.select().from(passkey);
 const allUsers = (t: TestApp) => t.deps.db.db.select().from(user);
 const allSessions = (t: TestApp) => t.deps.db.db.select().from(session);
+/** What `list-user-passkeys` answers, as far as these tests read it. */
+type Listed = { credentialID: string; name: string | null }[];
+/** Each passkey's name, by credential id. */
+const namesOf = (rows: Listed) => Object.fromEntries(rows.map((p) => [p.credentialID, p.name]));
 
 describe('setup', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_passkey_package_pinned', () => {
@@ -242,11 +248,19 @@ describe('ceremonies', { timeout: PGLITE_TIMEOUT }, () => {
     // Without a name, the label comes from the authenticator's AAGUID; the all-zero one names nothing.
     const second = authenticator();
     expect((await register(t, cookie, second)).status).toBe(200);
-    const named = await passkeysOf(t, ann);
-    expect(named.map((p) => [p.credentialID, p.name])).toEqual([
-      [key.credentialId, 'Test key'],
-      [second.credentialId, null],
-    ]);
+    // A model the package knows names itself; a name the page sends still wins.
+    const google = authenticator({ aaguid: GOOGLE_PASSWORD_MANAGER });
+    expect((await register(t, cookie, google)).status).toBe(200);
+    const namedGoogle = authenticator({ aaguid: GOOGLE_PASSWORD_MANAGER });
+    expect((await register(t, cookie, namedGoogle, { name: 'Test key' })).status).toBe(200);
+    const names = {
+      [key.credentialId]: 'Test key',
+      [second.credentialId]: null,
+      [google.credentialId]: 'Google Password Manager',
+      [namedGoogle.credentialId]: 'Test key',
+    };
+    expect(namesOf(await passkeysOf(t, ann))).toEqual(names);
+    expect(namesOf((await (await get(t, LIST_PASSKEYS, cookie)).json()) as Listed)).toEqual(names);
 
     // Only the fields the account page sends: registering never starts another session.
     const sessions = (await allSessions(t)).length;
@@ -255,7 +269,35 @@ describe('ceremonies', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await extra.json()).toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(sessionCookie(extra)).toBe('');
     expect(await allSessions(t)).toHaveLength(sessions);
-    expect(await passkeysOf(t, ann)).toHaveLength(2);
+    expect(await passkeysOf(t, ann)).toHaveLength(4);
+  });
+
+  it('test_passkey_credential_registers_once', async () => {
+    const t = await passkeyApp();
+    const annCookie = await signInWeb(t.app, t.outbox, ANN);
+    const bobCookie = await signInWeb(t.app, t.outbox, BOB);
+    const ann = await userId(t, ANN);
+    const key = authenticator();
+    expect((await register(t, annCookie, key)).status).toBe(200);
+
+    // Bob claiming Ann's credential id with a key of his own, and Ann adding the same credential again: both refused,
+    // nothing stored. Sign-in finds a passkey by its id alone, so a second row could stand in for Ann's.
+    for (const [cookie, copy] of [
+      [bobCookie, authenticator({ credentialId: key.credentialId })],
+      [annCookie, key],
+    ] as const) {
+      const res = await register(t, cookie, copy, { name: 'Copy' });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ code: 'PREVIOUSLY_REGISTERED' });
+    }
+    expect((await allPasskeys(t)).map((p) => [p.userId, p.credentialID, p.name])).toEqual([[ann, key.credentialId, null]]);
+
+    // Ann's passkey keeps signing her in.
+    for (let i = 0; i < 3; i++) {
+      const res = await signInWithPasskey(t, key);
+      expect(res.status).toBe(200);
+      expect((await sessionOf(t.app, sessionCookie(res)))?.user?.email).toBe(ANN);
+    }
   });
 
   it('test_sign_in_with_passkey', async () => {
@@ -383,20 +425,48 @@ describe('ceremonies', { timeout: PGLITE_TIMEOUT }, () => {
   });
 });
 
+describe('rate limit', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_passkey_sign_in_rate_limited', async () => {
+    // The only test in this file that turns the limiter on: Better Auth keeps its counts in one store per process.
+    const t = await passkeyApp({ TRUST_PROXY: 'one-hop' }, { authRateLimit: true });
+    const from = (address: string) => ({ 'X-Forwarded-For': address });
+
+    // Anyone may ask for sign-in options, and each answer stores a challenge: 30 a minute per address.
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) {
+      statuses.push((await t.app.request(AUTHENTICATE_OPTIONS, { headers: from('203.0.113.1') })).status);
+    }
+    expect(statuses).toEqual([...Array<number>(30).fill(200), 429]);
+    // Another address counts on its own.
+    expect((await t.app.request(AUTHENTICATE_OPTIONS, { headers: from('203.0.113.2') })).status).toBe(200);
+
+    // Verifying is a sign-in: 3 every 10 seconds per address, whatever the answer.
+    const verified: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const res = await postJson(t.app, VERIFY_AUTHENTICATION, { response: {} }, { ...page(''), ...from('203.0.113.3') });
+      verified.push(res.status);
+    }
+    expect(verified.slice(0, 3)).not.toContain(429);
+    expect(verified[3]).toBe(429);
+  });
+});
+
 describe('privacy', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_passkey_logs_hold_no_identifiers', async () => {
     const consoleCalls = (['error', 'warn', 'info', 'log', 'debug'] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation(() => {}),
     );
     const t = await passkeyApp();
-    // Each outcome once: options without a session, a registration with and without a name, a sign-in, another site's
-    // registration and sign-in, another key, a stranger's delete and the owner's, a registration without a session.
+    // Each outcome once: options without a session, a registration with and without a name, another account's copy of
+    // a credential, a sign-in, another site's registration and sign-in, another key, a stranger's delete and the
+    // owner's, a registration without a session.
     await get(t, REGISTER_OPTIONS);
     const cookie = await signInWeb(t.app, t.outbox, ANN);
     const bobCookie = await signInWeb(t.app, t.outbox, BOB);
     const key = authenticator();
     await register(t, cookie, key, { name: 'Test key' });
     await register(t, cookie, authenticator());
+    await register(t, bobCookie, authenticator({ credentialId: key.credentialId }));
     await signInWithPasskey(t, key);
     await register(t, cookie, authenticator({ origin: EVIL }));
     await signInWithPasskey(t, key, '', EVIL);

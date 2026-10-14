@@ -9,7 +9,7 @@
  * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
  * only.
  */
-import { getAuthenticatorName, passkey } from '@better-auth/passkey';
+import { getAuthenticatorName, PASSKEY_ERROR_CODES, passkey } from '@better-auth/passkey';
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -109,14 +109,26 @@ const BODY_FIELDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['/passkey/verify-registration', PASSKEY_REGISTRATION_FIELDS],
 ]);
 
+/**
+ * Better Auth's limits, per client address and Better Auth path, for the passkey sign-in, which anyone may start: its
+ * own default would allow 100 requests every 10 seconds. Each options request stores a challenge for five minutes, so
+ * 30 a minute, room for a sign-in page that asks on load and again on a click behind a shared address. Verifying is a
+ * sign-in, limited as Better Auth limits its others: 3 every 10 seconds.
+ */
+const PASSKEY_SIGN_IN_LIMITS = {
+  '/passkey/generate-authenticate-options': { window: 60, max: 30 },
+  '/passkey/verify-authentication': { window: 10, max: 3 },
+};
+
 export interface AuthDeps {
   config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signupAllowlist' | 'google'>;
   db: DbHandle;
   mailer: Mailer;
   log: Logger;
   /**
-   * Better Auth's per-address limits (3 codes and 3 sign-ins a minute). Default: on, in every running server. Tests
-   * turn it off unless they ask for it (`createTestApp`): without a socket every request counts as one address.
+   * Better Auth's per-address limits (3 codes a minute, 3 sign-ins every 10 seconds, and `PASSKEY_SIGN_IN_LIMITS`).
+   * Default: on, in every running server. Tests turn it off unless they ask for it (`createTestApp`): without a socket
+   * every request counts as one address.
    */
   rateLimitEnabled?: boolean;
 }
@@ -170,7 +182,7 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     session: { expiresIn: SESSION_TTL_SECONDS },
     // Also refused as BETTER_AUTH_TELEMETRY by `loadConfig`: Better Auth honours that variable over this option.
     telemetry: { enabled: false },
-    rateLimit: { enabled: rateLimitEnabled, storage: 'memory' },
+    rateLimit: { enabled: rateLimitEnabled, storage: 'memory', customRules: PASSKEY_SIGN_IN_LIMITS },
     advanced: {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       // Better Auth skips the Origin check when NODE_ENV is `test` or TEST is set; it holds in every environment here.
@@ -218,11 +230,23 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
         // Adding one needs a fresh web session (`requireSession`, on by default; fresh for a day, as long as a session
         // lasts), so a passkey never creates an account and the allowlist keeps deciding who has one.
         registration: {
+          // Runs before the passkey is stored. A credential id already stored, for any account, is refused (WebAuthn
+          // asks this of a relying party): without attestation a page can claim any id, and sign-in finds a passkey by
+          // its id alone, so a copy under another account could stand in for the owner's and lock them out.
           // When the page sends no name, the authenticator's model as a label ("Google Password Manager"), from the
           // package's table; none for an unknown or anonymous model. A name the page sends wins.
-          afterVerification: async ({ verification }) => ({
-            name: getAuthenticatorName(verification.registrationInfo?.aaguid),
-          }),
+          afterVerification: async ({ ctx, verification }) => {
+            const info = verification.registrationInfo;
+            const taken = info
+              ? await ctx.context.adapter.findOne({
+                  model: 'passkey',
+                  where: [{ field: 'credentialID', value: info.credential.id }],
+                  select: ['id'],
+                })
+              : null;
+            if (taken) throw APIError.from('BAD_REQUEST', PASSKEY_ERROR_CODES.PREVIOUSLY_REGISTERED);
+            return { name: getAuthenticatorName(info?.aaguid) };
+          },
         },
       }),
     ],

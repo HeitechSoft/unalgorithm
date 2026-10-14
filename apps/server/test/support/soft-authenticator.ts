@@ -1,6 +1,6 @@
 /**
  * A software WebAuthn authenticator for tests of passkey sign-in (CL3-14), on `node:crypto` only: one EC P-256 key
- * pair, a random 16-byte credential id, the all-zero AAGUID and a sign count that stays 0. `register` and
+ * pair, a random 16-byte credential id, the all-zero AAGUID (or a model's) and a sign count that stays 0. `register` and
  * `authenticate` answer the options Better Auth's passkey routes hand out with the JSON a browser's
  * `navigator.credentials.create` and `get` results serialise to (WebAuthn Level 3 `toJSON()`): no attestation (`none`),
  * user presence and verification set. The CBOR is written by hand for these fixed shapes.
@@ -17,6 +17,11 @@ export interface SoftAuthenticatorOptions {
    * claim that credential while signing with its own, different key.
    */
   credentialId?: string;
+  /**
+   * The authenticator model's id (AAGUID) its registrations report, as a UUID. Default: all zeros, which
+   * privacy-preserving authenticators report and which names no model.
+   */
+  aaguid?: string;
 }
 
 /** What `register` reads of the registration options the server hands out (`generate-register-options`). */
@@ -48,7 +53,7 @@ export interface SoftAuthenticator {
 const FLAGS_REGISTER = 0x45;
 const FLAGS_AUTHENTICATE = 0x05;
 /** The AAGUID privacy-preserving authenticators report, which names no authenticator model. */
-const ZERO_AAGUID = Buffer.alloc(16);
+const ZERO_AAGUID = '00000000-0000-0000-0000-000000000000';
 
 const sha256 = (data: Buffer | string): Buffer => createHash('sha256').update(data).digest();
 
@@ -62,7 +67,14 @@ function uint(value: number, bytes: 2 | 4): Buffer {
 /** A CBOR text string of fewer than 24 bytes. */
 const cborText = (text: string): Buffer => Buffer.concat([Buffer.from([0x60 + text.length]), Buffer.from(text)]);
 
-export function softAuthenticator({ rpId, origin, credentialId }: SoftAuthenticatorOptions): SoftAuthenticator {
+export function softAuthenticator({
+  rpId,
+  origin,
+  credentialId,
+  aaguid = ZERO_AAGUID,
+}: SoftAuthenticatorOptions): SoftAuthenticator {
+  const aaguidBytes = Buffer.from(aaguid.replaceAll('-', ''), 'hex');
+  if (aaguidBytes.length !== 16) throw new TypeError('An AAGUID is 16 bytes, written as a UUID.');
   const { privateKey, publicKey: keyObject } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const jwk = keyObject.export({ format: 'jwk' });
   const x = Buffer.from(jwk.x ?? '', 'base64url');
@@ -93,7 +105,7 @@ export function softAuthenticator({ rpId, origin, credentialId }: SoftAuthentica
         rpIdHash,
         Buffer.from([FLAGS_REGISTER]),
         signCount,
-        ZERO_AAGUID,
+        aaguidBytes,
         uint(rawId.length, 2),
         rawId,
         publicKey,
