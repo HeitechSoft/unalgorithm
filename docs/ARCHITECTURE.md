@@ -11,7 +11,7 @@ apps/extension ──► packages/platforms ──► packages/core ──► pa
        └──────────► packages/ui (React components, tokens, in-feed parts)
 
 apps/server ─────► packages/ai, packages/core, packages/protocol   (never ui, platforms or wxt)
-apps/web ────────► packages/ui, packages/protocol                  (the server's sign-in page)
+apps/web ────────► packages/ui, packages/protocol                  (the server's sign-in and account pages)
 ```
 
 | Package | Responsibility | Rules |
@@ -23,7 +23,7 @@ apps/web ────────► packages/ui, packages/protocol             
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
 | `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core` and `ai`; never `ui`, `platforms` or `wxt`. Logs no request body |
-| `apps/web` | The sign-in page the server serves on its own origin (`/` and `/authorize`), built by Vite into `apps/web/dist` | Imports `protocol` and `ui`; never `platforms` or `wxt` |
+| `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol` and `ui`; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
 are consumed as TypeScript source (`exports` points at `src/index.ts`); there is no separate build step for them.
@@ -99,8 +99,9 @@ usage is recorded even when a call fails.
 ## Server
 
 `apps/server` is the self-hostable UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
-Auth for email codes. `apps/web` is the sign-in page it serves on its own origin. UnAlgorithm Cloud runs this same
-server; HeitechSoft's private repository adds only a billing module and its own operations configuration (ADR 0007).
+Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. UnAlgorithm Cloud
+runs this same server; HeitechSoft's private repository adds only a billing module and its own operations
+configuration (ADR 0007).
 One image holds both apps (`apps/server/Dockerfile`), released on the server train
 ([release.md](release.md#server-releases)). What a server keeps is in
 [privacy-model.md](privacy-model.md#what-a-server-stores).

@@ -10,6 +10,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
 import {
+  ACCOUNT_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
   EMAIL_OTP_METHOD,
@@ -170,9 +171,9 @@ export function createApp(deps: AppDeps): App {
 }
 
 /**
- * The sign-in page (apps/web), built into `config.webDist`: `/` and `/authorize` answer its `index.html`, and
- * `/assets/*` the files Vite built, named by their content hash. Without a build those two pages answer 503 and the
- * log says so once. Both are looked up per request, so a build made after the server started is served.
+ * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize` and `/account` answer its
+ * `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build those pages answer
+ * 503 and the log says so once. The build is looked up per request, so one made after the server started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
   const indexHtml = join(config.webDist, 'index.html');
@@ -194,6 +195,7 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   };
   app.get('/', page);
   app.get(AUTHORIZE_PAGE_PATH, page);
+  app.get(ACCOUNT_PAGE_PATH, page);
 
   // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
   let assets: MiddlewareHandler | undefined;

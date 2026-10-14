@@ -1,10 +1,11 @@
 /**
- * The server serves the sign-in page (apps/web) from its own origin: `/` and `/authorize` answer the built
+ * The server serves its web app (apps/web) from its own origin: `/`, `/authorize` and `/account` answer the built
  * `index.html` under a strict CSP, `/assets/*` the built files, and a server without a build says so instead.
  */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, testConfig } from './support/test-app.ts';
 
@@ -90,5 +91,29 @@ describe('static serving', { timeout: PGLITE_TIMEOUT }, () => {
     // Built later, it is served without a restart.
     await writeFile(join(empty, 'index.html'), INDEX_HTML);
     expect((await t.app.request('/authorize')).status).toBe(200);
+  });
+});
+
+describe('pages', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_account_page_served', async () => {
+    const dist = await tempDir();
+    await writeFile(join(dist, 'index.html'), INDEX_HTML);
+    const t = await webApp(dist);
+
+    const home = await t.app.request('/');
+    const page = await t.app.request(ACCOUNT_PAGE_PATH);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toMatch(/^text\/html/);
+    expect(page.headers.get('content-security-policy')).toBe(CSP);
+    expect(page.headers.get('content-security-policy')).toBe(home.headers.get('content-security-policy'));
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    expect(await page.text()).toBe(INDEX_HTML);
+
+    // Without a build, the same answer as the other pages.
+    const none = await webApp(join(await tempDir(), 'dist'));
+    const missing = await none.app.request(ACCOUNT_PAGE_PATH);
+    expect(missing.status).toBe(503);
+    expect(missing.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect(await missing.text()).toBe('Build apps/web first');
   });
 });

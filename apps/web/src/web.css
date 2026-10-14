@@ -41,3 +41,7 @@
 .web-footer a {
   text-decoration: underline;
 }
+/* An address is one long word: it wraps inside its row rather than running under the row's button. */
+.web-main .ua-row-title {
+  overflow-wrap: anywhere;
+}
