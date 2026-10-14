@@ -227,6 +227,22 @@ describe('validation', () => {
     expect(validateSettingsItem(live('display.newField', undefined))).toBe(false);
   });
 
+  it('test_validate_settings_item_refuses_lone_surrogates', () => {
+    // Postgres jsonb refuses an unpaired UTF-16 half like U+0000, so it is one invalid item, never a failed push.
+    const high = String.fromCharCode(0xd800);
+    const low = String.fromCharCode(0xdc00);
+    expect(validateSettingsItem(live(HIDE_KEY, { ...rule, label: `Ann${high}` }))).toBe(false);
+    expect(validateSettingsItem(live('interests.about', `hi ${low}`))).toBe(false);
+    // An emoji cut in half at a length limit leaves its high half at the end.
+    expect(validateSettingsItem(live('interests.about', `${'a'.repeat(499)}\u{1F600}`.slice(0, 500)))).toBe(false);
+    expect(validateSettingsItem(live('display.newField', { [`k${String.fromCharCode(0xd801)}`]: 1 }))).toBe(false);
+    // A low half before a high half is two lone halves, not a pair.
+    expect(validateSettingsItem(live('interests.about', `${low}${high}`))).toBe(false);
+    // A whole pair is one code point Postgres stores, and so are the noncharacters U+FFFE and U+FFFF.
+    expect(validateSettingsItem(live(HIDE_KEY, { ...rule, label: 'Ann \u{1F600}' }))).toBe(true);
+    expect(validateSettingsItem(live('display.newField', { '\u{1F600}': '￾￿' }))).toBe(true);
+  });
+
   it('test_only_settings_collection_registered', () => {
     expect(SYNC_COLLECTIONS.names()).toEqual(['settings']);
     expect(SYNC_COLLECTIONS.get('settings')).toBe(settingsCollection);

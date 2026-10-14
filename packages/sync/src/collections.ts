@@ -10,13 +10,16 @@ import { someString } from './strings.ts';
  */
 export const SETTINGS_COLLECTION = 'settings';
 
-/** Postgres `jsonb` cannot store U+0000; refused here, it is one `invalid` item instead of a failed push. */
-const hasNul = (s: string): boolean => s.includes('\0');
+/**
+ * Postgres `jsonb` cannot store U+0000 or an unpaired UTF-16 surrogate (in `u` mode a whole pair is one astral code
+ * point, so `\p{Cs}` matches only a lone half); refused here, it is one `invalid` item instead of a failed push.
+ */
+const unstorable = (s: string): boolean => s.includes('\0') || /\p{Cs}/u.test(s);
 
 /**
  * Whether `item` may exist in the settings collection: a well-formed sync item, on its canonical key (no item
- * overlaps another), within `SYNC_MAX_ITEM_BYTES`, free of U+0000, and passing the setting's schema when this version
- * knows it. Only entries and fields this version does not know can be deleted.
+ * overlaps another), within `SYNC_MAX_ITEM_BYTES`, free of U+0000 and lone surrogates, and passing the setting's schema
+ * when this version knows it. Only entries and fields this version does not know can be deleted.
  */
 export function validateSettingsItem(item: SyncItem): boolean {
   // The depth check comes first, so the size and string walks below only see values it bounded.
@@ -26,7 +29,7 @@ export function validateSettingsItem(item: SyncItem): boolean {
   if (data.collection !== SETTINGS_COLLECTION || settingsItemKey(data.key) !== data.key) return false;
   const schema = settingsItemSchema(data.key);
   if (data.deleted) return schema === null || isSettingsEntryKey(data.key);
-  if (itemBytes(data.value) > SYNC_MAX_ITEM_BYTES || someString(data.value, hasNul)) return false;
+  if (itemBytes(data.value) > SYNC_MAX_ITEM_BYTES || someString(data.value, unstorable)) return false;
   return schema === null || schema.safeParse(data.value).success;
 }
 
