@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import type { BrowserContext, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   AUTHORIZE_PAGE_PATH,
@@ -13,7 +13,8 @@ import {
 } from '@unalgorithm/protocol';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { expect, test } from './fixtures.ts';
-import { clearMailbox, databaseExists, type LocalServer, latestSignInCode, startLocalServer } from './server-harness.ts';
+import { databaseExists, type LocalServer, startLocalServer } from './server-harness.ts';
+import { signInFromSettings } from './server-sign-in.ts';
 
 /**
  * The walking skeleton end to end (CL1): a fresh extension signs in to a real server process with an emailed code, and
@@ -29,6 +30,8 @@ const EMAIL = 'tester@example.com';
 const POST_TEXT = 'Which HR task would you automate first';
 const AUTHOR = 'Morgan Ellis';
 const CLOUD = 'https://cloud.unalgorithm.app';
+/** The balance pill's accessible name (CL2-12). */
+const BALANCE_PILL = /^Credit balance:/;
 
 test.describe('a self-hosted server', () => {
   test.skip(SKIP, NEEDS);
@@ -64,7 +67,6 @@ test.describe('a self-hosted server', () => {
     const host = new URL(url).host;
     expect(FIRST_DEGREE_POST).toContain(POST_TEXT);
     expect(FIRST_DEGREE_POST).toContain(AUTHOR);
-    await clearMailbox();
 
     const classifyBodies: string[] = [];
     await context.route('http://127.0.0.1:*/**', (route) => {
@@ -74,30 +76,13 @@ test.describe('a self-hosted server', () => {
     // Where the sign-in page sends the browser back; the extension reads the address from the tab and closes it.
     await context.route(`https://${extensionId}.chromiumapp.org/**`, (route) => route.fulfill({ status: 200, body: 'ok' }));
 
-    // The server card: address, then who receives posts.
-    const options = await context.newPage();
-    await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
-    await options.getByText('UnAlgorithm server', { exact: true }).click();
-    await options.getByLabel('Server address').fill(url);
-    await options.getByRole('button', { name: 'Continue', exact: true }).click();
-    const consent = options.getByText(/not HeitechSoft/);
-    await expect(consent).toContainText(host);
-
-    // Sign in on the server's own page with the emailed code.
-    await options.getByRole('button', { name: 'Sign in and turn on' }).click();
-    const signIn = await authorizePage(context, url);
-    await expect(signIn.getByLabel('Email')).toBeVisible();
-    await test.step('test_authorize_page_accessibility (email step)', () => expectAccessible(signIn));
-    await signIn.getByLabel('Email').fill(EMAIL);
-    await signIn.getByRole('button', { name: 'Send code' }).click();
-    const code = signIn.getByLabel('6-digit code');
-    await expect(code).toBeVisible();
-    await test.step('test_authorize_page_accessibility (code step)', () => expectAccessible(signIn));
-    await code.fill(await latestSignInCode());
-    await signIn.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(options.getByText(`Signed in as ${EMAIL}`)).toBeVisible({ timeout: 15_000 });
+    // Sign in from Settings with the emailed code; the sign-in page is checked at its email and code steps.
+    await signInFromSettings(context, extensionId, url, EMAIL, (step, page) =>
+      test.step(`test_authorize_page_accessibility (${step} step)`, () => expectAccessible(page)),
+    );
 
     // Privacy & Data names the server by its host, with the self-hosted recipient text.
+    const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options.html#/privacy`);
     await expect(options.locator('.flow-box').last()).toHaveText(host);
     await expect(options.getByText(/not HeitechSoft/)).toContainText(host);
@@ -123,6 +108,19 @@ test.describe('a self-hosted server', () => {
     }
     expect(logs()).not.toContain(POST_TEXT);
     expect(logs()).not.toContain(AUTHOR);
+
+    // A server that doesn't bill shows no balance anywhere (R5): no pill in the popup or in Settings, no credit banner.
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    // The footer names the server once `aiStatus` has answered, so what is absent below is absent from that answer.
+    await expect(popup.getByText(`${host} · Ready`, { exact: true })).toBeVisible();
+    await expect(popup.getByLabel(BALANCE_PILL)).toHaveCount(0);
+    await expect(popup.getByText('Your balance is low', { exact: true })).toHaveCount(0);
+    await expect(popup.getByText('AI is paused', { exact: true })).toHaveCount(0);
+    await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
+    await expect(options.getByText(`Signed in as ${EMAIL}`)).toBeVisible();
+    expect(await options.evaluate(() => chrome.runtime.sendMessage({ type: 'aiStatus' }))).not.toHaveProperty('balance');
+    await expect(options.getByLabel(BALANCE_PILL)).toHaveCount(0);
   });
 });
 
@@ -165,15 +163,6 @@ test.describe('UnAlgorithm Cloud', () => {
     await expect(popup.getByText('UnAlgorithm Cloud · Needs attention', { exact: true })).toBeVisible();
   });
 });
-
-/** The tab the extension opens on the server's sign-in page. */
-async function authorizePage(context: BrowserContext, serverUrl: string): Promise<Page> {
-  const find = () => context.pages().find((p) => p.url().startsWith(`${serverUrl}${AUTHORIZE_PAGE_PATH}`));
-  await expect.poll(() => find() !== undefined, { timeout: 15_000 }).toBe(true);
-  const page = find() as Page;
-  await page.waitForLoadState();
-  return page;
-}
 
 /** No serious or critical axe violations, as `a11y.spec.ts` checks the extension's own pages. Soft, so sign-in goes on. */
 async function expectAccessible(page: Page): Promise<void> {

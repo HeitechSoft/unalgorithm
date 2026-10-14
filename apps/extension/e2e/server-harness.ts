@@ -17,6 +17,8 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const SERVER_ENTRY = resolve(REPO_ROOT, 'apps/server/src/index.ts');
 const ROUTE_EVAL = resolve(REPO_ROOT, 'apps/server/src/cli/route-eval.ts');
 const WEB_DIST = resolve(REPO_ROOT, 'apps/web/dist');
+/** The public test billing module (CL2-05), for `BILLING=module` and `BILLING_MODULE`. Test code, never shipped. */
+export const BILLING_FIXTURE_MODULE = resolve(REPO_ROOT, 'apps/server/test/fixtures/billing-module/index.ts');
 
 const ADMIN_DATABASE_URL = process.env.TEST_DATABASE_URL?.trim() || 'postgres://postgres:dev@127.0.0.1:5432/unalgorithm';
 const MAILPIT_URL = (process.env.MAILPIT_URL?.trim() || 'http://127.0.0.1:8025').replace(/\/+$/, '');
@@ -53,8 +55,15 @@ export interface LocalServer {
  * `route-eval`. `ROUTE_EVAL_MIN_AGREEMENT=0` is an operator's explicit choice that the server and the CLI both read:
  * the mock's default verdicts agree at most 0.4 with the eval set, so with the default minimum every classify would
  * answer 503. The gate itself still runs (`recordEval`, then `resolveRoute` on every request).
+ *
+ * `env` is added after the harness's own variables, for the server and `route-eval` alike: a billing module
+ * (`BILLING=module`, `BILLING_MODULE=BILLING_FIXTURE_MODULE` and the module's own `BILLING_*` variables), or a changed
+ * default.
  */
-export async function startLocalServer(opts: { aiBaseUrl: string }): Promise<LocalServer> {
+export async function startLocalServer(opts: {
+  aiBaseUrl: string;
+  env?: Readonly<Record<string, string>>;
+}): Promise<LocalServer> {
   const db = await createPostgresTestDb('ua_e2e', ADMIN_DATABASE_URL);
   let child: ChildProcess | undefined;
   let output = '';
@@ -77,6 +86,7 @@ export async function startLocalServer(opts: { aiBaseUrl: string }): Promise<Loc
       SIGNUP_ALLOWLIST: 'tester@example.com',
       ROUTE_EVAL_MIN_AGREEMENT: '0',
       WEB_DIST,
+      ...opts.env,
     };
 
     const server = spawn(process.execPath, [SERVER_ENTRY], {

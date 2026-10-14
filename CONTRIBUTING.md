@@ -30,7 +30,7 @@ Useful commands:
 | `pnpm check` | Biome lint + format check, typecheck every package, unit tests |
 | `pnpm format` | Format and apply safe fixes |
 | `pnpm e2e` | Build in `e2e` mode and run Playwright: the real extension in Chromium against fixture pages |
-| `UA_SERVER_E2E=1 pnpm e2e` | Also sign in to a real local server with an emailed code and label the feed through it (`e2e/cloud.spec.ts`). Needs Postgres and Mailpit (`docker compose -f apps/server/compose.dev.yaml up -d`) and `pnpm --filter @unalgorithm/web build` first |
+| `UA_SERVER_E2E=1 pnpm e2e` | Also sign in to a real local server with an emailed code and label the feed through it (`e2e/cloud.spec.ts`), and show, lower and run out of a balance with the test billing module (`e2e/credits.spec.ts`). Needs Postgres and Mailpit (`docker compose -f apps/server/compose.dev.yaml up -d`) and `pnpm --filter @unalgorithm/web build` first |
 | `pnpm fixtures:check` | Make sure captured fixtures contain no real names or post text |
 | `pnpm scan:public` | Make sure no tracked file or commit holds a public IP address, server details or a key file |
 | `pnpm licenses:server` | Make sure no server dependency is GPL, AGPL or LGPL, and none is MPL or unknown without a review |
