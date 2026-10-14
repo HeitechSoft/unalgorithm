@@ -199,7 +199,12 @@ describe('helpers and boundaries', () => {
     expect(Object.keys(rule.options.paths)).not.toContain('@unalgorithm/ai/presets');
     const groups = rule.options.patterns.flatMap((p) => p.group);
     expect(groups).toEqual(expect.arrayContaining(['wxt', 'react', '@unalgorithm/ui', '@unalgorithm/platforms']));
-    // A gitignore-style pattern for the AI package would also match its SDK-free subpath.
-    expect(groups.some((g) => g.startsWith('@unalgorithm/ai'))).toBe(false);
+    // Subpaths that need Chrome, Node or the DOM are blocked; the SDK-free presets subpath is carved out of the same group.
+    const subpaths = rule.options.patterns.find((p) => p.group.includes('@unalgorithm/ai/*'));
+    expect(subpaths?.group).toEqual(
+      expect.arrayContaining(['!@unalgorithm/ai/presets', '@unalgorithm/platforms/*', '@unalgorithm/ui/*']),
+    );
+    const aiGroups = groups.filter((g) => g.startsWith('@unalgorithm/ai'));
+    expect(aiGroups).toEqual(['@unalgorithm/ai/*']);
   });
 });

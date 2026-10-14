@@ -122,6 +122,10 @@
                   {
                     "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui", "@unalgorithm/platforms"],
                     "message": "sync is shared by the server and the extension: protocol, core, zod and the SDK-free @unalgorithm/ai/presets only."
+                  },
+                  {
+                    "group": ["@unalgorithm/ai/*", "!@unalgorithm/ai/presets", "@unalgorithm/platforms/*", "@unalgorithm/ui/*"],
+                    "message": "sync is shared by the server and the extension: these subpaths need Chrome, Node or the DOM. Import @unalgorithm/ai/presets."
                   }
                 ]
               }
