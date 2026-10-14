@@ -21,7 +21,6 @@ import {
   SERVER_INFO_PATH,
   type ServerInfo,
   TOKEN_PATH,
-  toPostRef,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,10 +29,10 @@ import { aiStatus, classifyItems, testSource } from '../src/background/ai.ts';
 import { recordVote } from '../src/background/feedback.ts';
 import { clearCache } from '../src/background/idb.ts';
 import { type getAccessToken, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
-import { classifyViaServer } from '../src/background/server-source.ts';
+import { classifyViaServer, MAX_CLASSIFY_BODY_BYTES } from '../src/background/server-source.ts';
 import type { ClassifyItem } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN } from '../src/lib/server-label.ts';
-import { deviceItem, learnedItem } from '../src/lib/storage.ts';
+import { deviceItem, learnedItem, usageItem } from '../src/lib/storage.ts';
 
 // `classifyItems` and `testSource` take no dependencies: the device token comes from this stub.
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
@@ -44,7 +43,6 @@ vi.mock('../src/background/server-auth.ts', async (importOriginal) => ({
 
 const ORIGIN = 'https://ai.example.org';
 const CFG = { kind: 'server', baseUrl: `${ORIGIN}/` } as const;
-const PK_REF = /^pk_[A-Za-z0-9_-]{43}$/;
 const NOW = Date.UTC(2026, 9, 12, 9);
 
 const INFO: ServerInfo = {
@@ -87,10 +85,7 @@ const input = (text: string, over: Partial<PostForAI> = {}): Omit<PostForAI, 're
   ...over,
 });
 const item = (key: PostKey, text: string, over: Partial<PostForAI> = {}): ClassifyItem => ({ key, input: input(text, over) });
-const withRef = async (key: string, text: string, over: Partial<PostForAI> = {}): Promise<PostForAI> => ({
-  ...input(text, over),
-  ref: await toPostRef(key),
-});
+const withRef = (ref: string, text: string, over: Partial<PostForAI> = {}): PostForAI => ({ ...input(text, over), ref });
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -167,10 +162,10 @@ afterEach(() => {
 });
 
 describe('classifyViaServer', () => {
-  it('test_server_request_shape_and_pk_refs', async () => {
+  it('test_server_request_shape', async () => {
     const s = fakeServer();
     const token = tokens();
-    const posts = [await withRef('li:urn:li:activity:1', 'First post'), await withRef('li:urn:li:activity:2', 'Second post')];
+    const posts = [withRef('p1', 'First post'), withRef('p2', 'Second post')];
     await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token as typeof getAccessToken });
 
     expect(token).toHaveBeenCalledOnce();
@@ -184,13 +179,11 @@ describe('classifyViaServer', () => {
 
     const body = ClassifyRequestSchema.parse(JSON.parse(String(call?.init.body)));
     expect(body).toStrictEqual({ v: 1, posts, profile: OPTS.profile, profileHash: 'abc123', locale: 'en-CA' });
-    for (const p of body.posts) expect(p.ref).toMatch(PK_REF);
-    expect(String(call?.init.body)).not.toContain('urn:li:activity');
   });
 
   it('test_server_result_mapping', async () => {
     const s = fakeServer((req) => json(answer(req, (i) => (['ok', 'declined', 'error'] as const)[i] ?? 'ok')));
-    const posts = [await withRef('li:a', 'A'), await withRef('li:b', 'B'), await withRef('li:c', 'C')];
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B'), withRef('p3', 'C')];
     const outcome = await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: tokens() });
 
     expect(outcome.model).toBe('mock-model');
@@ -216,7 +209,7 @@ describe('classifyViaServer', () => {
       n === 1 ? json({ code: 'auth-required', message: 'Sign in to Example AI again.' }, 401) : json(answer(req)),
     );
     const token = tokens();
-    const posts = [await withRef('li:a', 'A'), await withRef('li:b', 'B')];
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
     const outcome = await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token });
 
     expect(token.mock.calls).toStrictEqual([[ORIGIN], [ORIGIN, { forceRefresh: true }]]);
@@ -230,7 +223,7 @@ describe('classifyViaServer', () => {
     await serverAccountItem.setValue(account());
     const s = fakeServer(() => json({ code: 'auth-required', message: 'Sign in to Example AI again.' }, 401));
     const token = tokens();
-    const posts = [await withRef('li:a', 'A'), await withRef('li:b', 'B')];
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
     const outcome = await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token });
 
     expect(codes(outcome)).toStrictEqual(['auth-required', 'auth-required']);
@@ -260,7 +253,7 @@ describe('classifyViaServer', () => {
   });
 
   it('test_error_status_mapping', async () => {
-    const posts = [await withRef('li:a', 'A'), await withRef('li:b', 'B')];
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
     const run = (fetch: typeof globalThis.fetch) => classifyViaServer(CFG, posts, OPTS, { fetch, getAccessToken: tokens() });
 
     const cap = await run(fakeServer(() => json({ code: 'cap-reached', message: 'Daily limit.' }, 429)).fetch);
@@ -301,7 +294,7 @@ describe('classifyViaServer', () => {
           for (const c of timers) c.abort(new DOMException('The operation timed out.', 'TimeoutError'));
         }),
     ) as unknown as typeof globalThis.fetch;
-    const posts = [await withRef('li:a', 'A'), await withRef('li:b', 'B')];
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
     const outcome = await classifyViaServer(CFG, posts, OPTS, { fetch: hang, getAccessToken: tokens() });
 
     expect(timeout).toHaveBeenCalledWith(90_000);
@@ -315,19 +308,46 @@ describe('classifyViaServer', () => {
     const ok = await classifyViaServer(CFG, posts, OPTS, { fetch: fakeServer().fetch, getAccessToken: tokens() });
     expect(ok).toMatchObject({ calls: 1, failedCalls: 0, usage: ZERO_USAGE, okUsage: ZERO_USAGE });
   });
+
+  it('test_oversized_or_unbounded_answer_is_refused', async () => {
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
+    const send = async (reply: (req: ClassifyRequest) => Response) =>
+      classifyViaServer(CFG, posts, OPTS, { fetch: fakeServer(reply).fetch, getAccessToken: tokens() });
+
+    // Valid answers padded past the cap are dropped unread, so a server cannot fill memory or storage with one.
+    const padded = await send((req) => json({ ...answer(req), padding: 'x'.repeat(MAX_CLASSIFY_BODY_BYTES) }));
+    expect(codes(padded)).toStrictEqual(['unknown', 'unknown']);
+    expect(padded).toMatchObject({ model: 'server', failedCalls: 1 });
+    // An error answer past the cap is read as its status alone.
+    const failed = await send(() => json({ code: 'rate-limit', padding: 'x'.repeat(MAX_CLASSIFY_BODY_BYTES) }, 503));
+    expect(codes(failed)).toStrictEqual(['overloaded', 'overloaded']);
+    // Under the cap, the schema bounds each field: a 1 MiB model name is no answer.
+    const named = await send((req) =>
+      json({ ...answer(req), source: { kind: 'server', model: 'm'.repeat(1 << 20), promptVersion: 1 } }),
+    );
+    expect(codes(named)).toStrictEqual(['unknown', 'unknown']);
+    expect(named.model).toBe('server');
+  });
 });
 
 describe('classifyItems with a server source', () => {
-  it('test_classify_items_sends_only_pk_refs', async () => {
+  it('test_classify_items_sends_batch_local_refs', async () => {
     await setSource({ kind: 'server', baseUrl: ORIGIN });
-    const s = fakeServer();
+    const s = fakeServer((req) =>
+      json({ ...answer(req), source: { kind: 'server', model: 'named-by-server', promptVersion: 1 } }),
+    );
     vi.stubGlobal('fetch', s.fetch);
-    const items = [item('li:urn:li:activity:71', 'Moving forms online'), item('li:ck:secret-key-72', 'What to automate next')];
+    // `fb:h:` keys hash the author's name with the text: a ref derived from the key would let a server test names.
+    const items = [
+      item('li:urn:li:activity:71', 'Moving forms online'),
+      item('li:ck:secret-key-72', 'What to automate next'),
+      item('fb:h:4a7c1f9e2b', 'Our community garden opens this Saturday', { platform: 'facebook', audience: 'public' }),
+    ];
     const res = await classifyItems(items);
 
     expect(res.pause).toBeUndefined();
     expect(res.results).toStrictEqual(
-      items.map((i) => ({ key: i.key, status: 'ok', classification: CLASSIFICATION, model: 'mock-model', cached: false })),
+      items.map((i) => ({ key: i.key, status: 'ok', classification: CLASSIFICATION, model: 'named-by-server', cached: false })),
     );
     expect(s.requests()).toHaveLength(1);
     const [body] = s.bodies();
@@ -335,12 +355,17 @@ describe('classifyItems with a server source', () => {
     expect(body).not.toContain('activity:71');
     expect(body).not.toContain('secret-key-72');
     const sent = ClassifyRequestSchema.parse(JSON.parse(body ?? ''));
-    expect(sent.posts.map((p) => p.ref)).toStrictEqual(await Promise.all(items.map((i) => toPostRef(i.key))));
+    // Refs say where a post sits in its batch and nothing else: the answer is mapped back here, as for any source.
+    expect(sent.posts.map((p) => p.ref)).toStrictEqual(['p1', 'p2', 'p3']);
+    expect(body).not.toContain('4a7c1f9e2b');
     expect(auth.getAccessToken).toHaveBeenCalledWith(ORIGIN);
+    // The server's usage is recorded under one fixed name, whatever model the server names (it costs no tokens here).
+    const ledger = await usageItem.getValue();
+    expect(Object.values(ledger).flatMap((day) => Object.keys(day.byModel))).toStrictEqual(['server']);
 
     // The answers are cached like any other source's.
     const again = await classifyItems(items);
-    expect(again.results.map((r) => r.status === 'ok' && r.cached)).toStrictEqual([true, true]);
+    expect(again.results.map((r) => r.status === 'ok' && r.cached)).toStrictEqual([true, true, true]);
     expect(s.requests()).toHaveLength(1);
   });
 
@@ -475,7 +500,7 @@ describe('status and setup', () => {
     expect(res).toMatchObject({ ok: true, mode: 'server', model: 'mock-model', models: [] });
     expect(s.calls.map((c) => new URL(c.url).pathname)).toStrictEqual([SERVER_INFO_PATH, CLASSIFY_PATH]);
     const [probe] = ClassifyRequestSchema.parse(JSON.parse(s.bodies()[0] ?? '')).posts;
-    expect(probe?.ref).toBe(await toPostRef('li:probe'));
+    expect(probe?.ref).toBe('p1');
 
     // Not a server: discovery says so, and nothing is classified.
     const notServer = vi.fn(async () => new Response('Not found', { status: 404 })) as unknown as typeof globalThis.fetch;

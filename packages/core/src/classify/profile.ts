@@ -2,7 +2,7 @@ import type { InterestProfile } from '@unalgorithm/protocol';
 import { cyrb53 } from '../hash.ts';
 import type { LearnedPrefs } from '../learn.ts';
 import type { Settings } from '../settings/schema.ts';
-import { stableStringify } from '../util.ts';
+import { clipText, stableStringify } from '../util.ts';
 import { neutralize } from './fence.ts';
 
 const MAX_INTERESTS = 20;
@@ -33,7 +33,7 @@ export function buildInterestProfile(
     lessOf: Object.values(settings.interests.less)
       .map((t) => t.label)
       .slice(0, MAX_LESS),
-    about: settings.interests.about.slice(0, 500),
+    about: clipText(settings.interests.about, 500),
     examples,
   };
 }

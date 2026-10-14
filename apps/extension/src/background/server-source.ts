@@ -11,13 +11,15 @@ import {
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import { serverLabel } from '../lib/server-label.ts';
+import { readBoundedText } from './bounded-body.ts';
 import { getAccessToken, markNeedsSignIn, refreshServerInfo, type ServerAccount, serverAccountItem } from './server-auth.ts';
 import { noteRefused, noteSettlement } from './server-balance.ts';
 
 /**
  * The `server` AI source (R25): one `POST /v1/classify` per batch to an UnAlgorithm server, with the signed-in device's
  * token. The server builds the prompts, calls its own model and meters the request, so the extension sees no token
- * usage. Posts arrive here with `pk_` refs (`toPostRef`), and Facebook posts that aren't public never arrive at all.
+ * usage. Posts arrive here with batch-local refs (`p1`…), never anything derived from a post key, and Facebook posts
+ * that aren't public never arrive at all.
  *
  * A failed request is every post's error, never a throw, so `classifyItems` caches, pauses and retries exactly as it
  * does for the other sources. Errors carry the extension's own words for the server's error code, never the server's
@@ -26,8 +28,14 @@ import { noteRefused, noteSettlement } from './server-balance.ts';
 
 type ServerSource = Extract<AISourceConfig, { kind: 'server' }>;
 
-/** The ledger's model for a request the server never answered, so never named one. */
-const NO_MODEL = 'server';
+/**
+ * The model a server source's usage is recorded under, and its outcome's model when no answer named one. The server
+ * meters, so the model it names adds nothing to the ledger, and a fixed key keeps a server from adding keys there.
+ */
+export const SERVER_USAGE_MODEL = 'server';
+
+/** The most of a classify answer that is read: 12 results come to a few KiB. Anything longer is no answer. */
+export const MAX_CLASSIFY_BODY_BYTES = 256 * 1024;
 
 export async function classifyViaServer(
   cfg: ServerSource,
@@ -90,7 +98,7 @@ export async function classifyViaServer(
           redirect: 'error',
           signal,
         });
-        return { res, text: await res.text() };
+        return { res, text: (await readBoundedText(res, MAX_CLASSIFY_BODY_BYTES)) ?? '' };
       } catch (err) {
         if (signal.aborted) throw new AIError('timeout', describeError('timeout', title), { cause: err });
         throw new AIError('network', describeError('network'), { cause: err });
@@ -119,7 +127,7 @@ export async function classifyViaServer(
     return outcome(resultsByRef(posts, answer.data), answer.data.source.model, false);
   } catch (err) {
     const e = isAIError(err) ? err : new AIError('unknown', describeError('unknown'), { cause: err });
-    return outcome(new Map(posts.map((p) => [p.ref, { ok: false, error: e }])), NO_MODEL, true);
+    return outcome(new Map(posts.map((p) => [p.ref, { ok: false, error: e }])), SERVER_USAGE_MODEL, true);
   }
 }
 

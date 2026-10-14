@@ -29,6 +29,16 @@ export function dateKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * `text` cut to at most `max` UTF-16 units between code points: a character that doesn't fit whole is dropped, never
+ * cut in half, so no lone surrogate is left (Postgres `jsonb` refuses one, and sync with it).
+ */
+export function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const last = text.charCodeAt(max - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
 export function snippet(text: string, max = 140): string {
   const t = text.replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;

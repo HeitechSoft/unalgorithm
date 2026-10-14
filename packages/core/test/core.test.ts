@@ -1,4 +1,4 @@
-import type { Classification } from '@unalgorithm/protocol';
+import { type Classification, MAX_MODEL_CHARS, ZERO_USAGE as ZERO } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   adjustRelevance,
@@ -9,6 +9,7 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   changedPaths,
+  clipText,
   decide,
   defaultSettings,
   EMPTY_LEARNED,
@@ -349,6 +350,36 @@ describe('usage', () => {
     expect(ledger['2026-01-01']).toMatchObject({ posts: 6, calls: 2, failedCalls: 1 });
     ledger = recordUsage(ledger, { model: 'm', usage: z, posts: 1, now: new Date(2026, 2, 1) });
     expect(Object.keys(ledger)).toEqual(['2026-03-01']);
+  });
+
+  it('test_ledger_model_key_is_bounded', () => {
+    // A provider or server that names a 4 MiB model still adds one short key, whatever the source.
+    const huge = 'm'.repeat(4 * 1024 * 1024);
+    const ledger = recordUsage({}, { model: huge, usage: ZERO, posts: 1, now: new Date(2026, 0, 1) });
+    expect(Object.keys(ledger['2026-01-01']?.byModel ?? {})).toEqual(['m'.repeat(MAX_MODEL_CHARS)]);
+    // Names that agree up to the bound count as one model, and the cut never leaves half an emoji behind.
+    const again = recordUsage(ledger, { model: `${huge}x`, usage: ZERO, posts: 1, now: new Date(2026, 0, 1) });
+    expect(again['2026-01-01']?.byModel['m'.repeat(MAX_MODEL_CHARS)]?.calls).toBe(2);
+    const emoji = recordUsage({}, { model: `${'m'.repeat(MAX_MODEL_CHARS - 1)}\u{1F600}`, usage: ZERO, posts: 0 });
+    expect(Object.keys(Object.values(emoji)[0]?.byModel ?? {})).toEqual(['m'.repeat(MAX_MODEL_CHARS - 1)]);
+  });
+});
+
+describe('clipText', () => {
+  it('test_clip_text_never_splits_a_code_point', () => {
+    expect(clipText('hello', 10)).toBe('hello');
+    expect(clipText('hello', 3)).toBe('hel');
+    expect(clipText('hello', 0)).toBe('');
+    // An emoji is two UTF-16 units: one that doesn't fit whole is dropped, never cut in half.
+    expect(clipText(`${'a'.repeat(499)}\u{1F600}`, 500)).toBe('a'.repeat(499));
+    expect(clipText(`${'a'.repeat(498)}\u{1F600}b`, 500)).toBe(`${'a'.repeat(498)}\u{1F600}`);
+    expect(clipText('\u{1F600}\u{1F600}', 3)).toBe('\u{1F600}');
+  });
+
+  it('test_profile_about_is_cut_between_code_points', () => {
+    const settings = defaultSettings();
+    settings.interests.about = `${'a'.repeat(499)}\u{1F600} and more`;
+    expect(buildInterestProfile(settings).about).toBe('a'.repeat(499));
   });
 });
 

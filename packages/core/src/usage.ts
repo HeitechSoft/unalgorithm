@@ -1,5 +1,5 @@
-import { addUsage, costMicros, estimatePosts, type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
-import { dateKey } from './util.ts';
+import { addUsage, costMicros, estimatePosts, MAX_MODEL_CHARS, type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
+import { clipText, dateKey } from './util.ts';
 
 export interface ModelUsage {
   calls: number;
@@ -23,7 +23,10 @@ export function emptyDay(): DayUsage {
   return { posts: 0, calls: 0, failedCalls: 0, byModel: {} };
 }
 
-/** Record one AI call, including failed ones (tokens were still spent). */
+/**
+ * Record one AI call, including failed ones (tokens were still spent). The model name comes from a provider or a server,
+ * so it is cut to `MAX_MODEL_CHARS` here, for every source: a long one cannot fill the extension's storage.
+ */
 export function recordUsage(
   ledger: UsageLedger,
   entry: { model: string; usage: NormalizedUsage; posts: number; failed?: boolean; now?: Date },
@@ -31,14 +34,15 @@ export function recordUsage(
   const now = entry.now ?? new Date();
   const date = dateKey(now);
   const day = ledger[date] ?? emptyDay();
-  const prev = day.byModel[entry.model] ?? { calls: 0, usage: ZERO_USAGE };
+  const model = clipText(entry.model, MAX_MODEL_CHARS);
+  const prev = day.byModel[model] ?? { calls: 0, usage: ZERO_USAGE };
   const next: UsageLedger = {
     ...ledger,
     [date]: {
       posts: day.posts + entry.posts,
       calls: day.calls + 1,
       failedCalls: day.failedCalls + (entry.failed ? 1 : 0),
-      byModel: { ...day.byModel, [entry.model]: { calls: prev.calls + 1, usage: addUsage(prev.usage, entry.usage) } },
+      byModel: { ...day.byModel, [model]: { calls: prev.calls + 1, usage: addUsage(prev.usage, entry.usage) } },
     },
   };
   const keep = new Set(Array.from({ length: KEEP_DAYS }, (_, i) => dateKey(new Date(now.getTime() - i * 86_400_000))));

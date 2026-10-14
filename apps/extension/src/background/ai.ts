@@ -36,7 +36,7 @@ import {
   SOURCE_LIMITS,
   sourceId,
 } from '@unalgorithm/core';
-import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, serverMayReceive, toPostRef } from '@unalgorithm/protocol';
+import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, serverMayReceive } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
@@ -46,7 +46,7 @@ import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from
 import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
 import { balanceStatus } from './server-balance.ts';
-import { classifyViaServer } from './server-source.ts';
+import { classifyViaServer, SERVER_USAGE_MODEL } from './server-source.ts';
 
 // ---------- capability learning, persisted across service-worker restarts ----------
 
@@ -278,10 +278,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   await Promise.all(
     groups.map((group) =>
       (limit as ReturnType<typeof createLimiter>)(async () => {
-        // A server only ever sees `pk_<sha256>` refs, never post keys; local sources get short ids for small prompts.
-        const sent = await Promise.all(
-          group.map(async (p, i) => ({ p, ref: cfg.kind === 'server' ? await toPostRef(p.item.key) : `p${i + 1}` })),
-        );
+        // Every source, a server too, sees batch-local refs, mapped back here. Nothing derived from a post key leaves
+        // the device: `fb:h:`/`li:h:` keys hash the author's name with the text, so a hashed key would give it away.
+        const sent = group.map((p, i) => ({ p, ref: `p${i + 1}` }));
         const outcome = await classify(sent.map(({ p, ref }) => ({ ...p.input, ref })));
         const fresh = [];
         let ok = 0;
@@ -323,7 +322,7 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
           const ledger = await usageItem.getValue();
           await usageItem.setValue(
             recordUsage(ledger, {
-              model: outcome.model,
+              model: cfg.kind === 'server' ? SERVER_USAGE_MODEL : outcome.model,
               usage: outcome.usage,
               posts: isLocalSource(cfg) ? 0 : ok,
               failed: outcome.failedCalls > 0,
@@ -405,13 +404,12 @@ async function testServer(cfg: ServerSource, started: number): Promise<TestSourc
   const found = await discoverServer(cfg.baseUrl);
   if (!found.ok) return found;
   const profile = buildInterestProfile(defaultSettings());
-  const ref = await toPostRef('li:probe');
-  const out = await classifyViaServer(cfg, [{ ...PROBE, ref }], {
+  const out = await classifyViaServer(cfg, [PROBE], {
     profile,
     profileHash: profileHash(profile),
     locale: uiLocale(),
   });
-  const r = out.byRef.get(ref);
+  const r = out.byRef.get(PROBE.ref);
   if (!r?.ok) throw r?.error ?? new AIError('unknown', 'No answer.');
   return { ok: true, model: out.model, mode: 'server', latencyMs: Date.now() - started, models: [] };
 }

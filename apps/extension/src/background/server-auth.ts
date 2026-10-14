@@ -18,6 +18,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from '../lib/messages.ts';
 import { serverLabel } from '../lib/server-label.ts';
+import { readBoundedJson } from './bounded-body.ts';
 import { getSecret, setSecret } from './idb.ts';
 
 /**
@@ -101,7 +102,7 @@ export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}
   }
   try {
     const res = await call(withDefaults(deps), new URL(SERVER_INFO_PATH, url.origin), TIMEOUT_MS);
-    const info = res.ok ? ServerInfoSchema.safeParse(await res.json().catch(() => null)) : null;
+    const info = res.ok ? ServerInfoSchema.safeParse(await readBoundedJson(res)) : null;
     if (!info?.success || !info.data.auth.methods.includes(EMAIL_OTP_METHOD)) {
       return { ok: false, error: { code: 'unsupported', message: NOT_A_SERVER } };
     }
@@ -369,7 +370,7 @@ async function call(d: AuthDeps, url: URL, timeoutMs: number, body?: unknown): P
  */
 async function readTokens(res: Response, origin: string): Promise<TokenResponse> {
   const { title } = serverLabel(origin);
-  const body: unknown = await res.json().catch(() => null);
+  const body = await readBoundedJson(res);
   if (res.ok) {
     const tokens = TokenResponseSchema.safeParse(body);
     if (tokens.success) return tokens.data;

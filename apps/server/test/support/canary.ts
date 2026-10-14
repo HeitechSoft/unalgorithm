@@ -16,8 +16,7 @@ const CANARY_LINK = { domain: 'example.org', title: `Release notes ${CANARY}` };
 
 /**
  * `n` posts a server may receive, half LinkedIn and half public Facebook, then one friends-only Facebook post (R23 keeps
- * it from any model), `n + 1` in all. Every text and link title carries the marker; refs are `pk_…`, as the extension
- * sends them.
+ * it from any model), `n + 1` in all. Every text and link title carries the marker.
  */
 export async function canaryPosts(n: number): Promise<PostForAI[]> {
   const shared = Array.from({ length: n }, (_, i) =>

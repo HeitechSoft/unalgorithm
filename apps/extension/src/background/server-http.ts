@@ -1,4 +1,5 @@
 import { isAIError } from '@unalgorithm/ai';
+import { readBoundedJson } from './bounded-body.ts';
 import { getAccessToken, markNeedsSignIn } from './server-auth.ts';
 
 /**
@@ -18,9 +19,9 @@ export interface ServerHttpDeps {
 }
 
 export type ServerResult =
-  /** 2xx; `body` is the parsed JSON, null when empty or not JSON. */
+  /** 2xx; `body` is the parsed JSON, null when empty, not JSON or over `MAX_SERVER_BODY_BYTES`. */
   | { ok: true; status: number; body: unknown }
-  /** Any other HTTP status; `body` is the parsed JSON, null when empty or not JSON. */
+  /** Any other HTTP status; `body` is the parsed JSON, null when empty, not JSON or over `MAX_SERVER_BODY_BYTES`. */
   | { ok: false; status: number; body: unknown }
   /**
    * No answer to use: 'auth' when the person has to sign in again, 'aborted' when the caller's `signal` fired, and
@@ -76,7 +77,7 @@ export async function serverRequest(
           signal: init.signal ? AbortSignal.any([timeout, init.signal]) : timeout,
         });
         if (res.status === 401) return { ok: false, status: 401, body: null };
-        const parsed = parseJson(await res.text());
+        const parsed = await readBoundedJson(res);
         return res.ok ? { ok: true, status: res.status, body: parsed } : { ok: false, status: res.status, body: parsed };
       } catch {
         return failed(init.signal?.aborted ? 'aborted' : 'network');
@@ -109,13 +110,5 @@ async function token(origin: string, d: ServerHttpDeps, forceRefresh: boolean): 
     return forceRefresh ? await d.getAccessToken(origin, { forceRefresh: true }) : await d.getAccessToken(origin);
   } catch (err) {
     return failed(isAIError(err) && err.code === 'auth-required' ? 'auth' : 'network');
-  }
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
   }
 }

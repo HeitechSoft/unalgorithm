@@ -130,7 +130,6 @@ describe('classify: happy path', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await classifyApp();
     const a = await post('A', 'How our team uses AI agents for automation');
     const b = await post('B', 'Photos from my weekend hike');
-    expect(a.ref).toMatch(/^pk_/);
 
     const res = await classify(t, request([a, b]));
     expect(res.status).toBe(200);

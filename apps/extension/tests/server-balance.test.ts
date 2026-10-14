@@ -16,7 +16,6 @@ import {
   SERVER_INFO_PATH,
   type ServerInfo,
   TOKEN_PATH,
-  toPostRef,
 } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -173,7 +172,7 @@ const OPTS = (() => {
 })();
 const posts = async (): Promise<PostForAI[]> => [
   {
-    ref: await toPostRef('li:urn:li:activity:1'),
+    ref: 'p1',
     platform: 'linkedin',
     text: 'A post',
     textComplete: true,

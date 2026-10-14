@@ -12,7 +12,7 @@
  */
 import { createRoute } from '@hono/zod-openapi';
 import { AIError, type ClassifyOutcome, classifyPosts, describeError, POST_ERROR_CODES } from '@unalgorithm/ai';
-import { PROMPT_VERSION } from '@unalgorithm/core';
+import { clipText, PROMPT_VERSION } from '@unalgorithm/core';
 import {
   type AIErrorCode,
   CLASSIFY_PATH,
@@ -20,6 +20,7 @@ import {
   type ClassifyResponse,
   ClassifyResponseSchema,
   costMicros,
+  MAX_MODEL_CHARS,
   type PostClassificationResult,
   type PostForAI,
   serverMayReceive,
@@ -231,7 +232,8 @@ export function classifyRoutes(app: App, deps: AppDeps): void {
         const body: ClassifyResponse = {
           v: 1,
           results,
-          source: { kind: 'server', model: served.model, promptVersion: PROMPT_VERSION },
+          // Within the contract's bound, which the extension enforces: a provider may echo any name.
+          source: { kind: 'server', model: clipText(served.model, MAX_MODEL_CHARS), promptVersion: PROMPT_VERSION },
           // Only a billing provider that charges answers with a balance; a self-hosted server shows none.
           ...(settled ? { billing: settled } : {}),
         };

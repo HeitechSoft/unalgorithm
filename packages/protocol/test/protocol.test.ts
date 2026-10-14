@@ -4,12 +4,15 @@ import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
   ClassifyRequestSchema,
+  ClassifyResponseSchema,
   chromiumRedirectUri,
   compareHlc,
   costMicros,
   EMAIL_OTP_METHOD,
   ExtensionIdSchema,
   formatHlc,
+  MAX_MODEL_CHARS,
+  MAX_POSTS_PER_REQUEST,
   PostForAISchema,
   parseHlc,
   platformOfKey,
@@ -20,16 +23,35 @@ import {
   TokenRequestSchema,
   TokenResponseSchema,
   tickHlc,
-  toPostRef,
   uuidv7,
 } from '../src/index.ts';
 
 describe('post refs', () => {
-  it('hashes post keys so servers never see platform ids', async () => {
-    const ref = await toPostRef('li:urn:li:activity:7001');
-    expect(ref).toMatch(/^pk_[A-Za-z0-9_-]{43}$/);
-    expect(ref).not.toContain('7001');
-    expect(await toPostRef('li:urn:li:activity:7001')).toBe(ref);
+  it('test_classify_response_is_bounded', () => {
+    // A server's answer is read into the extension's storage, so nothing in it is unbounded (a 4 MiB model name).
+    const ok = {
+      ref: 'p1',
+      status: 'ok',
+      classification: { relevance: 50, noise: [], topics: [], reason: 'r', isNews: false, hasCheckableClaims: false },
+    };
+    const answer = (over: Record<string, unknown> = {}, source: Record<string, unknown> = {}) => ({
+      v: 1,
+      results: [ok],
+      source: { kind: 'server', model: 'm', promptVersion: 1, ...source },
+      ...over,
+    });
+    expect(ClassifyResponseSchema.safeParse(answer()).success).toBe(true);
+    expect(ClassifyResponseSchema.safeParse(answer({}, { model: 'm'.repeat(MAX_MODEL_CHARS) })).success).toBe(true);
+    expect(ClassifyResponseSchema.safeParse(answer({}, { model: 'm'.repeat(4 * 1024 * 1024) })).success).toBe(false);
+    expect(ClassifyResponseSchema.safeParse(answer({}, { model: 'm'.repeat(MAX_MODEL_CHARS + 1) })).success).toBe(false);
+    expect(ClassifyResponseSchema.safeParse(answer({}, { kind: 'k'.repeat(41) })).success).toBe(false);
+    const many = Array.from({ length: MAX_POSTS_PER_REQUEST }, (_, i) => ({ ...ok, ref: `p${i + 1}` }));
+    expect(ClassifyResponseSchema.safeParse(answer({ results: many })).success).toBe(true);
+    expect(ClassifyResponseSchema.safeParse(answer({ results: [...many, ok] })).success).toBe(false);
+    expect(ClassifyResponseSchema.safeParse(answer({ results: [{ ...ok, ref: 'r'.repeat(65) }] })).success).toBe(false);
+    const error = (message: string) => answer({ results: [{ ref: 'p1', status: 'error', message }] });
+    expect(ClassifyResponseSchema.safeParse(error('Try again later.')).success).toBe(true);
+    expect(ClassifyResponseSchema.safeParse(error('e'.repeat(501))).success).toBe(false);
   });
 
   it('finds the platform of a key', () => {

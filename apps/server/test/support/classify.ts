@@ -1,4 +1,4 @@
-import { CLASSIFY_PATH, type InterestProfile, type PostForAI, toPostRef } from '@unalgorithm/protocol';
+import { CLASSIFY_PATH, type InterestProfile, type PostForAI } from '@unalgorithm/protocol';
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
 import type { Db } from '../../src/db/client.ts';
@@ -15,10 +15,13 @@ export const TEST_PROFILE: InterestProfile = {
   examples: [],
 };
 
-/** A post as the extension sends it to a server: a `pk_` ref, LinkedIn unless `over` says otherwise. */
+/**
+ * A post as the extension sends it to a server, LinkedIn unless `over` says otherwise. The extension's refs are
+ * batch-local (`p1`…); these are distinctive (`ref-<key>`) so one that leaks into a prompt or a log shows.
+ */
 export async function serverPost(key: string, text: string, over: Partial<PostForAI> = {}): Promise<PostForAI> {
   return {
-    ref: await toPostRef(`li:${key}`),
+    ref: `ref-${key}`,
     platform: 'linkedin',
     text,
     textComplete: true,

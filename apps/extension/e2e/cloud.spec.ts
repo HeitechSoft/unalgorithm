@@ -76,11 +76,11 @@ test.describe('a self-hosted server', () => {
     await expect(friend).toHaveAttribute('data-unalgo-pick', '', { timeout: 20_000 });
     await expect(friend.locator('unalgo-post').getByText('For you')).toBeVisible();
 
-    // Only masked post text and pk_ refs reach the server, nothing about the author; nothing of the post reaches a log.
+    // Only masked post text and batch-local refs reach the server, nothing about the author; nothing of the post reaches a log.
     expect(classifyBodies.length).toBeGreaterThan(0);
     for (const body of classifyBodies) {
       const request = ClassifyRequestSchema.parse(JSON.parse(body));
-      for (const post of request.posts) expect(post.ref).toMatch(/^pk_/);
+      for (const post of request.posts) expect(post.ref).toMatch(/^p\d+$/);
       expect(body).not.toContain(AUTHOR);
       expect(body).not.toContain('linkedin.com/in/');
     }

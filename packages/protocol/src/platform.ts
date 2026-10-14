@@ -12,7 +12,8 @@ export const PLATFORM_NAMES: Record<PlatformId, string> = { linkedin: 'LinkedIn'
 
 /**
  * Local post key: platform prefix + the platform's own id, e.g. `li:urn:li:activity:123`, `li:ck:<key>`,
- * `fb:<fbid>`, or `li:h:<hash>` when the page shows no id. Never sent to a server as-is (see `toPostRef`).
+ * `fb:<fbid>`, or `li:h:<hash>` when the page shows no id. Never sent anywhere, not even hashed: a post that leaves the
+ * device carries a batch-local ref (`PostForAI.ref`).
  */
 export type PostKey = `${(typeof PLATFORM_PREFIX)[PlatformId]}:${string}`;
 

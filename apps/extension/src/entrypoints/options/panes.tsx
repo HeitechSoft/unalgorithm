@@ -1,4 +1,5 @@
 import {
+  clipText,
   type Device,
   dayCostMicros,
   dayUsage,
@@ -569,7 +570,7 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
             placeholder="e.g. I run a small software company and follow AI, hiring and local tech events."
             value={about}
             onChange={(e) => setAbout(e.target.value)}
-            onBlur={() => void save((s) => void (s.interests.about = about.slice(0, 500))).then(() => toast({ title: 'Saved' }))}
+            onBlur={() => void save((s) => void (s.interests.about = clipText(about, 500))).then(() => toast({ title: 'Saved' }))}
             aria-label="About you"
           />
         </div>

@@ -19,7 +19,7 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 
 | Field | Notes |
 |---|---|
-| `ref` | A batch-local id (`p1`, `p2`…) for sources the browser calls directly; `pk_<sha256>` of the post id for a server. Never the post URL |
+| `ref` | A batch-local id (`p1`, `p2`…) for every source, a server too, mapped back to the post on the device. Never the post URL, and never anything derived from the post's id: where a page shows no id, the id is a hash of the author's name and the text, so a hash of it would let a server test names |
 | `platform`, `lang` | |
 | `text` | Normalized, NFKC, control/zero-width/bidi characters stripped, emails and phone numbers masked, @handles and tagged names (`PostData.mentions`, read from profile links inside the post text) masked unless the user turns that off (`core/classify/input.ts`), at most 2,000 characters (1,200 on-device, marked incomplete when cut) |
 | `textComplete` | Whether the site cut the text off behind "See more" |
