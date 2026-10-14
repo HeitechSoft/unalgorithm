@@ -238,6 +238,12 @@ importers:
 
   packages/sync:
     dependencies:
+      '@unalgorithm/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@unalgorithm/core':
+        specifier: workspace:*
+        version: link:../core
       '@unalgorithm/protocol':
         specifier: workspace:*
         version: link:../protocol

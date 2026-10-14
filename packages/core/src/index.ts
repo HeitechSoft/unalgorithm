@@ -19,6 +19,7 @@ export * from './settings/clocks.ts';
 export * from './settings/defaults.ts';
 export * from './settings/migrate.ts';
 export * from './settings/schema.ts';
+export * from './settings/sync-keys.ts';
 export * from './tab-state.ts';
 export * from './usage.ts';
 export * from './util.ts';

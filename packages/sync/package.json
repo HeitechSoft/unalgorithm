@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@unalgorithm/ai": "workspace:*",
+    "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "zod": "^4.6.6"
   },
