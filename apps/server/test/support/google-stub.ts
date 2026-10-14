@@ -40,6 +40,12 @@ export interface GoogleIdentity {
   sub?: string;
   /** The id token's audience. Default: `TEST_GOOGLE_CLIENT_ID`. */
   clientId?: string;
+  /**
+   * The `name` and `picture` claims, which Google sends when the `profile` scope was granted (the server never asks for
+   * it). Default: none.
+   */
+  name?: string;
+  picture?: string;
 }
 
 export interface GoogleStub {
@@ -57,7 +63,7 @@ export interface GoogleStub {
 export async function stubGoogle(identity: GoogleIdentity): Promise<GoogleStub> {
   // A second spy would take over the first and call itself for every other URL.
   if (vi.isMockFunction(globalThis.fetch)) throw new Error('fetch is already stubbed: restore() the earlier stub first.');
-  const { email, emailVerified = true, clientId = TEST_GOOGLE_CLIENT_ID } = identity;
+  const { email, emailVerified = true, clientId = TEST_GOOGLE_CLIENT_ID, name, picture } = identity;
   const sub = identity.sub ?? `1${Array.from({ length: 20 }, () => randomInt(10)).join('')}`;
   const kid = 'test-key';
   const { publicKey, privateKey } = await generateKeyPair('RS256');
@@ -72,7 +78,7 @@ export async function stubGoogle(identity: GoogleIdentity): Promise<GoogleStub> 
     const request = new Request(input, init);
     if (url === GOOGLE_TOKEN_URL && request.method === 'POST') {
       tokenRequests.push(new URLSearchParams(await request.text()));
-      const idToken = await new SignJWT({ email, email_verified: emailVerified })
+      const idToken = await new SignJWT({ email, email_verified: emailVerified, name, picture })
         .setProtectedHeader({ alg: 'RS256', kid })
         .setIssuer('https://accounts.google.com')
         .setAudience(clientId)

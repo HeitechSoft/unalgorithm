@@ -12,7 +12,7 @@
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { emailOTP } from 'better-auth/plugins/email-otp';
 import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
@@ -43,7 +43,7 @@ export type AuthRoute = readonly ['GET' | 'POST', string];
  * among them `/token` (a JWT signed with the device tokens' key for any web session), `/update-user` (a name and an
  * image the privacy notice does not cover), the other email-otp routes and the ones that link, list or unlink accounts.
  * Those stay unreachable, and `signJWT` and `verifyJWT` are server-only calls. With a Google client, the two routes of
- * its sign-in join them: starting it, and Google's redirect back.
+ * its sign-in join them: starting it (the redirect flow only, `SOCIAL_SIGN_IN_FIELDS`), and Google's redirect back.
  */
 export function authRoutesFor(config: Pick<Config, 'google'>): AuthRoute[] {
   const google: AuthRoute[] = [
@@ -71,6 +71,20 @@ const NO_PROVIDER_TOKENS = {
   accessTokenExpiresAt: null,
   refreshTokenExpiresAt: null,
 };
+
+/**
+ * The fields `POST /api/auth/sign-in/social` accepts: what the server's own page sends to start the redirect flow. Better
+ * Auth takes more, and a request carrying any other field is refused: `scopes` and `additionalParams` would widen what
+ * Google is asked for (a profile, offline access, other Google APIs), `idToken` signs in straight from a Google ID token
+ * (no state, PKCE or Origin check), and the rest serve flows this server does not offer.
+ */
+const SOCIAL_SIGN_IN_FIELDS: ReadonlySet<string> = new Set([
+  'provider',
+  'callbackURL',
+  'errorCallbackURL',
+  'newUserCallbackURL',
+  'disableRedirect',
+]);
 
 export interface AuthDeps {
   config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signupAllowlist' | 'google'>;
@@ -124,6 +138,9 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
             scope: ['openid', 'email'],
             includeGrantedScopes: false,
             prompt: 'select_account',
+            // Only the redirect flow signs in: no session straight from a Google ID token (also refused by
+            // `SOCIAL_SIGN_IN_FIELDS`).
+            disableIdTokenSignIn: true,
           },
         }
       : undefined,
@@ -143,6 +160,20 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
     // `onError`, which logs `errorFields` only and answers 500 `unknown`. A Google sign-in that fails goes back to the
     // page that started it with an `error` parameter; when the page is unknown (a state never issued), to the account page.
     onAPIError: { throw: true, errorURL: `${config.publicOrigin}${ACCOUNT_PAGE_PATH}` },
+    hooks: {
+      // Refuses a sign-in/social body with a field beyond `SOCIAL_SIGN_IN_FIELDS`. Runs after Better Auth's Origin check
+      // and before it validates the body.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-in/social') return;
+        const body: unknown = ctx.body;
+        if (typeof body === 'object' && body !== null && Object.keys(body).some((k) => !SOCIAL_SIGN_IN_FIELDS.has(k))) {
+          throw new APIError('BAD_REQUEST', {
+            code: 'VALIDATION_ERROR',
+            message: 'The request has a field this server does not accept.',
+          });
+        }
+      }),
+    },
     plugins: [
       emailOTP({ otpLength: 6, expiresIn: OTP_TTL_SECONDS, allowedAttempts: 3, storeOTP: 'hashed', sendVerificationOTP }),
       jwt({

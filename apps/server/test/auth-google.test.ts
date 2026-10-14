@@ -1,9 +1,11 @@
 import { SERVER_INFO_PATH, ServerInfoSchema } from '@unalgorithm/protocol';
+import { betterAuth } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { authRoutesFor } from '../src/auth/better-auth.ts';
+import { authOptions, authRoutesFor } from '../src/auth/better-auth.ts';
 import { ConfigError } from '../src/config.ts';
-import { account, user } from '../src/db/schema.ts';
+import { account, session, user } from '../src/db/schema.ts';
+import { memoryMailer } from '../src/mail/mailer.ts';
 import {
   GOOGLE_ACCESS_TOKEN,
   GOOGLE_AUTHORIZE_URL,
@@ -29,6 +31,8 @@ const GET_SESSION = '/api/auth/get-session';
 const ANN = 'ann@example.org';
 const BOB = 'bob@example.org';
 const STRANGER = 'stranger@example.com';
+/** The `name` and `picture` claims Google sends when `profile` was granted: the server must store neither. */
+const PROFILE = { name: 'Ann Example', picture: 'https://lh3.googleusercontent.com/a/test-picture' };
 const NOT_FOUND = { code: 'bad-request', message: 'Not found.' };
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -37,7 +41,7 @@ type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 const cleanup: (() => Promise<unknown>)[] = [];
 /** Every log line of every app in this file, and every Google value the stubs handed out, for the log test (AC 10). */
 const allLines: string[] = [];
-const googleSecrets: string[] = [GOOGLE_ACCESS_TOKEN];
+const googleSecrets: string[] = [GOOGLE_ACCESS_TOKEN, PROFILE.name, PROFILE.picture];
 const stubs: GoogleStub[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -68,6 +72,7 @@ const usersWithEmail = (t: TestApp, email: string) => t.deps.db.db.select().from
 const accountsOf = (t: TestApp, userId: string) => t.deps.db.db.select().from(account).where(eq(account.userId, userId));
 const allUsers = (t: TestApp) => t.deps.db.db.select().from(user);
 const allAccounts = (t: TestApp) => t.deps.db.db.select().from(account);
+const allSessions = (t: TestApp) => t.deps.db.db.select().from(session);
 
 /** The session cookie a response sets, as a `Cookie` header, or '' when it sets none. */
 function sessionCookie(res: Response): string {
@@ -183,6 +188,21 @@ describe('configuration', { timeout: PGLITE_TIMEOUT }, () => {
     ]) {
       expect((await startGoogleSignIn(t.app, away)).status).toBe(403);
     }
+    // Only the fields the server's own page sends: nothing that widens what Google is asked for (a profile, offline
+    // access, other Google APIs, scopes from an earlier grant) or signs in another way.
+    for (const extra of [
+      { scopes: ['profile', 'https://www.googleapis.com/auth/drive'] },
+      { additionalParams: { access_type: 'offline', include_granted_scopes: 'true' } },
+      { idToken: { token: 'header.payload.signature' } },
+      { loginHint: ANN },
+      { additionalData: { plan: 'any' } },
+      { requestSignUp: true },
+    ]) {
+      const widened = await startGoogleSignIn(t.app, { ...body, ...extra });
+      expect(widened.status).toBe(400);
+      expect(await widened.json()).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(widened.headers.getSetCookie()).toEqual([]);
+    }
 
     // Every other Better Auth route stays unmounted, and the callback takes GET only.
     const cookie = 'a=b';
@@ -202,7 +222,8 @@ describe('configuration', { timeout: PGLITE_TIMEOUT }, () => {
 describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_google_creates_allowed_account_without_tokens', async () => {
     const t = await googleApp();
-    const stub = await google({ email: ANN, emailVerified: true, sub: '109876543210987654321' });
+    // Google's id token names Ann and her picture, as it would had `profile` been granted: neither is kept.
+    const stub = await google({ email: ANN, emailVerified: true, sub: '109876543210987654321', ...PROFILE });
 
     const res = await signInWithGoogle(t.app);
     expect(res.status).toBe(302);
@@ -250,7 +271,7 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     const [bob] = await usersWithEmail(t, BOB);
     expect(await accountsOf(t, bob?.id ?? '')).toHaveLength(0);
 
-    const stub = await google({ email: BOB, emailVerified: true });
+    const stub = await google({ email: BOB, emailVerified: true, ...PROFILE });
     const res = await signInWithGoogle(t.app);
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/account');
@@ -295,6 +316,39 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await allAccounts(t)).toHaveLength(0);
   });
 
+  it('test_google_id_token_sign_in_refused', async () => {
+    const t = await googleApp();
+    const stub = await google({ email: ANN, emailVerified: true });
+    await signInWithGoogle(t.app);
+    expect(await allSessions(t)).toHaveLength(1);
+
+    // A Google ID token for this client, replayed with no state, PKCE verifier, cookie or Origin, signs nobody in.
+    const replay = { provider: 'google', idToken: { token: stub.idTokens[0] ?? '', accessToken: 'AT', refreshToken: 'RT' } };
+    const res = await postJson(t.app, GOOGLE_SIGN_IN, replay);
+    expect(res.status).toBe(400);
+    expect(res.headers.getSetCookie()).toEqual([]);
+
+    // Better Auth's ID-token sign-in is off for Google as well, should a request get past that refusal.
+    const { config, db, log } = t.deps;
+    const unchecked = betterAuth({
+      ...authOptions({ config, db, log, mailer: memoryMailer().mailer, rateLimitEnabled: false }),
+      hooks: undefined,
+    });
+    const direct = await unchecked.handler(
+      new Request(`${TEST_PUBLIC_URL}${GOOGLE_SIGN_IN}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(replay),
+      }),
+    );
+    expect(direct.status).toBe(404);
+    expect(await direct.json()).toMatchObject({ code: 'ID_TOKEN_NOT_SUPPORTED' });
+    expect(direct.headers.getSetCookie()).toEqual([]);
+
+    expect(await allSessions(t)).toHaveLength(1);
+    expect(await allUsers(t)).toHaveLength(1);
+  });
+
   it('test_email_code_sign_up_still_works', async () => {
     const t = await googleApp();
     const cookie = await signInWeb(t.app, t.outbox, ANN);
@@ -335,7 +389,7 @@ describe('privacy', { timeout: PGLITE_TIMEOUT }, () => {
     );
     const t = await googleApp();
     // Each outcome once: a new account, a link, a refusal, an unverified address, a bad state.
-    await google({ email: ANN });
+    await google({ email: ANN, ...PROFILE });
     await signInWithGoogle(t.app);
     await signInWeb(t.app, t.outbox, BOB);
     await google({ email: BOB });
