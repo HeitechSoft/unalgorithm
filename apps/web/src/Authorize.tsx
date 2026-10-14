@@ -1,31 +1,26 @@
 /**
  * The page the extension opens with `launchWebAuthFlow`. It checks the link first and makes no request for a bad one.
- * Then the person signs in with an emailed code, or continues as the address already signed in here, and the page asks
- * the server for a single-use code bound to the extension and sends the browser back to it. An existing session never
- * hands out a code by itself: "Continue as" needs a click.
+ * Then the person signs in with an emailed code (`SignIn`), or continues as the address already signed in here, and the
+ * page asks the server for a single-use code bound to the extension and sends the browser back to it. An existing
+ * session never hands out a code by itself: "Continue as" needs a click.
  */
 import { type AuthorizeRequest, AuthorizeRequestSchema, type ServerInfo } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, TextField } from '@unalgorithm/ui';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { ApiError, authorize, getSession, sendCode, serverInfo, signOut, verifyCode } from './api.ts';
+import { Banner, Button, ListGroup } from '@unalgorithm/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { ApiError, authorize, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
+import { failureMessage, SignIn } from './SignIn.tsx';
 
 const INTRO = 'Sign in to use AI in the UnAlgorithm Feed extension.';
 
 const INVALID_LINK = "This sign-in link isn't valid. Start again from the UnAlgorithm extension.";
-const OFFLINE = "Couldn't reach the server. Try again.";
-const TOO_MANY = 'Too many tries. Wait a minute and try again.';
-const FAILED = 'Something went wrong. Try again.';
-/** Better Auth answers 400 for a wrong or expired code and 403 once three tries have failed: either way, a new code. */
-const WRONG_CODE = "That code didn't work. Check it, or send a new one.";
 const SIGNED_OUT = 'You were signed out. Sign in again.';
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
 
 type Step =
   | { name: 'loading' }
   | { name: 'unavailable' }
-  | { name: 'email' }
-  | { name: 'code'; email: string }
+  | { name: 'signIn'; email?: string; notice?: string }
   | { name: 'continue'; email: string }
   | { name: 'done' };
 
@@ -35,22 +30,14 @@ function linkRequest(): AuthorizeRequest | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** What to tell the person about a failed request; `byStatus` holds the messages one step has for its own statuses. */
-function failureMessage(err: unknown, byStatus: Partial<Record<number, string>> = {}): string {
-  if (!(err instanceof ApiError)) return FAILED;
-  if (err.status === 0) return OFFLINE;
-  return byStatus[err.status] ?? (err.status === 429 ? TOO_MANY : FAILED);
-}
-
 export function Authorize() {
   const [request] = useState(linkRequest);
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [step, setStep] = useState<Step>({ name: 'loading' });
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
+  /** Counts the returns to the sign-in step: each starts a fresh SignIn, even when no other step rendered in between. */
+  const [signIns, setSignIns] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setStep({ name: 'loading' });
@@ -59,7 +46,7 @@ export function Authorize() {
       const [found, session] = await Promise.all([serverInfo(), getSession()]);
       setInfo(found);
       document.title = `Sign in · ${found.name}`;
-      setStep(session ? { name: 'continue', email: session.email } : { name: 'email' });
+      setStep(session ? { name: 'continue', email: session.email } : { name: 'signIn' });
     } catch (err) {
       setError(failureMessage(err));
       setStep({ name: 'unavailable' });
@@ -74,7 +61,6 @@ export function Authorize() {
   async function run(action: () => Promise<void>, byStatus?: Partial<Record<number, string>>): Promise<boolean> {
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       await action();
       return true;
@@ -86,58 +72,40 @@ export function Authorize() {
     }
   }
 
-  /** Asks for the extension's code and sends the browser back to the extension with it. */
-  async function toExtension(req: AuthorizeRequest) {
+  /** Back to the email-code sign-in; `notice` says why, `email` pre-fills the address. */
+  function toSignIn(next: { email?: string; notice?: string } = {}) {
+    setSignIns((count) => count + 1);
+    setStep({ name: 'signIn', ...next });
+  }
+
+  /**
+   * Asks for the extension's code and sends the browser back to the extension with it. `address` is the one just
+   * signed in with on this page, kept for the sign-in if the session is gone.
+   */
+  async function toExtension(req: AuthorizeRequest, address?: string) {
     await run(
       async () => {
         let redirect: string;
         try {
           redirect = await authorize(req);
         } catch (err) {
-          // The session ended (it lasts a day, and another tab can sign out): sign in again.
-          if (err instanceof ApiError && err.status === 401) setStep({ name: 'email' });
+          // The session ended (it lasts a day, and another tab can sign out): sign in again. SignIn shows why, so the
+          // message is not kept here, where it would outlast SignIn's own steps.
+          if (err instanceof ApiError && err.status === 401) {
+            toSignIn({ email: address, notice: SIGNED_OUT });
+            return;
+          }
           throw err;
         }
         setStep({ name: 'done' });
         window.location.assign(redirect);
       },
-      { 401: SIGNED_OUT, 403: REFUSED },
+      { 403: REFUSED },
     );
   }
 
-  async function onSendCode(event: FormEvent) {
-    event.preventDefault();
-    const address = email.trim();
-    if (await run(() => sendCode(address))) {
-      setCode('');
-      setStep({ name: 'code', email: address });
-    }
-  }
-
-  async function onSendNewCode(address: string) {
-    if (await run(() => sendCode(address))) {
-      setCode('');
-      setNotice('New code requested.');
-    }
-  }
-
-  async function onSignIn(event: FormEvent, address: string, req: AuthorizeRequest) {
-    event.preventDefault();
-    if (await run(() => verifyCode(address, code), { 400: WRONG_CODE, 403: WRONG_CODE })) {
-      setStep({ name: 'continue', email: address });
-      await toExtension(req);
-    }
-  }
-
-  /** Back from the code step to fix the address; nobody is signed in yet. */
-  function onEditEmail() {
-    setError(null);
-    setNotice(null);
-    setStep({ name: 'email' });
-  }
-
   async function onUseAnotherEmail() {
-    if (await run(signOut)) setStep({ name: 'email' });
+    if (await run(signOut)) toSignIn();
   }
 
   if (!request) {
@@ -149,8 +117,8 @@ export function Authorize() {
   }
   if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
 
-  const banners = (
-    <>
+  return (
+    <Page info={info} intro={INTRO}>
       {error ? (
         <Banner
           tone="danger"
@@ -158,58 +126,16 @@ export function Authorize() {
           action={step.name === 'unavailable' ? { label: 'Try again', onAction: () => void load() } : undefined}
         />
       ) : null}
-      {notice ? <Banner tone="info" title={notice} /> : null}
-    </>
-  );
-
-  return (
-    <Page info={info} intro={INTRO}>
-      {banners}
-      {step.name === 'email' ? (
-        <ListGroup>
-          <form className="web-form ua-stack" onSubmit={onSendCode}>
-            <TextField
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <Button type="submit" variant="primary" fullWidth loading={busy}>
-              Send code
-            </Button>
-          </form>
-        </ListGroup>
-      ) : null}
-      {step.name === 'code' ? (
-        <ListGroup footer={`If ${step.email} can sign in here, a 6-digit code is on its way.`}>
-          <form className="web-form ua-stack" onSubmit={(e) => onSignIn(e, step.email, request)}>
-            <TextField
-              label="6-digit code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-              autoFocus
-              mono
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            />
-            <Button type="submit" variant="primary" fullWidth loading={busy}>
-              Sign in
-            </Button>
-            <div className="ua-hstack web-actions">
-              <Button variant="plain" size="sm" disabled={busy} onClick={() => onSendNewCode(step.email)}>
-                Send a new code
-              </Button>
-              <Button variant="plain" size="sm" disabled={busy} onClick={onEditEmail}>
-                Use another email
-              </Button>
-            </div>
-          </form>
-        </ListGroup>
+      {step.name === 'signIn' ? (
+        <SignIn
+          key={signIns}
+          initialEmail={step.email}
+          notice={step.notice}
+          onSignedIn={(address) => {
+            setStep({ name: 'continue', email: address });
+            void toExtension(request, address);
+          }}
+        />
       ) : null}
       {step.name === 'continue' ? (
         <ListGroup>
