@@ -16,6 +16,7 @@
     "route-eval": "node --import ./src/require-node.js src/cli/route-eval.ts",
     "user-cap": "node --import ./src/require-node.js src/cli/user-cap.ts",
     "billing": "node --import ./src/require-node.js src/cli/billing.ts",
+    "sync:new-epoch": "node --import ./src/require-node.js src/cli/sync-new-epoch.ts",
     "db:generate": "drizzle-kit generate",
     "auth:generate": "auth generate --config auth.cli.ts --output src/db/auth-schema.ts --adapter drizzle --dialect postgresql --yes && pnpm run db:generate"
   },

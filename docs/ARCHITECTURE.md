@@ -202,7 +202,10 @@ the account page (`apps/web`) shows the balance and history the module answers a
 Background jobs run on graphile-worker inside the server process, on the server's own pool, one at a time
 (`apps/server/src/jobs/worker.ts`). The server and a billing module register named tasks and UTC cron schedules on
 the job registry while the server starts. The server's own: `auth.purge-expired`, hourly, deletes expired refresh
-tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`). graphile-worker creates the
+tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
+deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
+`ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`). After a database restore,
+`pnpm sync:new-epoch` gives every space a new epoch, so every device resyncs. graphile-worker creates the
 `graphile_worker` schema when it first starts and keeps its queue there: each job's task name, payload, run
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
