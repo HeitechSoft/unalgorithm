@@ -140,19 +140,57 @@ describe('rotation', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await refreshApp();
     const first = await signedIn(t);
     const next = await refreshed(t, first.refresh_token);
+    const latest = await refreshed(t, next.refresh_token);
 
-    // The old token again: someone else holds a copy.
+    // The old token again, after the token its refresh issued was used: someone else holds a copy.
     await expectAuthRequired(await refresh(t, first.refresh_token));
     const revoked = await device(t, first.device_id);
     expect(revoked.revokedReason).toBe('refresh-reuse');
     expect(revoked.revokedAt).not.toBeNull();
     expect((await tokenRows(t, first.device_id)).every((r) => r.usedAt !== null)).toBe(true);
 
-    // Neither copy works any longer: not the newer refresh token, not an access token that has not expired.
-    await expectAuthRequired(await refresh(t, next.refresh_token));
+    // No copy works any longer: not the newest refresh token, not an access token that has not expired.
+    await expectAuthRequired(await refresh(t, latest.refresh_token));
     await expectRejected(await withBearer(t, first.access_token));
-    await expectRejected(await withBearer(t, next.access_token));
+    await expectRejected(await withBearer(t, latest.access_token));
     expect((await device(t, first.device_id)).revokedReason).toBe('refresh-reuse');
+  });
+
+  it('test_refresh_replay_within_a_minute', async () => {
+    const t = await refreshApp();
+    const first = await signedIn(t);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // The answer to this refresh is lost: the extension still holds `first`, and nobody holds `lost`.
+    const lost = await refreshed(t, first.refresh_token);
+
+    // 50 seconds later the extension tries `first` again: new tokens for the same device, nothing revoked.
+    vi.setSystemTime(Date.now() + 50_000);
+    const again = await refreshed(t, first.refresh_token);
+    expect(again.device_id).toBe(first.device_id);
+    expect(again.refresh_token).not.toBe(lost.refresh_token);
+    expect(await device(t, first.device_id)).toMatchObject({ revokedAt: null, revokedReason: null });
+    // Lost once more: the allowance still counts from the first refresh of `first`.
+    const third = await refreshed(t, first.refresh_token);
+    const next = await refreshed(t, third.refresh_token);
+    expect((await withBearer(t, next.access_token)).status).toBe(200);
+
+    // A token a replay superseded is a copy: it revokes the device, and the chain that went on dies with it.
+    await expectAuthRequired(await refresh(t, lost.refresh_token));
+    expect((await device(t, first.device_id)).revokedReason).toBe('refresh-reuse');
+    await expectAuthRequired(await refresh(t, next.refresh_token));
+    await expectRejected(await withBearer(t, next.access_token));
+  });
+
+  it('test_refresh_replay_after_a_minute_revokes', async () => {
+    const t = await refreshApp();
+    const first = await signedIn(t);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const next = await refreshed(t, first.refresh_token);
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await expectAuthRequired(await refresh(t, first.refresh_token));
+    expect((await device(t, first.device_id)).revokedReason).toBe('refresh-reuse');
+    await expectAuthRequired(await refresh(t, next.refresh_token));
   });
 
   it('test_refresh_expired_is_401_without_revoke', async () => {
@@ -354,14 +392,17 @@ describe('bearer middleware', { timeout: PGLITE_TIMEOUT }, () => {
 describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_refresh_logs_hold_no_tokens', async () => {
     const t = await refreshApp();
-    // Every outcome once: rotated, reused, refused, revoked, a valid and a revoked bearer token.
+    // Every outcome once: rotated, replayed, reused, refused, revoked, a valid and a revoked bearer token.
     const first = await signedIn(t);
     const next = await refreshed(t, first.refresh_token);
     expect((await withBearer(t, next.access_token)).status).toBe(200);
-    await refresh(t, first.refresh_token);
-    // Spent by the revocation: a reuse on a device revoked already.
+    // The previous token again, its successor unused: a lost answer, replayed.
+    const replayed = await refreshed(t, first.refresh_token);
+    // The successor that replay superseded: reuse.
     await refresh(t, next.refresh_token);
-    await withBearer(t, next.access_token);
+    // Spent by the revocation: a reuse on a device revoked already.
+    await refresh(t, replayed.refresh_token);
+    await withBearer(t, replayed.access_token);
     const second = await signedIn(t);
     await revoke(t, second.refresh_token);
     // A signed-out token tried again: also a reuse, and the device stays signed out.
@@ -380,8 +421,10 @@ describe('logs', { timeout: PGLITE_TIMEOUT }, () => {
     expect((await device(t, second.device_id)).revokedReason).toBe('sign-out');
     for (const e of reuse) expect(Object.keys(e).sort()).toEqual(['already_revoked', 'device_id', 'event', 'level', 'rid', 't']);
     expect(events.filter((e) => e.event === 'auth.refreshed').map((e) => e.device_id)).toEqual([first.device_id]);
+    const replays = events.filter((e) => e.event === 'auth.refresh_replayed');
+    expect(replays.map((e) => [e.level, e.device_id])).toEqual([['info', first.device_id]]);
     expect(events.filter((e) => e.event === 'auth.revoked').map((e) => e.device_id)).toEqual([second.device_id]);
-    for (const e of events.filter((x) => x.event === 'auth.refreshed' || x.event === 'auth.revoked')) {
+    for (const e of events.filter((x) => ['auth.refreshed', 'auth.refresh_replayed', 'auth.revoked'].includes(String(x.event)))) {
       expect(Object.keys(e).sort()).toEqual(['device_id', 'event', 'level', 'rid', 't']);
     }
 

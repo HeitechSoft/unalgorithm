@@ -151,7 +151,7 @@ always show or hide (`sync_items`).
 | `jwks` | The key pair that signs access tokens, its private half encrypted with the server's secret |
 | `devices` | One row per signed-in extension: account, extension id, the name it gave itself at sign-in, last use, revocation |
 | `auth_codes` | Single-use codes for the PKCE exchange, by hash, with the extension, redirect address and challenge they are bound to |
-| `refresh_tokens` | Device refresh tokens, by hash, each usable once |
+| `refresh_tokens` | Device refresh tokens, by hash, each usable once, with the token each refresh issued; deleted once expired |
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |
 | `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
@@ -159,8 +159,8 @@ always show or hide (`sync_items`).
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 
-A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and a server whose
-module registers jobs also has graphile-worker's `graphile_worker` schema ([Jobs](#jobs)).
+A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
+keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
 
 ### Billing seam
 
@@ -197,9 +197,10 @@ the account page (`apps/web`) shows the balance and history the module answers a
 ### Jobs
 
 Background jobs run on graphile-worker inside the server process, on the server's own pool, one at a time
-(`apps/server/src/jobs/worker.ts`). A billing module registers named tasks and UTC cron schedules on the job registry
-while the server starts, and the worker starts only when a task is registered: a server without a module runs none and
-never creates the `graphile_worker` schema. graphile-worker keeps its queue there: each job's task name, payload, run
+(`apps/server/src/jobs/worker.ts`). The server and a billing module register named tasks and UTC cron schedules on
+the job registry while the server starts. The server's own: `auth.purge-expired`, hourly, deletes expired refresh
+tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`). graphile-worker creates the
+`graphile_worker` schema when it first starts and keeps its queue there: each job's task name, payload, run
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
 

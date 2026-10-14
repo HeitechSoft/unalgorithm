@@ -1,8 +1,8 @@
 /**
  * Background jobs, run by graphile-worker inside the server process (R7: at first). Modules register named tasks and
  * cron schedules on a registry while the server starts; `startJobs` then runs them on the server's own Postgres pool.
- * With no task registered nothing starts, so a server without a billing module runs no worker and never gets a
- * `graphile_worker` schema. graphile-worker creates and migrates that schema itself when it starts.
+ * With no task registered nothing starts (the server registers its own, `auth.purge-expired`). graphile-worker creates
+ * and migrates its `graphile_worker` schema itself when it starts.
  *
  * A job's payload holds ids and numbers only. Log lines name the task and the job, never graphile-worker's messages or
  * an error's message, and a failed job hands graphile-worker an error without the original message, since

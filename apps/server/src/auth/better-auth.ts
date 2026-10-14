@@ -10,6 +10,7 @@
  * only.
  */
 import { getAuthenticatorName, PASSKEY_ERROR_CODES, passkey } from '@better-auth/passkey';
+import { AIError } from '@unalgorithm/ai';
 import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -18,6 +19,7 @@ import { emailOTP } from 'better-auth/plugins/email-otp';
 import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
+import { createRateLimiter } from '../ai/limits.ts';
 import type { Config } from '../config.ts';
 import * as authSchema from '../db/auth-schema.ts';
 import type { DbHandle } from '../db/client.ts';
@@ -126,8 +128,8 @@ export interface AuthDeps {
   mailer: Mailer;
   log: Logger;
   /**
-   * Better Auth's per-address limits (3 codes a minute, 3 sign-ins every 10 seconds, and `PASSKEY_SIGN_IN_LIMITS`).
-   * Default: on, in every running server. Tests turn it off unless they ask for it (`createTestApp`): without a socket
+   * Better Auth's per-address limits (3 codes a minute, 3 sign-ins every 10 seconds, and `PASSKEY_SIGN_IN_LIMITS`), and
+   * with them `mountAuth`'s per-email ones. Default: on, in every running server. Tests turn it off unless they ask for it (`createTestApp`): without a socket
    * every request counts as one address.
    */
   rateLimitEnabled?: boolean;
@@ -282,12 +284,70 @@ export function createAuth(deps: AuthDeps) {
 export type Auth = ReturnType<typeof createAuth>;
 
 /**
+ * Codes emailed to one address, whoever asks: 5 in 15 minutes, then one every 3 minutes. Better Auth's limits count per
+ * client address, which anyone with many addresses gets past, and each new code brings 3 more tries.
+ */
+export const CODE_SENDS_PER_EMAIL = { max: 5, windowMs: 15 * 60_000 } as const;
+/** Wrong codes tried for one address, whoever tries them: 10 an hour, then one every 6 minutes. A sign-in is not counted. */
+export const FAILED_SIGN_INS_PER_EMAIL = { max: 10, windowMs: 60 * 60_000 } as const;
+
+const SEND_CODE_PATH = '/api/auth/email-otp/send-verification-otp';
+const SIGN_IN_CODE_PATH = '/api/auth/sign-in/email-otp';
+
+type Forward = (c: Context<AppEnv>) => Promise<Response>;
+
+/**
  * Forwards each route of `authRoutesFor(config)` to Better Auth; any other `/api/auth` path, or another method, gets
  * the app's 404. The request reaches Better Auth with `CLIENT_IP_HEADER` set to the address `clientIp` decided, or
- * removed when there is none.
+ * removed when there is none. With Better Auth's rate limit on, the emailed code is also limited per email address
+ * (`CODE_SENDS_PER_EMAIL`, `FAILED_SIGN_INS_PER_EMAIL`), in this process's memory.
  */
 export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'google'>): void {
-  for (const [method, path] of authRoutesFor(config)) app.on(method, path, (c) => auth.handler(withClientIp(c)));
+  const forward: Forward = (c) => auth.handler(withClientIp(c));
+  const limited = auth.options.rateLimit.enabled ? perEmailLimits(forward) : new Map<string, Forward>();
+  for (const [method, path] of authRoutesFor(config)) app.on(method, path, limited.get(path) ?? forward);
+}
+
+/** The two emailed-code routes, each behind its per-address limit. The address is the counter's key, never logged. */
+function perEmailLimits(forward: Forward): Map<string, Forward> {
+  const sends = createRateLimiter(CODE_SENDS_PER_EMAIL);
+  const failures = createRateLimiter(FAILED_SIGN_INS_PER_EMAIL);
+  return new Map<string, Forward>([
+    [
+      SEND_CODE_PATH,
+      async (c) => {
+        const email = await emailOf(c);
+        // Past the limit: Better Auth's answer to a code sent, with no code made or mailed. It says nothing about
+        // whether the address may sign in.
+        if (email !== undefined && !sends.take(email).ok) return c.json({ success: true });
+        return forward(c);
+      },
+    ],
+    [
+      SIGN_IN_CODE_PATH,
+      async (c) => {
+        const email = await emailOf(c);
+        if (email === undefined) return forward(c);
+        // Taken before the code is checked, so requests sent at once cannot all pass; given back unless the code failed.
+        const rate = failures.take(email);
+        if (!rate.ok)
+          throw new AIError('rate-limit', 'Too many wrong codes for this address.', { retryAfterMs: rate.retryAfterMs });
+        const res = await forward(c);
+        if (res.ok || res.status === 429) failures.refund(email);
+        return res;
+      },
+    ],
+  ]);
+}
+
+/** The body's `email`, lowercased as Better Auth compares it, or undefined. The request's body stays unread. */
+async function emailOf(c: Context<AppEnv>): Promise<string | undefined> {
+  const body: unknown = await c.req.raw
+    .clone()
+    .json()
+    .catch(() => undefined);
+  const email = typeof body === 'object' && body !== null ? (body as { email?: unknown }).email : undefined;
+  return typeof email === 'string' ? email.toLowerCase() : undefined;
 }
 
 function withClientIp(c: Context<AppEnv>): Request {

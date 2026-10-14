@@ -75,7 +75,10 @@ export const authCodes = pgTable('auth_codes', {
   usedAt: timestamp('used_at', { withTimezone: true }),
 });
 
-/** A device's refresh tokens, by hash only. Each works once: using it sets `used_at` and issues the next (CL1-10). */
+/**
+ * A device's refresh tokens, by hash only. Each works once: using it sets `used_at` and issues the next (CL1-10). Rows
+ * are deleted once expired (`auth.purge-expired`).
+ */
 export const refreshTokens = pgTable(
   'refresh_tokens',
   {
@@ -87,8 +90,17 @@ export const refreshTokens = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
+    /**
+     * The token a refresh with this one issued last, so a refresh whose answer was lost can be replayed
+     * (`REFRESH_REPLAY_MS`). Null for a token no refresh spent (revoked, or superseded by a replay). Not a foreign key:
+     * the purge deletes rows by their own expiry.
+     */
+    replacedBy: uuid('replaced_by'),
   },
-  (table) => [index('refresh_tokens_device_id_idx').on(table.deviceId)],
+  (table) => [
+    index('refresh_tokens_device_id_idx').on(table.deviceId),
+    index('refresh_tokens_expires_at_idx').on(table.expiresAt),
+  ],
 );
 
 /**

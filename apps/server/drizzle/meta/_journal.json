@@ -57,6 +57,13 @@
       "when": 1791997731153,
       "tag": "0007_nasty_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792017338387,
+      "tag": "0008_past_typhoid_mary",
+      "breakpoints": true
     }
   ]
 }

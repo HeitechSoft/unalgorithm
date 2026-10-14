@@ -57,7 +57,7 @@ export interface TestAppOptions {
   /**
    * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
    * limiter allows 3 codes and 3 sign-ins a minute per address, so a few sign-ins would get 429. Its counts live in one
-   * store per process, so only the test of the limiter itself turns it on.
+   * store per process, so only the tests of the limiters turn it on. It also turns on the per-email limits of `mountAuth`.
    */
   authRateLimit?: boolean;
   /**

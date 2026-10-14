@@ -4,7 +4,8 @@
  * refresh tokens are stored as SHA-256 hashes only and never logged; whoever reads the database cannot use them.
  *
  * A refresh token works once: each refresh spends it and issues the next. A spent token coming back means two copies
- * exist, one of them in someone else's hands, so that revokes the device (CL1-10).
+ * exist, one of them in someone else's hands, so that revokes the device (CL1-10). One exception: a refresh whose answer
+ * was lost on the way may be replayed once, within `REFRESH_REPLAY_MS`, while the token it issued is still unused.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { AIError } from '@unalgorithm/ai';
@@ -18,6 +19,11 @@ import type { Auth } from './better-auth.ts';
 export const AUTH_CODE_TTL_SECONDS = 60;
 /** How long a refresh token works. Every rotation issues a new one with a fresh lifetime (CL1-10). */
 export const REFRESH_TOKEN_TTL_DAYS = 60;
+/**
+ * How long after a refresh its spent token may come back as a replay rather than reuse: the extension gives up on an
+ * answer after 10 seconds and keeps its old token, and tries again on its next request.
+ */
+export const REFRESH_REPLAY_MS = 60_000;
 
 const DAY_MS = 86_400_000;
 
@@ -90,10 +96,17 @@ export interface IssueOptions {
   /** Store the device along with its first tokens: a new sign-in. Default: the device exists already. */
   newDevice?: boolean;
   /**
-   * The id of the refresh token these tokens replace (a rotation): spent in the transaction that stores the new one.
-   * When another request spent it first, nothing is stored and `TokenAlreadyUsed` is thrown.
+   * The id of the refresh token these tokens replace (a rotation): spent in the transaction that stores the new one,
+   * and linked to it (`replaced_by`). When another request spent it first, nothing is stored and `TokenAlreadyUsed` is
+   * thrown.
    */
   replaces?: string;
+  /**
+   * A replay of `replaces`, which a refresh spent already: the token that refresh issued, spent instead (superseded,
+   * with no link of its own, so it is never replayed). `replaces` is linked to the new token. When the successor was
+   * spent already, `TokenAlreadyUsed` is thrown.
+   */
+  successor?: string;
   now?: number;
 }
 
@@ -118,7 +131,7 @@ export class TokenAlreadyUsed extends Error {
 export async function issueTokens(
   { db, auth }: TokenDeps,
   grant: DeviceGrant,
-  { newDevice = false, replaces, now = Date.now() }: IssueOptions = {},
+  { newDevice = false, replaces, successor, now = Date.now() }: IssueOptions = {},
 ): Promise<TokenResponse> {
   const [owner] = await db.select({ email: user.email }).from(user).where(eq(user.id, grant.userId)).limit(1);
   if (!owner) throw new AIError('auth-required', 'The account no longer exists.');
@@ -133,20 +146,27 @@ export async function issueTokens(
         .insert(devices)
         .values({ id: grant.deviceId, userId: grant.userId, clientId: grant.clientId, name: grant.name ?? null });
     }
+    const [issued] = await tx
+      .insert(refreshTokens)
+      .values({
+        deviceId: grant.deviceId,
+        tokenHash: hashSecret(refreshToken),
+        expiresAt: new Date(now + REFRESH_TOKEN_TTL_DAYS * DAY_MS),
+      })
+      .returning({ id: refreshTokens.id });
+    if (!issued) throw new Error('The new refresh token was not stored.');
     if (replaces !== undefined) {
       // One statement: of two refreshes racing with one token, exactly one spends it.
       const spent = await tx
         .update(refreshTokens)
-        .set({ usedAt: new Date(now) })
-        .where(and(eq(refreshTokens.id, replaces), isNull(refreshTokens.usedAt)))
+        .set(successor === undefined ? { usedAt: new Date(now), replacedBy: issued.id } : { usedAt: new Date(now) })
+        .where(and(eq(refreshTokens.id, successor ?? replaces), isNull(refreshTokens.usedAt)))
         .returning({ id: refreshTokens.id });
       if (spent.length === 0) throw new TokenAlreadyUsed();
+      if (successor !== undefined) {
+        await tx.update(refreshTokens).set({ replacedBy: issued.id }).where(eq(refreshTokens.id, replaces));
+      }
     }
-    await tx.insert(refreshTokens).values({
-      deviceId: grant.deviceId,
-      tokenHash: hashSecret(refreshToken),
-      expiresAt: new Date(now + REFRESH_TOKEN_TTL_DAYS * DAY_MS),
-    });
   });
   return {
     access_token: token,
@@ -189,6 +209,7 @@ async function findRefreshToken(db: Db, refreshToken: string) {
       id: refreshTokens.id,
       expiresAt: refreshTokens.expiresAt,
       usedAt: refreshTokens.usedAt,
+      replacedBy: refreshTokens.replacedBy,
       deviceId: devices.id,
       userId: devices.userId,
       clientId: devices.clientId,
@@ -207,8 +228,11 @@ export interface Reuse {
   alreadyRevoked: boolean;
 }
 
-/** What a refresh comes to: new tokens for the same device, or a refusal, which names the reuse when it was one. */
-export type Rotation = { ok: true; tokens: TokenResponse } | { ok: false; reuse?: Reuse };
+/**
+ * What a refresh comes to: new tokens for the same device (`replayed` when the token was spent by a refresh whose answer
+ * was lost), or a refusal, which names the reuse when it was one.
+ */
+export type Rotation = { ok: true; tokens: TokenResponse; replayed: boolean } | { ok: false; reuse?: Reuse };
 
 /**
  * The refresh grant. An unknown token is refused. A spent one is reuse: the device is revoked, so the newer token stops
@@ -217,6 +241,12 @@ export type Rotation = { ok: true; tokens: TokenResponse } | { ok: false; reuse?
  * without revoking anything. Otherwise the token is spent and replaced (`issueTokens` with `replaces`); when a
  * concurrent refresh spent it first, this one is reuse as well. Expiry is judged by this server's clock, which also
  * set it.
+ *
+ * The one spent token that is not reuse is a replay: it was spent by a refresh less than `REFRESH_REPLAY_MS` ago, comes
+ * from the same extension on a device still signed in, and the token that refresh issued is unused, so the answer was
+ * most likely lost on the way. That successor is spent instead and new tokens answer. Theft is still caught: whoever
+ * holds the successor revokes the device when they next use it. A successor used already, a later replay or a lost
+ * race for the successor is reuse.
  */
 export async function rotateRefreshToken(
   deps: TokenDeps,
@@ -230,15 +260,26 @@ export async function rotateRefreshToken(
     const revoked = await revokeDevice(deps.db, found.deviceId, 'refresh-reuse', now);
     return { ok: false, reuse: { deviceId: found.deviceId, alreadyRevoked: !revoked } };
   };
-  if (found.usedAt !== null) return reuse();
-  if (found.expiresAt.getTime() <= now || found.revokedAt !== null || found.clientId !== clientId) return { ok: false };
   const grant = { userId: found.userId, deviceId: found.deviceId, clientId: found.clientId };
-  try {
-    return { ok: true, tokens: await issueTokens(deps, grant, { replaces: found.id, now }) };
-  } catch (err) {
-    if (err instanceof TokenAlreadyUsed) return reuse();
-    throw err;
+  const issue = async (options: IssueOptions, replayed: boolean): Promise<Rotation> => {
+    try {
+      return { ok: true, replayed, tokens: await issueTokens(deps, grant, { ...options, now }) };
+    } catch (err) {
+      if (err instanceof TokenAlreadyUsed) return reuse();
+      throw err;
+    }
+  };
+  if (found.usedAt !== null) {
+    const { replacedBy } = found;
+    const replay =
+      replacedBy !== null &&
+      now - found.usedAt.getTime() < REFRESH_REPLAY_MS &&
+      found.revokedAt === null &&
+      found.clientId === clientId;
+    return replay ? issue({ replaces: found.id, successor: replacedBy }, true) : reuse();
   }
+  if (found.expiresAt.getTime() <= now || found.revokedAt !== null || found.clientId !== clientId) return { ok: false };
+  return issue({ replaces: found.id }, false);
 }
 
 /**

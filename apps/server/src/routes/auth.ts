@@ -97,7 +97,8 @@ export function authRoutes(app: App, deps: AppDeps): void {
           if (reuse) log.warn('auth.refresh_reuse', { rid, device_id: reuse.deviceId, already_revoked: reuse.alreadyRevoked });
           throw new AIError('auth-required', 'The refresh token was not accepted.');
         }
-        log.info('auth.refreshed', { rid, device_id: rotation.tokens.device_id });
+        // A replay is a refresh whose answer was lost, not a copy: logged apart, at info.
+        log.info(rotation.replayed ? 'auth.refresh_replayed' : 'auth.refreshed', { rid, device_id: rotation.tokens.device_id });
         return c.json(rotation.tokens, 200);
       }
       // Spent from here on, whatever the checks below find.

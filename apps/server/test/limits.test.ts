@@ -17,6 +17,7 @@ import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 const TOM = 'tom@example.com';
 const ANA = 'ana@example.com';
 const INSTANCE = 'Test server';
+const MINUTE_MS = 60_000;
 
 type TestApp = Awaited<ReturnType<typeof limitsApp>>;
 
@@ -180,6 +181,29 @@ describe('rate limit', { timeout: PGLITE_TIMEOUT }, () => {
     expect(limiter.take('a', later)).toEqual({ ok: true });
     expect(limiter.take('a', later)).toMatchObject({ ok: false });
     expect(limiter.size).toBe(2);
+  });
+
+  it('test_rate_limiter_window_and_refund', () => {
+    // 5 in 15 minutes: one more every 3 minutes once they are spent.
+    const limiter = createRateLimiter({ max: 5, windowMs: 15 * MINUTE_MS });
+    const t0 = Date.parse('2026-10-13T12:00:00.000Z');
+    for (let i = 0; i < 5; i++) expect(limiter.take('a', t0)).toEqual({ ok: true });
+    expect(limiter.take('a', t0)).toEqual({ ok: false, retryAfterMs: 3 * MINUTE_MS });
+    expect(limiter.take('a', t0 + MINUTE_MS)).toEqual({ ok: false, retryAfterMs: 2 * MINUTE_MS });
+    expect(limiter.take('a', t0 + 3 * MINUTE_MS)).toEqual({ ok: true });
+
+    // A request given back can be taken again; a bucket never holds more than its maximum, and an unknown one is left.
+    limiter.refund('a', t0 + 3 * MINUTE_MS);
+    expect(limiter.take('a', t0 + 3 * MINUTE_MS)).toEqual({ ok: true });
+    limiter.refund('b', t0);
+    for (let i = 0; i < 5; i++) expect(limiter.take('b', t0)).toEqual({ ok: true });
+    expect(limiter.take('b', t0)).toMatchObject({ ok: false });
+
+    // A bucket is dropped once idle for its whole window, when it has refilled: not after IDLE_BUCKET_MS.
+    expect(limiter.take('c', t0 + IDLE_BUCKET_MS + MINUTE_MS)).toEqual({ ok: true });
+    expect(limiter.size).toBe(3);
+    expect(limiter.take('c', t0 + 18 * MINUTE_MS)).toEqual({ ok: true });
+    expect(limiter.size).toBe(1);
   });
 
   it('test_rate_limit_retry_after_exposed', async () => {

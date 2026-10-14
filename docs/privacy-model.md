@@ -72,11 +72,18 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
   whether it was signed out or revoked (`devices`).
 - **Hashed refresh tokens and codes:** refresh tokens and the single-use codes the extension trades for them are kept
-  by hash only (`refresh_tokens`, `auth_codes`). An emailed sign-in code is kept by hash under the address it was asked
-  for (`verification`), whether or not that address may sign in. A code works for five minutes, and each new code adds
-  a row. Trying a code deletes every row for that address; a wrong code puts the newest one back to count the attempt.
-  Whenever anyone tries a code on the server, the rows of codes past their five minutes are deleted, so a code nobody
-  tries keeps its row until someone next tries a code there.
+  by hash only (`refresh_tokens`, `auth_codes`). Each refresh adds a row with its time, so the rows show when each
+  device refreshed, as often as every 15 minutes while it is in use. A spent token is kept until its own 60-day expiry,
+  so that a copy coming back is still caught: there is always a rolling 60-day record of each device's refreshes. An
+  hourly job deletes refresh tokens once they expire and the extension's codes once past their minute. An emailed
+  sign-in code is kept by hash under the address it was asked for (`verification`), whether or not that address may
+  sign in. A code works for five minutes, and each new code adds a row. Trying a code deletes every row for that
+  address; a wrong code puts the newest one back to count the attempt. The same hourly job deletes the rows of codes
+  past their five minutes (and of Google sign-ins and passkey challenges past theirs), so none stays more than about an
+  hour after it expires.
+- **Sign-in limits:** the server counts the codes sent to each email address and the wrong codes tried for it, with
+  the address as the counter's key. The counts live in the server's memory only, never in the database or a log line,
+  and go after an hour without a request for that address (or when the server restarts).
 - **Sign-in page sessions:** signing in on the server's own page starts a session that records the browser's IP
   address and user agent (`session`). The session expires after one day, but expired rows are not purged
   automatically yet, so a row can stay until the account is deleted.
@@ -85,7 +92,7 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   number of posts, token counts, the model, the outcome and the cost (`usage_events`). Together the rows show when each
   device used AI; they stay until the account is deleted.
 - **Per-user limits:** a daily post cap the server's admin set for an account with `user-cap` (`user_limits`).
-- **Background jobs:** only on a server whose billing module registers jobs
+- **Background jobs:** the hourly purge of expired sign-in rows above, and any job a billing module registers
   ([ARCHITECTURE.md → Jobs](ARCHITECTURE.md#jobs)). graphile-worker's queue (schema `graphile_worker`) holds each job's
   task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
   and after a failure the error's name and code, never its message. A job's row is deleted once it succeeds; one that
@@ -99,7 +106,8 @@ The server logs one JSON line per event (`apps/server/src/log.ts`). Each request
 method, path, status and timing (`requestLog`). Other lines name an event and a few facts about it, among them:
 
 - `auth.*`: the request id and the device id when a device signs in, refreshes its token (as often as every 15 minutes
-  while it is in use), is signed out, or reuses a refresh token. These lines show roughly when each device was in use.
+  while it is in use), replays a refresh whose answer was lost, is signed out, or reuses a refresh token. These lines
+  show roughly when each device was in use. `auth.purged` holds only how many expired rows the hourly purge deleted.
 - `classify.done`: the request id, the number of posts asked for, answered and declined (Facebook posts that aren't
   public), the model, the outcome and the time taken.
 - `limits.spend_breaker`: the day's AI spend and the limit, once per UTC day, when the daily spend limit

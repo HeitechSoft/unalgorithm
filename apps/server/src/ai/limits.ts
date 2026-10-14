@@ -19,17 +19,22 @@ import { postsToday, spendTodayMicros, utcDayStart } from './metering.ts';
 export type RateDecision = { ok: true } | { ok: false; retryAfterMs: number };
 
 export interface RateLimiter {
-  /** Takes one request from `userId`'s bucket at `now` (ms since the epoch), or says how long until one is there. */
-  take(userId: string, now?: number): RateDecision;
+  /** Takes one request from `key`'s bucket at `now` (ms since the epoch), or says how long until one is there. */
+  take(key: string, now?: number): RateDecision;
+  /** Gives one request back to `key`'s bucket, up to its maximum; nothing when it has none. */
+  refund(key: string, now?: number): void;
   /** How many buckets are held. */
   readonly size: number;
 }
 
-/** A bucket untouched this long is dropped. It refilled within a minute, so dropping it changes no answer. */
+/**
+ * A bucket untouched this long, or its whole window when that is longer, is dropped. It has refilled by then, so dropping
+ * it changes no answer.
+ */
 export const IDLE_BUCKET_MS = 10 * 60_000;
 
-/** One request in bucket units: a bucket gains `perMinute` units a millisecond, so the arithmetic stays in integers. */
-const REQUEST_UNITS = 60_000;
+/** `max` requests at once, refilled evenly over `windowMs`; `{ perMinute }` is `{ max: perMinute, windowMs: 60_000 }`. */
+export type Rate = { perMinute: number } | { max: number; windowMs: number };
 
 interface Bucket {
   units: number;
@@ -38,31 +43,44 @@ interface Bucket {
 }
 
 /**
- * An in-memory token bucket per user: `perMinute` requests at once, refilled at `perMinute / 60` a second. Buckets are
+ * An in-memory token bucket per user (or any key): `max` requests at once, refilled evenly over `windowMs`. Buckets are
  * kept in the order of their last request, so each request drops the idle ones from the front and memory stays bounded
- * by the people active in the last 10 minutes.
+ * by the keys active in the last 10 minutes (or the last window, when that is longer).
  */
-export function createRateLimiter({ perMinute }: { perMinute: number }): RateLimiter {
-  const capacity = perMinute * REQUEST_UNITS;
+export function createRateLimiter(rate: Rate): RateLimiter {
+  const { max, windowMs } = 'perMinute' in rate ? { max: rate.perMinute, windowMs: 60_000 } : rate;
+  // One request is `windowMs` units and a bucket gains `max` units a millisecond, so the arithmetic stays in integers.
+  const capacity = max * windowMs;
+  const idleMs = Math.max(IDLE_BUCKET_MS, windowMs);
   const buckets = new Map<string, Bucket>();
 
+  /** `key`'s bucket refilled to `now`, moved to the back (the most recent request is last), or undefined. */
+  function refill(key: string, now: number): Bucket | undefined {
+    const bucket = buckets.get(key);
+    if (!bucket) return undefined;
+    bucket.units = Math.min(capacity, bucket.units + Math.max(0, now - bucket.at) * max);
+    bucket.at = Math.max(bucket.at, now);
+    buckets.delete(key);
+    buckets.set(key, bucket);
+    return bucket;
+  }
+
   return {
-    take(userId, now = Date.now()) {
+    take(key, now = Date.now()) {
       for (const [id, b] of buckets) {
-        if (now - b.at < IDLE_BUCKET_MS) break;
+        if (now - b.at < idleMs) break;
         buckets.delete(id);
       }
 
-      const bucket = buckets.get(userId) ?? { units: capacity, at: now };
-      bucket.units = Math.min(capacity, bucket.units + Math.max(0, now - bucket.at) * perMinute);
-      bucket.at = Math.max(bucket.at, now);
-      // Moved to the back: the most recent request is last.
-      buckets.delete(userId);
-      buckets.set(userId, bucket);
-
-      if (bucket.units < REQUEST_UNITS) return { ok: false, retryAfterMs: Math.ceil((REQUEST_UNITS - bucket.units) / perMinute) };
-      bucket.units -= REQUEST_UNITS;
+      const bucket = refill(key, now) ?? { units: capacity, at: now };
+      buckets.set(key, bucket);
+      if (bucket.units < windowMs) return { ok: false, retryAfterMs: Math.ceil((windowMs - bucket.units) / max) };
+      bucket.units -= windowMs;
       return { ok: true };
+    },
+    refund(key, now = Date.now()) {
+      const bucket = refill(key, now);
+      if (bucket) bucket.units = Math.min(capacity, bucket.units + windowMs);
     },
     get size() {
       return buckets.size;

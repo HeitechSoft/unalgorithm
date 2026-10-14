@@ -11,6 +11,7 @@ import { serve } from '@hono/node-server';
 import { clientForRoute } from './ai/provider.ts';
 import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
+import { registerAuthJobs } from './auth/purge.ts';
 import { createBillingHost } from './billing/host.ts';
 import { BillingLoadError, loadBilling } from './billing/provider.ts';
 import { type Config, ConfigError, loadConfig } from './config.ts';
@@ -56,8 +57,9 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // The rate limit stays at its default (on): only tests turn it off.
     const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
     const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
-    // Modules register their tasks here, before the jobs start. With none, no worker runs.
+    // The server's own tasks and a billing module's are registered here, before the jobs start.
     const jobs = createJobRegistry();
+    registerAuthJobs(jobs, { db: db.db });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });

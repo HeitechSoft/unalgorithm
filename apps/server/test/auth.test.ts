@@ -11,6 +11,7 @@ import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 const GET_SESSION = '/api/auth/get-session';
 const TOM = 'tom@example.com';
 const STRANGER = 'stranger@example.com';
+const ANA = 'ana@example.com';
 const JWT = /eyJ[\w-]+\.[\w-]+\.[\w-]+/;
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -240,7 +241,7 @@ describe('keys and sessions', { timeout: PGLITE_TIMEOUT }, () => {
 
 describe('rate limit and IP', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_otp_rate_limit_keyed_by_one_hop_ip', async () => {
-    // The only test that turns the limiter on: Better Auth keeps its counts in one store per process.
+    // One of two tests that turn the limiter on: Better Auth keeps its counts in one store per process.
     const t = await authApp({ TRUST_PROXY: 'one-hop' }, { authRateLimit: true });
 
     // Four clients behind the proxy: the right-most address is each one's own, whatever the client claims.
@@ -252,13 +253,44 @@ describe('rate limit and IP', { timeout: PGLITE_TIMEOUT }, () => {
       expect(res.status).toBe(200);
     }
 
-    // One client four times: a header of its own choosing does not give it a new bucket.
+    // One client four times: a header of its own choosing does not give it a new bucket. (Another address, under its own
+    // limit of five codes.)
     const statuses: number[] = [];
     for (let i = 1; i <= 4; i++) {
-      const res = await sendCode(t, STRANGER, { 'X-Forwarded-For': '198.51.100.7', [CLIENT_IP_HEADER]: `203.0.113.${10 + i}` });
+      const res = await sendCode(t, ANA, { 'X-Forwarded-For': '198.51.100.7', [CLIENT_IP_HEADER]: `203.0.113.${10 + i}` });
       statuses.push(res.status);
     }
     expect(statuses).toEqual([200, 200, 200, 429]);
+  });
+
+  it('test_otp_limits_per_address_across_ips', async () => {
+    const t = await authApp({ TRUST_PROXY: 'one-hop', SIGNUP_ALLOWLIST: `${TOM},${ANA}` }, { authRateLimit: true });
+    let n = 0;
+    /** Every request from a client address of its own (apart from the other test's), past the per-client limits. */
+    const fresh = () => ({ 'X-Forwarded-For': `192.0.2.${++n}` });
+    const signInFrom = (email: string, otp: string) => post(t, SIGN_IN, { email, otp }, fresh());
+
+    // Five codes per address in 15 minutes, however the address is written. Past that the answer is the same and no
+    // code is made or mailed, so the endpoint still does not tell which addresses may sign in.
+    for (let i = 0; i < 8; i++) {
+      const res = await sendCode(t, i % 2 === 0 ? TOM : TOM.toUpperCase(), fresh());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+    }
+    expect(t.outbox.filter((m) => m.to === TOM)).toHaveLength(5);
+
+    // A sign-in that works is not counted; ten failed ones an hour are.
+    expect((await sendCode(t, ANA, fresh())).status).toBe(200);
+    expect((await signInFrom(ANA, codeFor(t, ANA))).status).toBe(200);
+    for (let i = 0; i < 10; i++) expect((await signInFrom(ANA, '000000')).status).not.toBe(429);
+    // Then even the right code waits, whichever client sends it.
+    expect((await sendCode(t, ANA, fresh())).status).toBe(200);
+    const limited = await signInFrom(ANA, codeFor(t, ANA));
+    expect(limited.status).toBe(429);
+    expect((await limited.json()) as unknown).toMatchObject({ code: 'rate-limit' });
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(5 * 60);
+    // Another address is not held back.
+    expect((await signInFrom(TOM, codeFor(t, TOM))).status).toBe(200);
   });
 });
 

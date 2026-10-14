@@ -44,7 +44,8 @@ once if the issue is already public. The GitHub security advisory names the serv
 - Anything that makes the extension act on a platform (click, post, follow) on the user's behalf.
 - Post text or interest profiles logged or stored by the server.
 - Reading another account's data on a server.
-- Token theft, a refresh token that can be used again without revoking its device, or a way past sign-in.
+- Token theft, a refresh token that can be used again without revoking its device (beyond the one replay of a refresh
+  whose answer was lost, within a minute and while its successor is unused), or a way past sign-in.
 - Getting past the Facebook audience filter (a post that isn't public reaching a server's model) or the limit of 12
   posts per request.
 - Using `/v1/classify` as a general model proxy.
@@ -62,6 +63,9 @@ once if the issue is already public. The GitHub security advisory names the serv
   nonce before it reaches a model, and model output must match a strict schema.
 - No remote code. AI hosts are optional permissions requested one origin at a time; an UnAlgorithm server needs none,
   because it answers the extension through CORS.
+- Emailed sign-in codes are limited per email address as well as per client address: 5 codes an address in 15
+  minutes (past that the server answers as before and sends nothing) and 10 wrong codes an address an hour (then 429),
+  so many IP addresses buy no more guesses.
 - The server builds every prompt itself: `/v1/classify` takes posts and the interest profile, never a prompt, and logs
   no request body. The canary test (`apps/server/test/canary.test.ts`) checks that a marker sent in posts reaches no
   log line and no database row.
