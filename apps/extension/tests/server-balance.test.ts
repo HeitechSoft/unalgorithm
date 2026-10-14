@@ -32,6 +32,8 @@ import {
 import {
   BALANCE_MAX_AGE_MS,
   BALANCE_WAIT_MS,
+  noteRefused,
+  noteSettlement,
   refreshBalance,
   type StoredBalance,
   serverBalanceItem,
@@ -470,6 +472,49 @@ describe('refresh', () => {
     expect(await serverBalanceItem.getValue()).toStrictEqual(
       stored({ balanceMicros: 970_000, source: 'endpoint', updatedAt: NOW }),
     );
+  });
+
+  it('test_refresh_keeps_newer_value', async () => {
+    const acc = account();
+    await serverAccountItem.setValue(acc);
+    await serverBalanceItem.setValue(stored({ updatedAt: NOW - 10 * MINUTE }));
+    const answers = [gate<Response>(), gate<Response>(), gate<Response>()];
+    const s = fakeServer({ balance: (n) => answers[n - 1]?.promise ?? json(balanceBody(970_000)) });
+    vi.stubGlobal('fetch', s.fetch);
+    /** A stale value starts a refresh: `aiStatus` answers at once, and the balance request is in flight. */
+    const staleRefresh = async (requests: number) => {
+      await aiStatus();
+      await vi.waitFor(() => expect(s.balanceCalls()).toHaveLength(requests));
+    };
+
+    // A feed batch's 402 lands while the request runs: the server read its balance before that, and the 0 stays.
+    await staleRefresh(1);
+    await noteRefused(ORIGIN, DEVICE_A, NOW);
+    answers[0]?.open(json(balanceBody(970_000)));
+    const refused = stored({ balanceMicros: 0, source: 'refused', updatedAt: NOW });
+    expect(await refreshBalance(acc)).toStrictEqual(refused);
+    expect(await serverBalanceItem.getValue()).toStrictEqual(refused);
+    const empty = await aiStatus();
+    expect(empty).toMatchObject({ state: 'needs-attention', balance: { balanceMicros: 0, empty: true } });
+    expect(empty.message).toBe(describeError('insufficient-credits', 'UnAlgorithm Cloud'));
+    expect(s.balanceCalls()).toHaveLength(1);
+
+    // So does a classify answer's balance.
+    vi.setSystemTime(NOW + 6 * MINUTE);
+    await staleRefresh(2);
+    await noteSettlement(ORIGIN, DEVICE_A, { chargedMicros: 300, balanceMicros: 1_000 }, NOW + 6 * MINUTE);
+    answers[1]?.open(json(balanceBody(970_000)));
+    const settled = stored({ balanceMicros: 1_000, source: 'classify', updatedAt: NOW + 6 * MINUTE });
+    expect(await refreshBalance(acc)).toStrictEqual(settled);
+    expect(await serverBalanceItem.getValue()).toStrictEqual(settled);
+
+    // "Erase everything" while the request runs: the answer isn't written back.
+    vi.setSystemTime(NOW + 12 * MINUTE);
+    await staleRefresh(3);
+    await fakeBrowser.storage.session.clear();
+    answers[2]?.open(json(balanceBody(970_000)));
+    expect(await refreshBalance(acc)).toBeUndefined();
+    expect(await serverBalanceItem.getValue()).toBeNull();
   });
 });
 

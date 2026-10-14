@@ -1,4 +1,4 @@
-import type { AISourceConfig } from '@unalgorithm/core';
+import { type AISourceConfig, createLock } from '@unalgorithm/core';
 import {
   ACCOUNT_PAGE_PATH,
   type ClassifyResponse,
@@ -71,30 +71,52 @@ export async function noteRefused(origin: string, deviceId: string, now = Date.n
   await store({ origin, deviceId, balanceMicros: 0, source: 'refused', updatedAt: now });
 }
 
+/**
+ * Every write of the balance runs one at a time, so a classify answer or a 402 never lands between a refresh's check
+ * and its write.
+ */
+const writing = createLock();
+
 async function store(value: StoredBalance): Promise<void> {
-  await serverBalanceItem.setValue(value).catch(() => undefined);
+  await writing(() => serverBalanceItem.setValue(value)).catch(() => undefined);
 }
 
 /**
- * The stored value when it belongs to this account. Sign-out and sign-in leave session storage alone, so a value for
- * another origin or another device (an earlier sign-in) counts as missing.
+ * `value` when it belongs to this account. Sign-out and sign-in leave session storage alone, so a value for another
+ * origin or another device (an earlier sign-in) counts as missing.
  */
+function belongsTo(value: StoredBalance | null, account: ServerAccount): StoredBalance | undefined {
+  return value?.origin === account.origin && value.deviceId === account.deviceId ? value : undefined;
+}
+
 async function storedFor(account: ServerAccount): Promise<StoredBalance | undefined> {
   try {
-    const value = await serverBalanceItem.getValue();
-    return value?.origin === account.origin && value.deviceId === account.deviceId ? value : undefined;
+    return belongsTo(await serverBalanceItem.getValue(), account);
   } catch {
     return undefined;
   }
+}
+
+function sameValue(a: StoredBalance | null, b: StoredBalance | null): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.origin === b.origin &&
+    a.deviceId === b.deviceId &&
+    a.balanceMicros === b.balanceMicros &&
+    a.source === b.source &&
+    a.updatedAt === b.updatedAt
+  );
 }
 
 /** One balance request per account at a time. */
 const refreshing = new Map<string, Promise<StoredBalance | undefined>>();
 
 /**
- * Asks the server for the account's balance and stores it. Resolves with the stored value for this account: the new
- * one, or on any failure the one it had (or undefined). Never rejects, and never marks the account for signing in
- * again: the classify path makes that call (CL1-17).
+ * Asks the server for the account's balance and stores it, unless something else was stored while the request ran (a
+ * classify answer, a 402, or "Erase everything"): that is newer than the server's answer and stays, so a refused 0 is
+ * never replaced by a balance the server read before it. Resolves with the stored value for this account: the new one,
+ * the newer one, or on any failure the one it had (or undefined). Never rejects, and never marks the account for
+ * signing in again: the classify path makes that call (CL1-17).
  */
 export function refreshBalance(account: ServerAccount, deps: Partial<BalanceDeps> = {}): Promise<StoredBalance | undefined> {
   const key = `${account.origin} ${account.deviceId}`;
@@ -109,6 +131,7 @@ export function refreshBalance(account: ServerAccount, deps: Partial<BalanceDeps
 async function fetchBalance(account: ServerAccount, d: BalanceDeps): Promise<StoredBalance | undefined> {
   try {
     if (account.info.billing !== true || account.needsSignIn) return await storedFor(account);
+    const before = await serverBalanceItem.getValue();
     const url = new URL(CREDIT_BALANCE_PATH, account.origin).href;
     const get = (token: string) =>
       d.fetch(url, {
@@ -129,8 +152,13 @@ async function fetchBalance(account: ServerAccount, d: BalanceDeps): Promise<Sto
       source: 'endpoint',
       updatedAt: d.now(),
     };
-    await serverBalanceItem.setValue(value);
-    return value;
+    return await writing(async () => {
+      const current = await serverBalanceItem.getValue();
+      // Stored while the request ran: newer than what the server read.
+      if (!sameValue(current, before)) return belongsTo(current, account);
+      await serverBalanceItem.setValue(value);
+      return value;
+    });
   } catch {
     return storedFor(account);
   }
