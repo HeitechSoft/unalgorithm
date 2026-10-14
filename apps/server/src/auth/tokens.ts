@@ -159,7 +159,7 @@ export async function issueTokens(
 }
 
 /** Why a device was revoked, as `devices.revoked_reason` holds it. */
-export type RevokeReason = 'sign-out' | 'refresh-reuse';
+export type RevokeReason = 'sign-out' | 'refresh-reuse' | 'revoked-by-user';
 
 /**
  * Ends a device: marks it revoked and spends every refresh token it still holds, in one transaction. Its access tokens

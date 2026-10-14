@@ -15,6 +15,7 @@ import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
   chromiumRedirectUri,
+  OkResponseSchema,
   REVOKE_PATH,
   RevokeRequestSchema,
   TOKEN_PATH,
@@ -22,7 +23,6 @@ import {
   TokenResponseSchema,
 } from '@unalgorithm/protocol';
 import { HTTPException } from 'hono/http-exception';
-import { z } from 'zod';
 import {
   consumeAuthCode,
   issueAuthCode,
@@ -34,9 +34,6 @@ import {
 import { ownPageOnly, REFUSED, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
 import { errorResponse, json } from './openapi.ts';
-
-/** The revoke answer, whatever the token was (RFC 7009): it tells a caller nothing about the token. */
-const RevokeResponseSchema = z.object({ ok: z.literal(true) });
 
 /** Mounts the authorize, token and revoke routes on the app. */
 export function authRoutes(app: App, deps: AppDeps): void {
@@ -137,7 +134,8 @@ export function authRoutes(app: App, deps: AppDeps): void {
       path: REVOKE_PATH,
       request: { body: { content: json(RevokeRequestSchema), required: true } },
       responses: {
-        200: { description: 'Signed out, or there was nothing to sign out', content: json(RevokeResponseSchema) },
+        // The same answer whatever the token was (RFC 7009): it tells a caller nothing about the token.
+        200: { description: 'Signed out, or there was nothing to sign out', content: json(OkResponseSchema) },
         400: errorResponse('The request was not valid'),
       },
     }),

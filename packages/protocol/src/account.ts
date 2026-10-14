@@ -29,6 +29,9 @@ export const DeviceNameSchema = z
   .regex(/^[\p{L}\p{N} ._()-]+$/u);
 export type DeviceName = z.infer<typeof DeviceNameSchema>;
 
+/** The most devices the list answers, most recently used first: far more than one person signs in. */
+export const MAX_ACCOUNT_DEVICES = 200;
+
 const Iso = z.iso.datetime();
 
 export const AccountDeviceSchema = z.object({
@@ -41,7 +44,10 @@ export const AccountDeviceSchema = z.object({
   current: z.boolean(),
 });
 export type AccountDevice = z.infer<typeof AccountDeviceSchema>;
-export const AccountDevicesResponseSchema = z.object({ v: z.literal(1), devices: z.array(AccountDeviceSchema).max(200) });
+export const AccountDevicesResponseSchema = z.object({
+  v: z.literal(1),
+  devices: z.array(AccountDeviceSchema).max(MAX_ACCOUNT_DEVICES),
+});
 export type AccountDevicesResponse = z.infer<typeof AccountDevicesResponseSchema>;
 
 export const RevokeDeviceRequestSchema = z.object({ device_id: z.uuid() });

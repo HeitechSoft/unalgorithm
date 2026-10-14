@@ -33,8 +33,10 @@ import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
+import { accountRoutes } from '../routes/account.ts';
 import { authRoutes } from '../routes/auth.ts';
 import { classifyRoutes } from '../routes/classify.ts';
+import { NOT_FOUND } from '../routes/openapi.ts';
 import { type AppEnv, clientIp, extensionCors, nonErrorsAsErrors, requestLog } from './middleware.ts';
 
 export type { AppEnv } from './middleware.ts';
@@ -64,7 +66,6 @@ const MAX_AUTH_BODY_BYTES = 16 * 1024;
 
 const NOT_VALID: WireError = { code: 'bad-request', message: 'The request was not valid.' };
 const TOO_LARGE: WireError = { code: 'bad-request', message: 'The request was too large.' };
-const NOT_FOUND: WireError = { code: 'bad-request', message: 'Not found.' };
 const UNKNOWN: WireError = { code: 'unknown', message: 'Something went wrong on the server.' };
 
 /** The sign-in page's CSP: scripts, styles and requests from this origin only, nothing inline, never in a frame. */
@@ -158,6 +159,7 @@ export function createApp(deps: AppDeps): App {
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
   mountAuth(app, auth, config);
   authRoutes(app, deps);
+  accountRoutes(app, deps);
   classifyRoutes(app, deps);
 
   billing.mount?.(app);

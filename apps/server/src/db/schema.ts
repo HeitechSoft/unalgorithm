@@ -53,7 +53,7 @@ export const devices = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    /** 'sign-out' or 'refresh-reuse' (CL1-10). */
+    /** 'sign-out' or 'refresh-reuse' (CL1-10), or 'revoked-by-user' from the devices list (CL3-12). */
     revokedReason: text('revoked_reason'),
   },
   (table) => [index('devices_user_id_idx').on(table.userId)],
