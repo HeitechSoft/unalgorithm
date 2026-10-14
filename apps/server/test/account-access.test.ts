@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { requireAccount } from '../src/auth/account-access.ts';
 import { REFUSED } from '../src/auth/web-session.ts';
-import { user } from '../src/db/schema.ts';
+import { session, user } from '../src/db/schema.ts';
 import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice, signInWeb } from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 
@@ -81,6 +81,17 @@ describe('credentials', { timeout: PGLITE_TIMEOUT }, () => {
       sessionCreatedAt: expect.any(String),
     });
     expect(Math.abs(Date.parse(principal.sessionCreatedAt) - signedInAt)).toBeLessThan(5_000);
+
+    // The session's own start, not the time of the request (CL3-15's fresh sign-in check reads it): moved an hour back,
+    // the session answers that hour.
+    const startedAt = new Date(Date.now() - 60 * 60_000);
+    await t.deps.db.db
+      .update(session)
+      .set({ createdAt: startedAt })
+      .where(eq(session.userId, await userId(t, TOM)));
+    const later = await whoami(t, { Cookie: cookie });
+    expect(later.status).toBe(200);
+    expect(await later.json()).toMatchObject({ via: 'session', sessionCreatedAt: startedAt.toISOString() });
   });
 
   it('test_require_account_without_credentials_is_401', async () => {
