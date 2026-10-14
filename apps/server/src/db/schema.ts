@@ -2,8 +2,9 @@
  * The schema barrel: every table the server stores is defined here or in a module this file re-exports, so the Drizzle
  * client and drizzle-kit see one schema.
  *
- * No table holds post text, author names or prompts. The server keeps accounts, devices, tokens, AI routes and usage
- * counts; post content passes through classification and is never written down (ADR 0007).
+ * No table holds post text or prompts. The server keeps accounts, devices, tokens, AI routes, usage counts and each
+ * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3).
+ * Post content passes through classification and is never written down (ADR 0007).
  *
  * Adding a table: define it here (or in a module re-exported from here), run
  * `pnpm --filter @unalgorithm/server db:generate`, and commit the generated SQL and `drizzle/meta` journal together
@@ -11,8 +12,22 @@
  * committed migration. A branch that rebases onto someone else's migration deletes its own generated files and runs
  * `db:generate` again.
  */
+import { HLC_ZERO } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
-import { boolean, doublePrecision, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { user } from './auth-schema.ts';
 
 export * from './auth-schema.ts';
@@ -154,3 +169,75 @@ export const userLimits = pgTable('user_limits', {
   dailyPostCap: integer('daily_post_cap'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/*
+ * Sync v2 (CL3). These tables hold a person's own settings, including the labels of people they chose to always show
+ * or hide, and never post text. Deleting the account deletes them: every space cascades from `user`, and items and
+ * push records from their space.
+ */
+
+/** One owner's synced collections (R14). CL3 has one personal ('user') space per account; CL7 adds 'org' spaces. */
+export const syncSpaces = pgTable('sync_spaces', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 'user' (CL3); 'org' arrives in CL7. */
+  kind: text('kind').notNull(),
+  /** Owner of a 'user' space; null for other kinds. One personal space per account. */
+  userId: text('user_id')
+    .unique()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** Changes when the server is restored from a backup (CL3-09): every client then resyncs. */
+  epoch: uuid('epoch').notNull().defaultRandom(),
+  /** The last seq handed out in this space. */
+  seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+  /** Live items only. Tombstones are not counted here, but their bytes count toward `bytes_used` (CL3-07). */
+  itemCount: integer('item_count').notNull().default(0),
+  bytesUsed: integer('bytes_used').notNull().default(0),
+  /** The highest seq and HLC among tombstones already cleaned up (CL3-09): an older cursor gets `410 resync-required`. */
+  gcFloorSeq: bigint('gc_floor_seq', { mode: 'number' }).notNull().default(0),
+  gcFloorHlc: text('gc_floor_hlc').notNull().default(HLC_ZERO),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** The newest value of each key in a space, or its tombstone, with the seq of the write that stored it. */
+export const syncItems = pgTable(
+  'sync_items',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => syncSpaces.id, { onDelete: 'cascade' }),
+    collection: text('collection').notNull(),
+    key: text('key').notNull(),
+    /** Null for a tombstone. */
+    value: jsonb('value'),
+    deleted: boolean('deleted').notNull(),
+    hlc: text('hlc').notNull(),
+    deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    /** Key length plus `itemBytes(value)`, for the space's quota. */
+    bytes: integer('bytes').notNull(),
+    /** `ttl-cache` items only. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.collection, table.key] }),
+    index('sync_items_space_seq').on(table.spaceId, table.seq),
+    index('sync_items_tombstones').on(table.updatedAt).where(sql`${table.deleted}`),
+  ],
+);
+
+/** The answer to each push, so a retried `pushId` gets the same answer and writes nothing (CL3-07). */
+export const syncPushes = pgTable(
+  'sync_pushes',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => syncSpaces.id, { onDelete: 'cascade' }),
+    pushId: uuid('push_id').notNull(),
+    deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    /** Keys, statuses and seqs; never a value. */
+    response: jsonb('response').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.pushId] }), index('sync_pushes_created').on(table.createdAt)],
+);

@@ -46,6 +46,19 @@ jobs:
       - name: Fixtures contain no personal data
         run: pnpm fixtures:check
 
+      - name: Server migrations match the schema
+        if: matrix.os == 'ubuntu-latest'
+        # db:generate writes nothing when the committed migrations already describe apps/server/src/db/schema.ts.
+        shell: bash
+        run: |
+          pnpm --filter @unalgorithm/server db:generate
+          changes=$(git status --porcelain -- apps/server/drizzle)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "Run pnpm --filter @unalgorithm/server db:generate and commit what it writes."
+            exit 1
+          fi
+
       - name: Third-party notices match the bundle
         if: matrix.os == 'ubuntu-latest'
         run: pnpm notices:check
