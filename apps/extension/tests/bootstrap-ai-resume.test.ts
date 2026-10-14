@@ -2,7 +2,8 @@
 /**
  * "Sign in again" (R26, CL1-18). Signing in again to the server that is already the source writes an identical device,
  * which the content script's storage watch never reports, so the background sends `aiResume` and a feed tab paused on
- * auth-required picks up where it stopped. The background is a stubbed `runtime.sendMessage`.
+ * auth-required picks up where it stopped. While paused, the tab asks the background's cache only (R27). The background
+ * is a stubbed `runtime.sendMessage`.
  */
 import { defaultDevice } from '@unalgorithm/core';
 import { linkedinAdapter } from '@unalgorithm/platforms';
@@ -12,7 +13,7 @@ import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { FIRST_DEGREE_POST, feed2026 } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { bootContentScript } from '../src/content/bootstrap.ts';
 import { FeedController } from '../src/content/feed-controller.ts';
-import type { BgRequest, BgResponses, ClassifyItem } from '../src/lib/messages.ts';
+import type { BgRequest, BgResponses } from '../src/lib/messages.ts';
 import { deviceItem } from '../src/lib/storage.ts';
 
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to ai.example.org again.' } as const;
@@ -31,11 +32,14 @@ class FakeIO {
   }
 }
 
-/** The background: refuses every post until `signedIn`, then classifies it. */
+type ClassifyRequest = Extract<BgRequest, { type: 'classify' }>;
+
+/** The background: refuses every post until `signedIn`, then classifies it. Its cache knows no post. */
 function background() {
   const state = { signedIn: false };
-  const classify = vi.fn((items: ClassifyItem[]): BgResponses['classify'] =>
-    state.signedIn
+  const classify = vi.fn(({ items, cacheOnly }: ClassifyRequest): BgResponses['classify'] => {
+    if (cacheOnly) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'paused' })) };
+    return state.signedIn
       ? {
           results: items.map((i) => ({
             key: i.key,
@@ -48,10 +52,10 @@ function background() {
       : {
           results: items.map((i) => ({ key: i.key, status: 'failed', retryable: false, ...AUTH_REQUIRED })),
           pause: AUTH_REQUIRED,
-        },
-  );
+        };
+  });
   vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((async (msg: BgRequest) =>
-    msg.type === 'classify' ? classify(msg.items) : { ok: true }) as never);
+    msg.type === 'classify' ? classify(msg) : { ok: true }) as never);
   return { state, classify };
 }
 
@@ -92,6 +96,34 @@ it('test_ai_resume_clears_pause', async () => {
 
   // The post that failed goes to the server again.
   await vi.waitFor(() => expect(bg.classify).toHaveBeenCalledTimes(2));
-  expect(bg.classify.mock.calls[1]?.[0].map((i) => i.key)).toStrictEqual(['li:ck:EEEkeyFirstDegree5']);
+  expect(bg.classify.mock.calls[1]?.[0].items.map((i) => i.key)).toStrictEqual(['li:ck:EEEkeyFirstDegree5']);
   await vi.waitFor(() => expect(controller.buildState().ai).toStrictEqual({ state: 'ready' }));
 });
+
+it('test_paused_tab_asks_the_cache_only', async () => {
+  const bg = background();
+  const start = vi.spyOn(FeedController.prototype, 'start');
+  await bootContentScript(linkedinAdapter, ctx);
+  const controller = start.mock.contexts[0] as FeedController;
+  await vi.waitFor(() => expect(controller.buildState().ai).toStrictEqual({ state: 'paused', ...AUTH_REQUIRED }));
+  expect(bg.classify.mock.calls[0]?.[0]).toMatchObject({ type: 'classify', platform: 'linkedin', cacheOnly: false });
+
+  // A post scrolls in while paused: the message asks the background's cache only (no server request, R27).
+  document
+    .querySelector('[data-testid="mainFeed"] > .load-more-marker')
+    ?.insertAdjacentHTML('beforebegin', FIRST_DEGREE_POST.replaceAll('EEEkeyFirstDegree5', 'SSSkeyNeverSeen004'));
+  await vi.waitFor(() => expect(bg.classify).toHaveBeenCalledTimes(2), { timeout: 5000 });
+  expect(bg.classify.mock.calls[1]?.[0]).toMatchObject({
+    items: [{ key: 'li:ck:SSSkeyNeverSeen004' }],
+    cacheOnly: true,
+  });
+
+  // Signed in again: both posts go to the server as normal requests.
+  bg.state.signedIn = true;
+  await fakeBrowser.runtime.onMessage.trigger({ type: 'aiResume' }, {}, vi.fn());
+  await vi.waitFor(() => expect(bg.classify).toHaveBeenCalledTimes(3), { timeout: 5000 });
+  const resumed = bg.classify.mock.calls[2]?.[0];
+  expect(resumed?.cacheOnly).toBe(false);
+  expect(resumed?.items.map((i) => i.key).sort()).toStrictEqual(['li:ck:EEEkeyFirstDegree5', 'li:ck:SSSkeyNeverSeen004']);
+  await vi.waitFor(() => expect(controller.buildState().ai).toStrictEqual({ state: 'ready' }));
+}, 15_000);

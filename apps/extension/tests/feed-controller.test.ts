@@ -329,6 +329,32 @@ describe('paused AI', () => {
     c.stop();
   });
 
+  it('test_pause_sends_rest_of_queue_cache_only', async () => {
+    // AI is turned on with the feed already read: every post has settled, and more than one batch is queued at once.
+    vi.stubGlobal('IntersectionObserver', OffScreenIO);
+    const first = [UNPAID, ...[1, 2, 3, 4, 5].map((n) => `UUUkeyFirstBatch0${n}`)];
+    document.body.innerHTML = feed2026(...[...first, LATER_KNOWN, LATER_NEW].map(postCard));
+    const bg = emptyBalance([LATER_KNOWN]);
+    const c = new FeedController(linkedinAdapter, bg.bridge, mountUi);
+    const rt = runtime({ device: { ...defaultDevice('d'), aiSource: { kind: 'server', baseUrl: 'https://ai.example.org' } } });
+    c.start({ ...rt, device: { ...rt.device, aiSource: null } });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(bg.classify).not.toHaveBeenCalled();
+    c.update(rt);
+    await vi.advanceTimersByTimeAsync(5000);
+    // The first batch meets the empty balance; the rest of the queue still reaches the cache, and only the cache.
+    expect(bg.classify).toHaveBeenCalledTimes(2);
+    expect(sentKeys(bg.classify.mock.calls[0])).toStrictEqual(first.map(id).sort());
+    expect(bg.classify.mock.calls[0]?.[1]).toStrictEqual({ cacheOnly: false });
+    expect(sentKeys(bg.classify.mock.calls[1])).toStrictEqual([id(LATER_KNOWN), id(LATER_NEW)]);
+    expect(bg.classify.mock.calls[1]?.[1]).toStrictEqual({ cacheOnly: true });
+    expect(state(LATER_KNOWN)).toBe('collapsed');
+    expect(hidden(c, LATER_KNOWN)).toMatchObject({ reasonKey: 'noise:engagement-bait', ai: true });
+    expect(state(LATER_NEW)).toBeNull();
+    expect(c.buildState().ai).toMatchObject({ state: 'paused', code: PAUSE.code });
+    c.stop();
+  });
+
   it('test_pause_skips_uncached_without_network', async () => {
     const { c, bg } = await pausedFeed([KNOWN]);
     scrollIn(postCard(LATER_NEW));
@@ -389,13 +415,31 @@ describe('paused AI', () => {
 
   it('test_ai_off_still_skips_ai_filters', async () => {
     const { c, bg, rt } = await pausedFeed([KNOWN, LATER_KNOWN]);
-    c.update({ ...rt, device: { ...rt.device, aiSource: null } });
+    let release = () => {};
+    bg.classify.mockImplementationOnce(async (items, opts) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return bg.answer(items, opts);
+    });
     scrollIn(postCard(LATER_KNOWN));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sentKeys(bg.classify.mock.calls[1])).toStrictEqual([id(LATER_KNOWN)]);
+    // AI is turned off while that cache lookup is on its way; its answer arrives afterwards.
+    c.update({ ...rt, device: { ...rt.device, aiSource: null } });
+    release();
+    scrollIn(postCard(LATER_NEW));
     scrollIn(PROMOTED_FOLLOWS_PAGE);
     await vi.advanceTimersByTimeAsync(5000);
-    expect(bg.classify).toHaveBeenCalledTimes(1);
-    expect(state(KNOWN)).toBeNull();
+    expect(bg.classify).toHaveBeenCalledTimes(2);
+    // The late answer held a classification, but with no AI source configured it does not hide the post.
+    await expect(bg.classify.mock.results[1]?.value).resolves.toMatchObject({
+      results: [{ key: id(LATER_KNOWN), status: 'ok', classification: BAIT }],
+    });
     expect(state(LATER_KNOWN)).toBeNull();
+    expect(hidden(c, LATER_KNOWN)).toBeUndefined();
+    expect(state(KNOWN)).toBeNull();
+    expect(state(LATER_NEW)).toBeNull();
     expect(state(AD)).toBe('collapsed');
     expect(c.buildState().ai).toStrictEqual({ state: 'off' });
     c.stop();

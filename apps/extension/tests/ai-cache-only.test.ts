@@ -1,14 +1,17 @@
 /**
  * Cache-only lookups while AI is paused (R27): the background answers what its classification cache knows and sends
- * nothing anywhere. Extension storage is the WXT fake browser, the cache fake-indexeddb and the network a spied fetch.
+ * nothing anywhere, also when a feed tab asks through the `classify` message. Extension storage is the WXT fake browser,
+ * the cache fake-indexeddb and the network a spied fetch.
  */
 import { defaultDevice, defaultSettings } from '@unalgorithm/core';
 import type { Classification, ClassifyRequest, ClassifyResponse, PostKey } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { Browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { classifyItems } from '../src/background/ai.ts';
 import { clearCache } from '../src/background/idb.ts';
-import type { ClassifyItem } from '../src/lib/messages.ts';
+import { handlers } from '../src/entrypoints/background.ts';
+import type { BgRequest, ClassifyItem } from '../src/lib/messages.ts';
 import { deviceItem, settingsItem, usageItem } from '../src/lib/storage.ts';
 
 // The device token, and the server source itself as a spy: for a server source it is the AI client.
@@ -99,4 +102,26 @@ it('test_cache_only_returns_hits_and_skips_misses', async () => {
   expect(normal.results).toStrictEqual([{ key: unseen.key, status: 'skipped', reason: 'cap-reached' }]);
   expect(normal.pause?.code).toBe('cap-reached');
   expect(server).not.toHaveBeenCalled();
+});
+
+it('test_classify_message_passes_cache_only', async () => {
+  await deviceItem.setValue({ ...defaultDevice('dev1'), aiSource: { kind: 'server', baseUrl: ORIGIN } });
+  const url = 'https://www.linkedin.com/feed/';
+  const feedTab = { tab: { id: 7, url }, url } as Browser.runtime.MessageSender;
+  const unseen = item('li:urn:li:activity:4', 'A post first seen after the balance ran out');
+  const msg: Extract<BgRequest, { type: 'classify' }> = { type: 'classify', platform: 'linkedin', items: [unseen] };
+
+  // A paused feed tab's lookup: the cache does not know the post, and nothing is sent.
+  expect(await handlers.classify({ ...msg, cacheOnly: true }, feedTab)).toStrictEqual({
+    results: [{ key: unseen.key, status: 'skipped', reason: 'paused' }],
+  });
+  expect(spies.getAccessToken).not.toHaveBeenCalled();
+  expect(server).not.toHaveBeenCalled();
+
+  // The same message without `cacheOnly` goes to the server.
+  const res = await handlers.classify(msg, feedTab);
+  expect(res.results).toStrictEqual([
+    { key: unseen.key, status: 'ok', classification: CLASSIFICATION, model: 'mock-model', cached: false },
+  ]);
+  expect(server).toHaveBeenCalledOnce();
 });
