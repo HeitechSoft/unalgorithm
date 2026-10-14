@@ -20,9 +20,7 @@ import {
   TOKEN_PATH,
   TokenRequestSchema,
   TokenResponseSchema,
-  type WireError,
 } from '@unalgorithm/protocol';
-import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import {
@@ -33,24 +31,25 @@ import {
   rotateRefreshToken,
   verifyPkce,
 } from '../auth/tokens.ts';
+import { ownPageOnly, REFUSED, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
 import { errorResponse, json } from './openapi.ts';
-
-const REFUSED: WireError = { code: 'permission', message: "This server doesn't accept sign-ins from here." };
 
 /** The revoke answer, whatever the token was (RFC 7009): it tells a caller nothing about the token. */
 const RevokeResponseSchema = z.object({ ok: z.literal(true) });
 
 /** Mounts the authorize, token and revoke routes on the app. */
-export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
+export function authRoutes(app: App, deps: AppDeps): void {
+  const { config, db, auth, log } = deps;
   const extensionIds = new Set(config.extensionIds);
 
   app.openapi(
     createRoute({
       method: 'post',
       path: AUTHORIZE_API_PATH,
-      // Before the body is read: only the server's own sign-in page may ask for a code.
-      middleware: [ownPageOnly(config.publicOrigin)] as const,
+      // Before the body is read: only the server's own sign-in page, with a web session, may ask for a code. So a request
+      // without a session gets 401 even when its body is not valid.
+      middleware: [ownPageOnly(config.publicOrigin), requireWebSession(deps)] as const,
       request: { body: { content: json(AuthorizeRequestSchema), required: true } },
       responses: {
         200: { description: 'Where the sign-in page sends the browser', content: json(AuthorizeResponseSchema) },
@@ -60,15 +59,13 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
       },
     }),
     async (c) => {
-      c.header('Cache-Control', 'no-store');
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      if (!session) throw new AIError('auth-required', 'No web session.');
+      // `requireWebSession` has set `Cache-Control: no-store`: the answer holds a code.
       const req = c.req.valid('json');
       if (!extensionIds.has(req.client_id)) return c.json(REFUSED, 403);
       // The schema holds the same rule; the server does not depend on it to keep codes from going elsewhere.
       if (req.redirect_uri !== chromiumRedirectUri(req.client_id)) throw new HTTPException(400);
       const code = await issueAuthCode(db.db, {
-        userId: session.user.id,
+        userId: c.get('webUser').userId,
         clientId: req.client_id,
         redirectUri: req.redirect_uri,
         codeChallenge: req.code_challenge,
@@ -144,12 +141,4 @@ export function authRoutes(app: App, { config, db, auth, log }: AppDeps): void {
       return c.json({ ok: true as const }, 200);
     },
   );
-}
-
-/** Refuses a request whose `Origin` is not `origin`, such as another site or an extension. */
-function ownPageOnly(origin: string): MiddlewareHandler {
-  return async (c, next) => {
-    if (c.req.header('origin') !== origin) return c.json(REFUSED, 403);
-    await next();
-  };
 }
