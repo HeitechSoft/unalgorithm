@@ -1,13 +1,44 @@
 /**
- * A fake server for the account page's tests: `fetch` stubbed with the server's routes, keeping a session as the real one
- * does (an accepted code starts it and signing out ends it), and every request recorded.
+ * A fake server for the web app's tests: `fetch` stubbed with the server's routes, keeping a session as the real one
+ * does (an accepted code or passkey starts it and signing out ends it), and every request recorded. Also the query the
+ * extension opens the authorize page with, and what Google and a passkey sign-in answer.
  */
-import { SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { AUTHORIZE_API_PATH, chromiumRedirectUri, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { vi } from 'vitest';
-import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../../src/api.ts';
+import {
+  PASSKEY_AUTH_OPTIONS_PATH,
+  PASSKEY_AUTH_VERIFY_PATH,
+  SEND_CODE_PATH,
+  SESSION_PATH,
+  SIGN_IN_PATH,
+  SIGN_OUT_PATH,
+  SOCIAL_SIGN_IN_PATH,
+} from '../../src/api.ts';
 
 export const TOM = 'tom@example.com';
 export const SIGNED_IN = `Signed in as ${TOM}`;
+
+export const EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/** The query `launchWebAuthFlow` opens the authorize page with. */
+export const PARAMS = {
+  client_id: EXTENSION_ID,
+  redirect_uri: chromiumRedirectUri(EXTENSION_ID),
+  code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+  code_challenge_method: 'S256',
+  state: 'Qm9vdHN0cmFwLXN0YXRlLTE',
+};
+/** Where the authorize endpoint sends the browser: back to the extension with its single-use code. */
+export const REDIRECT = `${PARAMS.redirect_uri}?code=${'c'.repeat(43)}&state=${PARAMS.state}`;
+
+/** Google's address `sign-in/social` answers, where the page sends the browser. */
+export const GOOGLE_URL = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test-client&state=test-state';
+/** The authentication options Better Auth's passkey plugin answers, as `startAuthentication` receives them. */
+export const PASSKEY_OPTIONS = {
+  challenge: 'cGFzc2tleS1jaGFsbGVuZ2U',
+  timeout: 300000,
+  rpId: 'localhost',
+  userVerification: 'preferred',
+};
 
 export const INFO: ServerInfo = {
   v: 1,
@@ -31,7 +62,8 @@ export interface Call {
 
 /**
  * Stubs `fetch` with the server's routes (keyed `METHOD path`; `routes` replaces or adds any of them). `session` is the
- * address signed in at the start, or null for none; an accepted code signs in as TOM and signing out ends the session.
+ * address signed in at the start, or null for none; an accepted code or passkey signs in as TOM and signing out ends
+ * the session.
  */
 export function fakeServer({
   session = null,
@@ -59,6 +91,13 @@ export function fakeServer({
       current = null;
       return { status: 200, body: { success: true } };
     },
+    [`POST ${AUTHORIZE_API_PATH}`]: { status: 200, body: { redirect: REDIRECT } },
+    [`POST ${SOCIAL_SIGN_IN_PATH}`]: { status: 200, body: { url: GOOGLE_URL, redirect: false } },
+    [`GET ${PASSKEY_AUTH_OPTIONS_PATH}`]: { status: 200, body: PASSKEY_OPTIONS },
+    [`POST ${PASSKEY_AUTH_VERIFY_PATH}`]: () => {
+      current = TOM;
+      return { status: 200, body: { session: { userId: 'u1' } } };
+    },
     ...routes,
   };
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -74,5 +113,10 @@ export function fakeServer({
     });
   });
   vi.stubGlobal('fetch', fetch);
-  return { calls, count: (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path).length };
+  return {
+    fetch,
+    calls,
+    posts: () => calls.filter((c) => c.method === 'POST'),
+    count: (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path).length,
+  };
 }

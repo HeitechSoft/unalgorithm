@@ -69,3 +69,17 @@
   justify-items: center;
   text-align: center;
 }
+/* "or" between the email form and the other ways to sign in, with a rule on each side; screen readers skip it. */
+.web-or {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-3);
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+.web-or::before,
+.web-or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--ua-separator);
+}

@@ -1,16 +1,16 @@
 /**
  * The account page every server serves at `/account`, Cloud or self-hosted: who is signed in on this server, and signing
- * out, or the email-code sign-in (`SignIn`) when nobody is. The page names the server only by its discovery document.
- * Sections go below the account row: the credits when the server advertises billing (`Credits`), and later devices,
- * export and delete.
+ * out, or the sign-in (`SignIn`) when nobody is, which Google comes back to. The page names the server only by its
+ * discovery document. Sections go below the account row: the credits when the server advertises billing (`Credits`),
+ * and later devices, export and delete.
  */
-import type { ServerInfo } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getSession, serverInfo, signOut } from './api.ts';
 import { Credits } from './Credits.tsx';
 import { Page } from './Page.tsx';
-import { failureMessage, SignIn } from './SignIn.tsx';
+import { failureMessage, googleSignInFailed, SignIn } from './SignIn.tsx';
 
 const UNREACHABLE = "Couldn't reach the server. Try again.";
 
@@ -21,6 +21,8 @@ export function Account() {
   const [step, setStep] = useState<Step>({ name: 'loading' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Google sent the browser back with `?error=`: said until the person signs out, when it no longer applies. */
+  const [googleFailed, setGoogleFailed] = useState(googleSignInFailed);
 
   /** Asks the server for its discovery document and who is signed in, and shows the step they call for. */
   const load = useCallback(async () => {
@@ -43,6 +45,7 @@ export function Account() {
   /** The one way to the sign-in step: after "Sign out", and for any section that finds the session gone. */
   const toSignedOut = useCallback(() => {
     setError(null);
+    setGoogleFailed(false);
     setStep({ name: 'signed-out' });
   }, []);
 
@@ -70,7 +73,12 @@ export function Account() {
   if (step.name === 'signed-out') {
     return (
       <Page info={info} intro="Sign in to see your account.">
-        <SignIn onSignedIn={() => void load()} />
+        <SignIn
+          methods={info.auth.methods}
+          returnTo={ACCOUNT_PAGE_PATH}
+          googleFailed={googleFailed}
+          onSignedIn={() => void load()}
+        />
       </Page>
     );
   }

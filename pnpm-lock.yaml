@@ -162,6 +162,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@simplewebauthn/browser':
+        specifier: ^13.3.0
+        version: 13.3.0
       '@unalgorithm/core':
         specifier: workspace:*
         version: link:../../packages/core

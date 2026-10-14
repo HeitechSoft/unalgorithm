@@ -1,9 +1,15 @@
 /**
- * The page's calls to its own server: the discovery document, Better Auth's email-code sign-in, the authorize endpoint
- * that hands the extension a single-use code, and the account's credits where the server bills. All same-origin, so the
- * browser sends the session cookie and the `Origin` header Better Auth checks. Every failure is an `ApiError` carrying
- * the HTTP status (0: no answer at all).
+ * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
+ * passkey), the authorize endpoint that hands the extension a single-use code, and the account's credits where the
+ * server bills. All same-origin, so the browser sends the session cookie and the `Origin` header Better Auth checks.
+ * Every failure is an `ApiError` carrying the HTTP status (0: no answer at all), except a cancelled passkey prompt
+ * (`PasskeyCancelled`).
  */
+import {
+  type AuthenticationResponseJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+  startAuthentication,
+} from '@simplewebauthn/browser';
 import {
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
@@ -22,9 +28,24 @@ export const SEND_CODE_PATH = '/api/auth/email-otp/send-verification-otp';
 export const SIGN_IN_PATH = '/api/auth/sign-in/email-otp';
 export const SESSION_PATH = '/api/auth/get-session';
 export const SIGN_OUT_PATH = '/api/auth/sign-out';
+/** Google sign-in, on a server with a Google client (CL3-13), and passkey sign-in, on every server (CL3-14). */
+export const SOCIAL_SIGN_IN_PATH = '/api/auth/sign-in/social';
+export const PASSKEY_AUTH_OPTIONS_PATH = '/api/auth/passkey/generate-authenticate-options';
+export const PASSKEY_AUTH_VERIFY_PATH = '/api/auth/passkey/verify-authentication';
 
 /** `get-session` answers `null` without a session; the page only needs the address. */
 const SessionSchema = z.object({ user: z.object({ email: z.string() }) }).nullable();
+
+/**
+ * `sign-in/social` with `disableRedirect` answers where to send the browser instead of redirecting it. Only Google's own
+ * sign-in page is followed: an answer naming any other address is a failure, never a navigation.
+ */
+const GoogleRedirectSchema = z.object({ url: z.url({ protocol: /^https$/, hostname: /^accounts\.google\.com$/ }) });
+
+/** The authentication options `startAuthentication` takes; the library reads them as WebAuthn defines them. */
+const PasskeyOptionsSchema = z.custom<PublicKeyCredentialRequestOptionsJSON>(
+  (value) => z.looseObject({ challenge: z.string().min(1) }).safeParse(value).success,
+);
 
 export class ApiError extends Error {
   /** The HTTP status (a 2xx one when the answer could not be used), or 0 when the server could not be reached. */
@@ -76,6 +97,42 @@ export async function sendCode(email: string): Promise<void> {
 /** Signs in with the emailed code; the server sets the session cookie. */
 export async function verifyCode(email: string, otp: string): Promise<void> {
   await request(SIGN_IN_PATH, z.unknown(), { email, otp });
+}
+
+/**
+ * Where to send the browser for Google; only an https://accounts.google.com/ address is accepted. Google sends the
+ * browser back to `returnTo` (a path on this server) either way: signed in, or with `?error=` when it didn't work.
+ */
+export async function googleSignInUrl(returnTo: string): Promise<string> {
+  const body = { provider: 'google', callbackURL: returnTo, errorCallbackURL: returnTo, disableRedirect: true };
+  return (await request(SOCIAL_SIGN_IN_PATH, GoogleRedirectSchema, body)).url;
+}
+
+/** The person closed the browser's passkey prompt, or it timed out: the server was told nothing. */
+export class PasskeyCancelled extends Error {
+  constructor() {
+    super('The passkey sign-in was cancelled.');
+    this.name = 'PasskeyCancelled';
+  }
+}
+
+/**
+ * Signs in with a passkey: the server's challenge, the browser's passkey prompt, then the signed answer back to the
+ * server, which sets the session cookie. A cancelled prompt is told apart by the error's name, never its class: the
+ * library rethrows the browser's `DOMException` as its own `WebAuthnError`, an `Error` that keeps the name.
+ */
+export async function signInWithPasskey(): Promise<void> {
+  const optionsJSON = await request(PASSKEY_AUTH_OPTIONS_PATH, PasskeyOptionsSchema);
+  let response: AuthenticationResponseJSON;
+  try {
+    response = await startAuthentication({ optionsJSON });
+  } catch (err) {
+    if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+      throw new PasskeyCancelled();
+    }
+    throw err;
+  }
+  await request(PASSKEY_AUTH_VERIFY_PATH, z.unknown(), { response });
 }
 
 export async function signOut(): Promise<void> {

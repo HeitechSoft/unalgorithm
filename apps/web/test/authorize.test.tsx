@@ -1,81 +1,22 @@
 /**
  * The sign-in page as the extension's `launchWebAuthFlow` opens it: the link is checked before anything is fetched,
- * then the email and code steps (or "Continue as") end with the browser sent back to the extension. `fetch` is a fake
- * server per test, and `location` a stand-in whose `assign` records the redirect: jsdom's own cannot be spied on.
+ * then the email and code steps (or "Continue as") end with the browser sent back to the extension. `fetch` is the
+ * shared fake server, and `location` a stand-in whose `assign` records the redirect: jsdom's own cannot be spied on.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { AUTHORIZE_API_PATH, chromiumRedirectUri, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { AUTHORIZE_API_PATH, chromiumRedirectUri } from '@unalgorithm/protocol';
 import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Authorize } from '../src/Authorize.tsx';
-import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
-
-const EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
-const TOM = 'tom@example.com';
-
-/** The query `launchWebAuthFlow` opens the page with. */
-const PARAMS = {
-  client_id: EXTENSION_ID,
-  redirect_uri: chromiumRedirectUri(EXTENSION_ID),
-  code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-  code_challenge_method: 'S256',
-  state: 'Qm9vdHN0cmFwLXN0YXRlLTE',
-};
-const REDIRECT = `${PARAMS.redirect_uri}?code=${'c'.repeat(43)}&state=${PARAMS.state}`;
-
-const INFO: ServerInfo = {
-  v: 1,
-  name: 'Example AI',
-  version: '0.1.0',
-  source: 'https://example.org/source/server-v0.1.0',
-  billing: false,
-  capabilities: { classify: true, sync: false },
-  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
-  limits: { maxPostsPerRequest: 12 },
-};
+import { SEND_CODE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
+import { fakeServer, INFO, PARAMS, REDIRECT, TOM } from './support/fake-server.ts';
 
 const INVALID_LINK = "This sign-in link isn't valid. Start again from the UnAlgorithm extension.";
 const WRONG_CODE = "That code didn't work. Check it, or send a new one.";
 const TOO_MANY = 'Too many tries. Wait a minute and try again.';
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
-
-type Reply = { status: number; body?: unknown };
-interface Call {
-  method: string;
-  path: string;
-  body: unknown;
-}
-
-/**
- * Stubs `fetch` with the server's routes, each answering 200 unless `replies` says otherwise (keyed `METHOD path`).
- * `session` is the address `get-session` reports, or null for none.
- */
-function fakeServer({ session = null, replies = {} }: { session?: string | null; replies?: Record<string, Reply> } = {}) {
-  const calls: Call[] = [];
-  const routes: Record<string, Reply> = {
-    [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: INFO },
-    [`GET ${SESSION_PATH}`]: { status: 200, body: session ? { session: { userId: 'u1' }, user: { email: session } } : null },
-    [`POST ${SEND_CODE_PATH}`]: { status: 200, body: { success: true } },
-    [`POST ${SIGN_IN_PATH}`]: { status: 200, body: { token: 'session-token', user: { email: TOM } } },
-    [`POST ${SIGN_OUT_PATH}`]: { status: 200, body: { success: true } },
-    [`POST ${AUTHORIZE_API_PATH}`]: { status: 200, body: { redirect: REDIRECT } },
-    ...replies,
-  };
-  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    const path = String(input);
-    calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-    const reply = routes[`${method} ${path}`] ?? { status: 404, body: { code: 'bad-request', message: 'Not found.' } };
-    return new Response(JSON.stringify(reply.body ?? null), {
-      status: reply.status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  });
-  vi.stubGlobal('fetch', fetch);
-  return { fetch, calls, posts: () => calls.filter((c) => c.method === 'POST') };
-}
 
 /** Opens `/authorize` with this query and renders the page. */
 function openPage(params: Record<string, string> = PARAMS) {
@@ -148,7 +89,7 @@ describe('email-code flow', () => {
 
   it('test_wrong_code_message', async () => {
     const server = fakeServer({
-      replies: { [`POST ${SIGN_IN_PATH}`]: { status: 400, body: { code: 'INVALID_OTP', message: 'Invalid OTP' } } },
+      routes: { [`POST ${SIGN_IN_PATH}`]: { status: 400, body: { code: 'INVALID_OTP', message: 'Invalid OTP' } } },
     });
     const { user, assign } = openPage();
     await user.type(await sendCodeTo(user), '654321');
@@ -163,7 +104,7 @@ describe('email-code flow', () => {
 
   it('test_locked_code_shows_send_new_code', async () => {
     const server = fakeServer({
-      replies: { [`POST ${SIGN_IN_PATH}`]: { status: 403, body: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many attempts' } } },
+      routes: { [`POST ${SIGN_IN_PATH}`]: { status: 403, body: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many attempts' } } },
     });
     const { user, assign } = openPage();
     await user.type(await sendCodeTo(user), '123456');
@@ -184,7 +125,7 @@ describe('email-code flow', () => {
 
   it('test_rate_limited_message', async () => {
     // Sending the code.
-    fakeServer({ replies: { [`POST ${SEND_CODE_PATH}`]: { status: 429, body: { message: 'Too many requests.' } } } });
+    fakeServer({ routes: { [`POST ${SEND_CODE_PATH}`]: { status: 429, body: { message: 'Too many requests.' } } } });
     let page = openPage();
     await page.user.type(await screen.findByLabelText('Email'), TOM);
     await page.user.click(screen.getByRole('button', { name: 'Send code' }));
@@ -193,7 +134,7 @@ describe('email-code flow', () => {
     cleanup();
 
     // Signing in with it.
-    fakeServer({ replies: { [`POST ${SIGN_IN_PATH}`]: { status: 429, body: { message: 'Too many requests.' } } } });
+    fakeServer({ routes: { [`POST ${SIGN_IN_PATH}`]: { status: 429, body: { message: 'Too many requests.' } } } });
     page = openPage();
     await page.user.type(await sendCodeTo(page.user), '123456');
     await page.user.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -223,7 +164,7 @@ describe('existing session', () => {
   it('test_authorize_forbidden_message', async () => {
     fakeServer({
       session: TOM,
-      replies: {
+      routes: {
         [`POST ${AUTHORIZE_API_PATH}`]: {
           status: 403,
           body: { code: 'permission', message: "This server doesn't accept sign-ins from here." },

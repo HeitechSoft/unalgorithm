@@ -111,8 +111,10 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
 
 1. The extension reads `/.well-known/unalgorithm.json`: the server's name, version, source link and capabilities.
 2. The background opens `/authorize` in `chrome.identity.launchWebAuthFlow` with a PKCE challenge. On that page the
-   person enters their email address and the six-digit code the server emails. Accounts are created only for
-   addresses in `SIGNUP_ALLOWLIST`, and signing in starts a one-day session for the page.
+   person enters their email address and the six-digit code the server emails, or, where the discovery document lists
+   them, uses a passkey they added on the account page or continues with Google, which sends the browser back to the
+   page signed in (it then waits for "Continue as"). Accounts are created only for addresses in `SIGNUP_ALLOWLIST`,
+   and signing in starts a one-day session for the page.
 3. The page asks `POST /v1/auth/authorize` for a single-use code, valid for a minute and bound to the extension id
    (one of `EXTENSION_IDS`), its redirect address and the challenge, and sends the browser back to the extension with
    it.

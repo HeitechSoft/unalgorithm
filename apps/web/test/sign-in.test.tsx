@@ -1,19 +1,17 @@
 /**
  * The email-code sign-in every page of the server's web app shares: the email step, the code step and their messages,
- * on their own and inside the authorize page. `fetch` is a fake server per test, as in `authorize.test.tsx`.
+ * on their own and inside the authorize page. `fetch` is the shared fake server (`test/support/fake-server.ts`).
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { AUTHORIZE_API_PATH, chromiumRedirectUri, SERVER_INFO_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { AUTHORIZE_API_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
 import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Authorize } from '../src/Authorize.tsx';
 import { SEND_CODE_PATH, SESSION_PATH, SIGN_IN_PATH } from '../src/api.ts';
 import { SignIn } from '../src/SignIn.tsx';
-
-const TOM = 'tom@example.com';
-const EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+import { fakeServer, INFO, PARAMS, type Reply, TOM } from './support/fake-server.ts';
 
 const SENT = `If ${TOM} can sign in here, a 6-digit code is on its way.`;
 const NEW_CODE = 'New code requested.';
@@ -21,49 +19,6 @@ const WRONG_CODE = "That code didn't work. Check it, or send a new one.";
 const TOO_MANY = 'Too many tries. Wait a minute and try again.';
 const OFFLINE = "Couldn't reach the server. Try again.";
 const SIGNED_OUT = 'You were signed out. Sign in again.';
-
-const INFO: ServerInfo = {
-  v: 1,
-  name: 'Example AI',
-  version: '0.1.0',
-  source: 'https://example.org/source/server-v0.1.0',
-  billing: false,
-  capabilities: { classify: true, sync: false },
-  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
-  limits: { maxPostsPerRequest: 12 },
-};
-
-/** An answer, `'offline'` for none at all (`fetch` rejects), or a function for one that arrives when the test says. */
-type Reply = { status: number; body?: unknown } | 'offline' | (() => Promise<{ status: number; body?: unknown }>);
-interface Call {
-  method: string;
-  path: string;
-  body: unknown;
-}
-
-/** Stubs `fetch` with these routes (keyed `METHOD path`); the two sign-in routes answer 200 unless `routes` says otherwise. */
-function fakeServer(routes: Record<string, Reply> = {}) {
-  const calls: Call[] = [];
-  const all: Record<string, Reply> = {
-    [`POST ${SEND_CODE_PATH}`]: { status: 200, body: { success: true } },
-    [`POST ${SIGN_IN_PATH}`]: { status: 200, body: { token: 'session-token', user: { email: TOM } } },
-    ...routes,
-  };
-  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    const path = String(input);
-    calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-    const route = all[`${method} ${path}`] ?? { status: 404, body: { code: 'bad-request', message: 'Not found.' } };
-    if (route === 'offline') throw new TypeError('Failed to fetch');
-    const reply = typeof route === 'function' ? await route() : route;
-    return new Response(JSON.stringify(reply.body ?? null), {
-      status: reply.status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  });
-  vi.stubGlobal('fetch', fetch);
-  return { calls, posts: () => calls.filter((c) => c.method === 'POST') };
-}
 
 /** Renders `SignIn` on its own, with a spy for `onSignedIn`. */
 function renderSignIn(props: { notice?: string; initialEmail?: string } = {}) {
@@ -156,7 +111,7 @@ describe('errors', () => {
       ['429', { status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
       ['no network', 'offline', OFFLINE],
     ])('signing in: %s', async (_name, reply, message) => {
-      fakeServer({ [`POST ${SIGN_IN_PATH}`]: reply });
+      fakeServer({ routes: { [`POST ${SIGN_IN_PATH}`]: reply } });
       const { user, onSignedIn } = renderSignIn();
       await user.type(await sendCodeTo(user), '123456');
       await user.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -172,7 +127,7 @@ describe('errors', () => {
       ['429', { status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
       ['no network', 'offline', OFFLINE],
     ])('sending the code: %s', async (_name, reply, message) => {
-      fakeServer({ [`POST ${SEND_CODE_PATH}`]: reply });
+      fakeServer({ routes: { [`POST ${SEND_CODE_PATH}`]: reply } });
       const { user } = renderSignIn();
       await user.type(screen.getByLabelText('Email'), TOM);
       await user.click(screen.getByRole('button', { name: 'Send code' }));
@@ -186,14 +141,16 @@ describe('errors', () => {
     let answerSend: () => void = () => {};
     let answerSignIn: () => void = () => {};
     const server = fakeServer({
-      [`POST ${SEND_CODE_PATH}`]: () =>
-        new Promise((resolve) => {
-          answerSend = () => resolve({ status: 200, body: { success: true } });
-        }),
-      [`POST ${SIGN_IN_PATH}`]: () =>
-        new Promise((resolve) => {
-          answerSignIn = () => resolve({ status: 200, body: { token: 'session-token', user: { email: TOM } } });
-        }),
+      routes: {
+        [`POST ${SEND_CODE_PATH}`]: () =>
+          new Promise((resolve) => {
+            answerSend = () => resolve({ status: 200, body: { success: true } });
+          }),
+        [`POST ${SIGN_IN_PATH}`]: () =>
+          new Promise((resolve) => {
+            answerSignIn = () => resolve({ status: 200, body: { token: 'session-token', user: { email: TOM } } });
+          }),
+      },
     });
     const { user, onSignedIn } = renderSignIn();
     await user.type(screen.getByLabelText('Email'), TOM);
@@ -224,20 +181,15 @@ describe('errors', () => {
 
   it('test_signed_out_notice_clears_on_send_code', async () => {
     // The authorize page, signed in, and the session ends before "Continue as" asks for the extension's code.
-    const params = {
-      client_id: EXTENSION_ID,
-      redirect_uri: chromiumRedirectUri(EXTENSION_ID),
-      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-      code_challenge_method: 'S256',
-      state: 'Qm9vdHN0cmFwLXN0YXRlLTE',
-    };
     const server = fakeServer({
-      [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: INFO },
-      [`GET ${SESSION_PATH}`]: { status: 200, body: { session: { userId: 'u1' }, user: { email: TOM } } },
-      [`POST ${AUTHORIZE_API_PATH}`]: { status: 401, body: { code: 'auth-required', message: 'Sign in first.' } },
+      routes: {
+        [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: INFO },
+        [`GET ${SESSION_PATH}`]: { status: 200, body: { session: { userId: 'u1' }, user: { email: TOM } } },
+        [`POST ${AUTHORIZE_API_PATH}`]: { status: 401, body: { code: 'auth-required', message: 'Sign in first.' } },
+      },
     });
     const assign = vi.fn();
-    vi.stubGlobal('location', { pathname: '/authorize', search: `?${new URLSearchParams(params)}`, assign });
+    vi.stubGlobal('location', { pathname: '/authorize', search: `?${new URLSearchParams(PARAMS)}`, assign });
     let user = setupUser();
     render(<Authorize />);
     await user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
