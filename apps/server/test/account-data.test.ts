@@ -54,9 +54,16 @@ const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server 
 const COST_MICROS = 9_876_543;
 /** A raw `User-Agent` header longer than the export's cap of 500. */
 const LONG_USER_AGENT = `Mozilla/5.0 ${'x'.repeat(588)}`;
+/** A 250-character passkey name, longer than the export's cap of 200: the plugin stores whatever name the page sent. */
+const passkeyName = (label: string) => `${label}'s phone `.padEnd(250, 'x');
 /** Two UTC days of usage: two requests on the first (at its first and last minute), one on the second. */
 const DAY_ONE = '2026-10-01';
 const DAY_TWO = '2026-10-02';
+/** The usage `seedAccount` stores for one account, as the export groups it: by UTC day and task; counts, never cost. */
+const SEEDED_USAGE = [
+  { day: DAY_ONE, task: 'classify', requests: 2, postsRequested: 10, postsOk: 8 },
+  { day: DAY_TWO, task: 'classify', requests: 1, postsRequested: 2, postsOk: 2 },
+];
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
@@ -135,6 +142,20 @@ function rowsHolding(tables: Map<string, Record<string, unknown>[]>, needles: st
   return found;
 }
 
+/** The one session `seedAccount` leaves the account, as the export shows it: its 600-character user agent cut to 500. */
+async function exportedSession(t: TestApp, userId: string): Promise<AccountExport['sessions'][number]> {
+  const rows = await t.deps.db.db.select().from(session).where(eq(session.userId, userId));
+  expect(rows.map((s) => s.userAgent)).toEqual([LONG_USER_AGENT]);
+  const [row] = rows;
+  if (!row) throw new Error('No session.');
+  return {
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    ipAddress: row.ipAddress,
+    userAgent: LONG_USER_AGENT.slice(0, 500),
+  };
+}
+
 /** How many rows each table has. */
 async function rowCounts(t: TestApp): Promise<Record<string, number>> {
   return Object.fromEntries([...(await allRows(t))].map(([table, rows]) => [table, rows.length]));
@@ -155,9 +176,9 @@ interface Seeded {
 
 /**
  * An account with everything the server can hold about it: two devices (one revoked) with their codes and refresh
- * tokens, one web session with a 600-character user agent, a linked Google account, a passkey, usage on two UTC days,
- * its own daily cap, and a sync space with two live items and a tombstone and one push record. Device and session rows
- * come from the real sign-in routes; the rest is inserted directly.
+ * tokens, one web session with a 600-character user agent, a linked Google account, a passkey with a 250-character
+ * name, usage on two UTC days, its own daily cap, and a sync space with two live items and a tombstone and one push
+ * record. Device and session rows come from the real sign-in routes; the rest is inserted directly.
  */
 async function seedAccount(t: TestApp, email: string): Promise<Seeded> {
   const db = t.deps.db.db;
@@ -183,7 +204,7 @@ async function seedAccount(t: TestApp, email: string): Promise<Seeded> {
   });
   await db.insert(passkey).values({
     id: randomUUID(),
-    name: `${label}'s phone`,
+    name: passkeyName(label),
     publicKey: `public-key-${randomUUID()}`,
     userId,
     credentialID: `credential-${randomUUID()}`,
@@ -279,28 +300,24 @@ describe('export', { timeout: PGLITE_TIMEOUT }, () => {
     ]);
     expect(body.devices[1]?.revokedAt).toEqual(expect.any(String));
 
+    // The passkey, its 250-character name cut to the contract's 200.
     const [key] = await db.select().from(passkey).where(eq(passkey.userId, tom.userId));
+    expect(key?.name).toHaveLength(250);
     expect(body.passkeys).toEqual([
-      { name: "tom's phone", createdAt: key?.createdAt?.toISOString(), deviceType: 'multiDevice', backedUp: true },
+      {
+        name: passkeyName('tom').slice(0, 200),
+        createdAt: key?.createdAt?.toISOString(),
+        deviceType: 'multiDevice',
+        backedUp: true,
+      },
     ]);
 
     // The one session, its 600-character user agent cut to the contract's 500.
-    const [sessionRow] = await db.select().from(session).where(eq(session.userId, tom.userId));
-    expect(body.sessions).toEqual([
-      {
-        createdAt: sessionRow?.createdAt.toISOString(),
-        expiresAt: sessionRow?.expiresAt.toISOString(),
-        ipAddress: sessionRow?.ipAddress,
-        userAgent: LONG_USER_AGENT.slice(0, 500),
-      },
-    ]);
-    expect(sessionRow?.userAgent).toHaveLength(600);
+    expect(LONG_USER_AGENT).toHaveLength(600);
+    expect(body.sessions).toEqual([await exportedSession(t, tom.userId)]);
 
     // Grouped by UTC day and task; counts, never cost.
-    expect(body.usage).toEqual([
-      { day: DAY_ONE, task: 'classify', requests: 2, postsRequested: 10, postsOk: 8 },
-      { day: DAY_TWO, task: 'classify', requests: 1, postsRequested: 2, postsOk: 2 },
-    ]);
+    expect(body.usage).toEqual(SEEDED_USAGE);
 
     // The three items, the tombstone without a value.
     const itemRows = await db.select().from(syncItems).where(eq(syncItems.spaceId, tom.spaceId));
@@ -408,8 +425,11 @@ describe('export', { timeout: PGLITE_TIMEOUT }, () => {
 
   it('test_export_session_only_and_isolation', async () => {
     const t = await dataApp();
+    const db = t.deps.db.db;
     const tom = await seedAccount(t, TOM);
     const ana = await seedAccount(t, ANA);
+    // Ana signs in by email only: Tom's Google account is the only linked one.
+    await db.delete(account).where(eq(account.userId, ana.userId));
 
     // A device token, even with the page's origin and the session cookie beside it, never downloads the account.
     for (const headers of [bearer(tom.windows), { ...bearer(tom.windows), ...page(tom.cookie) }]) {
@@ -423,12 +443,17 @@ describe('export', { timeout: PGLITE_TIMEOUT }, () => {
     expect(none.status).toBe(401);
     expect(await none.json()).toEqual(AUTH_REQUIRED);
 
-    // Ana's session downloads Ana's account, and nothing of Tom's.
+    // Ana's session downloads Ana's account, and nothing of Tom's: not his providers, devices, passkey, session (its IP
+    // address and user agent), usage or sync items.
     const { text, body } = await exported(t, ana.cookie);
-    expect(body.account.email).toBe(ANA);
+    const [anaUser] = await db.select().from(user).where(eq(user.id, ana.userId));
+    expect(body.account).toEqual({ email: ANA, createdAt: anaUser?.createdAt.toISOString(), linkedProviders: [] });
     expect(body.devices.map((d) => d.id)).toEqual([ana.windows.device_id, ana.linux.device_id]);
+    expect(body.passkeys.map((p) => p.name)).toEqual([passkeyName('ana').slice(0, 200)]);
+    expect(body.sessions).toEqual([await exportedSession(t, ana.userId)]);
+    expect(body.usage).toEqual(SEEDED_USAGE);
     expect(body.sync.spaces.map((s) => s.id)).toEqual([ana.spaceId]);
-    for (const value of [TOM, tom.userId, tom.windows.device_id, tom.linux.device_id, tom.spaceId, ...tom.keys]) {
+    for (const value of [TOM, tom.userId, tom.windows.device_id, tom.linux.device_id, "tom's phone", tom.spaceId, ...tom.keys]) {
       expect(text).not.toContain(value);
     }
     // And Tom's his own.
@@ -482,6 +507,9 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
       expect((await postJson(t.app, SEND_CODE, { email: TOM, type }, page(tom.cookie))).status).toBe(200);
     }
     expect((await t.app.request(REGISTER_OPTIONS, { headers: { Cookie: tom.cookie } })).status).toBe(200);
+    // Ana's own unused sign-in code and unfinished passkey registration, which must outlast Tom's deletion.
+    expect((await postJson(t.app, SEND_CODE, { email: ANA, type: 'sign-in' }, page(ana.cookie))).status).toBe(200);
+    expect((await t.app.request(REGISTER_OPTIONS, { headers: { Cookie: ana.cookie } })).status).toBe(200);
 
     const tomIs = [tom.userId, TOM];
     const anaIs = [ana.userId, ANA];
@@ -510,6 +538,7 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
       `sign-in-otp-${TOM}`,
     ]);
     const anasRows = rowsHolding(before, anaIs);
+    expect(anasRows['public.verification']).toHaveLength(2);
 
     await deleted(t, TOM.toUpperCase(), tom.cookie);
 
@@ -520,7 +549,8 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
     expect(after.get('public.sync_items')).toHaveLength(3);
     expect(after.get('public.sync_pushes')).toHaveLength(1);
     expect(after.get('public.refresh_tokens')).toHaveLength(2);
-    // Every row of Ana's is still there, unchanged.
+    // Only Tom's four `verification` rows went; every row of Ana's, her code and challenge too, is still there, unchanged.
+    expect(after.get('public.verification')).toHaveLength((before.get('public.verification')?.length ?? 0) - 4);
     expect(rowsHolding(after, anaIs)).toEqual(anasRows);
     expect((await me(t, ana.windows)).status).toBe(200);
   });
