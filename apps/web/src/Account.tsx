@@ -2,12 +2,14 @@
  * The account page every server serves at `/account`, Cloud or self-hosted: who is signed in on this server, and signing
  * out, or the sign-in (`SignIn`) when nobody is, which Google comes back to. The page names the server only by its
  * discovery document. Sections go below the account row: the credits when the server advertises billing (`Credits`),
- * the devices signed in (`Devices`) and the passkeys (`Passkeys`). A section that finds the session gone sends the
- * person back to the sign-in, saying so.
+ * the devices signed in (`Devices`), the passkeys (`Passkeys`), and the account's export and deletion (`AccountData`).
+ * A section that finds the session gone sends the person back to the sign-in, saying so. Once the account is deleted
+ * the page says so and shows nothing else: the session went with the account.
  */
 import { ACCOUNT_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { AccountData } from './AccountData.tsx';
 import { getSession, serverInfo, signOut } from './api.ts';
 import { Credits } from './Credits.tsx';
 import { Devices } from './Devices.tsx';
@@ -16,12 +18,15 @@ import { Passkeys } from './Passkeys.tsx';
 import { failureMessage, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const UNREACHABLE = "Couldn't reach the server. Try again.";
+/** The server deletes an account only for a session signed in within the last 10 minutes (CL3-15). */
+const SIGN_IN_TO_DELETE = 'For your safety, sign in again, then delete your account within 10 minutes.';
 
 type Step =
   | { name: 'loading' }
   | { name: 'unavailable' }
   | { name: 'signed-out'; notice?: string }
-  | { name: 'signed-in'; email: string };
+  | { name: 'signed-in'; email: string }
+  | { name: 'deleted' };
 
 export function Account() {
   const [info, setInfo] = useState<ServerInfo | null>(null);
@@ -58,6 +63,15 @@ export function Account() {
   /** A section's request found the session gone (401): the one-day session ended, or it was signed out elsewhere. */
   const sessionEnded = useCallback(() => toSignedOut(SIGNED_OUT), [toSignedOut]);
 
+  /**
+   * Deleting found the session too old: it is ended here, so signing in again starts a fresh one. A sign-out that fails
+   * changes nothing that matters, as signing in replaces the session anyway.
+   */
+  const signInToDelete = useCallback(async () => {
+    await signOut().catch(() => undefined);
+    toSignedOut(SIGN_IN_TO_DELETE);
+  }, [toSignedOut]);
+
   async function onSignOut() {
     setBusy(true);
     setError(null);
@@ -79,6 +93,7 @@ export function Account() {
       </Page>
     );
   }
+  if (step.name === 'deleted') return <Page info={info} intro="Your account was deleted." />;
   if (step.name === 'signed-out') {
     return (
       <Page info={info} intro="Sign in to see your account.">
@@ -108,6 +123,13 @@ export function Account() {
       {info.billing ? <Credits onSignedOut={sessionEnded} /> : null}
       <Devices onSignedOut={sessionEnded} />
       <Passkeys onSignedOut={sessionEnded} />
+      <AccountData
+        email={step.email}
+        info={info}
+        onDeleted={() => setStep({ name: 'deleted' })}
+        onNeedsSignIn={() => void signInToDelete()}
+        onSignedOut={sessionEnded}
+      />
     </Page>
   );
 }

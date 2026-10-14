@@ -444,7 +444,7 @@ describe('accessibility', () => {
 
     // Each dialog is named by its own title, and every button, open or not, says what it does in visible text.
     const names = screen.getAllByRole('alertdialog', { hidden: true }).map((d) => d.getAttribute('aria-label'));
-    expect(names).toEqual(['Revoke Chrome on Windows?', REMOVE_TITLE]);
+    expect(names).toEqual(['Revoke Chrome on Windows?', REMOVE_TITLE, 'Delete your account?']);
     for (const button of screen.getAllByRole('button', { hidden: true })) {
       expect(button.textContent?.trim()).not.toBe('');
       expect(button.getAttribute('aria-label')).toBeNull();

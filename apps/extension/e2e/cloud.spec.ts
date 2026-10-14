@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import {
+  ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
   ACCOUNT_PAGE_PATH,
   AUTHORIZE_PAGE_PATH,
@@ -148,9 +149,9 @@ test.describe('UnAlgorithm Cloud', () => {
 });
 
 /**
- * The account page's revoke dialog in Chromium, where jsdom has no modal dialog (CL3-17): opened from the row of the
- * device the extension just signed in as, it is a modal that keeps Tab inside and closes on the Escape key, and no
- * revoke request leaves the page.
+ * The account page's revoke and delete dialogs in Chromium, where jsdom has no modal dialog (CL3-17, CL3-18): the
+ * revoke dialog opened from the row of the device the extension just signed in as, then the delete dialog; each is a
+ * modal that opens on "Cancel", keeps Tab inside and closes on the Escape key, and neither request leaves the page.
  */
 async function expectAccountDialogsTrapFocus(context: BrowserContext, serverUrl: string): Promise<void> {
   const page = await context.newPage();
@@ -167,6 +168,11 @@ async function expectAccountDialogsTrapFocus(context: BrowserContext, serverUrl:
   await expectDialogTrapsFocus(page, revoke, 2);
   expect(posted).not.toContain(ACCOUNT_DEVICE_REVOKE_PATH);
   await expect(revoke).toHaveCount(1);
+
+  // The delete dialog: its field and "Cancel" ("Delete account" stays disabled until the address is typed).
+  await expectDialogTrapsFocus(page, page.getByRole('button', { name: 'Delete account…', exact: true }), 2);
+  expect(posted).not.toContain(ACCOUNT_DELETE_PATH);
+  await expect(page.getByText(`Signed in as ${EMAIL}`)).toBeVisible();
   await page.close();
 }
 

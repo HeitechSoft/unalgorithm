@@ -2,13 +2,17 @@
  * A fake server for the web app's tests: `fetch` stubbed with the server's routes, keeping a session as the real one
  * does (an accepted code or passkey starts it and signing out ends it), and every request recorded. Also the query the
  * extension opens the authorize page with, and what Google and a passkey sign-in answer. The account's devices and
- * passkeys are kept too: revoking or removing one takes it off its list and adding a passkey puts one on; without a
- * session those routes answer 401, as the real ones do.
+ * passkeys are kept too: revoking or removing one takes it off its list and adding a passkey puts one on. The account
+ * exports as `EXPORT`, and deleting it (with the address typed again) ends the session. Without a session those routes
+ * answer 401, as the real ones do.
  */
 import {
+  ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
   ACCOUNT_DEVICES_PATH,
+  ACCOUNT_EXPORT_PATH,
   type AccountDevice,
+  type AccountExport,
   AUTHORIZE_API_PATH,
   chromiumRedirectUri,
   SERVER_INFO_PATH,
@@ -118,6 +122,29 @@ export const INFO: ServerInfo = {
   limits: { maxPostsPerRequest: 12 },
 };
 
+/** What `GET /v1/account/export` answers for TOM. */
+export const EXPORT: AccountExport = {
+  v: 1,
+  exportedAt: '2026-10-14T12:00:00.000Z',
+  server: { name: INFO.name, origin: 'https://ai.example.org', version: INFO.version },
+  account: { email: TOM, createdAt: '2026-08-20T12:00:00.000Z', linkedProviders: ['credential'] },
+  devices: [
+    {
+      id: '4f5d8a2e-6b1c-4c3d-9e8f-0a1b2c3d4e5f',
+      name: 'Chrome on Windows',
+      createdAt: '2026-09-02T15:00:00.000Z',
+      lastUsedAt: '2026-10-13T09:30:00.000Z',
+      revokedAt: null,
+      revokedReason: null,
+    },
+  ],
+  passkeys: [{ name: 'iCloud Keychain', createdAt: '2026-09-01T12:00:00.000Z', deviceType: 'multiDevice', backedUp: true }],
+  sessions: [{ createdAt: '2026-10-14T11:55:00.000Z', expiresAt: '2026-10-15T11:55:00.000Z', ipAddress: null, userAgent: null }],
+  usage: [{ day: '2026-10-13', task: 'classify', requests: 3, postsRequested: 30, postsOk: 30 }],
+  sync: { spaces: [] },
+  billing: null,
+};
+
 export type Answer = { status: number; body?: unknown };
 export interface Call {
   method: string;
@@ -196,6 +223,14 @@ export function fakeServer({
     [`POST ${PASSKEY_REGISTER_VERIFY_PATH}`]: withSession(() => {
       passkeyList = [...passkeyList, ADDED_PASSKEY];
       return { status: 200, body: ADDED_PASSKEY };
+    }),
+    [`GET ${ACCOUNT_EXPORT_PATH}`]: withSession(() => ({ status: 200, body: EXPORT })),
+    [`POST ${ACCOUNT_DELETE_PATH}`]: withSession((call) => {
+      if (field(call, 'confirm')?.trim().toLowerCase() !== current?.toLowerCase()) {
+        return { status: 400, body: { code: 'bad-request', message: 'The address does not match.' } };
+      }
+      current = null;
+      return { status: 200, body: { ok: true } };
     }),
     [`POST ${PASSKEY_DELETE_PATH}`]: withSession((call) => {
       const id = field(call, 'id');

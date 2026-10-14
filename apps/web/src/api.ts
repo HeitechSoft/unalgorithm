@@ -13,10 +13,13 @@ import {
   startRegistration,
 } from '@simplewebauthn/browser';
 import {
+  ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
   ACCOUNT_DEVICES_PATH,
+  ACCOUNT_EXPORT_PATH,
   type AccountDevice,
   AccountDevicesResponseSchema,
+  AccountExportSchema,
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
@@ -218,4 +221,23 @@ export async function addPasskey(): Promise<void> {
 /** Removes one of the account's passkeys; signing in with an emailed code still works. */
 export async function removePasskey(id: string): Promise<void> {
   await request(PASSKEY_DELETE_PATH, z.unknown(), { id });
+}
+
+/**
+ * Everything the server holds about the account, as the JSON file the person downloads. The answer is checked with
+ * `AccountExportSchema` first, which also drops any field the contract does not list: a bad answer is an `ApiError`,
+ * never a download.
+ */
+export async function exportAccount(): Promise<Blob> {
+  const data = await request(ACCOUNT_EXPORT_PATH, AccountExportSchema);
+  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+}
+
+/**
+ * Deletes the account and everything stored about it, which signs out every device. `confirm` is the address as the
+ * person typed it; the server compares it ignoring case and surrounding spaces, and answers 401 when the session is
+ * older than 10 minutes and 400 when the address does not match.
+ */
+export async function deleteAccount(confirm: string): Promise<void> {
+  await request(ACCOUNT_DELETE_PATH, OkResponseSchema, { confirm });
 }
