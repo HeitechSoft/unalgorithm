@@ -67,9 +67,8 @@ function fakeServer(routes: Record<string, Reply> = {}) {
 
 /**
  * A user-event session that types without a timer between keys. The default (`delay: 0`) waits a `setTimeout` after
- * every key, which on Windows lasts a whole timer tick (about 15 ms): the six sign-ins of `test_sign_in_error_messages`
- * spent most of their time asleep, ran past the 5 s timeout under the full suite's load, and the rest of that test then
- * typed into the next one.
+ * every key, which on Windows lasts a whole timer tick (about 15 ms), so each sign-in spent most of its time asleep and
+ * the longest tests ran past the 5 s timeout under the full suite's load.
  */
 function setupUser() {
   return userEvent.setup({ delay: null });
@@ -157,14 +156,15 @@ describe('happy path', () => {
 });
 
 describe('errors', () => {
-  it('test_sign_in_error_messages', async () => {
-    const cases: [Reply, string][] = [
-      [{ status: 400, body: { code: 'INVALID_OTP', message: 'Invalid OTP' } }, WRONG_CODE],
-      [{ status: 403, body: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many attempts' } }, WRONG_CODE],
-      [{ status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
-      ['offline', OFFLINE],
-    ];
-    for (const [reply, message] of cases) {
+  // One test per answer, each with its own timeout: a slow sign-in under load fails alone instead of taking the
+  // remaining cases past the timeout and on into the next test.
+  describe('test_sign_in_error_messages', () => {
+    it.each<[string, Reply, string]>([
+      ['400 INVALID_OTP', { status: 400, body: { code: 'INVALID_OTP', message: 'Invalid OTP' } }, WRONG_CODE],
+      ['403 TOO_MANY_ATTEMPTS', { status: 403, body: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many attempts' } }, WRONG_CODE],
+      ['429', { status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
+      ['no network', 'offline', OFFLINE],
+    ])('signing in: %s', async (_name, reply, message) => {
       fakeServer({ [`POST ${SIGN_IN_PATH}`]: reply });
       const { user, onSignedIn } = renderSignIn();
       await user.type(await sendCodeTo(user), '123456');
@@ -174,14 +174,13 @@ describe('errors', () => {
       expect(screen.getByLabelText('6-digit code')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Send a new code' })).toBeTruthy();
       expect(onSignedIn).not.toHaveBeenCalled();
-      cleanup();
-    }
+    });
 
     // Sending the code: the same messages, on the email step.
-    for (const [reply, message] of [
-      [{ status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
-      ['offline', OFFLINE],
-    ] as [Reply, string][]) {
+    it.each<[string, Reply, string]>([
+      ['429', { status: 429, body: { message: 'Too many requests.' } }, TOO_MANY],
+      ['no network', 'offline', OFFLINE],
+    ])('sending the code: %s', async (_name, reply, message) => {
       fakeServer({ [`POST ${SEND_CODE_PATH}`]: reply });
       const { user } = renderSignIn();
       await user.type(screen.getByLabelText('Email'), TOM);
@@ -189,8 +188,7 @@ describe('errors', () => {
       expect((await screen.findByRole('alert')).textContent).toBe(message);
       expect(screen.getByLabelText('Email')).toBeTruthy();
       expect(screen.queryByLabelText('6-digit code')).toBeNull();
-      cleanup();
-    }
+    });
   });
 
   it('test_sign_in_single_flight', async () => {
