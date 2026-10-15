@@ -210,6 +210,8 @@ a higher `maxChargeMicros` is a raise. Adding a task follows [The procedure](#th
 
 `perspectives` was added this way: its first card is the 2026-11-01 entry (2×, hold cap $0.50), which copies the
 2026-10-01 classify card unchanged.
+`factcheck` was added the same way: its first card is the 2026-12-01 entry (2×, hold cap $0.40), which copies the
+classify and perspectives cards unchanged.
 
 ### Merging a schedule change
 

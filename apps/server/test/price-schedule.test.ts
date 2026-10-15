@@ -78,7 +78,7 @@ describe('cli', () => {
   it('test_cli_exit_codes', async () => {
     expect(await run(['--base', 'main'], atBase(REAL_SOURCE))).toEqual({
       code: 0,
-      lines: ['No price in effect changed (1 of 2 entries in effect).'],
+      lines: ['No price in effect changed (1 of 3 entries in effect).'],
     });
 
     const changed = REAL_SOURCE.replace('multiplier: 2,', 'multiplier: 2.5,');

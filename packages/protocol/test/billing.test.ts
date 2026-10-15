@@ -13,6 +13,8 @@ import {
   type CreditPriceScheduleEntry,
   checkPriceScheduleChange,
   estimatePosts,
+  FACTCHECK_COST_CEILING_MICROS,
+  FACTCHECK_TYPICAL_COST_MICROS,
   jobPriceAt,
   LOW_BALANCE_MICROS,
   MAX_CREDIT_HISTORY,
@@ -347,6 +349,8 @@ const F: CreditPriceScheduleEntry = {
   cards: { classify: L.cards.classify, factcheck: FACTCHECK, perspectives: PERSPECTIVES },
 };
 const FIXTURE: CreditPriceSchedule = [L, F];
+/** The schedule before P3-51 appended the 2026-12-01 fact-check entry. */
+const TWO_ENTRIES: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE.slice(0, 2);
 /** The fixture, then an entry from `e` copying F's cards with `cards` replaced. */
 const after = (e: string, cards: Partial<CreditPriceScheduleEntry['cards']>): CreditPriceSchedule => [
   ...FIXTURE,
@@ -364,7 +368,7 @@ describe('adding a task', () => {
   });
 
   it('test_perspectives_entry_passes_shape_and_change_rules', () => {
-    expect(CREDIT_PRICE_SCHEDULE).toEqual([
+    expect(TWO_ENTRIES).toEqual([
       LAUNCH,
       { effectiveFrom: '2026-11-01T00:00:00Z', cards: { classify: LAUNCH.cards.classify, perspectives: PERSPECTIVES } },
     ]);
@@ -379,20 +383,20 @@ describe('adding a task', () => {
   it('test_job_price_at_perspectives_from_its_date', () => {
     expect(jobPriceAt(at('2026-11-02T00:00:00Z'), 'perspectives')).toEqual({ typicalMicros: 270_000, maxMicros: 500_000 });
     expect(jobPriceAt(at('2026-10-31T23:59:59Z'), 'perspectives')).toBeNull();
-    // Fact-check is still not priced (RM4).
+    // Fact-check is not priced until its own entry (P3-51).
     expect(jobPriceAt(at('2026-11-02T00:00:00Z'), 'factcheck')).toBeNull();
   });
 
   it('test_perspectives_cap_raise_needs_notice', () => {
     const real = CREDIT_PRICE_SCHEDULE[1] as CreditPriceScheduleEntry;
     const raised: CreditPriceSchedule = [
-      ...CREDIT_PRICE_SCHEDULE,
+      ...TWO_ENTRIES,
       {
         effectiveFrom: '2026-11-11T00:00:00Z',
         cards: { ...real.cards, perspectives: { ...PERSPECTIVES, maxChargeMicros: 600_000 } },
       },
     ];
-    const problems = checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, raised, at('2026-11-05T12:00:00Z'));
+    const problems = checkPriceScheduleChange(TWO_ENTRIES, raised, at('2026-11-05T12:00:00Z'));
     expect(problems).toEqual([
       "2026-11-11T00:00:00Z: perspectives would raise its maximum charge from 500000 to 600000 micro-dollars; a price raise needs 30 days' notice: the earliest effectiveFrom allowed now for it is 2026-12-06T00:00:00Z",
     ]);
@@ -572,5 +576,69 @@ describe('schemas', () => {
     expect(CreditAccountSchema.safeParse({ ...minimal, history }).success).toBe(false);
     expect(CreditAccountSchema.safeParse({ ...minimal, pricingUrl: 'http://unalgorithm.app/credits' }).success).toBe(false);
     expect(CreditAccountSchema.safeParse({ ...minimal, addCreditPath: '//evil.example' }).success).toBe(false);
+  });
+});
+
+describe('the fact-check price card (P3-51)', () => {
+  const OCT_15 = at('2026-10-15T12:00:00Z');
+  const DEC_1 = '2026-12-01T00:00:00Z';
+  const D = CREDIT_PRICE_SCHEDULE[2] as CreditPriceScheduleEntry;
+
+  it('test_factcheck_entry_passes_shape_and_change_rules', () => {
+    expect(CREDIT_PRICE_SCHEDULE).toHaveLength(3);
+    expect(D.effectiveFrom).toBe(DEC_1);
+    expect(priceScheduleProblems(CREDIT_PRICE_SCHEDULE)).toEqual([]);
+    // The 2026-10-01 and 2026-11-01 entries are unchanged, and a task's first card is not a raise.
+    expect(checkPriceScheduleChange(TWO_ENTRIES, CREDIT_PRICE_SCHEDULE, OCT_15)).toEqual([]);
+  });
+
+  it('test_factcheck_entry_copies_earlier_cards', () => {
+    const before = CREDIT_PRICE_SCHEDULE[1] as CreditPriceScheduleEntry;
+    expect(D.cards.classify).toEqual(before.cards.classify);
+    expect(D.cards.perspectives).toEqual(before.cards.perspectives);
+    // Copied by identity, so the 2026-11-01 entry is the same data it was.
+    expect(D.cards.classify).toBe(before.cards.classify);
+    expect(D.cards.perspectives).toBe(before.cards.perspectives);
+    expect(Object.isFrozen(D.cards.factcheck)).toBe(true);
+  });
+
+  it('test_job_price_at_factcheck_from_its_date', () => {
+    expect(jobPriceAt(at('2026-12-02T00:00:00Z'), 'factcheck')).toEqual({ typicalMicros: 240_000, maxMicros: 400_000 });
+    expect(jobPriceAt(at('2026-11-30T23:59:59Z'), 'factcheck')).toBeNull();
+    expect(taskPriceAt(at('2026-11-15T00:00:00Z'), 'factcheck')).toEqual({ offered: false });
+    expect(taskPriceAt(at(DEC_1), 'factcheck')).toEqual({ offered: true, card: D.cards.factcheck, effectiveFrom: DEC_1 });
+    expect(jobPriceAt(at('2026-12-02T00:00:00Z'), 'perspectives')).toEqual({ typicalMicros: 270_000, maxMicros: 500_000 });
+  });
+
+  it('test_factcheck_card_matches_constants', () => {
+    expect(D.cards.factcheck).toEqual(FACTCHECK);
+    expect(D.cards.factcheck?.referenceCostMicrosPer1000).toBe(FACTCHECK_TYPICAL_COST_MICROS * 1_000);
+    expect(D.cards.factcheck?.maxChargeMicros).toBe(FACTCHECK_COST_CEILING_MICROS * 2);
+    expect(D.cards.factcheck?.multiplier).toBe(2);
+  });
+
+  it('test_factcheck_entry_date_and_raise_rules', () => {
+    // Merged on the entry's own date: rule 2a refuses a start in the past.
+    expect(checkPriceScheduleChange(TWO_ENTRIES, CREDIT_PRICE_SCHEDULE, at('2026-12-01T12:00:00Z'))).toEqual([
+      pastText(DEC_1, '2026-12-02T00:00:00Z'),
+    ]);
+    // Once priced, a higher hold cap is a raise and needs notice.
+    const raised: CreditPriceSchedule = [
+      ...CREDIT_PRICE_SCHEDULE,
+      { effectiveFrom: '2026-12-11T00:00:00Z', cards: { ...D.cards, factcheck: { ...FACTCHECK, maxChargeMicros: 450_000 } } },
+    ];
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, raised, at('2026-12-05T12:00:00Z'))).toEqual([
+      "2026-12-11T00:00:00Z: factcheck would raise its maximum charge from 400000 to 450000 micro-dollars; a price raise needs 30 days' notice: the earliest effectiveFrom allowed now for it is 2027-01-05T00:00:00Z",
+    ]);
+  });
+
+  it('test_factcheck_entry_cancellable_before_date', () => {
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, TWO_ENTRIES, at('2026-11-20T00:00:00Z'))).toEqual([]);
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, TWO_ENTRIES, at('2026-12-02T00:00:00Z'))).toEqual([
+      `${DEC_1}: this price is in effect and cannot be removed`,
+    ]);
+    // Moving it later before its date also passes.
+    const moved = [...TWO_ENTRIES, { ...D, effectiveFrom: '2026-12-15T00:00:00Z' }];
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, moved, at('2026-11-20T00:00:00Z'))).toEqual([]);
   });
 });
