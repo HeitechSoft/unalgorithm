@@ -374,11 +374,8 @@ export function priceRaisesWithinNotice(
   const starts = [...base, ...head].map((entry) => Date.parse(entry.effectiveFrom)).filter((t) => t > t0 && t < end);
   const instants = [...new Set([t0, ...starts])].sort((a, b) => a - b);
   const retail = (card: Readonly<CreditPriceCard>) => retailMicros(card.referenceCostMicrosPer1000, card.multiplier);
-  const higherCap = (x: Readonly<CreditPriceCard>, y: Readonly<CreditPriceCard> | undefined) =>
-    y !== undefined &&
-    x.maxChargeMicros !== undefined &&
-    y.maxChargeMicros !== undefined &&
-    x.maxChargeMicros > y.maxChargeMicros;
+  const higherCap = (x: Readonly<CreditPriceCard> | undefined, y: Readonly<CreditPriceCard> | undefined) =>
+    !!x && !!y && x.maxChargeMicros !== undefined && y.maxChargeMicros !== undefined && x.maxChargeMicros > y.maxChargeMicros;
 
   const problems: string[] = [];
   for (const t of instants) {
@@ -387,26 +384,31 @@ export function priceRaisesWithinNotice(
     const baseBefore = cardsOf(priceCardsAt(new Date(t - 1), base));
     const headBefore = cardsOf(priceCardsAt(new Date(t - 1), head));
     for (const [task, h] of Object.entries(cardsOf(priceCardsAt(new Date(t), head)))) {
-      const b = baseCards[task];
-      const p = headBefore[task];
-      if (!h || !b || !p) continue; // no earlier price to raise
-      const q = baseBefore[task];
-      const capRaisedFrom = higherCap(h, b) ? b : t !== t0 && higherCap(h, p) && !higherCap(b, q) ? p : undefined;
+      if (!h) continue;
+      // b: the base's card at t; p: the head's just before t; q: the base's just before t. A missing one is the task not
+      // yet offered there. A task's first card is no raise, but once either side has a card for it, a higher one is: the
+      // head is compared with the base's card when there is one, and with its own card just before t when there is one.
+      const b = baseCards[task] || undefined;
+      const p = t === t0 ? undefined : headBefore[task] || undefined;
+      const q = baseBefore[task] || undefined;
+      const capRaisedFrom = higherCap(h, b) ? b : higherCap(h, p) && !higherCap(b, q) ? p : undefined;
       if (capRaisedFrom) {
         problems.push(
           `${at}: ${task} would raise its maximum charge from ${capRaisedFrom.maxChargeMicros} to ${h.maxChargeMicros} micro-dollars; ${notice}`,
         );
       }
-      const [hRetail, bRetail, pRetail] = [retail(h), retail(b), retail(p)];
-      if (h.multiplier > b.multiplier || hRetail > bRetail) {
+      const hRetail = retail(h);
+      const bRetail = b ? retail(b) : undefined;
+      if (b && bRetail !== undefined && (h.multiplier > b.multiplier || hRetail > bRetail)) {
         problems.push(
           `${at}: ${task} would go from multiplier ${b.multiplier} and ${bRetail} micro-dollars per 1,000 posts to multiplier ${h.multiplier} and ${hRetail}; ${notice}`,
         );
         continue;
       }
-      if (t === t0) continue;
-      const baseRisesMultiplier = q !== undefined && b.multiplier > q.multiplier;
-      const baseRisesRetail = q !== undefined && bRetail > retail(q);
+      if (!p) continue;
+      const pRetail = retail(p);
+      const baseRisesMultiplier = !!b && !!q && b.multiplier > q.multiplier;
+      const baseRisesRetail = bRetail !== undefined && !!q && bRetail > retail(q);
       if ((h.multiplier > p.multiplier && !baseRisesMultiplier) || (hRetail > pRetail && !baseRisesRetail)) {
         problems.push(
           `${at}: ${task} would rise from multiplier ${p.multiplier} and ${pRetail} micro-dollars per 1,000 posts just before it to multiplier ${h.multiplier} and ${hRetail}, a rise the base does not have then; ${notice}`,

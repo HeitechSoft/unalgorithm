@@ -427,6 +427,32 @@ describe('adding a task', () => {
     ]);
   });
 
+  it('test_scheduled_first_card_raise_needs_notice', () => {
+    // Once on main, a task's first card is a published price: raising it before its date is a raise like any other.
+    const notice = "a price raise needs 30 days' notice: the earliest effectiveFrom allowed now for it is 2026-11-15T00:00:00Z";
+    const dearer = { ...FACTCHECK, multiplier: 3, maxChargeMicros: 600_000 };
+    const raise = (e: string) => [
+      `${e}: factcheck would raise its maximum charge from 400000 to 600000 micro-dollars; ${notice}`,
+      `${e}: factcheck would go from multiplier 2 and 240000000 micro-dollars per 1,000 posts to multiplier 3 and 360000000; ${notice}`,
+    ];
+    const raisedInPlace = [L, { ...F, cards: { ...F.cards, factcheck: dearer } }];
+    expect(checkPriceScheduleChange(FIXTURE, raisedInPlace, OCT_15)).toEqual(raise(F.effectiveFrom));
+    const postponedAndRaised = [L, { effectiveFrom: '2026-11-10T00:00:00Z', cards: { ...F.cards, factcheck: dearer } }];
+    expect(checkPriceScheduleChange(FIXTURE, postponedAndRaised, OCT_15)).toEqual(raise('2026-11-10T00:00:00Z'));
+    // Lowering it, postponing it or cancelling it is not a raise.
+    const lowered = [L, { ...F, cards: { ...F.cards, factcheck: { ...FACTCHECK, maxChargeMicros: 350_000 } } }];
+    expect(checkPriceScheduleChange(FIXTURE, lowered, OCT_15)).toEqual([]);
+    expect(checkPriceScheduleChange(FIXTURE, [L, { ...F, effectiveFrom: '2026-11-10T00:00:00Z' }], OCT_15)).toEqual([]);
+    expect(checkPriceScheduleChange(FIXTURE, [L], OCT_15)).toEqual([]);
+    // After its first card, a task's rise needs notice even where the base does not offer it yet.
+    const addedThenRaised = (e: string) => [...FIXTURE, { effectiveFrom: e, cards: { ...F.cards, factcheck: dearer } }];
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, addedThenRaised('2026-11-05T00:00:00Z'), OCT_15)).toEqual([
+      `2026-11-05T00:00:00Z: factcheck would raise its maximum charge from 400000 to 600000 micro-dollars; ${notice}`,
+      `2026-11-05T00:00:00Z: factcheck would rise from multiplier 2 and 240000000 micro-dollars per 1,000 posts just before it to multiplier 3 and 360000000, a rise the base does not have then; ${notice}`,
+    ]);
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, addedThenRaised('2026-11-15T00:00:00Z'), OCT_15)).toEqual([]);
+  });
+
   it('test_task_price_at_not_offered_then_offered', () => {
     expect(taskPriceAt(OCT_15, 'factcheck')).toEqual({ offered: false });
     expect(taskPriceAt(OCT_15, 'classify')).toEqual({ offered: true, card: L.cards.classify, effectiveFrom: L.effectiveFrom });
