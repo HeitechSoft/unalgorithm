@@ -107,15 +107,21 @@ describe('cloud beta documents', () => {
       'A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount charged; never the posts.',
     );
     expect(stores).toContain(
-      "Ledger entries cannot be changed or deleted; they stay after the account is deleted, under the account's internal id, for accounting.",
-    );
-    expect(stores).toContain(
       'To give the starter credit once per person we keep a keyed hash of your normalised email address (not the address), also after the account is deleted, so the same mailbox cannot claim it again.',
     );
-    // The deletion sentence names what stays.
-    expect(flat(notice)).toContain(
-      'removes all of it at once, except the credit ledger and the keyed hash described in section 3',
+    // CL3-24 (Reconciled 2026-10-13) replaces CL2-14's ledger-retention sentence: the Cloud's module erases a deleted
+    // account's credit records except the keyed hash (CL3-28), as docs/privacy-model.md says. The notice must agree.
+    expect(flat(read('docs/privacy-model.md'))).toContain(
+      "erases the account's promotional credit records with the account, keeping only the keyed starter-credit hash",
     );
+    expect(stores).toContain(
+      'Ledger entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the beta; how records of purchases are kept will be stated here before it is.',
+    );
+    expect(flat(notice)).not.toMatch(/stay after the account is deleted|except the credit ledger/);
+    // Section 7: the download holds the credit ledger; deletion keeps only the keyed hash.
+    const rights = flat(notice.slice(notice.indexOf('## 7.'), notice.indexOf('## 8.')));
+    expect(rights).toContain('download everything the Cloud stores about you, including your credit ledger,');
+    expect(rights).toContain('removes all of it at once, except the keyed hash of your email address described in section 3,');
 
     const text = flat(terms);
     expect(text).toContain(`Starter credit: see ${siteUrl(CREDITS_PAGE)}.`);

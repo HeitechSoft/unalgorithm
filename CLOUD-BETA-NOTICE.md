@@ -43,10 +43,11 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
 - Usage counts and costs: one row per AI request, with the time, the device, the number of posts, token counts, the
   model and the cost. No post content.
 - A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount
-  charged; never the posts. Ledger entries cannot be changed or deleted; they stay after the account is deleted, under
-  the account's internal id, for accounting. To give the starter credit once per person we keep a keyed hash of your
-  normalised email address (not the address), also after the account is deleted, so the same mailbox cannot claim it
-  again.
+  charged; never the posts. To give the starter credit once per person we keep a keyed hash of your normalised email
+  address (not the address), also after the account is deleted, so the same mailbox cannot claim it again. Ledger
+  entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash
+  of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the
+  beta; how records of purchases are kept will be stated here before it is.
 - Synced settings, only if you turn sync on: your settings, interests and exceptions. Never API keys or post text.
 - For fact-checks of public posts: a 24-hour shared cache of verdicts, keyed by a hash of each claim, with the public
   sources found. Never the claim, the post, or who checked it.
@@ -85,9 +86,9 @@ Quebec's privacy law (Law 25) we are assessing this transfer; that privacy impac
 ## 7. How long we keep your data, and your rights
 
 We keep your account data until you delete your account or ask us to. On your account page at
-`cloud.unalgorithm.app/account` you can download everything the Cloud stores about you, and delete your account. Deleting
-it removes all of it at once, except the credit ledger and the keyed hash described in section 3, and signs out
-every device; it stays in the encrypted backups until they age out.
+`cloud.unalgorithm.app/account` you can download everything the Cloud stores about you, including your credit ledger,
+and delete your account. Deleting it removes all of it at once, except the keyed hash of your email address described
+in section 3, and signs out every device; it stays in the encrypted backups until they age out.
 
 You can also email us to see, correct or delete your data. We answer within 30 days.
 
