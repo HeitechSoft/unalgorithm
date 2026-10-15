@@ -40,6 +40,8 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
 - Your devices: one row for each copy of the extension you signed in, with the short name it gave itself (such as
   "Chrome on Windows"), when it signed in and when it was last used. Sign-in tokens and codes are stored only as hashes.
 - Passkeys, if you add one: the public key and its label. Never a private key or biometric data.
+- If you sign in with Google: Google's id for your Google account and the verified address Google gave. Never a Google
+  access, refresh or ID token.
 - Usage counts and costs: one row per AI request, with the time, the device, the number of posts, token counts, the
   model and the cost. No post content.
 - A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount
@@ -48,7 +50,8 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
   entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash
   of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the
   beta; how records of purchases are kept will be stated here before it is.
-- Synced settings, only if you turn sync on: your settings, interests and exceptions. Never API keys or post text.
+- Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions. Never API keys or
+  post text.
 - For fact-checks of public posts: a 24-hour shared cache of verdicts, keyed by a hash of each claim, with the public
   sources found. Never the claim, the post, or who checked it.
 - A nightly encrypted backup of the database, kept for 14 nights.
@@ -56,9 +59,23 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
 Access logs and the server's own logs hold no post content, query strings or IP addresses. When a request fails, the
 web server's error log can record your IP address and the requested address; these logs are kept for 14 days (the
 host's log rotation). A sign-in page session stores your IP address and browser type and expires after one day;
-expired session records are deleted when you ask us to delete your account.
+expired session records are deleted when you delete your account.
 
-## 4. Subprocessors
+## 4. Accounts and sync
+
+You sign in with a code we email you, with Google, or with a passkey you added. Google is optional: if you use it,
+Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy.
+
+Sync is off until you turn it on in the extension. Then the Cloud stores your settings, interests and exceptions (the
+names and profile identifiers you chose to always show or hide), one item per setting with the time it was changed.
+Deleted entries are kept as markers for 90 days, then removed. A record of each sync request (which items, never their
+values) is kept for 24 hours. Sync never carries API keys, endpoint tokens, refresh tokens, AI source settings, learned
+topics, votes, statistics, cached results or post text, and the Cloud refuses items that look like API keys.
+
+On your account page at `https://cloud.unalgorithm.app/account` you can see your devices and revoke any of them, add
+or remove passkeys, download your data and delete your account (section 8).
+
+## 5. Subprocessors
 
 These companies process data for UnAlgorithm Cloud:
 
@@ -68,9 +85,10 @@ These companies process data for UnAlgorithm Cloud:
 | SMTP2GO | Delivering sign-in emails (your email address and the code) | |
 | OVHcloud | Hosting the server and its database | Beauharnois, Quebec, Canada |
 
-We do not use Cloudflare, and we take no payments during the beta.
+Google is not among them: Google acts as a sign-in provider you choose, not as a processor of Cloud data. We do not use
+Cloudflare, and we take no payments during the beta.
 
-## 5. How long Anthropic keeps what it receives
+## 6. How long Anthropic keeps what it receives
 
 Anthropic receives the post fields above, under its commercial API terms. As of 15 October 2026, Anthropic's
 published retention for commercial use ([How long do you store my organization's data?](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data),
@@ -78,24 +96,29 @@ dated 1 July 2026) says it deletes inputs and outputs "within 30 days of receipt
 flagged for a usage policy violation can be kept for up to 2 years. HeitechSoft has no separate retention agreement
 with Anthropic yet. We will update this notice if that changes.
 
-## 6. Sending data outside Canada
+## 7. Sending data outside Canada
 
 The Cloud is hosted in Canada, but post text is sent to Anthropic in the United States to be classified. Under
 Quebec's privacy law (Law 25) we are assessing this transfer; that privacy impact assessment is under way.
 
-## 7. How long we keep your data, and your rights
+## 8. How long we keep your data, and your rights
 
-We keep your account data until you delete your account or ask us to. On your account page at
-`cloud.unalgorithm.app/account` you can download everything the Cloud stores about you, including your credit ledger,
-and delete your account. Deleting it removes all of it at once, except the keyed hash of your email address described
-in section 3, and signs out every device; it stays in the encrypted backups until they age out.
+We keep your account data until you delete your account. Export and deletion are self-service on your account page at
+`https://cloud.unalgorithm.app/account`:
 
-You can also email us to see, correct or delete your data. We answer within 30 days.
+- "Download your data" gives everything the Cloud stores about you as JSON: your account, devices, passkeys, Google
+  link, page sessions, usage counts, synced settings and your credit ledger's entries, with no token, hash or code. The
+  ledger is also shown on the account page.
+- Deleting your account is immediate: it removes all of it at once, except the keyed hash of your email address
+  described in section 3, and signs out every device. Your credit records are erased with it. Deleted data stays in the
+  encrypted backups until they age out.
 
-## 8. Contact
+To see or correct your data, or for any other request, email the privacy contact (section 9). We answer within 30 days.
+
+## 9. Contact
 
 Privacy contact: Tom Heiber, HeitechSoft, privacy@heitechsoft.com
 
-## 9. Changes
+## 10. Changes
 
 When this notice changes, we update the date at the top and say what changed in the release notes.

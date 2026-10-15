@@ -60,19 +60,19 @@ describe('cloud beta documents', () => {
     expect(flat(notice)).toContain('Privacy contact: Tom Heiber, HeitechSoft, privacy@heitechsoft.com');
   });
 
-  it('test_beta_notice_has_nine_sections', () => {
+  it('test_beta_notice_has_ten_sections', () => {
     const headings = notice.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings.map((line) => /^## (\d)\. /.exec(line)?.[1])).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+    expect(headings.map((line) => /^## (\d+)\. /.exec(line)?.[1])).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
   });
 
   it('test_beta_notice_logs_and_sessions_wording', () => {
     expect(flat(notice)).toContain(
-      "Access logs and the server's own logs hold no post content, query strings or IP addresses. When a request fails, the web server's error log can record your IP address and the requested address; these logs are kept for 14 days (the host's log rotation). A sign-in page session stores your IP address and browser type and expires after one day; expired session records are deleted when you ask us to delete your account.",
+      "Access logs and the server's own logs hold no post content, query strings or IP addresses. When a request fails, the web server's error log can record your IP address and the requested address; these logs are kept for 14 days (the host's log rotation). A sign-in page session stores your IP address and browser type and expires after one day; expired session records are deleted when you delete your account.",
     );
   });
 
   it('test_beta_notice_dates_anthropic_retention', () => {
-    const section = flat(notice.slice(notice.indexOf('## 5.'), notice.indexOf('## 6.')));
+    const section = flat(notice.slice(notice.indexOf('## 6.'), notice.indexOf('## 7.')));
     expect(section).toMatch(/As of \d{1,2} \w+ \d{4}, Anthropic's published retention/);
     expect(section).toContain('https://privacy.claude.com/');
   });
@@ -118,9 +118,9 @@ describe('cloud beta documents', () => {
       'Ledger entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the beta; how records of purchases are kept will be stated here before it is.',
     );
     expect(flat(notice)).not.toMatch(/stay after the account is deleted|except the credit ledger/);
-    // Section 7: the download holds the credit ledger; deletion keeps only the keyed hash.
-    const rights = flat(notice.slice(notice.indexOf('## 7.'), notice.indexOf('## 8.')));
-    expect(rights).toContain('download everything the Cloud stores about you, including your credit ledger,');
+    // Section 8: the download holds the credit ledger; deletion keeps only the keyed hash.
+    const rights = flat(notice.slice(notice.indexOf('## 8.'), notice.indexOf('## 9.')));
+    expect(rights).toContain("your credit ledger's entries");
     expect(rights).toContain('removes all of it at once, except the keyed hash of your email address described in section 3,');
 
     const text = flat(terms);
@@ -128,6 +128,22 @@ describe('cloud beta documents', () => {
     expect(text).toContain(
       `It is promotional, has no cash value, expires after ${STARTER_CREDIT.expiresAfterDays} days and may be withheld or removed when it is abused.`,
     );
+  });
+
+  it('test_beta_notice_accounts_and_sync', () => {
+    // CL3-24: sign-in methods, sync off until turned on, what never syncs, and self-service export and deletion.
+    const section = flat(notice.slice(notice.indexOf('## 4. Accounts and sync'), notice.indexOf('## 5.')));
+    expect(section).toContain('Sync is off until you turn it on');
+    for (const never of ['API keys', 'endpoint tokens', 'refresh tokens', 'learned topics', 'votes']) {
+      expect(section, never).toMatch(new RegExp(`Sync never carries [^.]*${never}`));
+    }
+    expect(section).toContain("Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy");
+    expect(flat(notice)).toContain('Google acts as a sign-in provider you choose, not as a processor of Cloud data.');
+    const rights = flat(notice.slice(notice.indexOf('## 8.'), notice.indexOf('## 9.')));
+    for (const text of [section, rights]) expect(text).toContain('`https://cloud.unalgorithm.app/account`');
+    expect(rights).toContain('Deleting your account is immediate');
+    expect(rights).not.toMatch(/by email during the beta|come in CL3/);
+    expect(flat(notice.slice(notice.indexOf('## 3.'), notice.indexOf('## 4.')))).toContain('If you sign in with Google');
   });
 
   it('test_beta_docs_names_and_retention_claims', () => {
