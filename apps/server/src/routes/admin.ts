@@ -1,19 +1,67 @@
 /**
- * The admin routes (R38). `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
+ * The admin routes (R38). `GET /v1/admin/users` and `GET /v1/admin/overview` are what the admin page reads
+ * (`admin/queries.ts`): they need a web session with the admin role, and log only the app's `http` line, since every
+ * answer names accounts. `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
  * in on the setup page: it needs a web session and the page's own `Origin`, not the admin role, since it makes the
  * first admin. Every refusal gets one answer, so the page cannot tell an unknown link from a spent, expired or
  * other-address one; the log names the reason with a fixed code. No line logs a token, its hash or an address.
  */
 import { createRoute } from '@hono/zod-openapi';
-import { ADMIN_SETUP_PATH, AdminOkSchema, SetupRequestSchema } from '@unalgorithm/protocol';
+import {
+  ADMIN_OVERVIEW_PATH,
+  ADMIN_SETUP_PATH,
+  ADMIN_USERS_PATH,
+  AdminOkSchema,
+  AdminOverviewSchema,
+  AdminUsersSchema,
+  SetupRequestSchema,
+} from '@unalgorithm/protocol';
+import { requireAdmin } from '../admin/access.ts';
+import { adminOverview, listAdminUsers } from '../admin/queries.ts';
 import { claimSetup, SETUP_REFUSED } from '../admin/setup.ts';
 import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
 import { errorResponse, json } from './openapi.ts';
 
-/** Mounts the setup route on the app. */
+/** Mounts the admin routes on the app. */
 export function adminRoutes(app: App, deps: AppDeps): void {
   const { config, db, log } = deps;
+  // A GET changes nothing, so it needs no `ownPageOnly`; `requireWebSession` sets `Cache-Control: no-store`.
+  const webSession = requireWebSession(deps);
+  const adminRole = requireAdmin(deps);
+  const refusals = {
+    401: errorResponse('No web session'),
+    403: errorResponse("This account isn't an admin of this server"),
+  };
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: ADMIN_USERS_PATH,
+      middleware: [webSession, adminRole] as const,
+      responses: {
+        200: { description: "The server's accounts with their caps and usage, and the invites", content: json(AdminUsersSchema) },
+        ...refusals,
+      },
+    }),
+    async (c) => c.json(await listAdminUsers(db.db, config), 200),
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: ADMIN_OVERVIEW_PATH,
+      middleware: [webSession, adminRole] as const,
+      responses: {
+        200: {
+          description: "The server's usage of the last 30 days against its daily spend limit",
+          content: json(AdminOverviewSchema),
+        },
+        ...refusals,
+      },
+    }),
+    async (c) => c.json(await adminOverview(db.db, config), 200),
+  );
 
   app.openapi(
     createRoute({
