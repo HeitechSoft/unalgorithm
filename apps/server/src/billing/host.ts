@@ -55,6 +55,12 @@ export interface BillingHost {
    * schemas and paths. A module never bundles its own.
    */
   readonly protocol: typeof protocol;
+  /**
+   * The schedule this server prices with: `CREDIT_PRICE_SCHEDULE` in production. A module reads cards from it
+   * (`protocol.taskPriceAt(checkedAt, task, host.priceSchedule)`) so it and the server always agree; tests pass one
+   * that prices checks.
+   */
+  readonly priceSchedule: protocol.CreditPriceSchedule;
   readonly db: BillingSql;
   /**
    * Applies the module's Drizzle-format migrations, recorded in `billing.__drizzle_migrations`, under the module's own
@@ -90,6 +96,8 @@ export interface BillingHostDeps {
   jobs: JobRegistry;
   /** Becomes `host.env`; default `{}`. CL2-05 passes `config.billingEnv`. */
   env?: Readonly<Record<string, string>>;
+  /** Becomes `host.priceSchedule`, frozen; default `CREDIT_PRICE_SCHEDULE`. Tests pass one that prices checks. */
+  priceSchedule?: protocol.CreditPriceSchedule;
 }
 
 /** The schema a module's tables and its migrations' bookkeeping live in. */
@@ -111,6 +119,7 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
 
   return Object.freeze({
     protocol,
+    priceSchedule: deps.priceSchedule ? frozenSchedule(deps.priceSchedule) : protocol.CREDIT_PRICE_SCHEDULE,
     db: billingSql(db.db),
     async migrate(migrationsFolder: string) {
       await runMigrations(db, {
@@ -132,6 +141,20 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
     auth: Object.freeze({ device: requireDevice(deps), webSession: requireWebSession(deps) }),
     jobs,
   });
+}
+
+/** A frozen copy of `schedule`: its entries, their cards and each card. */
+function frozenSchedule(schedule: protocol.CreditPriceSchedule): protocol.CreditPriceSchedule {
+  return Object.freeze(
+    schedule.map((entry) =>
+      Object.freeze({
+        effectiveFrom: entry.effectiveFrom,
+        cards: Object.freeze(
+          Object.fromEntries(Object.entries(entry.cards).map(([task, card]) => [task, Object.freeze({ ...card })])),
+        ) as protocol.CreditPriceScheduleEntry['cards'],
+      }),
+    ),
+  );
 }
 
 /** The SQL facade over the server's database, or over one transaction on it. */

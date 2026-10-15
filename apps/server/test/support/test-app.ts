@@ -1,4 +1,5 @@
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
+import type { CreditPriceSchedule } from '@unalgorithm/protocol';
 import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingModule, createBillingHost } from '../../src/billing/host.ts';
@@ -55,6 +56,8 @@ export interface TestAppOptions {
   billingModule?: BillingModule;
   /** The module's `BILLING_*` variables (`host.env`). Default: none. */
   billingEnv?: Record<string, string>;
+  /** The billing host's `priceSchedule`. Default: `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks. */
+  priceSchedule?: CreditPriceSchedule;
   /**
    * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
    * limiter allows 3 codes and 3 sign-ins a minute per address, so a few sign-ins would get 429. Its counts live in one
@@ -107,7 +110,15 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
     const log = capture.log;
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: overrides.authRateLimit ?? false });
     const jobs = createJobRegistry();
-    const host = createBillingHost({ config, db, log, auth, jobs, env: overrides.billingEnv ?? {} });
+    const host = createBillingHost({
+      config,
+      db,
+      log,
+      auth,
+      jobs,
+      env: overrides.billingEnv ?? {},
+      priceSchedule: overrides.priceSchedule,
+    });
     const provider = overrides.billingModule
       ? await overrides.billingModule.createBillingProvider(host)
       : (overrides.billing ?? noopBilling);

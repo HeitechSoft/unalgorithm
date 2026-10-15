@@ -11,14 +11,15 @@
  */
 import { pathToFileURL } from 'node:url';
 import { AIError } from '@unalgorithm/ai';
-import type { ClassifyResponse, NormalizedUsage } from '@unalgorithm/protocol';
+import type { ClassifyResponse, CreditTask, NormalizedUsage } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
 import type { Config } from '../config.ts';
 import type { AppEnv } from '../http/middleware.ts';
 import { errorFields, type Logger } from '../log.ts';
 import type { BillingHost, BillingModule } from './host.ts';
 
-export type BillingTask = 'classify';
+/** Every task a server may charge credit for: classify per post, a fact-check or a comparison per job. */
+export type BillingTask = CreditTask;
 
 export interface BillingContext {
   userId: string;
@@ -32,6 +33,13 @@ export interface BillingContext {
   checkedAt: Date;
 }
 
+/**
+ * The answer to `check`. `hold` reserves credit before a long call (a fact-check or a comparison job): its settlement
+ * charges **at most** `amountMicros`, and `runWithBilling` logs `billing.settle.over_hold` at error level when a
+ * provider reports more (it still returns that settlement: the server cannot undo a charge). A hold the server neither
+ * settles nor releases (the process crashed) must expire on its own; a job never outlives its 240 s deadline plus the
+ * 10 s stop drain, so a module may expire a job hold after 15 minutes.
+ */
 export type BillingDecision =
   | { kind: 'allow' }
   | { kind: 'hold'; holdId: string; amountMicros: number }
@@ -46,9 +54,14 @@ export interface SettleInput {
   model: string;
   /** Usage of the successful calls only: a failed call is never charged. */
   chargeableUsage: NormalizedUsage;
-  /** `costMicros(model, chargeableUsage)`, or null when the model has no price card. */
+  /**
+   * The amount to price: our AI cost of the successful calls in micro-dollars, or null when a model has no price card.
+   * For a job it sums several calls on different models (claims on one, research and verdicts on another) while `model`
+   * names one of them and `chargeableUsage` sums their tokens, so a module charges `retailMicros(costMicros,
+   * multiplier)` and never re-prices `chargeableUsage` at `model`'s card.
+   */
   costMicros: number | null;
-  /** Posts classified successfully. */
+  /** Units used: posts classified, or 1 for a finished check or comparison. */
   posts: number;
   /** The request's `BillingContext.checkedAt`: a settlement is priced at its check's instant. Set by `runWithBilling`. */
   checkedAt: Date;
@@ -185,7 +198,8 @@ function isProvider(value: unknown): value is BillingProvider {
  * error never does: nothing is charged on either release path, so it neither replaces the error of a failed call (the
  * route needs that `AIError` for its answer and retry hint) nor fails a request that succeeded with nothing to charge.
  * It goes to `log` as `billing.release.failed` with the request id and `errorFields` only, and a hold left behind is the
- * provider's to expire.
+ * provider's to expire. A settlement that charges more than its hold is returned as given and logged as
+ * `billing.settle.over_hold` (ids and amounts only): a module bug made visible, not undone.
  */
 export async function runWithBilling<T>(
   provider: BillingProvider,
@@ -221,8 +235,14 @@ export async function runWithBilling<T>(
     await release();
     return { result, billing: null };
   }
-  return {
-    result,
-    billing: await provider.settle(holdId === undefined ? { ...input, checkedAt } : { ...input, checkedAt, holdId }),
-  };
+  const billing = await provider.settle(holdId === undefined ? { ...input, checkedAt } : { ...input, checkedAt, holdId });
+  if (decision.kind === 'hold' && billing !== null && billing.chargedMicros > decision.amountMicros) {
+    log?.error('billing.settle.over_hold', {
+      rid: ctx.requestId,
+      billing: provider.id,
+      held_micros: decision.amountMicros,
+      charged_micros: billing.chargedMicros,
+    });
+  }
+  return { result, billing };
 }

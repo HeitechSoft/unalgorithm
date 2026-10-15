@@ -11,6 +11,11 @@
  * A real module prices a request with `host.protocol.priceCardsAt(checkedAt)`; this one charges a flat 100 micro-dollars
  * a post. It settles only with the instant its check received, so every test that classifies through it proves the
  * instant arrives.
+ *
+ * A job (a fact-check, a comparison) follows the hold contract (`BillingDecision`): its check reads the card in effect
+ * from `host.priceSchedule` and holds `min(maxChargeMicros, balance)`; its settlement charges `retailMicros(costMicros,
+ * multiplier)`, never more than the hold or the balance; a release lets the hold go and charges nothing. Holding at most
+ * the balance is this double's choice, not policy.
  */
 import type { CreditAccount, CreditBalance } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
@@ -28,6 +33,22 @@ const USAGE = 'usage: balance --user <id>';
  * server's random user ids, so tests that share a process never see each other's balances.
  */
 const balances = new Map<string, number>();
+
+/** A job's hold: what was held, the card's multiplier and the check's instant (epoch ms). */
+interface Hold {
+  holdId: string;
+  amountMicros: number;
+  multiplier: number;
+  checkedAt: number;
+}
+
+/** Job holds not yet settled or released, by request id: shared like `balances`. */
+const holds = new Map<string, Hold>();
+
+/** Holds not yet settled or released, for tests. */
+export function openHolds(): number {
+  return holds.size;
+}
 
 /** The module's own configuration error: by contract its message names variables, never their values. */
 class BillingConfigError extends Error {
@@ -59,12 +80,40 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
   return {
     id: 'fixture',
     advertised: true,
-    async check({ userId, requestId, checkedAt }): Promise<BillingDecision> {
-      if (balanceOf(userId) <= 0) return { kind: 'refuse', code: 'insufficient-credits', message: 'The balance is empty.' };
+    async check({ userId, requestId, task, checkedAt }): Promise<BillingDecision> {
+      const price = task === 'classify' ? null : protocol.taskPriceAt(checkedAt, task, host.priceSchedule);
+      // The server refuses a task its schedule does not offer before asking (P3-19), so this never runs in a correct one.
+      if (price && !price.offered) throw new Error('task not offered');
+      const balance = balanceOf(userId);
+      if (balance <= 0) return { kind: 'refuse', code: 'insufficient-credits', message: 'The balance is empty.' };
+      if (price?.offered) {
+        const { maxChargeMicros, multiplier } = price.card;
+        if (maxChargeMicros === undefined) throw new Error('a job card without maxChargeMicros');
+        const hold: Hold = {
+          holdId: `hold-${requestId}`,
+          amountMicros: Math.min(maxChargeMicros, balance),
+          multiplier,
+          checkedAt: checkedAt.getTime(),
+        };
+        holds.set(requestId, hold);
+        return { kind: 'hold', holdId: hold.holdId, amountMicros: hold.amountMicros };
+      }
       checkedAtByRequest.set(requestId, checkedAt.getTime());
       return { kind: 'allow' };
     },
-    async settle({ userId, requestId, posts, checkedAt }): Promise<Settlement> {
+    async settle({ userId, requestId, task, holdId, costMicros, posts, checkedAt }): Promise<Settlement> {
+      if (task !== 'classify') {
+        const hold = holds.get(requestId);
+        holds.delete(requestId);
+        if (!hold || hold.holdId !== holdId || hold.checkedAt !== checkedAt.getTime()) {
+          throw new Error('settle without the hold its check made');
+        }
+        const balance = balanceOf(userId);
+        const retail = costMicros === null ? 0 : protocol.retailMicros(costMicros, hold.multiplier);
+        const chargedMicros = Math.min(retail, hold.amountMicros, balance);
+        balances.set(userId, balance - chargedMicros);
+        return { chargedMicros, balanceMicros: balance - chargedMicros };
+      }
       const checked = checkedAtByRequest.get(requestId);
       checkedAtByRequest.delete(requestId);
       if (checked === undefined || checked !== checkedAt.getTime()) {
@@ -76,6 +125,7 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
       return { chargedMicros, balanceMicros: balance - chargedMicros };
     },
     async release({ requestId }) {
+      holds.delete(requestId);
       checkedAtByRequest.delete(requestId);
     },
     async balance(userId) {

@@ -240,7 +240,18 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
     const env = { BILLING_STARTER_SECRET: 's3cret' };
     const { host, jobs, lines } = await testHost({ env });
 
-    expect(Object.keys(host)).toEqual(['protocol', 'db', 'migrate', 'log', 'config', 'env', 'accounts', 'auth', 'jobs']);
+    expect(Object.keys(host)).toEqual([
+      'protocol',
+      'priceSchedule',
+      'db',
+      'migrate',
+      'log',
+      'config',
+      'env',
+      'accounts',
+      'auth',
+      'jobs',
+    ]);
     expect(Object.keys(host.db)).toEqual(['sql', 'query', 'transaction']);
     expect(host.db.sql).toBe(sql);
     expect(Object.keys(host.accounts)).toEqual(['get', 'findByEmail']);
