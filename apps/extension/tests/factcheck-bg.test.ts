@@ -1,16 +1,26 @@
 /**
- * Fact-check in the background (P3-06): the gates, one check per tab, the three Anthropic calls, the usage ledger and
- * the tab's session entries. Extension storage is the WXT fake browser, API keys fake-indexeddb, and the network the
- * mock Anthropic responder from @unalgorithm/ai/testing/anthropic (nothing real is called).
+ * Fact-check in the background (P3-06, P3-46): the gates, one check per tab, the three Anthropic calls, the OpenAI and
+ * OpenAI-compatible modes, the usage ledger and the tab's session entries. Extension storage is the WXT fake browser,
+ * API keys fake-indexeddb, and the network the mock Anthropic and OpenAI Responses responders from
+ * @unalgorithm/ai/testing, the compat mock's answers and a stub Brave (nothing real is called).
  */
 import { describeError } from '@unalgorithm/ai';
+import { mockStructuredAnswer } from '@unalgorithm/ai/testing';
 import {
   type AnthropicRequestKind,
   mockAnthropicFetch,
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { type AISourceConfig, dayUsage, defaultDevice, sourceId } from '@unalgorithm/core';
+import {
+  errorResponse,
+  mockOpenAIResponsesFetch,
+  mockResponsesAnswer,
+  type ResponsesRequestKind,
+  researchResponse,
+  structuredResponse,
+} from '@unalgorithm/ai/testing/openai-responses';
+import { type AISourceConfig, dayUsage, defaultDevice, sourceId, type WebSearchKey } from '@unalgorithm/core';
 import { FactcheckResultSchema, type PostForAI, type PostKey } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
@@ -80,14 +90,17 @@ function useAnthropic(reply: Responder) {
 }
 
 let permitted: boolean;
+/** Host patterns `permissions.contains` answers false for, on top of `permitted`. */
+let deniedOrigins: Set<string>;
 let panelOpen: ReturnType<typeof vi.fn>;
 
-async function setup(over: { source?: AISourceConfig | null; labs?: boolean } = {}) {
+async function setup(over: { source?: AISourceConfig | null; labs?: boolean; webSearch?: WebSearchKey | null } = {}) {
   const device = defaultDevice('dev1');
   await deviceItem.setValue({
     ...device,
     aiSource: over.source === undefined ? ANTHROPIC : over.source,
     labs: { ...device.labs, factcheck: over.labs ?? true },
+    webSearch: over.webSearch ?? null,
   });
 }
 
@@ -111,7 +124,10 @@ const entries = async (tabId = TAB) => (await factcheckItem(tabId).getValue()).e
 beforeEach(async () => {
   fakeBrowser.reset();
   permitted = true;
-  vi.spyOn(fakeBrowser.permissions, 'contains').mockImplementation((async () => permitted) as never);
+  deniedOrigins = new Set();
+  vi.spyOn(fakeBrowser.permissions, 'contains').mockImplementation(
+    (async (p: { origins?: string[] }) => permitted && !(p.origins ?? []).some((o) => deniedOrigins.has(o))) as never,
+  );
   panelOpen = vi.fn(async () => undefined);
   vi.spyOn(fakeBrowser.sidePanel, 'open').mockImplementation(panelOpen as never);
   await setSecret(sourceId(ANTHROPIC), 'sk-ant-test');
@@ -141,11 +157,8 @@ describe('gates', () => {
       error: { code: 'not-available', message: 'Turn on Fact-check in Settings → Labs.' },
     });
 
-    await setup({ source: OPENAI });
-    expect(await factcheck()).toStrictEqual({
-      ok: false,
-      error: { code: 'unsupported', message: 'Fact-check needs your own Anthropic key.' },
-    });
+    await setup({ source: { kind: 'on-device' } });
+    expect(await factcheck()).toStrictEqual({ ok: false, error: { code: 'unsupported', message: NEEDS_OWN_KEY } });
 
     await setup();
     const fbUrl = 'https://www.facebook.com/';
@@ -400,5 +413,251 @@ describe('errors and storage', () => {
     expect(await factcheck()).toStrictEqual({ ok: false, error });
     const [entry] = await entries();
     expect(entry).toMatchObject({ status: 'failed', error });
+  });
+});
+
+// ---------- own-key modes (P3-46): OpenAI, and an OpenAI-compatible server with a Brave key ----------
+
+const NEEDS_OWN_KEY =
+  'Fact-check needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.';
+const COMPAT_BASE = 'http://localhost:11434/v1';
+const COMPAT: AISourceConfig = {
+  kind: 'openai-compatible',
+  preset: 'ollama',
+  baseUrl: COMPAT_BASE,
+  auth: 'none',
+  model: 'llama3.2',
+};
+const BRAVE: WebSearchKey = { provider: 'brave' };
+const BRAVE_PATTERN = 'https://api.search.brave.com/*';
+/** Two sentences, so the compat mock's one claim (the first sentence) is never the whole post. */
+const POST_2: Omit<PostForAI, 'ref'> = {
+  ...POST,
+  text: 'The bridge opened in 1932. It cost $10 million to build, more than any bridge before it.',
+};
+
+const SOURCE_URL_2 = 'https://archive.example.com/bridge-records';
+const QUOTE_2 = 'Records show the bridge opened in 1932.';
+
+/** OpenAI with web search: the mock's claims, research over two cited sources, a supported verdict quoting both. */
+function openaiAnswer(kind: ResponsesRequestKind, body: unknown): unknown {
+  if (kind === 'verdict') {
+    const citations = [
+      { sourceId: 's1', quote: 'The bridge opened in 1932' },
+      { sourceId: 's2', quote: 'the bridge opened in 1932' },
+    ];
+    const verdicts = [{ claimId: 'c1', verdict: 'supported', explanation: 'A history gives the same year.', citations }];
+    return structuredResponse({ verdicts }, { model: 'gpt-5' });
+  }
+  if (kind !== 'research') return mockResponsesAnswer(body);
+  const text = `${QUOTE} ${QUOTE_2}`;
+  return researchResponse({
+    searches: [{ urls: [SOURCE_URL, SOURCE_URL_2] }],
+    text,
+    citations: [
+      { url: SOURCE_URL, title: 'Bridge history', start: 0, end: QUOTE.length },
+      { url: SOURCE_URL_2, title: 'Bridge records', start: QUOTE.length + 1, end: text.length },
+    ],
+  });
+}
+
+const jsonResponse = (status: number, data: unknown) =>
+  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+
+/**
+ * Every request of an own-key run: OpenAI's host to the Responses mock, the compat base URL to the compat mock's
+ * structured answers (chat/completions), Brave's host to `brave`; anything else fails the test.
+ */
+function useOwnKeyNetwork(
+  opts: { openai?: (kind: ResponsesRequestKind, body: unknown) => unknown; brave?: (url: URL) => Response } = {},
+) {
+  const openai = mockOpenAIResponsesFetch(opts.openai ?? openaiAnswer);
+  const net = { urls: [] as URL[], bodies: [] as string[], braveQueries: [] as string[], braveKeys: [] as (string | null)[] };
+  const braveHit = () =>
+    jsonResponse(200, { web: { results: [{ url: SOURCE_URL, title: 'Bridge history', description: QUOTE }] } });
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    net.urls.push(url);
+    net.bodies.push(typeof init.body === 'string' ? init.body : '');
+    if (url.hostname === 'api.openai.com') return openai(input, init);
+    if (url.hostname === 'api.search.brave.com') {
+      net.braveQueries.push(url.searchParams.get('q') ?? '');
+      net.braveKeys.push(new Headers(init.headers).get('x-subscription-token'));
+      return (opts.brave ?? braveHit)(url);
+    }
+    if (`${url.origin}${url.pathname}`.startsWith(`${COMPAT_BASE}/`)) {
+      const body = JSON.parse(String(init.body)) as { model: string; messages: { role: string; content: string }[] };
+      const user = body.messages.find((m) => m.role === 'user')?.content ?? '';
+      return jsonResponse(200, {
+        model: body.model,
+        choices: [{ message: { content: JSON.stringify(mockStructuredAnswer(user).json) }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1000, completion_tokens: 50 },
+      });
+    }
+    throw new Error(`unexpected request to ${url.href}`);
+  });
+  return net;
+}
+
+describe('own-key modes', () => {
+  beforeEach(async () => {
+    await setSecret('search:brave', 'brave-test-key');
+  });
+
+  it('test_factcheck_openai_key_runs', async () => {
+    await setup({ source: OPENAI });
+    const net = useOwnKeyNetwork();
+    const res = await factcheck();
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.result.claims[0]?.verdict).toBe('supported');
+    expect(net.urls.length).toBeGreaterThan(0);
+    for (const url of net.urls) expect(url.hostname).toBe('api.openai.com');
+    const research = net.bodies.map((b) => JSON.parse(b) as Record<string, unknown>).filter((b) => Array.isArray(b.tools));
+    expect(research).toHaveLength(1);
+    expect(research[0]?.model).toBe('gpt-5');
+    expect(research[0]?.tools).toContainEqual(expect.objectContaining({ type: 'web_search' }));
+    const [entry] = await entries();
+    expect(entry?.status).toBe('done');
+    if (res.ok) expect(entry?.result).toStrictEqual(res.result);
+  });
+
+  it('test_factcheck_compat_with_brave_runs', async () => {
+    await setup({ source: COMPAT, webSearch: BRAVE });
+    const net = useOwnKeyNetwork();
+    const res = await factcheck(POST_2);
+    expect(res.ok).toBe(true);
+
+    const ai = net.urls.filter((u) => u.hostname !== 'api.search.brave.com');
+    expect(ai.length).toBeGreaterThan(0);
+    for (const url of ai) expect(url.href.startsWith(`${COMPAT_BASE}/`)).toBe(true);
+    expect(net.braveQueries.length).toBeGreaterThan(0);
+    for (const q of net.braveQueries) {
+      expect(q.length).toBeLessThanOrEqual(200);
+      expect(q).not.toBe(POST_2.text);
+      expect(q).toBe('The bridge opened in 1932.');
+    }
+    expect(new Set(net.braveKeys)).toEqual(new Set(['brave-test-key']));
+    // The search key only goes to Brave, never to the AI server.
+    for (const [i, url] of net.urls.entries()) {
+      if (url.hostname !== 'api.search.brave.com') expect(net.bodies[i]).not.toContain('brave-test-key');
+    }
+
+    const [entry] = await entries();
+    expect(entry?.status).toBe('done');
+    expect(entry?.costMicros).toBeUndefined();
+    if (res.ok) expect(res.costMicros).toBeUndefined();
+  });
+
+  it('test_factcheck_new_kinds_public_only', async () => {
+    const net = useOwnKeyNetwork();
+    const friends = { ...POST, platform: 'facebook' as const, audience: 'friends' as const };
+    const fb = feedTab(TAB, 'https://www.facebook.com/');
+    for (const over of [{ source: OPENAI }, { source: COMPAT, webSearch: BRAVE }]) {
+      await setup(over);
+      expect(await factcheck(friends, 'fb:1' as PostKey, fb)).toStrictEqual({
+        ok: false,
+        error: { code: 'not-available', message: 'Fact-check works only on public posts.' },
+      });
+    }
+    expect(net.urls).toHaveLength(0);
+    expect(await entries()).toStrictEqual([]);
+  });
+
+  it('test_factcheck_compat_refusals', async () => {
+    const net = useOwnKeyNetwork();
+    await setup({ source: COMPAT });
+    expect(await factcheck()).toStrictEqual({ ok: false, error: { code: 'unsupported', message: NEEDS_OWN_KEY } });
+
+    await setup({ source: COMPAT, webSearch: { provider: 'tavily' } });
+    expect(await factcheck()).toStrictEqual({
+      ok: false,
+      error: { code: 'no-key', message: 'Add a web search key in Settings → Labs.' },
+    });
+
+    await setup({ source: { ...COMPAT, model: null } as AISourceConfig, webSearch: BRAVE });
+    expect(await factcheck()).toStrictEqual({
+      ok: false,
+      error: { code: 'no-model', message: 'Choose a model in Settings → AI.' },
+    });
+    expect(net.urls).toHaveLength(0);
+    expect(await entries()).toStrictEqual([]);
+  });
+
+  it('test_factcheck_permissions_per_provider', async () => {
+    const net = useOwnKeyNetwork();
+    await setup({ source: COMPAT, webSearch: BRAVE });
+    deniedOrigins = new Set([BRAVE_PATTERN]);
+    const brave = await factcheck(POST_2);
+    expect(brave).toStrictEqual({
+      ok: false,
+      error: {
+        code: 'host-permission',
+        message: 'UnAlgorithm needs permission to reach Brave. Save your web search key again in Settings → Labs.',
+      },
+    });
+    expect(fakeBrowser.permissions.contains).toHaveBeenCalledWith({ origins: [BRAVE_PATTERN] });
+
+    await setup({ source: OPENAI });
+    deniedOrigins = new Set(['https://api.openai.com/*']);
+    const openai = await factcheck();
+    expect(openai).toStrictEqual({
+      ok: false,
+      error: { code: 'host-permission', message: describeError('host-permission', 'OpenAI') },
+    });
+    expect(openai.ok ? '' : openai.error.message).toContain('OpenAI');
+
+    expect(net.urls).toHaveLength(0);
+    expect(await entries()).toStrictEqual([]);
+  });
+
+  it('test_factcheck_provider_error_texts', async () => {
+    await setup({ source: COMPAT, webSearch: BRAVE });
+    useOwnKeyNetwork({ brave: () => jsonResponse(401, { error: 'unauthorized' }) });
+    const braveError = { code: 'not-available', message: 'Your Brave key was refused. Check it in Settings → Labs.' };
+    expect(await factcheck(POST_2)).toStrictEqual({ ok: false, error: braveError });
+    expect((await entries())[0]).toMatchObject({ status: 'failed', error: braveError });
+
+    await factcheckItem(TAB).removeValue();
+    await setup({ source: OPENAI });
+    useOwnKeyNetwork({
+      openai: (kind, body) =>
+        kind === 'research' ? errorResponse(400, 'Tool web_search is not supported with this model.') : openaiAnswer(kind, body),
+    });
+    const openaiError = { code: 'unsupported', message: "Web search isn't available for this OpenAI key or model." };
+    expect(await factcheck()).toStrictEqual({ ok: false, error: openaiError });
+    expect((await entries())[0]).toMatchObject({ status: 'failed', error: openaiError });
+  });
+
+  it('test_factcheck_new_kinds_ledger', async () => {
+    await setup({ source: OPENAI });
+    useOwnKeyNetwork();
+    expect((await factcheck()).ok).toBe(true);
+    let day = dayUsage(await usageItem.getValue());
+    expect(day.posts).toBe(0);
+    expect(day.calls).toBe(3);
+    expect(day.failedCalls).toBe(0);
+    expect(day.byModel['gpt-5-mini']?.calls).toBe(1);
+    expect(day.byModel['gpt-5']?.calls).toBe(2);
+
+    // A failed research call is in the ledger too.
+    await usageItem.removeValue();
+    useOwnKeyNetwork({
+      openai: (kind, body) => (kind === 'research' ? errorResponse(500, 'server error') : openaiAnswer(kind, body)),
+    });
+    expect((await factcheck()).ok).toBe(false);
+    day = dayUsage(await usageItem.getValue());
+    expect(day.posts).toBe(0);
+    expect(day.calls).toBe(2);
+    expect(day.failedCalls).toBe(1);
+
+    // OpenAI-compatible: every model call and the search step, none counted as a post.
+    await usageItem.removeValue();
+    await setup({ source: COMPAT, webSearch: BRAVE });
+    useOwnKeyNetwork();
+    expect((await factcheck(POST_2)).ok).toBe(true);
+    day = dayUsage(await usageItem.getValue());
+    expect(day.posts).toBe(0);
+    expect(day.calls).toBeGreaterThanOrEqual(2);
+    expect(day.byModel['llama3.2']?.calls).toBeGreaterThanOrEqual(2);
   });
 });

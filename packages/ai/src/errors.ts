@@ -61,7 +61,7 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'permission':
       return `${name} says this key can't use that model.`;
     case 'host-permission':
-      return 'UnAlgorithm needs permission to reach this AI server. Open Settings → AI and test it again.';
+      return `UnAlgorithm needs permission to reach ${provider || 'this AI server'}. Open Settings → AI and test it again.`;
     case 'origin-blocked':
       return 'The local server refused the request. For Ollama, set OLLAMA_ORIGINS=chrome-extension://* and restart it.';
     case 'model-not-found':

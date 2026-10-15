@@ -40,14 +40,15 @@ It **never** sends author names, profile links, group names, comments, images or
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
-**Fact-check (Labs, off by default).** When you turn on Settings → Labs → Fact-check, use your own Anthropic key and
-confirm a check on a public post, UnAlgorithm sends that one post to Anthropic, directly from your browser with your
-key: the same post fields classification sends, with the same masking described above (email addresses and phone
-numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most 2,000
-characters, a shared link's domain and title). Your interests are not sent. Anthropic then runs web searches based
-on the claims it found in the post. The result stays in this browser's temporary session storage for that tab and is
-removed when the tab closes or the browser restarts. Facebook posts that aren't public are never checked, and nothing
-goes to HeitechSoft.
+**Fact-check (Labs, off by default).** When you turn on Settings → Labs → Fact-check, use your own Anthropic or OpenAI
+key and confirm a check on a public post, UnAlgorithm sends that one post to that provider, directly from your browser
+with your key: the same post fields classification sends, with the same masking described above (email addresses and
+phone numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most
+2,000 characters, a shared link's domain and title). Your interests are not sent. The provider then runs web searches
+based on the claims it found in the post (for Other perspectives, below, on the story's search words). Requests to
+OpenAI ask it not to store responses (`store: false`), and no approximate location is sent with OpenAI's web search.
+The result stays in this browser's temporary session storage for that tab and is removed when the tab closes or the
+browser restarts. Facebook posts that aren't public are never checked, and nothing goes to HeitechSoft.
 
 **Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
 Cloud) and it offers fact-check, turning on Settings → Labs → Fact-check and confirming a check on a public post sends
@@ -60,12 +61,21 @@ you confirm it; a check that stops early is not charged. Closing the tab cancels
 result is kept in this browser exactly as above.
 
 **Other perspectives (Labs, off by default).** When you turn on Settings → Labs → Other perspectives, use your own
-Anthropic key and ask to compare a public post's shared link, the shared link's address (with tracking and per-click
-parameters removed first) and its link-card title go from your browser to Anthropic, which searches news sites from our
-outlet list for coverage of the same story and compares it. The post's text is never sent, nor its author, your
-interests or anything else about you. Lean labels come only from UnAlgorithm's reviewed outlet list, never from the AI.
-The result stays in this browser's temporary session storage for that tab, as a fact-check's does, and nothing goes to
-HeitechSoft.
+Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
+per-click parameters removed first) and its link-card title go from your browser to that provider, which searches news
+sites from our outlet list for coverage of the same story and compares it. The post's text is never sent, nor its
+author, your interests or anything else about you. Lean labels come only from UnAlgorithm's reviewed outlet list,
+never from the AI. The result stays in this browser's temporary session storage for that tab, as a fact-check's does,
+and nothing goes to HeitechSoft.
+
+**Fact-check and Other perspectives with your own AI server and a web search key.** If your AI option is a local or
+self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → Labs,
+a fact-check sends the post (with the same fields and masking as above) and Other perspectives sends the link and
+title (with tracking parameters removed) **only to the AI server address you entered**. The web searches go from your
+browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for Other
+perspectives, the story's search words and the outlet sites to search. The post itself is never sent to Brave or
+Tavily. Saving the key sends one test search for the word "UnAlgorithm". The key is stored only in this browser, like
+an API key, and Facebook posts that aren't public are never checked.
 
 **Other perspectives on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers Other
 perspectives, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
@@ -94,6 +104,7 @@ review the issue and submit it yourself, under GitHub's terms and privacy statem
 | Side panel | To show Highlights: the posts picked for you and the ones that were hidden |
 | Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
+| Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → Labs, for that one service |
 | Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses UnAlgorithm. It removes the `Origin` header from UnAlgorithm's own requests to that one server |
 
 ## Children

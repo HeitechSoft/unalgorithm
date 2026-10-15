@@ -1,20 +1,28 @@
 /**
- * "Other perspectives" in the background (P3-38): the registry by build mode, every gate, the own-key pipeline and its
- * ledger, only the link leaving, the server path (canonical link, cancel on tab close), one run per tab, and the
- * check of a server's leans against this build's registry. Extension storage is the WXT fake browser, API keys
- * fake-indexeddb, Anthropic the mock responder and the server a stubbed fetch; outlets are the fictional fixture.
- * Nothing real is called.
+ * "Other perspectives" in the background (P3-38, P3-46): the registry by build mode, every gate, the own-key pipeline
+ * (Anthropic, OpenAI, OpenAI-compatible with a Brave key) and its ledger, only the link leaving, the server path
+ * (canonical link, cancel on tab close), one run per tab, and the check of leans against this build's registry.
+ * Extension storage is the WXT fake browser, API keys fake-indexeddb, Anthropic and OpenAI the mock responders, the
+ * compat server, Brave and the UnAlgorithm server stubbed fetches; outlets are the fictional fixture. Nothing real is
+ * called.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mockStructuredAnswer } from '@unalgorithm/ai/testing';
 import {
   type AnthropicRequestKind,
   mockAnthropicFetch,
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { type AISourceConfig, dayUsage, defaultDevice, sourceId } from '@unalgorithm/core';
+import {
+  mockOpenAIResponsesFetch,
+  mockResponsesAnswer,
+  type ResponsesRequestKind,
+  researchResponse,
+} from '@unalgorithm/ai/testing/openai-responses';
+import { type AISourceConfig, dayUsage, defaultDevice, sourceId, type WebSearchKey } from '@unalgorithm/core';
 import type { Registry } from '@unalgorithm/outlets';
 import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
 import {
@@ -42,11 +50,17 @@ import type { BgRequest } from '../src/lib/messages.ts';
 import { leansMatchRegistry } from '../src/lib/outlets.ts';
 import { deviceItem, type FactcheckEntry, factcheckItem, usageItem } from '../src/lib/storage.ts';
 
-const reg = vi.hoisted(() => ({ value: null as Registry | null }));
-vi.mock('../src/lib/outlets.ts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-  perspectivesRegistry: () => reg.value,
-}));
+/** `leans`: what the leans check answers instead of the real one (undefined: the real one). */
+const reg = vi.hoisted(() => ({ value: null as Registry | null, leans: undefined as boolean | undefined }));
+vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/outlets.ts')>();
+  return {
+    ...actual,
+    perspectivesRegistry: () => reg.value,
+    leansMatchRegistry: (...args: Parameters<typeof actual.leansMatchRegistry>) =>
+      reg.leans ?? actual.leansMatchRegistry(...args),
+  };
+});
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
 vi.mock('../src/background/server-auth.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/background/server-auth.ts')>()),
@@ -172,10 +186,17 @@ const account = (info: ServerInfo = INFO): ServerAccount => ({
   needsSignIn: false,
 });
 
-async function setup(over: { source?: AISourceConfig | null; labs?: boolean; info?: ServerInfo } = {}) {
+async function setup(
+  over: { source?: AISourceConfig | null; labs?: boolean; info?: ServerInfo; webSearch?: WebSearchKey | null } = {},
+) {
   const device = defaultDevice('dev1');
   const source = over.source === undefined ? ANTHROPIC : over.source;
-  await deviceItem.setValue({ ...device, aiSource: source, labs: { ...device.labs, perspectives: over.labs ?? true } });
+  await deviceItem.setValue({
+    ...device,
+    aiSource: source,
+    labs: { ...device.labs, perspectives: over.labs ?? true },
+    webSearch: over.webSearch ?? null,
+  });
   if (source?.kind === 'server') await serverAccountItem.setValue(account(over.info));
 }
 
@@ -235,6 +256,7 @@ const doneServer =
 beforeEach(async () => {
   fakeBrowser.reset();
   reg.value = FIXTURE_REGISTRY;
+  reg.leans = undefined;
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockResolvedValue('access-token-1');
   vi.mocked(runPerspectivesViaServer).mockClear();
@@ -313,7 +335,10 @@ describe('gates', () => {
 
     await setup({ source: COMPATIBLE });
     expect(await perspectives()).toStrictEqual(
-      refusal('unsupported', 'Other perspectives needs your own Anthropic key or a server that offers it.'),
+      refusal(
+        'unsupported',
+        'Other perspectives needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
+      ),
     );
 
     await setup({ source: SERVER, info: { ...INFO, capabilities: { ...INFO.capabilities, perspectives: false } } });
@@ -482,6 +507,103 @@ describe('runs', () => {
     expect((await entries())[0]).toMatchObject({ task: 'perspectives', status: 'failed', error });
   });
 
+  it('test_perspectives_openai_and_compat_link_only', async () => {
+    const OPENAI: AISourceConfig = { kind: 'openai', model: null };
+    await setSecret(sourceId(OPENAI), 'sk-test');
+    await setSecret('search:brave', 'brave-test-key');
+    // Dated in the path (OpenAI's sources carry no date) or by `page_age` (Brave), inside the story's window.
+    const day = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const articleUrl = (domain: string) => `https://${domain}/${day.replaceAll('-', '/')}/bridge`;
+    const articleText = (domain: string) => `The city bridge reopened this week after repairs, ${domain} reported.`;
+
+    /** OpenAI: the mock's story query and comparison; each bucket search answers one article on its first allowed domain. */
+    const openaiAnswer = (kind: ResponsesRequestKind, body: unknown): unknown => {
+      if (kind !== 'research') return mockResponsesAnswer(body);
+      const tools = ((body as { tools?: { filters?: { allowed_domains?: string[] } }[] }).tools ?? []) as {
+        filters?: { allowed_domains?: string[] };
+      }[];
+      const domain = tools[0]?.filters?.allowed_domains?.[0] ?? 'none.example';
+      const text = articleText(domain);
+      return researchResponse({
+        searches: [{ urls: [articleUrl(domain)] }],
+        text,
+        citations: [{ url: articleUrl(domain), title: 'Bridge reopens', start: 0, end: text.length }],
+        model: 'gpt-5-mini',
+      });
+    };
+    const net = { urls: [] as URL[], bodies: [] as string[], braveQueries: [] as string[] };
+    const openai = mockOpenAIResponsesFetch(openaiAnswer);
+    const jsonOk = (data: unknown) =>
+      new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init: RequestInit = {}) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      net.urls.push(url);
+      net.bodies.push(typeof init.body === 'string' ? init.body : '');
+      if (url.hostname === 'api.openai.com') return openai(input, init);
+      if (url.hostname === 'api.search.brave.com') {
+        const q = url.searchParams.get('q') ?? '';
+        net.braveQueries.push(q);
+        const domain = /site:([^\s)]+)/.exec(q)?.[1] ?? 'none.example';
+        const hit = { url: articleUrl(domain), title: 'Bridge reopens', description: articleText(domain), page_age: day };
+        return jsonOk({ web: { results: [hit] } });
+      }
+      if (url.href.startsWith('http://localhost:11434/v1/')) {
+        const body = JSON.parse(String(init.body)) as { model: string; messages: { role: string; content: string }[] };
+        const user = body.messages.find((m) => m.role === 'user')?.content ?? '';
+        return jsonOk({
+          model: body.model,
+          choices: [{ message: { content: JSON.stringify(mockStructuredAnswer(user).json) }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1000, completion_tokens: 50 },
+        });
+      }
+      throw new Error(`unexpected request to ${url.href}`);
+    });
+    const tracked = { url: `${LINK.url}?utm_source=x&li_fat_id=y`, title: LINK.title };
+    const sent = () => JSON.stringify(net.urls.map((u, i) => [u.href, net.bodies[i]]));
+
+    // OpenAI: only the canonical link and title leave, and only to OpenAI.
+    await setup({ source: OPENAI });
+    const viaOpenai = await perspectives({ link: tracked, text: MARKER });
+    expect(viaOpenai.ok).toBe(true);
+    for (const url of net.urls) expect(url.hostname).toBe('api.openai.com');
+    expect(sent()).not.toMatch(/POST-TEXT-MARKER|utm_source|li_fat_id/);
+    expect(sent()).toContain(LINK.url);
+    expect((await entries())[0]).toMatchObject({ task: 'perspectives', status: 'done' });
+    expect((await entries())[0]?.perspectives?.sources).toHaveLength(5);
+
+    // OpenAI-compatible with a Brave key: five searches, one per bucket, each on that bucket's fixture domains only.
+    await factcheckItem(TAB).removeValue();
+    net.urls.length = 0;
+    net.bodies.length = 0;
+    await setup({ source: COMPATIBLE, webSearch: { provider: 'brave' } });
+    const viaCompat = await perspectives({ link: tracked, text: MARKER });
+    expect(viaCompat.ok).toBe(true);
+    expect(net.braveQueries).toHaveLength(5);
+    const sites = net.braveQueries.map((q) => [...q.matchAll(/site:([^\s)]+)/g)].map((m) => m[1]).sort());
+    const expected = LEAN_BUCKETS.map((bucket) => [`${bucket}-a.example`, `${bucket}-b.example`]);
+    expect([...sites].sort()).toStrictEqual([...expected].sort());
+    for (const url of net.urls) {
+      if (url.hostname !== 'api.search.brave.com') expect(url.href.startsWith('http://localhost:11434/v1/')).toBe(true);
+    }
+    expect(sent()).not.toMatch(/POST-TEXT-MARKER|utm_source|li_fat_id/);
+    const [entry] = await entries();
+    expect(entry).toMatchObject({ task: 'perspectives', status: 'done' });
+    expect(entry?.costMicros).toBeUndefined();
+
+    // A result whose leans don't match this build's registry is refused, on own keys as on a server.
+    reg.leans = false;
+    expect(await perspectives()).toMatchObject({ ok: false, error: { code: 'not-available' } });
+    expect((await entries())[0]).toMatchObject({ status: 'failed' });
+
+    // Every model call is in the ledger, none counted as a post.
+    const ledger = dayUsage(await usageItem.getValue());
+    expect(ledger.posts).toBe(0);
+    expect(ledger.byModel['gpt-5']?.calls).toBe(1);
+    expect(ledger.byModel['gpt-5-mini']?.calls).toBe(6);
+    // Two compat runs of seven calls: the story query, five bucket searches (zero usage, under the model) and the comparison.
+    expect(ledger.byModel.llama?.calls).toBe(14);
+  });
+
   it('test_perspectives_bg_server_leans_checked_against_own_registry', async () => {
     const valid = fixtureResult();
     expect(PerspectivesResultSchema.safeParse(valid).success).toBe(true);
@@ -541,6 +663,13 @@ describe('docs', () => {
       expect(p).toMatch(/never the post's text|post's text is never sent/);
     }
     expect(ownKey).toContain('Anthropic');
+    expect(ownKey).toContain('OpenAI');
     expect(server).toContain('10 minutes');
+    // P3-46: the own AI server with a web search key, and its optional permission.
+    const compat = paragraph('**Fact-check and Other perspectives with your own AI server and a web search key');
+    expect(compat).toMatch(/only to the AI server address you entered/);
+    expect(compat).toMatch(/never sent to Brave or\s+Tavily/);
+    expect(compat).toContain('"UnAlgorithm"');
+    expect(privacy).toContain('| Optional: access to a web search service |');
   });
 });

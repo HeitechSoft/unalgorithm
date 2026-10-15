@@ -1,5 +1,15 @@
 import { AIError, describeError } from '@unalgorithm/ai';
-import { type AISourceConfig, createLock, SOURCE_LIMITS, serverOfferFrom, sourceCapabilities } from '@unalgorithm/core';
+import {
+  type AISourceConfig,
+  createLock,
+  type Device,
+  SOURCE_LIMITS,
+  serverOfferFrom,
+  sourceCapabilities,
+  type WebSearchKey,
+  webSearchName,
+  webSearchOrigin,
+} from '@unalgorithm/core';
 import type { Registry } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
@@ -12,20 +22,21 @@ import {
   serverMayReceive,
 } from '@unalgorithm/protocol';
 import {
-  aiBucketSearcher,
-  aiRetriever,
   canonicalLink,
-  FACTCHECK_MODELS,
-  PERSPECTIVES_MODELS,
+  factcheckDepsForMode,
+  type OwnKeyMode,
+  perspectivesDepsForMode,
   runFactcheck,
   runPerspectives,
+  WebSearchFailure,
 } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
 import type { BgError, BgResponses } from '../lib/messages.ts';
 import { leansMatchRegistry, perspectivesRegistry } from '../lib/outlets.ts';
 import { type FactcheckEntry, factcheckItem, readDevice } from '../lib/storage.ts';
-import { clientFor, hasPermission, parsePostInput, recordSpend } from './ai.ts';
+import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
 import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
+import { deviceSearchProvider } from './search-key.ts';
 import { serverAccountItem } from './server-auth.ts';
 
 /** Checks kept per tab, newest first. */
@@ -47,12 +58,20 @@ type PerspectivesResponse = BgResponses['perspectives'];
 type Task = 'factcheck' | 'perspectives';
 type Refusal = { ok: false; error: BgError };
 type TaskAnswer<R> = { ok: true; result: R; costMicros?: number } | Refusal;
+/** A source whose provider the browser calls directly, on the person's own key. */
+type OwnKey = Extract<AISourceConfig, { kind: 'anthropic' | 'openai' | 'openai-compatible' }>;
 
 const refuse = (code: AIErrorCode, message: string): Refusal => ({ ok: false, error: { code, message } });
 
 const BUSY: Record<Task, string> = {
   factcheck: 'A check is already running on this page.',
   perspectives: 'A check or comparison is already running on this page.',
+};
+
+const NEEDS: Record<Task, string> = {
+  factcheck: 'Fact-check needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
+  perspectives:
+    'Other perspectives needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
 };
 
 /**
@@ -89,31 +108,70 @@ export function forgetFactchecks(tabId: number): Promise<void> {
   return entriesLock(() => factcheckItem(tabId).removeValue());
 }
 
-/** The text a failed check shows: fact-check wording where the classify text `describeError` gives would be wrong. */
-function factcheckError(err: unknown): BgError {
+/** The own-key source when it can run `task`: an OpenAI-compatible one only with this device's web search key. */
+function capableOwnKey(cfg: AISourceConfig | null, device: Device, task: Task): OwnKey | null {
+  if (!cfg || cfg.kind === 'server' || cfg.kind === 'on-device') return null;
+  return sourceCapabilities(cfg, null, device.webSearch)[task] ? cfg : null;
+}
+
+/** The mode for an own-key source, or the refusal that stops the run before anything is sent. */
+async function ownKeyMode(cfg: OwnKey, device: Device): Promise<OwnKeyMode | Refusal> {
+  if (cfg.kind !== 'openai-compatible') return { kind: cfg.kind };
+  if (!cfg.model) return refuse('no-model', 'Choose a model in Settings → AI.');
+  const search = await deviceSearchProvider(device);
+  if (!search) return refuse('no-key', 'Add a web search key in Settings → Labs.');
+  return { kind: cfg.kind, model: cfg.model, search };
+}
+
+const isRefusal = (m: OwnKeyMode | Refusal): m is Refusal => 'ok' in m;
+
+/**
+ * The text a failed own-key run shows: a search failure names the web search key's provider, everything else the AI's;
+ * task wording where the classify text `describeError` gives would be wrong.
+ */
+function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
   const e = err instanceof AIError ? err : new AIError('unknown', String(err));
-  if (e.code === 'unsupported') return { code: e.code, message: "Web search isn't turned on for this Anthropic account." };
-  if (e.code === 'refusal') return { code: e.code, message: 'The AI declined to check this post.' };
-  return { code: e.code, message: describeError(e.code, 'Anthropic') };
+  if (e instanceof WebSearchFailure) {
+    const name = e.provider === 'searxng' ? 'the search service' : webSearchName(e.provider);
+    if (e.code === 'not-available')
+      return { code: e.code, message: `Your ${name} key was refused. Check it in Settings → Labs.` };
+    if (e.code === 'rate-limit')
+      return { code: e.code, message: `${name} is limiting searches right now. Try again in a minute.` };
+    return { code: e.code, message: `Couldn't reach ${name}.` };
+  }
+  if (e.code === 'unsupported' && cfg.kind === 'anthropic')
+    return { code: e.code, message: "Web search isn't turned on for this Anthropic account." };
+  if (e.code === 'unsupported' && cfg.kind === 'openai')
+    return { code: e.code, message: "Web search isn't available for this OpenAI key or model." };
+  if (e.code === 'refusal')
+    return {
+      code: e.code,
+      message: task === 'factcheck' ? 'The AI declined to check this post.' : 'The AI declined to compare this link.',
+    };
+  if (e.code === 'bad-request' && task === 'perspectives') return { code: e.code, message: NOT_COMPARABLE };
+  return { code: e.code, message: describeError(e.code, providerName(cfg)) };
 }
 
 /**
- * Fact-check one post for a feed tab, on the person's own Anthropic key or on their UnAlgorithm server. Every gate is
- * checked again here, and each refusal returns before anything is sent. The result is kept in the tab's session
- * storage, where the side panel reads it.
+ * Fact-check one post for a feed tab, on the person's own key (Anthropic, OpenAI, or an OpenAI-compatible server with
+ * this device's web search key) or on their UnAlgorithm server. Every gate is checked again here, and each refusal
+ * returns before anything is sent. The result is kept in the tab's session storage, where the side panel reads it.
  */
 export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<FactcheckResponse> {
   const device = await readDevice();
   if (!device.labs.factcheck) return refuse('not-available', 'Turn on Fact-check in Settings → Labs.');
   const cfg = device.aiSource;
   if (cfg?.kind === 'server') return runOnServer(tabId, key, input, cfg);
-  if (cfg?.kind !== 'anthropic' || !sourceCapabilities(cfg).factcheck)
-    return refuse('unsupported', 'Fact-check needs your own Anthropic key.');
-  const post = parsePostInput(input, SOURCE_LIMITS.anthropic.maxPostChars);
+  const own = capableOwnKey(cfg, device, 'factcheck');
+  if (!own) return refuse('unsupported', NEEDS.factcheck);
+  const post = parsePostInput(input, SOURCE_LIMITS[own.kind].maxPostChars);
   if (!post) return refuse('bad-request', 'This post could not be read.');
   // Only public posts, own keys too (decision D2).
   if (!serverMayReceive(post)) return refuse('not-available', ONLY_PUBLIC);
-  return track(tabId, key, post.text.slice(0, LABEL_CHARS), 'factcheck', cfg, () => runOnAnthropic(post, cfg));
+  const mode = await ownKeyMode(own, device);
+  if (isRefusal(mode)) return mode;
+  const label = post.text.slice(0, LABEL_CHARS);
+  return track(tabId, key, label, 'factcheck', own, () => runOwnKey(post, own, mode), device.webSearch);
 }
 
 const ONLY_PUBLIC = 'Fact-check works only on public posts.';
@@ -147,27 +205,49 @@ async function cancelOnTabClose<A>(tabId: number, run: (signal: AbortSignal) => 
   }
 }
 
-/** The three Anthropic calls; every call's spend is in the ledger with `posts: 0` (no daily post cap). */
-async function runOnAnthropic(post: PostForAI, cfg: Extract<AISourceConfig, { kind: 'anthropic' }>): Promise<FactcheckResponse> {
+/**
+ * The check on the person's key, with the mode's deps (P3-43). Every call's spend is in the ledger with `posts: 0` (no
+ * daily post cap); `costMicros` only when the models are priced (an OpenAI-compatible model has no card).
+ */
+async function runOwnKey(post: PostForAI, cfg: OwnKey, mode: OwnKeyMode): Promise<FactcheckResponse> {
   // Every call's spend is in the ledger before the answer goes back, so the popup's cost today includes it.
   const spends: Promise<void>[] = [];
   try {
     const client = await clientFor(cfg);
-    const run = await runFactcheck(
-      { ...post, ref: 'p1' },
-      { client, retriever: aiRetriever(client, FACTCHECK_MODELS.research) },
-      { onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })) },
-    );
+    const run = await runFactcheck({ ...post, ref: 'p1' }, factcheckDepsForMode(client, mode), {
+      onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })),
+    });
     await Promise.all(spends);
     return { ok: true, result: run.result, ...(run.costMicros !== undefined ? { costMicros: run.costMicros } : {}) };
   } catch (err) {
     await Promise.allSettled(spends);
-    return { ok: false, error: factcheckError(err) };
+    return { ok: false, error: ownKeyError(err, cfg, 'factcheck') };
   }
 }
 
 /**
- * One check or comparison per tab: the host permission, then a `running` entry, then `run`, whose answer settles the
+ * The refusal when a host permission the run needs is missing: the source's own and, for an OpenAI-compatible source,
+ * its web search service's. Only checked here: both are asked for from a click in Settings.
+ */
+async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | null): Promise<Refusal | null> {
+  if (!(await hasPermission(cfg))) return refuse('host-permission', describeError('host-permission', providerName(cfg)));
+  if (cfg.kind !== 'openai-compatible' || !webSearch) return null;
+  let granted = false;
+  try {
+    granted = await browser.permissions.contains({ origins: [`${webSearchOrigin(webSearch.provider)}/*`] });
+  } catch {
+    granted = false;
+  }
+  if (granted) return null;
+  const name = webSearchName(webSearch.provider);
+  return refuse(
+    'host-permission',
+    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → Labs.`,
+  );
+}
+
+/**
+ * One check or comparison per tab: the host permissions, then a `running` entry, then `run`, whose answer settles the
  * entry. Nothing is settled when the tab closed meanwhile (its entries are gone): the item stays removed.
  */
 async function track<A extends TaskAnswer<unknown>>(
@@ -177,18 +257,20 @@ async function track<A extends TaskAnswer<unknown>>(
   task: Task,
   cfg: AISourceConfig,
   run: () => Promise<A>,
+  webSearch: WebSearchKey | null = null,
 ): Promise<A | Refusal> {
   if (inFlight.has(tabId)) return refuse('rate-limit', BUSY[task]);
   inFlight.add(tabId);
   try {
-    if (!(await hasPermission(cfg))) return refuse('host-permission', describeError('host-permission', 'Anthropic'));
+    const denied = await missingPermission(cfg, webSearch);
+    if (denied) return denied;
 
     const startedAt = Date.now();
     const mine = (e: FactcheckEntry) => e.startedAt === startedAt && e.key === key && e.status === 'running';
     const settle = (patch: Partial<FactcheckEntry>) =>
       updateEntries(tabId, (entries) => (entries.some(mine) ? entries.map((e) => (mine(e) ? { ...e, ...patch } : e)) : null));
     // Another `running` entry can only be left by a worker that died mid-check: this tab is in `inFlight` now.
-    const stale: Partial<FactcheckEntry> = { status: 'failed', error: factcheckError(new AIError('timeout', 'Stopped.')) };
+    const stale: Partial<FactcheckEntry> = { status: 'failed', error: { code: 'timeout', message: describeError('timeout') } };
     await updateEntries(tabId, (entries) => [
       { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running' },
       ...entries.map((e) => (e.status === 'running' ? { ...e, ...stale } : e)),
@@ -219,20 +301,11 @@ const NOT_COMPARABLE = "This link can't be compared.";
 const PLACE = PerspectivesJobRequestSchema.pick({ platform: true, audience: true });
 const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
 
-/** The text a failed own-key comparison shows. */
-function perspectivesError(err: unknown): BgError {
-  const e = err instanceof AIError ? err : new AIError('unknown', String(err));
-  if (e.code === 'unsupported') return { code: e.code, message: "Web search isn't turned on for this Anthropic account." };
-  if (e.code === 'refusal') return { code: e.code, message: 'The AI declined to compare this link.' };
-  if (e.code === 'bad-request') return { code: e.code, message: NOT_COMPARABLE };
-  return { code: e.code, message: describeError(e.code, 'Anthropic') };
-}
-
 /**
- * "Other perspectives" for one shared link in a feed tab, on the person's own Anthropic key or on their UnAlgorithm
- * server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link leaves the
- * browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when every
- * lean in it is this build's own registry's (`leansMatchRegistry`).
+ * "Other perspectives" for one shared link in a feed tab, on the person's own key (as fact-check) or on their
+ * UnAlgorithm server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link
+ * leaves the browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when
+ * every lean in it is this build's own registry's (`leansMatchRegistry`).
  */
 export async function runPerspectivesForTab(
   tabId: number,
@@ -269,30 +342,27 @@ export async function runPerspectivesForTab(
       checked(await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where }, { signal }))),
     );
   }
-  if (cfg?.kind !== 'anthropic' || !sourceCapabilities(cfg).perspectives)
-    return refuse('unsupported', 'Other perspectives needs your own Anthropic key or a server that offers it.');
-  return track(tabId, key, label, 'perspectives', cfg, async () => checked(await compareOnAnthropic(link, registry, cfg)));
+  const own = capableOwnKey(cfg, device, 'perspectives');
+  if (!own) return refuse('unsupported', NEEDS.perspectives);
+  const mode = await ownKeyMode(own, device);
+  if (isRefusal(mode)) return mode;
+  const compare = async () => checked(await compareOwnKey(link, registry, own, mode));
+  return track(tabId, key, label, 'perspectives', own, compare, device.webSearch);
 }
 
 /** The pipeline on the person's key: no `resolveLink` (the extension never fetches a link), no ceiling (own key). */
-async function compareOnAnthropic(
-  link: SharedLink,
-  registry: Registry,
-  cfg: Extract<AISourceConfig, { kind: 'anthropic' }>,
-): Promise<PerspectivesResponse> {
+async function compareOwnKey(link: SharedLink, registry: Registry, cfg: OwnKey, mode: OwnKeyMode): Promise<PerspectivesResponse> {
   // Every call's spend is in the ledger before the answer goes back, as fact-check's.
   const spends: Promise<void>[] = [];
   try {
     const client = await clientFor(cfg);
-    const run = await runPerspectives(
-      link,
-      { client, searcher: aiBucketSearcher(client, PERSPECTIVES_MODELS.search), registry },
-      { onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })) },
-    );
+    const run = await runPerspectives(link, perspectivesDepsForMode(client, mode, registry), {
+      onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })),
+    });
     await Promise.all(spends);
     return { ok: true, result: run.result, ...(run.costMicros !== undefined ? { costMicros: run.costMicros } : {}) };
   } catch (err) {
     await Promise.allSettled(spends);
-    return { ok: false, error: perspectivesError(err) };
+    return { ok: false, error: ownKeyError(err, cfg, 'perspectives') };
   }
 }

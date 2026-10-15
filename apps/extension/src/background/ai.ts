@@ -94,7 +94,8 @@ export function sourceLabel(cfg: AISourceConfig | null): string {
   }
 }
 
-function providerName(cfg: AISourceConfig): string {
+/** Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title. */
+export function providerName(cfg: AISourceConfig): string {
   if (cfg.kind === 'anthropic') return 'Anthropic';
   if (cfg.kind === 'openai') return 'OpenAI';
   if (cfg.kind === 'openai-compatible') return COMPAT_PRESET_INFO[cfg.preset].label;
