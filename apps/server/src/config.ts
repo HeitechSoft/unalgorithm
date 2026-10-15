@@ -54,6 +54,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'ALERT_DATABASE_MAX_GB',
   'ALERT_ERRORS_PER_15M',
   'ALERT_BACKUP_MAX_AGE_HOURS',
+  'METRICS_TOKEN',
   'WEB_DIST',
   'BACKUP_STATUS_DIR',
   'LOG_LEVEL',
@@ -123,6 +124,8 @@ export interface Config {
     /** `backup-<kind>` opens when the last success is older than this (ms); 0: only a failed run opens it. */
     backupMaxAgeMs: number;
   };
+  /** The bearer token of `GET /metrics` (CL4-17), at least 32 characters, exactly as given. Unset: no metrics endpoint. */
+  metricsToken?: string;
   webDist: string;
   /**
    * The folder of the backup status files (`<kind>.json`, CL4-10), absolute; compose.yaml mounts it read-only. Unset:
@@ -355,6 +358,8 @@ export function loadConfig(env: Env = process.env): Config {
   const databaseMaxGb = gigabytes('ALERT_DATABASE_MAX_GB', 10, 'database-size-high');
   const errorsPer15m = integer('ALERT_ERRORS_PER_15M', 20, 0);
   const backupMaxAgeHours = integer('ALERT_BACKUP_MAX_AGE_HOURS', 26, 0);
+  const metricsToken = readSecret('METRICS_TOKEN');
+  if (metricsToken !== undefined && metricsToken.length < 32) bad('METRICS_TOKEN', 'must be at least 32 characters');
 
   // Runtime
   const webDistValue = read('WEB_DIST');
@@ -419,6 +424,7 @@ export function loadConfig(env: Env = process.env): Config {
       errorsPer15m,
       backupMaxAgeMs: backupMaxAgeHours * HOUR_MS,
     },
+    metricsToken,
     webDist,
     backupStatusDir,
     logLevel,

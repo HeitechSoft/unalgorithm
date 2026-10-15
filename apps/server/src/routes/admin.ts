@@ -42,11 +42,8 @@ import { setDailyCap } from '../ai/limits.ts';
 import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
 import { listOpenAlerts } from '../ops/alerts.ts';
-import type { ErrorWindow } from '../ops/error-window.ts';
+import { NO_ERRORS } from '../ops/error-window.ts';
 import { errorResponse, json, NOT_FOUND } from './openapi.ts';
-
-/** The error count of an app built without a window (`AppDeps.errors`): it never records, so it counts 0. */
-const NO_ERRORS: ErrorWindow = { record: () => {}, count: () => 0 };
 
 const OWN_ACCESS: WireError = { code: 'bad-request', message: "You can't change your own access." };
 const OWN_ROLE: WireError = { code: 'bad-request', message: "You can't change your own role." };

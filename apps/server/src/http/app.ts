@@ -41,6 +41,7 @@ import { accountRoutes } from '../routes/account.ts';
 import { adminRoutes } from '../routes/admin.ts';
 import { authRoutes } from '../routes/auth.ts';
 import { classifyRoutes } from '../routes/classify.ts';
+import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
@@ -193,6 +194,7 @@ export function createApp(deps: AppDeps): App {
   accountRoutes(app, deps);
   classifyRoutes(app, deps);
   adminRoutes(app, deps);
+  metricsRoutes(app, deps);
   syncRoutes(app, deps);
 
   billing.mount?.(app);

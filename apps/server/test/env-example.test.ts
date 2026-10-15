@@ -31,7 +31,14 @@ const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL', 'BACKUP_STATUS_DIR']
 const OLLAMA_BASE_URL = 'http://ollama:11434/v1';
 const OLLAMA_MODEL = COMPAT_PREFERENCES.ollama?.[0] ?? '';
 /** Their values are secrets: the example leaves every one of them empty. */
-const SECRET_NAMES = ['BETTER_AUTH_SECRET', 'AI_API_KEY', 'SMTP_PASSWORD', 'GOOGLE_CLIENT_SECRET', 'POSTGRES_PASSWORD'];
+const SECRET_NAMES = [
+  'BETTER_AUTH_SECRET',
+  'AI_API_KEY',
+  'SMTP_PASSWORD',
+  'GOOGLE_CLIENT_SECRET',
+  'POSTGRES_PASSWORD',
+  'METRICS_TOKEN',
+];
 
 interface EnvExampleEntry {
   name: string;

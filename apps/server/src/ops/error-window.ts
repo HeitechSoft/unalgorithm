@@ -15,6 +15,9 @@ export interface ErrorWindow {
   count(now?: number): number;
 }
 
+/** The error count of an app built without a window (`AppDeps.errors`): it never records, so it counts 0. */
+export const NO_ERRORS: ErrorWindow = { record: () => {}, count: () => 0 };
+
 export function createErrorWindow(): ErrorWindow {
   /** Lines per minute since the epoch; `record` drops minutes outside the window, so at most 15 entries. */
   const minutes = new Map<number, number>();
