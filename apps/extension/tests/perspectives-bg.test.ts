@@ -293,6 +293,23 @@ describe('gates', () => {
     expect(await perspectives({ platform: 'facebook', audience: 'friends' })).toStrictEqual(
       refusal('not-available', 'Other perspectives works only on public posts.'),
     );
+    // A platform or audience the protocol doesn't know can't be shown public, and never leaves as sent.
+    const unknownPlaces = [
+      { platform: 'Facebook', audience: 'friends' },
+      { platform: MARKER },
+      { platform: 'linkedin', audience: MARKER },
+    ];
+    for (const place of unknownPlaces) {
+      expect(await perspectives(place as never)).toStrictEqual(
+        refusal('not-available', 'Other perspectives works only on public posts.'),
+      );
+    }
+    await setup({ source: SERVER });
+    for (const place of unknownPlaces) {
+      expect(await perspectives(place as never)).toStrictEqual(
+        refusal('not-available', 'Other perspectives works only on public posts.'),
+      );
+    }
 
     await setup({ source: COMPATIBLE });
     expect(await perspectives()).toStrictEqual(
@@ -486,6 +503,16 @@ describe('runs', () => {
       outlets: FIXTURE_REGISTRY.outlets.map((o) => (o.id === 'fx-left-a' ? { ...o, lean: null } : o)),
     };
     expect(leansMatchRegistry(valid, unlabelled)).toBe(false);
+    // Another outlet's name beside this outlet's lean.
+    expect(changed((r) => void (first(r).outlet = outletName('fx-right-a')))).toBe(false);
+    // A repeated source id (the schema allows it): the right row's `s1` would show the left outlet under Right.
+    type Row = { sourceIds: string[] };
+    const repeated = structuredClone(valid);
+    (repeated.sources[4] as PerspectivesResult['sources'][number]).id = 's1';
+    (repeated.coverage[0] as Row).sourceIds = [];
+    (repeated.coverage[4] as Row).sourceIds = ['s1'];
+    expect(PerspectivesResultSchema.safeParse(repeated).success).toBe(true);
+    expect(leansMatchRegistry(repeated, FIXTURE_REGISTRY)).toBe(false);
 
     // A server whose result carries a lean this build's registry doesn't hold: failed, nothing stored.
     await setup({ source: SERVER });

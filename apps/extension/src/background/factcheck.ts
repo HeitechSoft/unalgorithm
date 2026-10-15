@@ -4,6 +4,7 @@ import type { Registry } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
   type PerspectivesJobRequest,
+  PerspectivesJobRequestSchema,
   type PostForAI,
   type PostKey,
   type SharedLink,
@@ -215,6 +216,7 @@ export interface PerspectivesTabRequest {
 }
 
 const NOT_COMPARABLE = "This link can't be compared.";
+const PLACE = PerspectivesJobRequestSchema.pick({ platform: true, audience: true });
 const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
 
 /** The text a failed own-key comparison shows. */
@@ -246,9 +248,13 @@ export async function runPerspectivesForTab(
   if (!parsed.success || !url) return refuse('bad-request', NOT_COMPARABLE);
   const title = parsed.data.title;
   const link: SharedLink = { url, ...(title !== undefined ? { title } : {}) };
-  const where = { platform: req.platform, ...(req.audience ? { audience: req.audience } : {}) };
-  // Only public posts, own keys too (decision D2).
-  if (!serverMayReceive(where)) return refuse('not-available', 'Other perspectives works only on public posts.');
+  // Only public posts, own keys too (decision D2). Platform and audience are the protocol's own values first: an unknown
+  // platform would pass `serverMayReceive` as public, and would leave the browser as sent.
+  const place = PLACE.safeParse({ platform: req.platform, audience: req.audience });
+  const where = place.success
+    ? { platform: place.data.platform, ...(place.data.audience ? { audience: place.data.audience } : {}) }
+    : null;
+  if (!where || !serverMayReceive(where)) return refuse('not-available', 'Other perspectives works only on public posts.');
 
   const label = title?.trim() ? title.trim().slice(0, LABEL_CHARS) : new URL(url).hostname;
   const checked = (answer: PerspectivesResponse): PerspectivesResponse =>
