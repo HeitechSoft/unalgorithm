@@ -1,14 +1,8 @@
 import { type AISourceConfig, createLock } from '@unalgorithm/core';
-import {
-  ACCOUNT_PAGE_PATH,
-  type ClassifyResponse,
-  CREDIT_BALANCE_PATH,
-  CreditBalanceSchema,
-  LOW_BALANCE_MICROS,
-} from '@unalgorithm/protocol';
+import { type ClassifyResponse, CREDIT_BALANCE_PATH, CreditBalanceSchema, LOW_BALANCE_MICROS } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
-import { isServerAt } from '../lib/server-label.ts';
-import { getAccessToken, isTrustedServerOrigin, type ServerAccount } from './server-auth.ts';
+import { accountPageUrl, isServerAt } from '../lib/server-label.ts';
+import { getAccessToken, type ServerAccount } from './server-auth.ts';
 import { serverRequest } from './server-http.ts';
 
 /**
@@ -190,19 +184,9 @@ function toPublic({ balanceMicros, updatedAt }: StoredBalance, origin: string): 
     balanceMicros,
     low: balanceMicros > 0 && balanceMicros < LOW_BALANCE_MICROS,
     empty: balanceMicros <= 0,
-    accountUrl: accountUrl(origin),
+    accountUrl: accountPageUrl(origin),
     updatedAt,
   };
-}
-
-/** The server's account page, where discovery could have found the server; no link anywhere else. */
-function accountUrl(origin: string): string | null {
-  try {
-    const url = new URL(origin);
-    return isTrustedServerOrigin(url) ? new URL(ACCOUNT_PAGE_PATH, url.origin).href : null;
-  } catch {
-    return null;
-  }
 }
 
 /** `promise`'s value, or undefined once `ms` have passed (the promise carries on). */

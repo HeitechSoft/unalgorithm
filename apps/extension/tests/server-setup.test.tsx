@@ -91,6 +91,8 @@ beforeEach(() => {
     serverSignIn: (msg) => ({ ok: true, account: account(msg.baseUrl) }),
     serverSignOut: () => ({ ok: true }),
     saveSource: () => ({ ok: true }),
+    syncStatus: () => ({ available: true, enabled: false, state: 'off', lastSyncAt: null }),
+    serverDevices: () => ({ ok: true, devices: [] }),
   };
   vi.mocked(sendToBackground).mockReset();
   vi.mocked(sendToBackground).mockImplementation(async (msg) => {
@@ -256,7 +258,10 @@ describe('flow', () => {
     // The prompt opens from the click itself, before anything else is awaited: Chrome needs the user gesture.
     expect(permission).toHaveBeenCalledWith({ permissions: ['identity'] });
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
-    expect(events.slice(events.indexOf('serverDiscover') + 1)).toEqual(['permission', 'serverSignIn']);
+    expect(events.slice(events.indexOf('serverDiscover') + 1, events.indexOf('serverSignIn') + 1)).toEqual([
+      'permission',
+      'serverSignIn',
+    ]);
     cleanup();
 
     // Denied: the reason is shown on the consent step and nothing is sent.
@@ -297,7 +302,10 @@ describe('flow', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in again' }));
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
     expect(permission).toHaveBeenCalledWith({ permissions: ['identity'] });
-    expect(events.slice(events.indexOf('serverAccount') + 1)).toEqual(['permission', 'serverSignIn']);
+    expect(events.slice(events.indexOf('serverAccount') + 1, events.indexOf('serverSignIn') + 1)).toEqual([
+      'permission',
+      'serverSignIn',
+    ]);
     expect(sent()).toContainEqual({ type: 'serverSignIn', baseUrl: PINNED_CLOUD_ORIGIN });
     // Consent was given for this origin before: no discovery, no consent step.
     expect(sentTypes()).not.toContain('serverDiscover');

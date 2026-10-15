@@ -424,7 +424,11 @@ describe('settings', () => {
   it('test_settings_pill_after_sign_in_again', async () => {
     // `as never`: spyOn picks the callback overload, typed as returning void.
     vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => true) as never);
-    const afterSignIn = () => sentTypes().slice(sentTypes().indexOf('serverSignIn') + 1);
+    // The sync and devices sections (CL3-22) ask for their own state once signed in; only the balance's messages count.
+    const afterSignIn = () =>
+      sentTypes()
+        .slice(sentTypes().indexOf('serverSignIn') + 1)
+        .filter((type) => type !== 'syncStatus' && type !== 'serverDevices');
     // R26: the source stays the Cloud throughout, so the device never changes. While the account must sign in again,
     // `aiStatus` has no balance (CL2-10); once signed in, a server that bills has one.
     for (const billing of [true, false]) {

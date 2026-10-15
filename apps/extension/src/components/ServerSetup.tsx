@@ -6,7 +6,9 @@ import { browser } from 'wxt/browser';
 import { useAiStatus } from '../lib/hooks.ts';
 import { type PublicServerAccount, sendToBackground } from '../lib/messages.ts';
 import { isServerAt, PINNED_CLOUD_ORIGIN, recipientText, type ServerLabel } from '../lib/server-label.ts';
+import { AccountSync } from './AccountSync.tsx';
 import { BalancePill } from './BalancePill.tsx';
+import { DeviceList } from './DeviceList.tsx';
 
 declare global {
   interface ImportMetaEnv {
@@ -222,6 +224,17 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
           </Button>
         </div>
       ) : null}
+      {account.needsSignIn ? null : (
+        // A new sign-in asks the server again for the sync status and the devices.
+        <div key={account.signedInAt} className="ua-stack">
+          <AccountSync account={account} onSignInAgain={() => signIn(account.origin)} />
+          <DeviceList
+            account={account}
+            onSignInAgain={() => signIn(account.origin)}
+            onSignedOut={() => go({ step: 'address' })}
+          />
+        </div>
+      )}
     </div>
   );
 }

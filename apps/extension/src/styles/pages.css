@@ -146,6 +146,7 @@
 .flow-diagram {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
   padding: 18px 16px;

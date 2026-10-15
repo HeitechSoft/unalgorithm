@@ -46,7 +46,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
-import { useStorageItem } from '../../lib/hooks.ts';
+import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
@@ -727,11 +727,13 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
       .then((p) => setOrigins((p.origins ?? []).filter((o) => !/linkedin\.com|facebook\.com/.test(o))));
   useEffect(refreshPermissions, []);
 
+  // Settings, interests and exceptions go to the server while sync is on, whatever the AI source (CL3-22).
+  const syncedWith = useSyncedServer(CLOUD_ENABLED);
   const src = device.aiSource;
-  const flow = !src
-    ? { to: null, text: 'Rules run in your browser. Nothing leaves your computer.' }
+  const flow: { to: string | null; text: string; stays?: string } = !src
+    ? { to: null, text: 'Rules run in your browser.', stays: 'Nothing leaves your computer.' }
     : src.kind === 'on-device'
-      ? { to: null, text: "Chrome's built-in AI runs on this computer. Nothing leaves it." }
+      ? { to: null, text: "Chrome's built-in AI runs on this computer.", stays: 'Nothing leaves it.' }
       : src.kind === 'openai-compatible'
         ? {
             to: new URL(src.baseUrl).host,
@@ -743,6 +745,8 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
               to: src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI',
               text: `Post text goes from your browser straight to ${src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI'}. HeitechSoft never sees it. Author names, emails and phone numbers are never sent.`,
             };
+
+  const recipients = [...new Set([flow.to, syncedWith].filter((to): to is string => !!to))];
 
   const exportSettings = () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
@@ -772,13 +776,24 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   return (
     <>
       <Title>Privacy &amp; Data</Title>
-      <ListGroup header="Where your data goes" footer={flow.text}>
+      <ListGroup
+        header="Where your data goes"
+        footer={
+          syncedWith
+            ? `${flow.text} Your settings, interests and exceptions are synced with ${syncedWith}.`
+            : [flow.text, flow.stays].filter(Boolean).join(' ')
+        }
+      >
         <div className="flow-diagram">
           <span className="flow-box">This browser</span>
-          {flow.to ? (
+          {recipients.length ? (
             <>
               <span aria-hidden="true">→</span>
-              <span className="flow-box">{flow.to}</span>
+              {recipients.map((to) => (
+                <span key={to} className="flow-box">
+                  {to}
+                </span>
+              ))}
             </>
           ) : null}
         </div>

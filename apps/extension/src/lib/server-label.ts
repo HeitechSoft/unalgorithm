@@ -1,4 +1,5 @@
 import { type AISourceConfig, canonicalText } from '@unalgorithm/core';
+import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 
 /**
  * How a `server` AI source is named on screen (R25, docs/brand.md). The same server code runs HeitechSoft's Cloud and
@@ -110,5 +111,26 @@ export function isServerAt(cfg: AISourceConfig | null, origin: string): boolean 
     return new URL(cfg.baseUrl).origin === origin;
   } catch {
     return false;
+  }
+}
+
+/** Tokens must not cross the network in clear, except to a server on this computer. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Where tokens may go and links may point: https, or http to a server on this computer. The one place this rule lives
+ * (discovery, and the account page link next to a balance and under the devices).
+ */
+export function isTrustedServerOrigin(url: URL): boolean {
+  return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
+}
+
+/** The server's account page, where discovery could have found the server; null anywhere else (no link is offered). */
+export function accountPageUrl(origin: string): string | null {
+  try {
+    const url = new URL(origin);
+    return isTrustedServerOrigin(url) ? new URL(ACCOUNT_PAGE_PATH, url.origin).href : null;
+  } catch {
+    return null;
   }
 }

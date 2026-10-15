@@ -17,7 +17,7 @@ import {
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from '../lib/messages.ts';
-import { serverLabel } from '../lib/server-label.ts';
+import { isTrustedServerOrigin, serverLabel } from '../lib/server-label.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { deviceName } from './device-name.ts';
 import { getSecret, setSecret } from './idb.ts';
@@ -62,8 +62,6 @@ export interface AuthDeps {
 export type DiscoverResult = { ok: true; origin: string; info: ServerInfo } | { ok: false; error: BgError };
 export type SignInResult = { ok: true; account: ServerAccount } | { ok: false; error: BgError };
 
-/** Tokens must not cross the network in clear, except to a server on this computer. */
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 /** A server's discovery document is read again (`refreshServerInfo`) at most this often. */
 export const REDISCOVER_MIN_INTERVAL_MS = 5 * 60_000;
 const TIMEOUT_MS = 10_000;
@@ -83,13 +81,8 @@ function toBgError(e: unknown): BgError {
   return isAIError(e) ? { code: e.code, message: e.message } : { code: 'unknown', message: describeError('unknown') };
 }
 
-/**
- * Where tokens may go and links may point: https, or http to a server on this computer. The one place this rule lives
- * (discovery, and the account page link next to a balance).
- */
-export function isTrustedServerOrigin(url: URL): boolean {
-  return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
-}
+// The rule lives with the labels, so extension pages share it (the account page link, CL3-22).
+export { isTrustedServerOrigin };
 
 /** Checks that an address is an UnAlgorithm server this extension can sign in to, and reads its discovery document. */
 export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}): Promise<DiscoverResult> {
