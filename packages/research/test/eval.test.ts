@@ -5,6 +5,7 @@ import {
   type LinkStatus,
   PostForAISchema,
   type RetrievedSource,
+  serverMayReceive,
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { type CliDeps, main } from '../eval/cli.ts';
@@ -21,6 +22,7 @@ import {
   traceCitations,
   trustGates,
 } from '../eval/score.ts';
+import type { ClaimCache } from '../src/claim-cache.ts';
 import { type FactcheckDeps, type LinkChecker, type RetrievalPlan, RM4_RETRIEVAL } from '../src/factcheck.ts';
 import { buildResearchUser } from '../src/prompts.ts';
 
@@ -155,6 +157,28 @@ describe('report v1', () => {
     expect(report.citationsShown).toBe(112);
     expect(report.links).toEqual({ live: 0, dead: 112, unknown: 0 });
     expect(report.liveLinks).toBe(0);
+  });
+
+  it('test_eval_run_has_no_claim_cache', async () => {
+    const calls: string[] = [];
+    const claimCache: ClaimCache = {
+      async key(text) {
+        calls.push('key');
+        return text;
+      },
+      async get() {
+        calls.push('get');
+        return new Map();
+      },
+      async put() {
+        calls.push('put');
+      },
+    };
+    expect(SET.some((i) => serverMayReceive(i.post))).toBe(true);
+    const plain = await runFactcheckEval(mockDepsFor(SET), SET);
+    const report = await runFactcheckEval({ ...mockDepsFor(SET), claimCache }, SET);
+    expect(calls).toEqual([]);
+    expect(report.citationsShown).toBe(plain.citationsShown);
   });
 });
 

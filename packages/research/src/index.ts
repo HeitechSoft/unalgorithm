@@ -1,4 +1,5 @@
 export * from './blocklist.ts';
+export * from './claim-cache.ts';
 export * from './coverage.ts';
 export * from './factcheck.ts';
 export * from './modes.ts';

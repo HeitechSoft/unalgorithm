@@ -139,8 +139,9 @@ export async function runFactcheckEval(
   items: readonly FactcheckEvalItem[] = FACTCHECK_EVAL_SET,
   opts: FactcheckEvalOptions = {},
 ): Promise<FactcheckEvalReport> {
-  // The run never checks links itself: a checker in deps would drop dead citations before they are counted.
-  const { linkCheck: _dropped, ...runDeps } = deps;
+  // The run never checks links itself (a checker in deps would drop dead citations before they are counted), and never
+  // uses a claim cache: its provenance check means this run's retrieval.
+  const { linkCheck: _dropped, claimCache: _noCache, ...runDeps } = deps;
   /** A clone of every source the retriever returned for the current item, so a later mutation changes nothing. */
   let recorded: RetrievedSource[] = [];
   const retriever: Retriever = {

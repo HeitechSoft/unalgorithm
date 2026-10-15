@@ -18,6 +18,8 @@ export const LINK_STATUSES = ['live', 'dead', 'unknown'] as const;
 export type LinkStatus = (typeof LINK_STATUSES)[number];
 /** A check stops before its next model call once it has cost this much (decision 1: hold cap $0.40 at 2×). */
 export const FACTCHECK_COST_CEILING_MICROS = 200_000;
+/** How long a cached claim verdict is served (decision D59): a server's and a device's alike. */
+export const CLAIM_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 export const FactcheckSourceSchema = z.object({
   id: z.string().regex(/^s\d{1,2}$/),
@@ -36,6 +38,8 @@ export const FactcheckClaimSchema = z.object({
   citations: z.array(FactcheckCitationSchema).max(MAX_CITATIONS_PER_CLAIM),
   /** Set when validation replaced the model's verdict with `unverifiable`. */
   downgraded: z.enum(['too-few-domains', 'no-verdict']).optional(),
+  /** When the verdict and citations came from an earlier check's cache entry: that check's time, to the hour. Explanation is then ''. */
+  cachedAt: z.iso.datetime().optional(),
 });
 export type FactcheckClaim = z.infer<typeof FactcheckClaimSchema>;
 export const FactcheckResultSchema = z.object({

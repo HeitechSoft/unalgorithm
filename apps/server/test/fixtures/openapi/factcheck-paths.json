@@ -153,6 +153,10 @@
                             "downgraded": {
                               "type": "string",
                               "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": ["id", "claim", "verdict", "explanation", "citations"]
@@ -618,6 +622,10 @@
                             "downgraded": {
                               "type": "string",
                               "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": ["id", "claim", "verdict", "explanation", "citations"]
@@ -898,6 +906,10 @@
                             "downgraded": {
                               "type": "string",
                               "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": ["id", "claim", "verdict", "explanation", "citations"]

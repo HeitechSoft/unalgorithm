@@ -1,7 +1,9 @@
 import { type AIClient, AIError, type ResearchRequest, type StructuredRequest } from '@unalgorithm/ai';
 import {
+  CLAIM_CACHE_TTL_MS,
   costMicros,
   FactcheckResultSchema,
+  type LinkStatus,
   type NormalizedUsage,
   type PostForAI,
   type RetrievedSource,
@@ -9,11 +11,13 @@ import {
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { blockedDomains } from '../src/blocklist.ts';
+import { type CachedCitation, type CachedClaim, type ClaimCache, memoryClaimCache } from '../src/claim-cache.ts';
 import {
   FACTCHECK_MODELS,
   FACTCHECK_RETRIEVAL,
   type FactcheckDeps,
   type FactcheckOptions,
+  type LinkChecker,
   type RetrievalPlan,
   RM4_RETRIEVAL,
   runFactcheck,
@@ -534,5 +538,209 @@ describe('result, usage and errors', () => {
     expect(err).toBeInstanceOf(AIError);
     expect(err.code).toBe('timeout');
     expect(r.requests[0]?.signal?.aborted).toBe(true);
+  });
+});
+
+const CACHE_SECRET = new Uint8Array(32).fill(3);
+const cite = (host: string, path: string, quote: string): CachedCitation => ({
+  url: `https://${host}/${path}`,
+  domain: host,
+  title: `Cached ${path}`,
+  quote,
+});
+const CACHED: CachedClaim = {
+  v: 1,
+  verdict: 'disputed',
+  checkedAt: '2026-10-15T09:00:00.000Z',
+  citations: [cite('cached.com', 'a', 'quote a'), cite('archive.net', 'b', 'quote b')],
+};
+const CLAIMS_COST = costMicros(FACTCHECK_MODELS.claims, CLAIMS_USAGE);
+
+/** A cache recording every call, over a memory cache unless a method is overridden. */
+function spyCache(overrides: Partial<ClaimCache> = {}, now: () => number = () => NOW.getTime()) {
+  const inner = memoryClaimCache({ secret: CACHE_SECRET, now });
+  const calls = { key: [] as string[], get: [] as string[][], put: [] as { key: string; entry: CachedClaim }[][] };
+  const cache: ClaimCache = {
+    key(text) {
+      calls.key.push(text);
+      return (overrides.key ?? inner.key)(text);
+    },
+    get(keys) {
+      calls.get.push([...keys]);
+      return (overrides.get ?? inner.get)(keys);
+    },
+    put(entries) {
+      calls.put.push([...entries]);
+      return (overrides.put ?? inner.put)(entries);
+    },
+  };
+  return { cache, calls, inner };
+}
+
+async function seed(cache: ClaimCache, text: string, entry: CachedClaim = CACHED) {
+  await cache.put([{ key: await cache.key(text), entry }]);
+}
+
+describe('claim cache', () => {
+  it('test_factcheck_full_hit_skips_research_and_verdict', async () => {
+    const { cache, inner } = spyCache();
+    await seed(inner, 'The bridge opened in 1932.');
+    await seed(inner, 'It cost $10 million.', {
+      ...CACHED,
+      verdict: 'supported',
+      citations: [cite('archive.net', 'b', 'quote b2'), cite('third.org', 'c', 'quote c')],
+    });
+    const out = await run({ claims: ['The bridge opened in 1932.', 'It cost $10 million.'] }, SOURCES, { claimCache: cache });
+    expect(out.requests.map((r) => r.schemaName)).toEqual(['factcheck_claims']);
+    expect(out.retrieves).toHaveLength(0);
+    expect(out.costMicros).toBe(CLAIMS_COST);
+    expect(out.cached).toBe(2);
+    expect(out.result.model).toBe(FACTCHECK_MODELS.claims);
+    expect(FactcheckResultSchema.safeParse(out.result).success).toBe(true);
+    expect(out.result.claims.map((c) => [c.id, c.verdict, c.explanation, c.cachedAt])).toEqual([
+      ['c1', 'disputed', '', CACHED.checkedAt],
+      ['c2', 'supported', '', CACHED.checkedAt],
+    ]);
+    expect(out.result.sources.map((s) => [s.id, s.url, s.pageAge])).toEqual([
+      ['s1', 'https://cached.com/a', null],
+      ['s2', 'https://archive.net/b', null],
+      ['s3', 'https://third.org/c', null],
+    ]);
+    expect(out.result.claims[1]?.citations).toEqual([
+      { sourceId: 's2', quote: 'quote b2' },
+      { sourceId: 's3', quote: 'quote c' },
+    ]);
+  });
+
+  it('test_factcheck_partial_hit_researches_misses_only', async () => {
+    const { cache, inner } = spyCache();
+    await seed(inner, 'It cost $10 million.', {
+      ...CACHED,
+      citations: [cite('www.example.com', 's1', 'four years of work'), cite('cached.com', 'a', 'quote a')],
+    });
+    const claims = ['The bridge opened in 1932.', 'It cost $10 million.', 'It is 2 km long.'];
+    const out = await run({ claims }, SOURCES, { claimCache: cache });
+    expect(out.retrieves[0]?.claims).toEqual([
+      { id: 'c1', text: claims[0] },
+      { id: 'c3', text: claims[2] },
+    ]);
+    expect(out.retrieves[0]?.maxSearches).toBe(3);
+    expect(out.cached).toBe(1);
+    expect(out.result.claims.map((c) => [c.id, c.claim, c.cachedAt])).toEqual([
+      ['c1', claims[0], undefined],
+      ['c2', claims[1], CACHED.checkedAt],
+      ['c3', claims[2], undefined],
+    ]);
+    expect(out.result.sources.map((s) => [s.id, s.url])).toEqual([
+      ['s1', 'https://www.example.com/s1'],
+      ['s2', 'https://news.other.org/s2'],
+      ['s3', 'https://cached.com/a'],
+    ]);
+    expect(out.result.claims[0]?.citations.map((c) => c.sourceId)).toEqual(['s1', 's2']);
+    expect(out.result.claims[1]?.citations.map((c) => c.sourceId)).toEqual(['s1', 's3']);
+    expect(FactcheckResultSchema.safeParse(out.result).success).toBe(true);
+  });
+
+  it('test_factcheck_writes_conclusive_claims_only', async () => {
+    const { cache, calls } = spyCache();
+    const [first, second] = SUPPORTED.verdicts[0]?.citations ?? [];
+    if (!first || !second) throw new Error('fixture');
+    const verdicts: Verdicts = {
+      verdicts: [
+        { claimId: 'c1', verdict: 'supported', explanation: 'Agree.', citations: [first, second] },
+        { claimId: 'c2', verdict: 'supported', explanation: 'Same.', citations: [second, first] },
+        { claimId: 'c3', verdict: 'unverifiable', explanation: 'Nothing found.', citations: [] },
+      ],
+    };
+    const claims = ['The bridge opened in 1932.', 'The bridge opened in 1932', 'It cost $10 million.'];
+    const out = await run({ claims, verdicts }, SOURCES, { claimCache: cache });
+    expect(out.result.claims.map((c) => c.verdict)).toEqual(['supported', 'supported', 'unverifiable']);
+    expect(out.cached).toBe(0);
+    expect(calls.put).toHaveLength(1);
+    const entries = calls.put[0] ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.key).toBe(await cache.key('The bridge opened in 1932.'));
+    expect(entries[0]?.entry.citations.map((c) => c.url)).toEqual(['https://www.example.com/s1', 'https://news.other.org/s2']);
+    expect(entries[0]?.entry.checkedAt).toBe(NOW.toISOString());
+  });
+
+  it('test_factcheck_cache_unused_for_non_public_post', async () => {
+    const { cache, calls } = spyCache();
+    const c = fakeClient();
+    const r = fakeRetriever();
+    const post: PostForAI = { ...POST, platform: 'facebook', audience: 'friends' };
+    const out = await runFactcheck(post, deps(c.client, r.retriever, { claimCache: cache }));
+    expect(out.result.claims[0]?.verdict).toBe('supported');
+    expect(calls).toEqual({ key: [], get: [], put: [] });
+  });
+
+  it('test_factcheck_cache_failures_never_fail_a_check', async () => {
+    const plain = await run();
+    const failingGet = spyCache({ get: () => Promise.reject(new Error('db down')) });
+    const a = await run({}, SOURCES, { claimCache: failingGet.cache });
+    expect(a.result).toEqual(plain.result);
+    expect(a.costMicros).toBe(plain.costMicros);
+    expect(a.cached).toBe(0);
+    const failingPut = spyCache({ put: () => Promise.reject(new Error('db down')) });
+    const b = await run({}, SOURCES, { claimCache: failingPut.cache });
+    expect(failingPut.calls.put).toHaveLength(1);
+    expect(b.result).toEqual(plain.result);
+  });
+
+  it('test_factcheck_cached_dead_link_researched_again', async () => {
+    const { cache, inner } = spyCache();
+    await seed(inner, 'The bridge opened in 1932.');
+    const checked: string[][] = [];
+    const linkCheck: LinkChecker = async (urls) => {
+      checked.push([...urls]);
+      return new Map(urls.map((u): [string, LinkStatus] => [u, u === 'https://cached.com/a' ? 'dead' : 'live']));
+    };
+    const out = await run({}, SOURCES, { claimCache: cache, linkCheck });
+    expect(checked[0]).toEqual(['https://cached.com/a', 'https://archive.net/b']);
+    expect(out.retrieves).toHaveLength(1);
+    expect(out.cached).toBe(0);
+    expect(out.result.claims[0]?.cachedAt).toBeUndefined();
+    expect(out.result.claims[0]?.verdict).toBe('supported');
+  });
+
+  it('test_factcheck_repeat_check_costs_claims_step_only', async () => {
+    let t = NOW.getTime();
+    const { cache } = spyCache({}, () => t);
+    const once = async () => {
+      const c = fakeClient();
+      const r = fakeRetriever();
+      const out = await runFactcheck(POST, deps(c.client, r.retriever, { claimCache: cache, now: () => new Date(t) }));
+      return { ...out, retrieves: r.requests };
+    };
+    const first = await once();
+    expect(first.retrieves).toHaveLength(1);
+    expect(first.costMicros).toBeGreaterThan(CLAIMS_COST ?? 0);
+    const second = await once();
+    expect(second.retrieves).toHaveLength(0);
+    expect(second.costMicros).toBe(CLAIMS_COST);
+    expect(second.result.claims[0]?.cachedAt).toBe(NOW.toISOString());
+    t += CLAIM_CACHE_TTL_MS;
+    const third = await once();
+    expect(third.retrieves).toHaveLength(1);
+    expect(third.cached).toBe(0);
+  });
+
+  it('test_factcheck_abort_during_cache_lookup', async () => {
+    const outer = new AbortController();
+    const reason = new Error('stopped');
+    const { cache, calls } = spyCache({
+      get: () => {
+        setTimeout(() => outer.abort(reason), 5);
+        return new Promise(() => {});
+      },
+    });
+    const c = fakeClient();
+    const r = fakeRetriever();
+    await expect(runFactcheck(POST, deps(c.client, r.retriever, { claimCache: cache }), { signal: outer.signal })).rejects.toBe(
+      reason,
+    );
+    expect(calls.get).toHaveLength(1);
+    expect(calls.put).toHaveLength(0);
+    expect(r.requests).toHaveLength(0);
   });
 });
