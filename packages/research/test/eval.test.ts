@@ -10,14 +10,19 @@ import { describe, expect, it } from 'vitest';
 import { type CliDeps, main } from '../eval/cli.ts';
 import { FACTCHECK_EVAL_SET } from '../eval/factcheck-set.ts';
 import {
+  allLiveLinks,
+  compareRetrievalCost,
   type FactcheckEvalReport,
+  MOCK_COST_MODEL,
   mockDepsFor,
+  RM5_COST_TARGET,
   runFactcheckEval,
   TRUST_GATES,
   traceCitations,
   trustGates,
 } from '../eval/score.ts';
-import type { FactcheckDeps, LinkChecker } from '../src/factcheck.ts';
+import { type FactcheckDeps, type LinkChecker, type RetrievalPlan, RM4_RETRIEVAL } from '../src/factcheck.ts';
+import { buildResearchUser } from '../src/prompts.ts';
 
 const SET = FACTCHECK_EVAL_SET;
 const byId = new Map(SET.map((i) => [i.id, i]));
@@ -370,18 +375,82 @@ describe('cli', () => {
 
   it('test_cli_exit_code_follows_cost_gate', async () => {
     const env = { ANTHROPIC_API_KEY: 'sk-ant-test' };
-    // The mock's own usage costs about 113,000 micros per check: inside ±25 % of 120,000.
+    // The mock's cost model under RM4's plan costs about 111,000 micros per check: inside ±25 % of 120,000.
     expect(await main(['--live'], env, countingLive().deps)).toBe(0);
-    // Twice the research tokens and searches: about 218,000 micros, outside.
+    // Twice RM4's research tokens and searches: about 216,000 micros, outside.
     const dear = countingLive({ researchUsage: { uncachedInput: 60_000, output: 3_000, webSearches: 6 } });
     expect(await main(['--live'], env, dear.deps)).toBe(1);
-    // A third: about 43,000 micros, outside below.
+    // A third: about 41,000 micros, outside below.
     const cheap = countingLive({ researchUsage: { uncachedInput: 10_000, output: 500, webSearches: 1 } });
     expect(await main(['--live'], env, cheap.deps)).toBe(1);
+  });
+
+  it('test_cli_compare_offline_only', async () => {
+    const env = new Proxy({} as Record<string, string | undefined>, {
+      get(_t, prop) {
+        throw new Error(`read ${String(prop)}`);
+      },
+    });
+    const lines: string[] = [];
+    const io = { out: (l: string) => lines.push(l), err: (l: string) => lines.push(l) };
+    expect(await main(['--compare'], env, io)).toBe(1);
+    expect(JSON.parse(lines.join('\n'))).toMatchObject({ ratio: 1, equalTrust: true, passed: false });
+
+    const usage: string[] = [];
+    const bad = { out: (l: string) => usage.push(l), err: (l: string) => usage.push(l) };
+    expect(await main(['--compare', '--live'], env, bad)).toBe(2);
+    expect(await main(['--compare', '--all'], env, bad)).toBe(2);
+    expect(usage).toEqual(['--compare runs offline only.', '--compare runs offline only.']);
   });
 
   it('exits 2 on an unknown flag', async () => {
     const lines: string[] = [];
     expect(await main(['--liv'], {}, { out: (l) => lines.push(l), err: (l) => lines.push(l) })).toBe(2);
+  });
+});
+
+describe('cost model', () => {
+  it('test_mock_research_usage_follows_request', async () => {
+    const item = SET[0];
+    if (!item) throw new Error('empty set');
+    const research = mockDepsFor(SET).client.research;
+    if (!research) throw new Error('no research');
+    const user = buildResearchUser([{ id: 'c1', text: `[eval ${item.id}] The claim.` }], 'abc12345');
+    const base = { model: 'claude-sonnet-5-5', system: 'Research.', user, blockedDomains: [], maxOutputTokens: 2_000 };
+
+    const rm4 = await research({ ...base, maxSearches: 5, effort: RM4_RETRIEVAL.effort });
+    expect(rm4.usage).toMatchObject({ uncachedInput: 30_000, output: 1_500, webSearches: 3 });
+    expect(rm4.sources).toHaveLength(15);
+    expect(rm4.sources.filter((s) => s.snippets.length > 0).map((s) => s.id)).toEqual(['s1', 's2']);
+    expect(rm4.sources[14]).toMatchObject({ id: 's15', url: `https://${item.id}.example.net/result-15`, snippets: [] });
+
+    const low = await research({ ...base, maxSearches: 2, effort: 'low' });
+    expect(low.usage).toMatchObject({ uncachedInput: 21_000, output: 900, webSearches: 2 });
+    expect(low.sources).toHaveLength(10);
+    expect(MOCK_COST_MODEL.resultsPerSearch * 2).toBe(10);
+  });
+});
+
+describe('comparison', () => {
+  const CHEAPER: RetrievalPlan = { searches: (n) => n + 1, effort: 'low', verdictSources: 'quotable' };
+
+  it('test_compare_same_plan_ratio_one_fails', async () => {
+    const c = await compareRetrievalCost({ current: RM4_RETRIEVAL });
+    expect(c.ratio).toBe(1);
+    expect(c.baselineMeanCostMicros).toBe(c.currentMeanCostMicros);
+    expect(c.equalTrust).toBe(true);
+    expect(c.passed).toBe(false);
+  });
+
+  it('test_compare_cheaper_plan_passes_with_equal_trust', async () => {
+    const c = await compareRetrievalCost({ current: CHEAPER });
+    expect(c.ratio).toBeLessThanOrEqual(RM5_COST_TARGET);
+    expect(c.equalTrust).toBe(true);
+    expect(c.passed).toBe(true);
+    for (const plan of [RM4_RETRIEVAL, CHEAPER]) {
+      const report = await runFactcheckEval({ ...mockDepsFor(SET), retrieval: plan }, SET, { linkCheck: allLiveLinks });
+      expect(report).toMatchObject({ provenance: 1, pairConsistency: 1, liveLinks: 1 });
+      expect(report.citationsShown).toBeGreaterThanOrEqual(20);
+    }
   });
 });

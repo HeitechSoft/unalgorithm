@@ -35,6 +35,35 @@ export const FACTCHECK_DEADLINE_MS = 240_000;
 
 const MAX_CLAIM_CHARS = 300;
 const TIMEOUT_MESSAGE = 'The fact-check took too long.';
+/** How a check researches (F28): the knobs RM5 tunes, in one place so the eval can compare two plans. */
+export interface RetrievalPlan {
+  /** Searches allowed for one research call over `claims` claims. */
+  searches(claims: number): number;
+  /** The research call's effort. */
+  effort: 'low' | 'medium';
+  /**
+   * 'all': every retrieved source goes to the verdict step. 'quotable': only sources with at least one non-blank
+   * snippet, the only ones a quote can match (`citationProblem`).
+   */
+  verdictSources: 'all' | 'quotable';
+}
+
+/** RM4's retrieval: 5 searches whatever the claim count, medium effort, every source. The eval's baseline. */
+export const RM4_RETRIEVAL: RetrievalPlan = Object.freeze({
+  searches: () => MAX_FACTCHECK_SEARCHES,
+  effort: 'medium',
+  verdictSources: 'all',
+});
+
+/** The plan every check uses unless `deps.retrieval` says otherwise. RM4's until P3-56. */
+export const FACTCHECK_RETRIEVAL: RetrievalPlan = RM4_RETRIEVAL;
+
+/** A plan's search budget: truncated to an integer in 1..MAX_FACTCHECK_SEARCHES; non-finite gives the maximum. */
+function clampSearches(n: number): number {
+  if (!Number.isFinite(n)) return MAX_FACTCHECK_SEARCHES;
+  return Math.min(MAX_FACTCHECK_SEARCHES, Math.max(1, Math.trunc(n)));
+}
+
 const CLAIMS_JSON_SCHEMA = toStrictJsonSchema(ClaimsSchema);
 const VERDICTS_JSON_SCHEMA = toStrictJsonSchema(VerdictsSchema);
 
@@ -53,6 +82,8 @@ export interface FactcheckDeps {
   maxCostMicros?: number;
   /** The server's link check (P3-13). Default: none; every source counts as live. */
   linkCheck?: LinkChecker;
+  /** Default FACTCHECK_RETRIEVAL. */
+  retrieval?: RetrievalPlan;
 }
 
 /** Status of each URL, by URL; a URL left out counts as `unknown`. Must settle (or reject) when `signal` aborts. */
@@ -98,7 +129,7 @@ function pickClaims(raw: readonly { claim: string }[]): { id: string; text: stri
 }
 
 /**
- * Fact-check one post: Haiku picks up to 3 claims, the retriever researches them (at most 5 searches), Sonnet gives a
+ * Fact-check one post: Haiku picks up to 3 claims, the retriever researches them (at most 5 searches, per the plan), Sonnet gives a
  * verdict per claim with no tools, and the validator keeps only citations that trace to retrieved sources.
  */
 export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: FactcheckOptions = {}): Promise<FactcheckRun> {
@@ -106,6 +137,7 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
   const blocked = deps.blockedDomains ?? defaultBlockedDomains();
   const nonce = deps.nonce ?? makeNonce();
   const now = deps.now ?? (() => new Date());
+  const plan = deps.retrieval ?? FACTCHECK_RETRIEVAL;
 
   const guard = startRun({
     deadlineMs: deps.deadlineMs ?? FACTCHECK_DEADLINE_MS,
@@ -160,13 +192,23 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
 
     guard.checkCeiling();
     const research = await guard.step(models.research, () =>
-      deps.retriever.retrieve({ claims, maxSearches: MAX_FACTCHECK_SEARCHES, blockedDomains: blocked, nonce, signal }),
+      deps.retriever.retrieve({
+        claims,
+        maxSearches: clampSearches(plan.searches(claims.length)),
+        effort: plan.effort,
+        blockedDomains: blocked,
+        nonce,
+        signal,
+      }),
     );
+    // A citation to a source the verdict model never saw counts as `unknownSource` and is dropped.
+    const shown =
+      plan.verdictSources === 'quotable' ? research.sources.filter((s) => s.snippets.some((t) => t.trim())) : research.sources;
 
     guard.checkCeiling();
     const verdictRes = await structuredStep(guard, deps.client, models.verdict, VerdictsSchema, {
       system: VERDICT_SYSTEM,
-      user: buildVerdictUser(claims, research.sources, research.notes, nonce),
+      user: buildVerdictUser(claims, shown, research.notes, nonce),
       jsonSchema: VERDICTS_JSON_SCHEMA,
       schemaName: 'factcheck_verdicts',
       effort: 'medium',
@@ -175,8 +217,8 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
     });
 
     const { verdicts } = verdictRes.data;
-    const dead = await deadSources(research.sources, verdicts);
-    const validated = validateVerdicts({ claims, sources: research.sources, verdicts, blocked, dead });
+    const dead = await deadSources(shown, verdicts);
+    const validated = validateVerdicts({ claims, sources: shown, verdicts, blocked, dead });
     return {
       result: {
         ...base,

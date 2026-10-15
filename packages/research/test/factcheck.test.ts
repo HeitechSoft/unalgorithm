@@ -9,7 +9,14 @@ import {
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { blockedDomains } from '../src/blocklist.ts';
-import { FACTCHECK_MODELS, type FactcheckDeps, type FactcheckOptions, runFactcheck } from '../src/factcheck.ts';
+import {
+  FACTCHECK_MODELS,
+  type FactcheckDeps,
+  type FactcheckOptions,
+  type RetrievalPlan,
+  RM4_RETRIEVAL,
+  runFactcheck,
+} from '../src/factcheck.ts';
 import { FACTCHECK_PROMPT_VERSION } from '../src/prompts.ts';
 import { aiRetriever, type RetrieveRequest, type RetrieveResult, type Retriever } from '../src/retriever.ts';
 
@@ -222,6 +229,73 @@ describe('research', () => {
     expect(req?.user).toContain(`<claim_${NONCE} id="c1">\nThe bridge opened in 1932.\n</claim_${NONCE}>`);
     expect(req?.user).toContain(`<claim_${NONCE} id="c2">\nIt cost &lt;b&gt;$10&lt;/b&gt; million.\n</claim_${NONCE}>`);
     expect(out).toEqual({ notes: 'notes', sources: SOURCES, usage: RESEARCH_USAGE, model: 'claude-sonnet-5-5-20261001' });
+  });
+});
+
+describe('retrieval plan', () => {
+  const verdictUser = (requests: StructuredRequest[]) => requests.find((r) => r.schemaName === 'factcheck_verdicts')?.user ?? '';
+
+  it('test_factcheck_default_plan_is_rm4', async () => {
+    const sources = [...SOURCES, source('s3', 'third.example.net', [])];
+    for (const claims of [['The bridge opened in 1932.'], ['One.', 'Two.', 'Three.']]) {
+      const out = await run({ claims }, sources);
+      expect(out.retrieves[0]?.claims).toHaveLength(claims.length);
+      expect(out.retrieves[0]).toMatchObject({ maxSearches: 5, effort: 'medium' });
+      const user = verdictUser(out.requests);
+      for (const id of ['s1', 's2', 's3']) expect(user, id).toContain(`<source_${NONCE} id="${id}"`);
+    }
+  });
+
+  it('test_factcheck_plan_budget_effort_and_quotable_sources', async () => {
+    const plan: RetrievalPlan = { searches: (n) => n + 1, effort: 'low', verdictSources: 'quotable' };
+    const sources = [...SOURCES, source('s3', 'third.example.net', ['  '])];
+    const verdicts: Verdicts = {
+      verdicts: ['c1', 'c2'].map((claimId) => ({
+        claimId,
+        verdict: 'supported',
+        explanation: 'Two outlets report the same opening year.',
+        citations:
+          claimId === 'c1'
+            ? [...(SUPPORTED.verdicts[0]?.citations ?? []), { sourceId: 's3', quote: 'The bridge opened in 1932' }]
+            : [],
+      })),
+    };
+    const out = await run({ claims: ['The bridge opened in 1932.', 'It cost $10 million.'], verdicts }, sources, {
+      retrieval: plan,
+    });
+    expect(out.retrieves[0]).toMatchObject({ maxSearches: 3, effort: 'low' });
+    const user = verdictUser(out.requests);
+    expect(user).toContain(`<source_${NONCE} id="s1"`);
+    expect(user).toContain(`<source_${NONCE} id="s2"`);
+    expect(user).not.toContain('id="s3"');
+    expect(out.result.claims.flatMap((c) => c.citations.map((x) => x.sourceId))).not.toContain('s3');
+    expect(out.result.sources.map((s) => s.id)).not.toContain('s3');
+    expect(out.stats.unknownSource).toBe(1);
+  });
+
+  it('test_factcheck_plan_searches_clamped', async () => {
+    for (const [value, expected] of [
+      [0, 1],
+      [9, 5],
+      [Number.NaN, 5],
+    ] as const) {
+      const out = await run({}, SOURCES, { retrieval: { ...RM4_RETRIEVAL, searches: () => value } });
+      expect(out.retrieves[0]?.maxSearches, String(value)).toBe(expected);
+    }
+  });
+
+  it('test_ai_retriever_forwards_effort', async () => {
+    const seen: ResearchRequest[] = [];
+    const { client } = fakeClient();
+    client.research = async (req) => {
+      seen.push(req);
+      return { notes: '', sources: SOURCES, usage: RESEARCH_USAGE, model: req.model, searchErrors: [] };
+    };
+    const retriever = aiRetriever(client, 'claude-sonnet-5-5');
+    const req = { claims: [{ id: 'c1', text: 'One.' }], maxSearches: 2, blockedDomains: [], nonce: NONCE };
+    await retriever.retrieve({ ...req, effort: 'low' });
+    await retriever.retrieve(req);
+    expect(seen.map((r) => r.effort)).toEqual(['low', 'medium']);
   });
 });
 

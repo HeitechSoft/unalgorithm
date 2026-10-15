@@ -4,6 +4,9 @@
  * - No flags: against a deterministic mock, the full set. Spends nothing and never reads ANTHROPIC_API_KEY.
  * - `--live`: against Anthropic on the key in ANTHROPIC_API_KEY, the 5 smoke items; `--all` runs the whole set. This
  *   spends real money on that account: run it only with the key owner's approval.
+ * - `--compare`: offline only. Runs the mock under RM4's retrieval plan and under the current one and prints the cost
+ *   comparison (`compareRetrievalCost`); exit 0 when it passes RM5's target at equal trust, 1 otherwise. Never reads
+ *   the environment.
  *
  * Exit 0 when every shown citation traces to a retrieved source, no provider error happened and, for a live run, the
  * mean cost is within ±25 % of FACTCHECK_TYPICAL_COST_MICROS; 1 otherwise; 2 for a usage error.
@@ -14,7 +17,7 @@ import { formatPrice } from '@unalgorithm/core';
 import { FACTCHECK_TYPICAL_COST_MICROS } from '@unalgorithm/protocol';
 import { FACTCHECK_MODELS, type FactcheckDeps } from '../src/factcheck.ts';
 import { aiRetriever } from '../src/retriever.ts';
-import { FACTCHECK_EVAL_SET, type FactcheckEvalReport, mockDepsFor, runFactcheckEval } from './score.ts';
+import { compareRetrievalCost, FACTCHECK_EVAL_SET, type FactcheckEvalReport, mockDepsFor, runFactcheckEval } from './score.ts';
 
 export const COST_TOLERANCE = 0.25;
 
@@ -44,10 +47,19 @@ export async function main(
 ): Promise<number> {
   const out = deps.out ?? ((line: string) => console.log(line));
   const err = deps.err ?? ((line: string) => console.error(line));
-  const unknown = argv.filter((a) => a !== '--live' && a !== '--all');
+  const unknown = argv.filter((a) => a !== '--live' && a !== '--all' && a !== '--compare');
   if (unknown.length > 0) {
-    err(`Unknown option ${unknown[0]}. Usage: pnpm eval:factcheck [--live [--all]]`);
+    err(`Unknown option ${unknown[0]}. Usage: pnpm eval:factcheck [--live [--all] | --compare]`);
     return 2;
+  }
+  if (argv.includes('--compare')) {
+    if (argv.includes('--live') || argv.includes('--all')) {
+      err('--compare runs offline only.');
+      return 2;
+    }
+    const comparison = await compareRetrievalCost();
+    out(JSON.stringify(comparison, null, 2));
+    return comparison.passed ? 0 : 1;
   }
   const live = argv.includes('--live');
 

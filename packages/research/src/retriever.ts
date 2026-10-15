@@ -6,6 +6,8 @@ import { isBlocked } from './validate.ts';
 export interface RetrieveRequest {
   claims: readonly { id: string; text: string }[];
   maxSearches: number;
+  /** The research call's effort when a model researches; default 'medium'. `searchRetriever` ignores it. */
+  effort?: 'low' | 'medium';
   blockedDomains: readonly string[];
   nonce: string;
   signal?: AbortSignal;
@@ -41,7 +43,7 @@ export function aiRetriever(client: AIClient, model: string): Retriever {
         user: buildResearchUser(req.claims, req.nonce),
         maxSearches: req.maxSearches,
         blockedDomains: req.blockedDomains,
-        effort: 'medium',
+        effort: req.effort ?? 'medium',
         maxOutputTokens: 2_000,
         timeoutMs: 120_000,
         ...(req.signal ? { signal: req.signal } : {}),

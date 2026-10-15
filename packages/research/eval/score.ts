@@ -5,7 +5,7 @@
  * a provider's message. An error that measures the provider rather than the model (busy, unreachable, a refused key)
  * is listed in `providerErrors` and its item is left out of every ratio.
  */
-import { type AIClient, AIError } from '@unalgorithm/ai';
+import { type AIClient, AIError, type ResearchRequest } from '@unalgorithm/ai';
 import { neutralize } from '@unalgorithm/core';
 import {
   type AIErrorCode,
@@ -13,12 +13,22 @@ import {
   type FactcheckResult,
   type FactcheckVerdict,
   type LinkStatus,
+  MAX_RETRIEVED_SOURCES,
   type NormalizedUsage,
   type RetrievedSource,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
-import { type FactcheckDeps, type FactcheckRun, type LinkChecker, runFactcheck } from '../src/factcheck.ts';
-import type { Retriever } from '../src/retriever.ts';
+import {
+  FACTCHECK_MODELS,
+  FACTCHECK_RETRIEVAL,
+  type FactcheckDeps,
+  type FactcheckRun,
+  type LinkChecker,
+  type RetrievalPlan,
+  RM4_RETRIEVAL,
+  runFactcheck,
+} from '../src/factcheck.ts';
+import { aiRetriever, type Retriever } from '../src/retriever.ts';
 import { citationProblem } from '../src/validate.ts';
 import { FACTCHECK_EVAL_SET, type FactcheckEvalItem } from './factcheck-set.ts';
 
@@ -275,18 +285,42 @@ export interface MockOptions {
   researchUsage?: Partial<NormalizedUsage>;
 }
 
-/** Usage chosen so a mock check costs about 113,000 micros at the default models' prices, near the typical $0.12. */
+/**
+ * The mock's cost model (F28): a research call spends according to what it was asked for, so a retrieval change shows
+ * up in the eval's cost. Calibrated so RM4's plan on a one-claim item spends what RM4's fixed mock did (research 30,000
+ * in, 1,500 out, 3 searches). These are assumptions, not measurements: only a live run confirms a saving (decision D66).
+ */
+export const MOCK_COST_MODEL = Object.freeze({
+  researchBaseInput: 3_000,
+  inputPerSearch: 9_000,
+  /** The research model uses its budget, up to this many searches per claim. */
+  searchesPerClaim: 3,
+  researchOutput: Object.freeze({ medium: 1_500, low: 900 }),
+  /** Sources per search; s1 and s2 are cited and carry text, the rest carry none (as Anthropic's uncited results). */
+  resultsPerSearch: 5,
+  /** Verdict input tokens = ceil((system.length + user.length) / charsPerToken). */
+  charsPerToken: 4,
+  verdictOutput: 400,
+});
+
+/** RM5's goal (F28): the current plan's mean cost per check at most this share of RM4's, at equal trust gates. */
+export const RM5_COST_TARGET = 0.7;
+
+/** With MOCK_COST_MODEL, a mock check under RM4's plan costs about 111,000 micros, near the typical $0.12. */
 const CLAIMS_USAGE: NormalizedUsage = { ...ZERO_USAGE, uncachedInput: 1_000, output: 100 };
-const RESEARCH_USAGE: NormalizedUsage = { ...ZERO_USAGE, uncachedInput: 30_000, output: 1_500, webSearches: 3 };
-const VERDICT_USAGE: NormalizedUsage = { ...ZERO_USAGE, uncachedInput: 2_000, output: 400 };
 
 const CLAIM_TAG = /\[eval (fc-\d+)\]/;
+/** A claim tag of `buildResearchUser`, whatever the nonce. */
+const RESEARCH_CLAIM = /<claim_[a-z0-9]+ id="/g;
 
 function evidence(id: string, n: number): string {
   return `Records reviewed for item ${id} address this claim in source ${n}.`;
 }
 
-/** Deterministic fake client + retriever built from the set: two sources on different domains per item, verdict = expect[0]. */
+/**
+ * Deterministic fake client built from the set, researching through the real `aiRetriever`: two cited sources on
+ * different domains per item plus uncited results per search (MOCK_COST_MODEL), verdict = expect[0].
+ */
 export function mockDepsFor(items: readonly FactcheckEvalItem[], opts: MockOptions = {}): FactcheckDeps {
   const byText = items.map((item) => ({ item, fenced: neutralize(item.post.text) }));
   const byId = new Map(items.map((item) => [item.id, item]));
@@ -296,6 +330,7 @@ export function mockDepsFor(items: readonly FactcheckEvalItem[], opts: MockOptio
     if (!item) throw new AIError('bad-request', 'The mock got a claim from outside the eval set.');
     return item;
   };
+  const m = MOCK_COST_MODEL;
 
   const client: AIClient = {
     kind: 'eval-mock',
@@ -312,17 +347,18 @@ export function mockDepsFor(items: readonly FactcheckEvalItem[], opts: MockOptio
       const verdict = opts.verdict?.(item) ?? item.expect[0] ?? 'unverifiable';
       const citations = [1, 2].map((n) => ({ sourceId: `s${n}`, quote: `Records reviewed for item ${item.id}` }));
       const verdicts = [{ claimId: 'c1', verdict, explanation: 'Mock verdict from the eval set.', citations }];
-      return { text: JSON.stringify({ verdicts }), usage: VERDICT_USAGE, model: req.model, mode: 'json-schema' };
+      const usage: NormalizedUsage = {
+        ...ZERO_USAGE,
+        uncachedInput: Math.ceil((req.system.length + req.user.length) / m.charsPerToken),
+        output: m.verdictOutput,
+      };
+      return { text: JSON.stringify({ verdicts }), usage, model: req.model, mode: 'json-schema' };
     },
-    async listModels() {
-      return [];
-    },
-  };
-
-  const retriever: Retriever = {
-    async retrieve(req) {
-      const item = itemIn(req.claims[0]?.text ?? '');
-      const sources: RetrievedSource[] = (['example.com', 'example.org'] as const).map((domain, i) => ({
+    async research(req: ResearchRequest) {
+      const item = itemIn(req.user);
+      const claims = req.user.match(RESEARCH_CLAIM)?.length ?? 0;
+      const searches = Math.min(req.maxSearches, m.searchesPerClaim * claims);
+      const cited: RetrievedSource[] = (['example.com', 'example.org'] as const).map((domain, i) => ({
         id: `s${i + 1}`,
         url: `https://${item.id}.${domain}/evidence`,
         domain: `${item.id}.${domain}`,
@@ -330,14 +366,85 @@ export function mockDepsFor(items: readonly FactcheckEvalItem[], opts: MockOptio
         pageAge: null,
         snippets: [evidence(item.id, i + 1)],
       }));
+      const total = Math.min(MAX_RETRIEVED_SOURCES, m.resultsPerSearch * searches);
+      const uncited: RetrievedSource[] = [];
+      for (let n = cited.length + 1; n <= total; n++) {
+        uncited.push({
+          id: `s${n}`,
+          url: `https://${item.id}.example.net/result-${n}`,
+          domain: `${item.id}.example.net`,
+          title: `Result ${n}`,
+          pageAge: null,
+          snippets: [],
+        });
+      }
       return {
         notes: `c1: both sources address item ${item.id}.`,
-        sources,
-        usage: { ...RESEARCH_USAGE, ...opts.researchUsage },
-        model: 'claude-sonnet-5-5',
+        sources: [...cited, ...uncited],
+        usage: {
+          ...ZERO_USAGE,
+          uncachedInput: m.researchBaseInput + m.inputPerSearch * searches,
+          output: m.researchOutput[req.effort],
+          webSearches: searches,
+          ...opts.researchUsage,
+        },
+        searchErrors: [],
+        model: req.model,
       };
+    },
+    async listModels() {
+      return [];
     },
   };
 
-  return { client, retriever, now: () => new Date('2026-10-15T12:00:00.000Z') };
+  return {
+    client,
+    retriever: aiRetriever(client, FACTCHECK_MODELS.research),
+    now: () => new Date('2026-10-15T12:00:00.000Z'),
+  };
+}
+
+/** Every URL is live, with no network: the comparison measures cost, not the web. */
+export const allLiveLinks: LinkChecker = async (urls) => new Map(urls.map((u): [string, LinkStatus] => [u, 'live']));
+
+export interface CostComparison {
+  baselineMeanCostMicros: number;
+  currentMeanCostMicros: number;
+  /** current / baseline. */
+  ratio: number;
+  /** Provenance 1 in both runs; the current run's agreement, pair consistency and live links ≥ the baseline's. */
+  equalTrust: boolean;
+  /** ratio ≤ RM5_COST_TARGET and equalTrust. */
+  passed: boolean;
+}
+
+/**
+ * Offline: runs the mock eval once under `baseline` (default RM4's plan) and once under `current` (default the
+ * production plan) on the same items, and compares their mean cost per check at equal trust.
+ */
+export async function compareRetrievalCost(
+  opts: { items?: readonly FactcheckEvalItem[]; baseline?: RetrievalPlan; current?: RetrievalPlan } = {},
+): Promise<CostComparison> {
+  const items = opts.items ?? FACTCHECK_EVAL_SET;
+  const evaluate = (plan: RetrievalPlan) =>
+    runFactcheckEval({ ...mockDepsFor(items), retrieval: plan }, items, { linkCheck: allLiveLinks });
+  const base = await evaluate(opts.baseline ?? RM4_RETRIEVAL);
+  const cur = await evaluate(opts.current ?? FACTCHECK_RETRIEVAL);
+  const baselineCost = base.meanCostMicros;
+  const currentCost = cur.meanCostMicros;
+  if (baselineCost === undefined || currentCost === undefined) throw new Error('The comparison needs priced models.');
+  const costRatio = currentCost / baselineCost;
+  const equalTrust =
+    base.provenance === 1 &&
+    cur.provenance === 1 &&
+    cur.agreement >= base.agreement &&
+    cur.pairConsistency >= base.pairConsistency &&
+    (cur.liveLinks ?? 0) >= (base.liveLinks ?? 0);
+  return {
+    baselineMeanCostMicros: baselineCost,
+    currentMeanCostMicros: currentCost,
+    ratio: costRatio,
+    equalTrust,
+    passed: equalTrust && costRatio <= RM5_COST_TARGET,
+  };
 }
