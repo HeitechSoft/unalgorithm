@@ -1,4 +1,5 @@
 export * from './account.ts';
+export * from './admin.ts';
 export * from './billing.ts';
 export * from './classify.ts';
 export * from './errors.ts';
