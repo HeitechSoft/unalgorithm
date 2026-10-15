@@ -253,6 +253,8 @@ describe('searchRetriever', () => {
       hit('https://blocked.example/a'),
       hit('https://news.blocked.example/a'),
       hit('https://empty.example/a', '  <b> </b> '),
+      // The URL parser accepts a host over 253 characters, which FactcheckSourceSchema (the wire shape) refuses.
+      hit(`https://${Array.from({ length: 5 }, () => 'h'.repeat(60)).join('.')}.example/a`),
       hit('https://notblocked.example/a'),
       hit('http://Good.Example/b'),
     ]);

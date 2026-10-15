@@ -1,6 +1,6 @@
 import { AIError } from '@unalgorithm/ai';
 import { clipText } from '@unalgorithm/core';
-import { MAX_RETRIEVED_SOURCES, type RetrievedSource, ZERO_USAGE } from '@unalgorithm/protocol';
+import { FactcheckSourceSchema, MAX_RETRIEVED_SOURCES, type RetrievedSource, ZERO_USAGE } from '@unalgorithm/protocol';
 import { z } from 'zod';
 import type { Retriever } from './retriever.ts';
 import { isBlocked } from './validate.ts';
@@ -303,15 +303,18 @@ export function searchRetriever(provider: SearchProvider, opts: { resultsPerClai
           if (!snippet) continue;
           const key = url.href.replace(/#.*$/s, '');
           if (seen.has(key)) continue;
-          seen.add(key);
-          sources.push({
+          const source: RetrievedSource = {
             id: `s${sources.length + 1}`,
             url: url.href,
             domain,
             title: clipText(cleanSnippet(hit.title), 300),
             pageAge: hit.published === null ? null : clipText(hit.published, 64),
             snippets: [snippet],
-          });
+          };
+          // The URL parser lets through what the wire shape refuses (a host over 253 characters, say).
+          if (!FactcheckSourceSchema.safeParse(source).success) continue;
+          seen.add(key);
+          sources.push(source);
         }
       }
       return { notes: '', sources, usage: ZERO_USAGE, model: `search:${provider.id}` };
