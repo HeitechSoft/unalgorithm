@@ -56,7 +56,7 @@ export function manifestFor(mode: string): UserManifest {
     description: '__MSG_extDescription__',
     default_locale: 'en',
     minimum_chrome_version: '130',
-    homepage_url: 'https://github.com/HeitechSoft/unalgorithm',
+    homepage_url: 'https://unalgorithmfeed.com/',
     // `alarms` keeps settings sync on its 30-second rhythm (CL3-20); store builds without the server card leave it out.
     permissions: ['storage', 'sidePanel', 'scripting', ...(cloudEnabled(mode) ? ['alarms'] : []), ...(e2e ? ['identity'] : [])],
     host_permissions: [
