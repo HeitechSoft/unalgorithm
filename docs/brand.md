@@ -28,8 +28,8 @@
 
 | Domain | Role |
 |---|---|
-| `unalgorithm.app` | The website (planned, see the [roadmap](ROADMAP.md)). Home of the privacy policy, help and release notes |
-| `unalgorithmfeed.com` | Redirects to `unalgorithm.app` |
+| `unalgorithmfeed.com` | The website: what UnAlgorithm Feed does, how to install it, the privacy policy, help and release notes. `www.` redirects to it |
+| `unalgorithm.app` | The app's domain (UnAlgorithm Cloud). The website doesn't serve or redirect it |
 
 ## Mark and colors
 

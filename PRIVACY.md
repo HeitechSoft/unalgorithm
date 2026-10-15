@@ -1,10 +1,12 @@
 # UnAlgorithm privacy policy
 
 *Last updated: October 2026. This policy covers UnAlgorithm Feed ("UnAlgorithm"), the browser extension (public
-preview). It is also the privacy policy linked from the Chrome Web Store listing.*
+preview), and its website, unalgorithmfeed.com. It is also the privacy policy linked from the Chrome Web Store
+listing.*
 
-UnAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **It does
-not collect your data, and it has no analytics or tracking.**
+UnAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **The
+extension does not collect your data, and it has no analytics or tracking.** The website counts visits without
+cookies; see [This website](#this-website).
 
 ## What happens on your computer
 
@@ -61,6 +63,18 @@ review the issue and submit it yourself, under GitHub's terms and privacy statem
 | Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
 | Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses UnAlgorithm. It removes the `Origin` header from UnAlgorithm's own requests to that one server |
+
+## This website
+
+The website at unalgorithmfeed.com counts visits with Matomo, which HeitechSoft runs on its own server
+(analytics.heitechsoft.com). It sets no cookies. It records the pages you view, the page that linked you here, the
+links you follow (such as downloads), your browser, device type and approximate location, with your IP address
+shortened before it is stored. It doesn't run at all when your browser sends Do Not Track or Global Privacy Control.
+We use these counts only to see which pages help people, never for advertising, and we don't share them.
+
+Like any website, our server keeps short-lived access logs (IP address, page, time and browser) to keep the site
+running and secure; they are deleted after about two weeks. The site loads no other third-party scripts, fonts or
+trackers, and the extension never sends anything to this website.
 
 ## Children
 
