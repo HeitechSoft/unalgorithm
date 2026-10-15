@@ -211,10 +211,20 @@ describe('Other perspectives: where it is offered', () => {
     expect(offered(f.c)).toHaveLength(20);
     expect(b.perspectives).not.toHaveBeenCalled();
     vi.useRealTimers();
-    render(<Item c={f.c} e={entryOf(f.c, keys[7] as string)} />);
+    // Every offered item rendered: twenty rows, and still no call.
+    render(
+      <>
+        {keys.map((k) => (
+          <Item key={k} c={f.c} e={entryOf(f.c, k)} />
+        ))}
+      </>,
+    );
     await flush();
+    const starts = screen.getAllByRole('button', { name: 'Other perspectives' });
+    expect(starts).toHaveLength(20);
+    expect(b.perspectives).not.toHaveBeenCalled();
     const user = setupUser();
-    await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+    await user.click(starts[7] as HTMLElement);
     await flush();
     expect(b.perspectives).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Compare' }));
