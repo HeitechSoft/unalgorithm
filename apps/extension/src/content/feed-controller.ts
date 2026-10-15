@@ -437,6 +437,7 @@ export class FeedController {
     e.el.removeAttribute('data-unalgo');
     e.el.removeAttribute('data-unalgo-run');
     e.el.removeAttribute('data-unalgo-pick');
+    e.el.removeAttribute('data-unalgo-debug');
     e.ui?.host.remove();
     e.ui = undefined;
   }
@@ -565,6 +566,7 @@ export class FeedController {
     setAttr(e.el, 'data-unalgo', state);
     const pick = !e.applied && !!e.decision.highlight && rt.settings.display.forYou === 'ring';
     setAttr(e.el, 'data-unalgo-pick', pick ? '' : null);
+    setAttr(e.el, 'data-unalgo-debug', rt.device.dev.debugOverlay ? debugLabel(e) : null);
     let jobUi = false;
     for (const job of JOBS) {
       const offered = this.jobOffered(e, job);
@@ -1025,7 +1027,10 @@ export class FeedController {
     const style = (this.doc.getElementById(GLOBAL_STYLE_ID) as HTMLStyleElement | null) ?? this.doc.createElement('style');
     style.id = GLOBAL_STYLE_ID;
     const sample = [...this.entries.keys()][0] ?? null;
-    style.textContent = globalCss(sampleHostTheme(this.doc, sample, this.adapter.theme(this.doc)));
+    style.textContent = globalCss(
+      sampleHostTheme(this.doc, sample, this.adapter.theme(this.doc)),
+      !!this.rt?.device.dev.debugOverlay,
+    );
     if (!style.isConnected) (this.doc.head ?? this.doc.documentElement).appendChild(style);
   }
 
@@ -1215,6 +1220,40 @@ function setAttr(el: Element, name: string, value: string | null): void {
   if (value === null) {
     if (el.hasAttribute(name)) el.removeAttribute(name);
   } else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+/**
+ * Developer label for live testing (Settings → About → Developer, dev builds only): what the adapter read and what
+ * was decided, never the author's name or the post text.
+ */
+function debugLabel(e: Entry): string {
+  const verdict = e.applied
+    ? `HIDE ${reasonKey(e.applied)}${e.applied.source === 'ai' ? ' (AI)' : ''}`
+    : e.decision.filter
+      ? `WAIT ${reasonKey(e.decision.filter)} (AI, on screen)`
+      : e.decision.highlight
+        ? `FOR YOU (${e.decision.highlight.source})`
+        : 'show';
+  if (e.kind === 'module') return `module:${e.module?.kind ?? '?'} → ${verdict}`;
+  if (e.kind !== 'post' || !e.post) return e.kind;
+  const p = e.post;
+  const c = e.classification;
+  const parts = [
+    `${p.author.kind}/${p.author.relationship}`,
+    ...(p.group ? [`group:${p.group.joined === null ? '?' : p.group.joined ? 'joined' : 'not-joined'}`] : []),
+    ...Object.entries(p.signals)
+      .filter(([, on]) => on)
+      .map(([signal]) => signal),
+    `text:${p.text.length}${p.textComplete ? '' : '…'}`,
+    ...(p.mentions?.length ? [`tags:${p.mentions.length}`] : []),
+    ...(c
+      ? [`ai:${c.relevance}${c.noise.length ? ` ${c.noise.join(',')}` : ''}`]
+      : e.aiStatus !== 'idle'
+        ? [`ai:${e.aiStatus}`]
+        : []),
+  ];
+  const detectors = p.evidence.map((x) => x.detector).join(' ');
+  return `${parts.join(' · ')} → ${verdict}${detectors ? ` [${detectors}]` : ''}`;
 }
 
 function isOwnOnly(r: MutationRecord): boolean {

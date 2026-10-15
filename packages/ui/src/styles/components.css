@@ -728,20 +728,21 @@
   .ua-choice:hover {
     box-shadow: var(--ua-shadow-2);
   }
-  .ua-choice:has(input:checked) {
+  /* Only the card's own radio: never the fields shown inside a selected card (API key, server address). */
+  .ua-choice:has(> label > .ua-choice-input:checked) {
     box-shadow:
       var(--ua-shadow-1),
       inset 0 0 0 2px var(--ua-accent);
   }
-  .ua-choice:has(input:focus-visible) {
+  .ua-choice:has(> label > .ua-choice-input:focus-visible) {
     outline: 2px solid var(--ua-focus);
     outline-offset: 2px;
   }
-  .ua-choice:has(input:disabled) {
+  .ua-choice:has(> label > .ua-choice-input:disabled) {
     opacity: 0.55;
     cursor: default;
   }
-  .ua-choice input {
+  .ua-choice-input {
     position: absolute;
     opacity: 0;
     pointer-events: none;
@@ -768,7 +769,7 @@
     box-shadow: inset 0 0 0 1.5px var(--ua-control-border);
     transition: box-shadow var(--ua-dur-2) var(--ua-ease-spring);
   }
-  .ua-choice:has(input:checked) .ua-choice-radio {
+  .ua-choice:has(> label > .ua-choice-input:checked) .ua-choice-radio {
     box-shadow: inset 0 0 0 6px var(--ua-accent);
   }
   .ua-choice-more {

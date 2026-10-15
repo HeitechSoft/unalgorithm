@@ -87,7 +87,9 @@ export function App() {
   const stats = useStorageItem(statsItem, {});
   const [peek, setPeek] = useState(false);
   const [lowBalance, dismissLowBalance] = useLowBalanceNotice(ai);
+  const [copied, setCopied] = useState<string | null>(null);
   const platform = tab ? platformOfUrl(tab.url) : null;
+  const devBuild = import.meta.env.MODE !== 'production';
 
   if (!settings || !device) return null;
   const today = stats[dateKey()]?.hidden ?? 0;
@@ -130,6 +132,14 @@ export function App() {
     const res = tab ? await sendToTab(tab.id, { type: 'reportUrl' }) : undefined;
     await browser.tabs.create({ url: res?.url ?? NEW_ISSUE });
     window.close();
+  };
+
+  // Development builds: copy this page's content-free diagnostics (versions, counts, detector hits) for a bug report.
+  const copyDiagnostics = async () => {
+    const d = tab ? await sendToTab(tab.id, { type: 'diagnostics' }) : undefined;
+    if (!d) return setCopied('Reload the feed tab first');
+    await navigator.clipboard.writeText(JSON.stringify({ ...d, hidden: tabState.counts }, null, 1));
+    setCopied('Copied');
   };
 
   const setupBanner =
@@ -183,6 +193,16 @@ export function App() {
           <CircleHelp size={14} aria-hidden="true" /> Help
         </a>
       </span>
+      {devBuild && platform ? (
+        <button
+          type="button"
+          className="ua-button ua-button--plain ua-button--sm"
+          onClick={() => void copyDiagnostics()}
+          style={{ paddingInline: 4, flexBasis: '100%', justifyContent: 'flex-start' }}
+        >
+          {copied ?? 'Developer: copy diagnostics'}
+        </button>
+      ) : null}
     </footer>
   );
 

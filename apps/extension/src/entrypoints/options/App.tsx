@@ -63,7 +63,7 @@ export function App() {
       content = <PrivacyPane settings={settings} device={device} />;
       break;
     case 'about':
-      content = <AboutPane />;
+      content = <AboutPane device={device} saveDevice={saveDevice} />;
       break;
   }
 
