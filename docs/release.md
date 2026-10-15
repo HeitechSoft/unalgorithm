@@ -29,6 +29,7 @@ The extension version lives in `apps/extension/package.json` and follows semver.
   HeitechSoft as the developer, and open the long description with "UnAlgorithm Feed by HeitechSoft".
 - 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tile, short and long descriptions
   with the non-affiliation line.
-- **Website, support and privacy policy URLs:** `https://unalgorithm.app`, its help page and its privacy page once the
-  website is live; until then the GitHub repo, SUPPORT.md and PRIVACY.md on GitHub. Update the store's data-use
-  disclosures whenever PRIVACY.md changes.
+- **Website, support and privacy policy URLs:** `https://unalgorithmfeed.com/`, `https://unalgorithmfeed.com/help/`
+  and `https://unalgorithmfeed.com/privacy/` once the website is live; until then the GitHub repo, SUPPORT.md and
+  PRIVACY.md on GitHub. The website's privacy page is built from PRIVACY.md, so a merged change reaches it with the
+  website's next deploy. Update the store's data-use disclosures whenever PRIVACY.md changes.

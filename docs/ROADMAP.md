@@ -9,7 +9,7 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
   AI: Chrome's on-device AI, your own key (Anthropic, OpenAI, Gemini, OpenRouter, Groq), local and self-hosted
   models; noise labels, relevance, More/Less like this.
 - **Next.** Facebook verified on live feeds, a right-click menu on posts, and French for Canada.
-- **Website and Chrome Web Store.** The product website at unalgorithm.app: what UnAlgorithm Feed does, how to
+- **Website and Chrome Web Store.** The product website at unalgorithmfeed.com: what UnAlgorithm Feed does, how to
   install it, the privacy policy, help and release notes. Then the Chrome Web Store release as UnAlgorithm Feed by
   HeitechSoft, with the listing and the extension's links pointing to the website.
 
