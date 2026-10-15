@@ -4,20 +4,32 @@ import {
   type Device,
   migrateDevice,
   type Settings,
+  type SettingsClocks,
   SettingsSchema,
   stampClocks,
 } from '@unalgorithm/core';
-import { uuid } from '@unalgorithm/protocol';
+import { HlcSchema, hlcMs, maxHlc, SYNC_MAX_HLC_AHEAD_MS, tickHlc, uuid } from '@unalgorithm/protocol';
 import { deviceItem, lastHlcItem, readDevice, readSettings, settingsClocksItem, settingsItem } from './storage.ts';
 
-const lock = createLock();
+const moduleLock = createLock();
+
+/**
+ * Every settings write runs under one lock shared by the extension's pages and its background: the Web Lock
+ * `ua-settings` (one per extension origin) where there is one, else this module's own lock (jsdom has no Web Locks).
+ * Without it a remote apply in the background could land between a page's read and its write, and the page would
+ * write stale settings over it with clocks that already carry the remote stamps. Content scripts never write settings.
+ */
+async function settingsLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : (navigator.locks as LockManager | undefined);
+  return locks ? await locks.request('ua-settings', fn) : moduleLock(fn);
+}
 
 /**
  * The only way to change settings. Applies the mutator, validates, saves, and stamps a hybrid logical clock on
  * every changed field so Phase 2 sync can merge devices field by field. Invalid results are rejected, not saved.
  */
 export async function updateSettings(mutate: (s: Settings) => Settings | void): Promise<Settings> {
-  return lock(async () => {
+  return settingsLock(async () => {
     const before = await readSettings();
     const draft = structuredClone(before);
     const after = (mutate(draft) ?? draft) as Settings;
@@ -42,6 +54,58 @@ export async function updateSettings(mutate: (s: Settings) => Settings | void): 
 /** Replace all settings (import, reset). Every field gets a fresh clock. */
 export async function replaceSettings(next: Settings): Promise<Settings> {
   return updateSettings(() => next);
+}
+
+/**
+ * Writes the result of merging another device's items: settings, item clocks and the last HLC seen, under the same lock
+ * as updateSettings, and without stamping new clocks (stamping here would echo every remote change back to the server).
+ * Resolves false when `merge` returned null (nothing written).
+ */
+export async function applyRemoteSettings(
+  merge: (
+    settings: Settings,
+    clocks: SettingsClocks,
+  ) => { settings: Settings; clocks: SettingsClocks; maxHlc: string | null } | null,
+): Promise<boolean> {
+  return settingsLock(async () => {
+    const result = merge(await readSettings(), await settingsClocksItem.getValue());
+    if (!result) return false;
+    const last = await lastHlcItem.getValue();
+    await settingsItem.setValue(result.settings);
+    await settingsClocksItem.setValue(result.clocks);
+    await lastHlcItem.setValue(result.maxHlc ? maxHlc(last ?? undefined, result.maxHlc) : last);
+    return true;
+  });
+}
+
+/**
+ * After this computer's clock ran fast: gives every clock stamped further than `SYNC_MAX_HLC_AHEAD_MS` past `now` a
+ * fresh, unique stamp (the server refuses those as `clock-ahead`, and `tickHlc` never moves backwards on its own), and
+ * sets `local:lastHlc` to the newest stored clock so the next edit still stamps above all of them. Values are not
+ * touched. Resolves with how many clocks it re-stamped (0: nothing written).
+ */
+export async function restampFutureClocks(now: number): Promise<number> {
+  return settingsLock(async () => {
+    const clocks = { ...(await settingsClocksItem.getValue()) };
+    const { deviceId } = await readDevice();
+    let issued: string | undefined;
+    let kept: string | undefined;
+    let count = 0;
+    for (const [path, hlc] of Object.entries(clocks)) {
+      if (!HlcSchema.safeParse(hlc).success) continue;
+      if (hlcMs(hlc) > now + SYNC_MAX_HLC_AHEAD_MS) {
+        issued = tickHlc(issued, deviceId, now);
+        clocks[path] = issued;
+        count++;
+      } else {
+        kept = maxHlc(kept, hlc);
+      }
+    }
+    if (!issued) return 0;
+    await settingsClocksItem.setValue(clocks);
+    await lastHlcItem.setValue(maxHlc(kept, issued));
+    return count;
+  });
 }
 
 const deviceLock = createLock();

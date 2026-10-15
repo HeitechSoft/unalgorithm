@@ -20,6 +20,7 @@
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/platforms": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
+    "@unalgorithm/sync": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
     "lucide-react": "^1.55.0",
     "react": "^19.3.0",
