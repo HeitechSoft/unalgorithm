@@ -160,7 +160,7 @@ describe('deps', () => {
     await deps.searcher.search(SEARCH_REQ);
     expect(ai.research).toEqual([{ route: 'route-research', model: 'claude-haiku-5-5', allowed: ['left-a.example'] }]);
 
-    // A search provider: its searcher, and no research client asked.
+    // A search provider: its searcher, and no research client asked, even with a research route at hand.
     const withSearch = fakeAi();
     const queries: string[] = [];
     const search: SearchProvider = {
@@ -170,7 +170,7 @@ describe('deps', () => {
         return [];
       },
     };
-    const searched = perspectivesDepsFor({ ...ROUTES, research: null }, { ai: withSearch, search, registry: FIXTURE });
+    const searched = perspectivesDepsFor(ROUTES, { ai: withSearch, search, registry: FIXTURE });
     expect(withSearch.asked).toEqual(['route-synthesis']);
     expect(searched.searcher.model).toBe('search:searxng');
     expect(searched.resolveLink).toBeUndefined();
