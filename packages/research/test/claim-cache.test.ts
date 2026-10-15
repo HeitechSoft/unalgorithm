@@ -160,6 +160,47 @@ describe('entries', () => {
     );
     expect(one).toBeNull();
   });
+
+  it('test_entry_drops_post_echo_in_unspaced_scripts', () => {
+    // Chinese, Japanese and Thai put no spaces between words: a whole sentence must not count as one word.
+    const posts = [
+      { text: '據報導大橋於1932年開通市長說這是偉大的成就', echo: '新聞稿指出據報導大橋於1932年開通市長說這是偉大的成就' },
+      { text: '橋は1932年に開通したと市長が述べた', echo: '報道によると橋は1932年に開通したと市長が述べた' },
+      {
+        text: 'สะพานเปิดในปี1932นายกเทศมนตรีกล่าวว่าเป็นความสำเร็จที่ยิ่งใหญ่',
+        echo: 'รายงานว่าสะพานเปิดในปี1932นายกเทศมนตรีกล่าวว่าเป็นความสำเร็จที่ยิ่งใหญ่',
+      },
+    ];
+    for (const { text, echo } of posts) {
+      const post = { ...POST, text, link: undefined };
+      const entry = cacheEntryFor(
+        { ...CLAIM, citations: [...CLAIM.citations, { sourceId: 's3', quote: echo }] },
+        SOURCES,
+        post,
+        AT,
+      );
+      expect(
+        entry?.citations.map((c) => c.quote),
+        text,
+      ).toEqual(CLAIM.citations.map((c) => c.quote));
+      const titled = [...SOURCES.slice(0, 2), src('s3', 'third.net', echo)];
+      const byTitle = cacheEntryFor(
+        { ...CLAIM, citations: [...CLAIM.citations, { sourceId: 's3', quote: 'a third independent report' }] },
+        titled,
+        post,
+        AT,
+      );
+      expect(byTitle?.citations, text).toHaveLength(2);
+    }
+    // A shared word or two is not an echo.
+    const kept = cacheEntryFor(
+      { ...CLAIM, citations: [...CLAIM.citations, { sourceId: 's3', quote: '大橋全長兩公里' }] },
+      SOURCES,
+      { ...POST, text: posts[0]?.text ?? '', link: undefined },
+      AT,
+    );
+    expect(kept?.citations).toHaveLength(3);
+  });
 });
 
 const ENTRY: CachedClaim = {

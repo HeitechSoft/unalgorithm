@@ -93,11 +93,21 @@ export function hmacClaimKeyer(secret: Uint8Array): (claimText: string) => Promi
   };
 }
 
-/** Echo words: a finer split than `normalizeClaim`, so a marker or a hyphenated name counts as several words. */
+/** Scripts written without spaces between words: a run of them is split into its words by `Intl.Segmenter`. */
+const UNSPACED_SCRIPT = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u;
+const WORD_SEGMENTER = new Intl.Segmenter('und', { granularity: 'word' });
+
+/**
+ * Echo words: a finer split than `normalizeClaim`, so a marker or a hyphenated name counts as several words. A mark stays
+ * with its letter, and Chinese, Japanese or Thai text is split into its words, so a sentence there is not one word.
+ */
 function echoWords(text: string): string[] {
   return normalizeQuote(text)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .flatMap((token) => {
+      if (!UNSPACED_SCRIPT.test(token)) return token ? [token] : [];
+      return Array.from(WORD_SEGMENTER.segment(token), (s) => (s.isWordLike ? s.segment : '')).filter(Boolean);
+    });
 }
 
 /** Every run of POST_ECHO_WORDS words of `text` (all of it when shorter), as joined keys with the run length. */
