@@ -113,9 +113,9 @@ export const FLAGGED = [LINKEDIN_FLAGGED, FB_PUBLIC_FLAGGED, FB_FRIENDS_FLAGGED]
 /** The LinkedIn fixture feed's flagged first-degree post. */
 export const linkedinPost = (page: Page) => page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
 
-/** Turns Labs → Fact-check on through the options page's switch (on `#/labs`), which must be enabled and off. */
-export async function turnOnLabs(options: Page): Promise<void> {
-  const toggle = options.getByRole('switch', { name: 'Fact-check' });
+/** Turns a Labs switch (default Fact-check) on through the options page (on `#/labs`); it must be enabled and off. */
+export async function turnOnLabs(options: Page, name: 'Fact-check' | 'Other perspectives' = 'Fact-check'): Promise<void> {
+  const toggle = options.getByRole('switch', { name });
   await expect(toggle).toBeEnabled();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await toggle.click();

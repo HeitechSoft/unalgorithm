@@ -103,8 +103,9 @@ jobs:
 
   server:
     # The server against real Postgres 17 and Mailpit, and the extension signing in to it end to end (e2e/cloud.spec.ts),
-    # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts), and
-    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts).
+    # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts),
+    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and Other perspectives through
+    # the server with the fixture outlet registry (e2e/perspectives-server.spec.ts).
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -160,7 +161,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Sign in to a local server, label the feed, show the balance, sync two profiles and check facts
-        run: pnpm --filter @unalgorithm/extension exec playwright test e2e/cloud.spec.ts e2e/credits.spec.ts e2e/sync.spec.ts e2e/factcheck-server.spec.ts
+        run: pnpm --filter @unalgorithm/extension exec playwright test e2e/cloud.spec.ts e2e/credits.spec.ts e2e/sync.spec.ts e2e/factcheck-server.spec.ts e2e/perspectives-server.spec.ts
         env:
           UA_SERVER_E2E: '1'
 
