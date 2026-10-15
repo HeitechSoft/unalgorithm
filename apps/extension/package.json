@@ -8,9 +8,9 @@
   "scripts": {
     "dev": "wxt",
     "dev:fb": "cross-env UA_START=facebook wxt",
-    "build": "wxt build",
-    "build:e2e": "wxt build --mode e2e",
-    "zip": "wxt zip",
+    "build": "node ../../packages/outlets/src/cli.ts check && wxt build",
+    "build:e2e": "node ../../packages/outlets/src/cli.ts check && wxt build --mode e2e",
+    "zip": "node ../../packages/outlets/src/cli.ts check && wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
     "e2e": "pnpm build:e2e && playwright test",
     "postinstall": "wxt prepare"

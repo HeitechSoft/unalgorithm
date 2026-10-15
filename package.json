@@ -20,6 +20,7 @@
     "e2e": "pnpm --filter @unalgorithm/extension e2e",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "eval:factcheck": "node packages/research/eval/cli.ts",
+    "outlets:check": "node packages/outlets/src/cli.ts check",
     "changeset": "changeset",
     "fixtures:check": "node scripts/check-fixtures.mjs",
     "scan:public": "node scripts/scan-public-repo.mjs",

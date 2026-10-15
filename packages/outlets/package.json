@@ -1,0 +1,20 @@
+{
+  "name": "@unalgorithm/outlets",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only AND CC-BY-4.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/sign.ts",
+    "./testing": "./src/testing/fixture.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@unalgorithm/protocol": "workspace:*",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {}
+}
