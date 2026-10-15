@@ -1,6 +1,7 @@
 export * from './components/brand.tsx';
 export * from './components/choice.tsx';
 export * from './components/controls.tsx';
+export * from './components/factcheck.tsx';
 export * from './components/feedback.tsx';
 export * from './components/illustrations.tsx';
 export * from './components/lists.tsx';

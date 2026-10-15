@@ -42,6 +42,17 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* A whole-card button row, e.g. "Fact-checks · N". */
+.panel-row {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  color: var(--ua-text);
+}
+.panel-row:focus-visible {
+  outline: 2px solid var(--ua-focus);
+  outline-offset: 2px;
+}
 @container (max-width: 400px) {
   .panel-snippet {
     -webkit-line-clamp: 1;
