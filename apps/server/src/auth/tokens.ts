@@ -27,6 +27,9 @@ export const REFRESH_REPLAY_MS = 60_000;
 
 const DAY_MS = 86_400_000;
 
+/** Why an account whose access an admin removed gets no tokens (the admin plugin's own refusal says the same). */
+const BANNED_MESSAGE = 'This account cannot sign in to this server.';
+
 /** 32 random bytes, base64url: 43 characters. */
 export function newSecret(): string {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
@@ -123,6 +126,8 @@ export class TokenAlreadyUsed extends Error {
  * EdDSA and 15 minutes from Better Auth's jwt plugin) and a refresh token stored by its hash. The answer names the
  * account's address, which the extension shows.
  *
+ * Refused (`auth-required`) for an account whose access an admin removed (`user.banned`), checked in the transaction.
+ *
  * All or nothing: the JWT is signed before anything is written, and the new refresh token is stored in one transaction
  * with the new device, or with spending the token it replaces. So a failure leaves no device without a token, and a
  * refresh that fails does not spend its token: tried again, it is not taken for reuse. Signing stays outside the
@@ -141,6 +146,12 @@ export async function issueTokens(
   });
   const refreshToken = newSecret();
   await db.transaction(async (tx) => {
+    // A removed account (CL4-02) gets no device and no token, also from a code issued just before the removal. The row
+    // lock makes a ban racing this wait until the device is stored, so `removeAccess`, which revokes the devices after
+    // the ban, finds this one too. A refusal rolls everything back.
+    const [account] = await tx.select({ banned: user.banned }).from(user).where(eq(user.id, grant.userId)).for('share');
+    if (!account) throw new AIError('auth-required', 'The account no longer exists.');
+    if (account.banned === true) throw new AIError('auth-required', BANNED_MESSAGE);
     if (newDevice) {
       await tx
         .insert(devices)
@@ -179,7 +190,7 @@ export async function issueTokens(
 }
 
 /** Why a device was revoked, as `devices.revoked_reason` holds it. */
-export type RevokeReason = 'sign-out' | 'refresh-reuse' | 'revoked-by-user';
+export type RevokeReason = 'sign-out' | 'refresh-reuse' | 'revoked-by-user' | 'removed-by-admin';
 
 /**
  * Ends a device: marks it revoked and spends every refresh token it still holds, in one transaction. Its access tokens

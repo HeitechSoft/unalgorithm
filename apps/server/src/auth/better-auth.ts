@@ -16,6 +16,7 @@ import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { admin } from 'better-auth/plugins/admin';
 import { emailOTP } from 'better-auth/plugins/email-otp';
 import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
@@ -252,6 +253,10 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
           },
         },
       }),
+      // For its `role` and `banned` columns and its refusal of a session for a banned account (`admin/access.ts`).
+      // None of its routes is mounted (`authRoutesFor`): our admin routes call them server-side. The message names no
+      // product: it is any server's.
+      admin({ defaultRole: 'user', adminRoles: ['admin'], bannedUserMessage: 'This account cannot sign in to this server.' }),
     ],
     databaseHooks: {
       user: {
