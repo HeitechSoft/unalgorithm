@@ -5,6 +5,7 @@ import {
   type LearnedPrefs,
   migrateDevice,
   migrateSettings,
+  type ServerOffer,
   type Settings,
   type SettingsClocks,
   type TabState,
@@ -34,6 +35,13 @@ export const statsItem = storage.defineItem<Record<string, { hidden: number; see
 });
 /** The local date (`dateKey()`) the popup last showed the low-balance banner: a date only, no amount. */
 export const lowBalanceNoticeItem = storage.defineItem<string | null>('local:lowBalanceNoticeOn', { fallback: null });
+
+/**
+ * What the signed-in server offers (fact-check, and its price on a billing server), derived from its discovery
+ * document. Written only by the background; content scripts may read it because it holds nothing personal (no email,
+ * device id or token). Null without an account or while it needs signing in again.
+ */
+export const serverOfferItem = storage.defineItem<ServerOffer | null>('local:serverOffer', { fallback: null });
 
 /** Why the last sync run failed: a code only, never the server's message. */
 export type SyncProblem = 'auth' | 'network' | 'quota' | 'clock' | 'server' | 'unavailable';

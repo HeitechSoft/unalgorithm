@@ -1,3 +1,4 @@
+import type { ServerInfo } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   type AISourceConfig,
@@ -7,6 +8,8 @@ import {
   factcheckPriceLabel,
   migrateDevice,
   type PostData,
+  type ServerOffer,
+  serverOfferFrom,
   sourceCapabilities,
 } from '../src/index.ts';
 
@@ -89,5 +92,92 @@ describe('factcheckOffered', () => {
     expect(factcheckPriceLabel(ANTHROPIC)).toBe('About $0.12 on your Anthropic account');
     expect(factcheckPriceLabel(OPENAI)).toBeNull();
     expect(factcheckPriceLabel(null)).toBeNull();
+  });
+});
+
+const SERVER: AISourceConfig = { kind: 'server', baseUrl: 'https://ai.example.org' };
+const FREE_OFFER: ServerOffer = { origin: 'https://ai.example.org', billing: false, factcheck: true, factcheckPrice: null };
+const PRICE = { typicalMicros: 240_000, maxMicros: 400_000 };
+const PAID_OFFER: ServerOffer = { ...FREE_OFFER, billing: true, factcheckPrice: PRICE };
+
+/** A CL4 discovery document: no `capabilities.factcheck`, no `jobPrices`. */
+const CL4_INFO: ServerInfo = {
+  v: 1,
+  name: 'Example',
+  version: '0.1.0',
+  source: 'https://example.org/src',
+  billing: false,
+  capabilities: { classify: true, sync: true },
+  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/token' },
+  limits: { maxPostsPerRequest: 20 },
+};
+
+describe('Server offer', () => {
+  it('test_server_offer_from_account', () => {
+    expect(serverOfferFrom(null)).toBeNull();
+    const origin = 'https://ai.example.org';
+    expect(serverOfferFrom({ origin, info: CL4_INFO, needsSignIn: true })).toBeNull();
+    expect(serverOfferFrom({ origin, info: CL4_INFO, needsSignIn: false })).toEqual({
+      origin,
+      billing: false,
+      factcheck: false,
+      factcheckPrice: null,
+    });
+    const info: ServerInfo = {
+      ...CL4_INFO,
+      billing: true,
+      capabilities: { ...CL4_INFO.capabilities, factcheck: true },
+      jobPrices: { factcheck: PRICE },
+    };
+    const offer = serverOfferFrom({ origin, info, needsSignIn: false });
+    expect(offer).toEqual({ origin, billing: true, factcheck: true, factcheckPrice: PRICE });
+    expect(Object.keys(offer ?? {}).sort()).toEqual(['billing', 'factcheck', 'factcheckPrice', 'origin']);
+  });
+
+  it('test_server_source_capable_when_offered_same_origin', () => {
+    expect(sourceCapabilities(SERVER, FREE_OFFER)).toEqual({
+      classify: true,
+      factcheck: true,
+      perspectives: false,
+      webSearch: true,
+    });
+    // A trailing path on the base URL still matches the origin.
+    expect(sourceCapabilities({ kind: 'server', baseUrl: 'https://ai.example.org/' }, FREE_OFFER).factcheck).toBe(true);
+  });
+
+  it('test_server_source_not_capable_other_origin_or_not_offered', () => {
+    const notCapable = { classify: true, factcheck: false, perspectives: false, webSearch: false };
+    expect(sourceCapabilities(SERVER, { ...FREE_OFFER, origin: 'https://other.example.org' })).toEqual(notCapable);
+    expect(sourceCapabilities(SERVER, { ...FREE_OFFER, factcheck: false })).toEqual(notCapable);
+    expect(sourceCapabilities(SERVER, null)).toEqual(notCapable);
+    expect(sourceCapabilities(SERVER)).toEqual(notCapable);
+    expect(sourceCapabilities({ kind: 'server', baseUrl: 'not a url' }, FREE_OFFER)).toEqual(notCapable);
+    // Other kinds ignore the offer.
+    expect(sourceCapabilities(OPENAI, FREE_OFFER).factcheck).toBe(false);
+    expect(sourceCapabilities(ANTHROPIC, null).factcheck).toBe(true);
+  });
+
+  it('test_billing_server_needs_a_price', () => {
+    expect(sourceCapabilities(SERVER, { ...PAID_OFFER, factcheckPrice: null }).factcheck).toBe(false);
+    expect(sourceCapabilities(SERVER, PAID_OFFER).factcheck).toBe(true);
+  });
+
+  it('test_factcheck_offered_server_public_only', () => {
+    const input: Input = { ...base(), device: { aiSource: SERVER, labs: { factcheck: true } }, serverOffer: PAID_OFFER };
+    expect(factcheckOffered({ ...input, post: { platform: 'facebook', audience: 'public' } })).toBe(true);
+    expect(factcheckOffered({ ...input, post: { platform: 'linkedin' } })).toBe(true);
+    expect(factcheckOffered({ ...input, post: { platform: 'facebook', audience: 'friends' } })).toBe(false);
+    expect(factcheckOffered({ ...input, serverOffer: undefined })).toBe(false);
+  });
+});
+
+describe('Price label', () => {
+  it('test_factcheck_price_label_server', () => {
+    expect(factcheckPriceLabel(SERVER, FREE_OFFER)).toBe('Free on this server');
+    expect(factcheckPriceLabel(SERVER, PAID_OFFER)).toBe('About $0.24, at most $0.40');
+    expect(factcheckPriceLabel(SERVER, null)).toBeNull();
+    expect(factcheckPriceLabel(SERVER, { ...FREE_OFFER, factcheck: false })).toBeNull();
+    expect(factcheckPriceLabel(SERVER, { ...PAID_OFFER, factcheckPrice: null })).toBeNull();
+    expect(factcheckPriceLabel(ANTHROPIC, PAID_OFFER)).toBe('About $0.12 on your Anthropic account');
   });
 });

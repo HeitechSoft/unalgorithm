@@ -1,3 +1,4 @@
+import type { JobPrice, ServerInfo } from '@unalgorithm/protocol';
 import { z } from 'zod';
 
 /** OpenAI-compatible endpoints we ship presets for. `custom` is any other server. */
@@ -76,12 +77,47 @@ export interface SourceCapabilities {
   webSearch: boolean;
 }
 
+/** What the signed-in server offers, derived from its discovery document. No email, device id or token. */
+export interface ServerOffer {
+  origin: string;
+  billing: boolean;
+  factcheck: boolean;
+  factcheckPrice: JobPrice | null;
+}
+
+/** Null without an account or while it needs signing in again. */
+export function serverOfferFrom(account: { origin: string; info: ServerInfo; needsSignIn: boolean } | null): ServerOffer | null {
+  if (!account || account.needsSignIn) return null;
+  const { origin, info } = account;
+  return {
+    origin,
+    billing: info.billing,
+    factcheck: info.capabilities.factcheck === true,
+    factcheckPrice: info.jobPrices?.factcheck ?? null,
+  };
+}
+
+/** True when `offer` is for this server source's origin and it offers fact-check (with a price on a billing server). */
+function serverCanFactcheck(baseUrl: string, offer: ServerOffer | null): boolean {
+  if (!offer?.factcheck || (offer.billing && offer.factcheckPrice === null)) return false;
+  try {
+    return offer.origin === new URL(baseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * No source can do nothing; an own Anthropic key classifies and fact-checks with web search; every other kind only
- * classifies for now (server: RM2; openai and openai-compatible: RM4).
+ * No source can do nothing; an own Anthropic key classifies and fact-checks with web search; a server source
+ * fact-checks when its signed-in server offers it (`offer`, ignored for every other kind); every other kind only
+ * classifies for now (openai and openai-compatible: RM4).
  */
-export function sourceCapabilities(cfg: AISourceConfig | null): SourceCapabilities {
+export function sourceCapabilities(cfg: AISourceConfig | null, offer: ServerOffer | null = null): SourceCapabilities {
   if (!cfg) return { classify: false, factcheck: false, perspectives: false, webSearch: false };
   if (cfg.kind === 'anthropic') return { classify: true, factcheck: true, perspectives: false, webSearch: true };
+  if (cfg.kind === 'server') {
+    const factcheck = serverCanFactcheck(cfg.baseUrl, offer);
+    return { classify: true, factcheck, perspectives: false, webSearch: factcheck };
+  }
   return { classify: true, factcheck: false, perspectives: false, webSearch: false };
 }
