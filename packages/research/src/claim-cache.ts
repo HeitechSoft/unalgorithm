@@ -17,16 +17,16 @@ import { FACTCHECK_PROMPT_VERSION } from './prompts.ts';
 import { isBlocked, normalizeQuote, registrableDomain } from './validate.ts';
 
 /**
- * The shared claim cache's rules (F27, decisions D59 and D60): an entry holds a keyed hash of the normalized claim, the
- * verdict, the model's explanation unless it repeats the post, its validated citations and the hour it was checked,
- * nothing else. Storage is the caller's (a server, a
+ * The shared claim cache's rules (F27, decisions D59, D60 and D61): an entry holds a keyed hash of the normalized claim,
+ * the verdict, the model's explanation unless it repeats the post or a claim, its validated citations (minus any text
+ * repeating a claim) and the hour it was checked, nothing else. Storage is the caller's (a server, a
  * device); every rule about what is stored, served or refused lives here.
  */
 
 export const CACHEABLE_VERDICTS = ['supported', 'disputed', 'misleading', 'needs-context'] as const;
 /**
- * A quote, title or explanation sharing this many consecutive echo words with the post text (or its link title) is not
- * kept; when that text has fewer words, sharing all of them in a row is enough.
+ * A quote, title or explanation sharing this many consecutive echo words with the post text, its link title or a claim of
+ * the check is not kept; when that text has fewer words, sharing all of them in a row is enough.
  */
 export const POST_ECHO_WORDS = 6;
 /**
@@ -51,7 +51,7 @@ export const CachedCitationSchema = z.strictObject({
 export const CachedClaimSchema = z.strictObject({
   v: z.literal(1),
   verdict: z.enum(CACHEABLE_VERDICTS),
-  /** The verdict's explanation (the model's short reason), left out when it repeats the post's words (D60, 2026-10-15). */
+  /** The verdict's explanation (the model's short reason), left out when it repeats the post's or a claim's words (D60). */
   explanation: FactcheckClaimSchema.shape.explanation.min(1).optional(),
   citations: z.array(CachedCitationSchema).min(MIN_INDEPENDENT_DOMAINS).max(MAX_CITATIONS_PER_CLAIM),
   checkedAt: z.iso.datetime(),
@@ -147,32 +147,40 @@ function distinctDomains(citations: readonly CachedCitation[]): number {
 
 /**
  * The cache entry for a freshly validated claim, or null when it must not be cached: an inconclusive or downgraded
- * verdict, or fewer than two domains once citations on a platform or echoing the post are dropped. The explanation is
- * kept, cut to MAX_EXPLANATION_CHARS, unless it is empty or echoes the post. The claim text, `pageAge`, any id and the
- * post never enter it.
+ * verdict, or fewer than two domains once citations on a platform or echoing the post are dropped. A citation's quote or
+ * title echoing `claim` or any of `claimTexts` (every claim the check's claims step produced) is stored as ''. The
+ * explanation is kept, cut to MAX_EXPLANATION_CHARS, unless it is empty or echoes the post or a claim. The claim text,
+ * `pageAge`, any id and the post never enter it.
  */
 export function cacheEntryFor(
   claim: FactcheckClaim,
   sources: readonly FactcheckSource[],
   post: PostForAI,
   checkedAt: string,
+  claimTexts: readonly string[] = [],
 ): CachedClaim | null {
   if (!(CACHEABLE_VERDICTS as readonly string[]).includes(claim.verdict) || claim.downgraded) return null;
   const byId = new Map(sources.map((s) => [s.id, s]));
   const against = [echoRuns(post.text), echoRuns(post.link?.title)].filter((r) => r !== null);
+  const claimRuns = [claim.claim, ...claimTexts].map((t) => echoRuns(t)).filter((r) => r !== null);
   const citations: CachedCitation[] = [];
   for (const c of claim.citations) {
     const source = byId.get(c.sourceId);
     if (!source || isBlocked(source.domain, PLATFORM_DOMAINS)) continue;
     if (echoes(c.quote, against) || echoes(source.title, against)) continue;
-    citations.push({ url: source.url, domain: source.domain, title: source.title, quote: c.quote });
+    citations.push({
+      url: source.url,
+      domain: source.domain,
+      title: echoes(source.title, claimRuns) ? '' : source.title,
+      quote: echoes(c.quote, claimRuns) ? '' : c.quote,
+    });
   }
   if (distinctDomains(citations) < MIN_INDEPENDENT_DOMAINS) return null;
   const explanation = clipText(claim.explanation, MAX_EXPLANATION_CHARS);
   const out = CachedClaimSchema.safeParse({
     v: 1,
     verdict: claim.verdict,
-    ...(explanation && !echoes(explanation, against) ? { explanation } : {}),
+    ...(explanation && !echoes(explanation, [...against, ...claimRuns]) ? { explanation } : {}),
     citations,
     checkedAt: floorTime(checkedAt),
   });

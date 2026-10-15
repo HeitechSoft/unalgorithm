@@ -54,8 +54,8 @@ browser restarts. Facebook posts that aren't public are never checked, and nothi
 twice, a check on your own key (Anthropic, OpenAI, or your own AI server with a web search key) keeps, for each claim
 that two independent sources settled, a row in this browser's own storage: a keyed hash of the claim (under a random key
 created on this device and never synced or exported), the verdict, the AI's short explanation of it (left out when it
-repeats six or more words of the post in a row), the public sources' addresses, titles and short quotes, and the hour it
-was checked. Never the claim, the post's text, the post or its author, and no source on Facebook or LinkedIn. For 24
+repeats six or more words in a row of the post or of any claim the check found), the public sources' addresses, titles
+and short quotes (a title or quote repeating a claim that way is left out), and the hour it was checked. Never the claim, the post's text, the post or its author, and no source on Facebook or LinkedIn. For 24
 hours, a later check of the same claim on this device still sends the post to find its claims, then shows the kept
 verdict and explanation instead of searching and judging again, marked with when it was checked. Feed pages can't read
 this storage. Settings → Clear AI results cache removes the rows; Erase everything removes the rows and the key. Checks
@@ -71,8 +71,9 @@ sending it the claims, not the post. On a server that charges for checks, a chec
 you confirm it; a check that stops early is not charged. Closing the tab cancels a check that is still running. The
 result is kept in this browser exactly as above. Unless its operator turned it off, the server keeps a claim cache: for
 each claim that two independent sources settled, a row with a keyed hash of the claim, the verdict, the AI's short
-explanation of it (left out when it repeats six or more words of the post in a row), the public sources' addresses,
-titles and short quotes, and the hour it was checked, for 24 hours. Never the claim, the post's text, who checked, or a
+explanation of it (left out when it repeats six or more words in a row of the post or of any claim the check found),
+the public sources' addresses, titles and short quotes (a title or quote repeating a claim that way is left out), and the
+hour it was checked, for 24 hours. Never the claim, the post's text, who checked, or a
 source on Facebook or LinkedIn. A later check of the same claim on that server, by anyone, still sends the post to find
 its claims, then gets the kept verdict and explanation, marked with when it was checked, and costs only that one step.
 So a result dated earlier tells the person who asked that someone on that server checked the same public claim within

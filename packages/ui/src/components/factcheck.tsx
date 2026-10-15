@@ -122,7 +122,7 @@ function ClaimItem({ claim, sources }: { claim: FactcheckClaim; sources: Factche
 export function CitationFigure({ quote, source }: { quote: string; source?: FactcheckSource & { outlet?: string } }) {
   return (
     <figure className="ua-factcheck-cite">
-      <blockquote>{quote}</blockquote>
+      {quote ? <blockquote>{quote}</blockquote> : null}
       {source ? (
         <figcaption>
           <a href={source.url} target="_blank" rel="noopener noreferrer">

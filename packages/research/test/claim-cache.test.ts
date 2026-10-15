@@ -133,6 +133,72 @@ describe('entries', () => {
     expect(explained(long)?.explanation).toBe(long.slice(0, MAX_EXPLANATION_CHARS));
   });
 
+  it('test_entry_explanation_dropped_when_it_echoes_a_claim', () => {
+    // The entry is keyed by a hash of the claim; text repeating any claim of the check must not land in it either.
+    const claims = [CLAIM.claim, 'The new harbour bridge will cost the city ten million euros.', 'Tolls start in May.'];
+    const explained = (explanation: string) => cacheEntryFor({ ...CLAIM, explanation }, SOURCES, POST, AT, claims);
+    // The cached claim restated.
+    const restated = explained('Yes: the council approved the bridge budget, two outlets say.');
+    expect(restated).not.toBeNull();
+    expect(restated).not.toHaveProperty('explanation');
+    expect(restated?.citations).toHaveLength(2);
+    expect(JSON.stringify(restated)).not.toContain('approved the bridge');
+    // Without the other claims, the cached claim itself still counts.
+    const alone = cacheEntryFor(
+      { ...CLAIM, explanation: 'In short, the council approved the bridge budget.' },
+      SOURCES,
+      POST,
+      AT,
+    );
+    expect(alone).not.toHaveProperty('explanation');
+    // Six consecutive words of another claim of the same post.
+    expect(explained('Reports add that the bridge will cost the city ten million in total.')).not.toHaveProperty('explanation');
+    // A claim shorter than six words, contained whole.
+    expect(explained('Officials confirm tolls start in May this year.')).not.toHaveProperty('explanation');
+    // Five consecutive words of another claim, or an unrelated reason, are kept.
+    expect(explained('The bridge will cost the city more, outlets say.')?.explanation).toBe(
+      'The bridge will cost the city more, outlets say.',
+    );
+    expect(explained('Two outlets report the approval.')?.explanation).toBe('Two outlets report the approval.');
+    // Chinese: the claim is split into its words, so a restated sentence is an echo.
+    const zh = '大橋於1932年開通市長說這是偉大的成就';
+    const zhPost = { ...POST, text: 'x', link: undefined };
+    expect(cacheEntryFor({ ...CLAIM, explanation: `報導指出${zh}` }, SOURCES, zhPost, AT, [zh])).not.toHaveProperty(
+      'explanation',
+    );
+  });
+
+  it('test_entry_citation_text_echoing_a_claim_dropped', () => {
+    const claims = [CLAIM.claim, 'Tolls start in May.'];
+    const titled = [src('s1', 'www.example.com', 'The council approved the bridge budget on Tuesday'), ...SOURCES.slice(1)];
+    const entry = cacheEntryFor(
+      {
+        ...CLAIM,
+        citations: [
+          { sourceId: 's1', quote: 'the council voted to approve the budget' },
+          { sourceId: 's2', quote: 'Officials said tolls start in May.' },
+          { sourceId: 's3', quote: 'a third independent report' },
+        ],
+      },
+      titled,
+      POST,
+      AT,
+      claims,
+    );
+    // The citation stays (its URL still backs the verdict); only the text repeating a claim is emptied.
+    expect(entry?.citations).toEqual([
+      {
+        url: 'https://www.example.com/s1',
+        domain: 'www.example.com',
+        title: '',
+        quote: 'the council voted to approve the budget',
+      },
+      { url: 'https://news.other.org/s2', domain: 'news.other.org', title: 'Title s2', quote: '' },
+      { url: 'https://third.net/s3', domain: 'third.net', title: 'Title s3', quote: 'a third independent report' },
+    ]);
+    expect(CachedClaimSchema.safeParse(entry).success).toBe(true);
+  });
+
   it('test_entry_schema_bounds_explanation', () => {
     const base = { v: 1, verdict: 'supported', checkedAt: AT, citations: ENTRY.citations };
     expect(CachedClaimSchema.safeParse({ ...base, explanation: 'Short reason.' }).success).toBe(true);

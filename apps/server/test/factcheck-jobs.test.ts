@@ -635,6 +635,25 @@ describe('fact-check jobs: claim cache', { timeout: PGLITE_TIMEOUT }, () => {
     expect(JSON.stringify(rows)).not.toContain('1932 and cost');
   });
 
+  it('test_factcheck_cache_row_drops_text_echoing_the_claim', async () => {
+    // Restates the whole claim ("The bridge opened in 1932."), five words, without six in a row of the post.
+    const echo = 'Records say the bridge opened in 1932, as two histories agree.';
+    const t = await anthropicApp((body, kind) => (kind === 'verdict' ? ok(verdictMessage(echo)) : happy(body, kind)));
+    const { first, second, kinds } = await checkTwice(t);
+    expect(first.result?.claims[0]?.explanation).toBe(echo);
+    expect(first.result?.claims[0]?.citations.map((c) => c.quote)).toEqual([
+      'The bridge opened in 1932',
+      'the bridge opened to traffic in 1932',
+    ]);
+    expect(kinds).toEqual(['claims']);
+    // The row keeps a keyed hash of the claim only: the explanation is null and the quote repeating the claim is ''.
+    expect(second.result?.claims[0]).toMatchObject({ verdict: 'supported', explanation: '' });
+    expect(second.result?.claims[0]?.citations.map((c) => c.quote)).toEqual(['', 'the bridge opened to traffic in 1932']);
+    const rows = await t.deps.db.db.select().from(claimCache);
+    expect(rows.map((r) => r.explanation)).toEqual([null]);
+    expect(JSON.stringify(rows).toLowerCase()).not.toContain('bridge opened in 1932');
+  });
+
   it('test_factcheck_cache_hit_charged_cost_times_two', async () => {
     const t = await anthropicApp(happy, { billed: true });
     const settled: { requestId: string; costMicros: number | null; chargedMicros: number }[] = [];
