@@ -75,6 +75,25 @@ describe('anthropic research: request shape', () => {
     expect('blocked_domains' in tool(f.bodies[0] ?? {})).toBe(false);
   });
 
+  it('test_research_allowed_domains_replace_blocked', async () => {
+    const f = queued([ok(basic())]);
+    await clientWith(f)(req({ maxSearches: 1, allowedDomains: ['left-a.example'] }));
+    const t = tool(f.bodies[0] ?? {});
+    expect(t.allowed_domains).toEqual(['left-a.example']);
+    expect('blocked_domains' in t).toBe(false);
+    expect(t.max_uses).toBe(1);
+
+    const g = queued([ok(basic())]);
+    await clientWith(g)(req({ maxSearches: 1, allowedDomains: [] }));
+    expect(tool(g.bodies[0] ?? {})).toEqual({
+      type: 'web_search_20260209',
+      name: 'web_search',
+      max_uses: 1,
+      allowed_callers: ['direct'],
+      blocked_domains: ['satire.example', 'farm.example'],
+    });
+  });
+
   it('test_research_sends_no_output_format', async () => {
     const f = queued([ok(basic())]);
     await clientWith(f)(req());

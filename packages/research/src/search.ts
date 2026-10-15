@@ -22,9 +22,21 @@ export interface SearchHit {
   published: string | null;
 }
 
+/**
+ * `domains`, `from` and `to` are best-effort hints (RM3 bucket search): each provider passes on what its API takes, and
+ * `searchBuckets` enforces both the domains and the dates on whatever comes back.
+ */
+export interface SearchOptions {
+  count: number;
+  signal?: AbortSignal;
+  domains?: readonly string[];
+  from?: Date;
+  to?: Date;
+}
+
 export interface SearchProvider {
   readonly id: SearchProviderId;
-  search(query: string, opts: { count: number; signal?: AbortSignal }): Promise<SearchHit[]>;
+  search(query: string, opts: SearchOptions): Promise<SearchHit[]>;
 }
 
 export interface SearchProviderConfig {
@@ -134,18 +146,49 @@ function clampCount(count: number): number {
   return Math.min(MAX_COUNT, Math.max(1, Math.floor(count) || 1));
 }
 
+/** `(site:a.com OR site:b.com)` over the first `max` domains, in the given order; '' for none (decision D34). */
+export function siteClause(domains: readonly string[], max = 8): string {
+  const picked = domains.slice(0, Math.max(0, max));
+  return picked.length ? `(${picked.map((d) => `site:${d}`).join(' OR ')})` : '';
+}
+
+function withSites(query: string, domains: readonly string[] | undefined): string {
+  const clause = siteClause(domains ?? []);
+  return clause ? `${query} ${clause}` : query;
+}
+
+const DAY_MS = 86_400_000;
+const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+
 // SearXNG search API, https://docs.searxng.org/dev/search_api.html (checked 2026-10-15). The `json` format must be
 // enabled in the instance's `search.formats`, otherwise it answers 403. There is no count parameter: the first
-// `count` results are kept.
+// `count` results are kept. Date hint: `time_range` (day, week, month, year) counts back from now, so the smallest one
+// reaching back to `from` is sent; none when even a year does not.
 const SearxngSchema = z.object({
   results: z.array(z.object({ url: z.string(), title: optionalText, content: optionalText, publishedDate: optionalText })),
 });
+
+const SEARXNG_RANGES = [
+  ['day', 1],
+  ['week', 7],
+  ['month', 31],
+  ['year', 365],
+] as const;
+
+function searxngTimeRange(from: Date | undefined, to: Date | undefined): string | undefined {
+  if (!from || !to) return undefined;
+  const span = Math.max(to.getTime(), Date.now()) - from.getTime();
+  return SEARXNG_RANGES.find(([, days]) => span <= days * DAY_MS)?.[0];
+}
 
 function searxng(base: string, doFetch: typeof fetch, timeoutMs: number): SearchProvider {
   return {
     id: 'searxng',
     async search(query, opts) {
-      const url = `${base}/search?${new URLSearchParams({ q: query, format: 'json', safesearch: '0' })}`;
+      const params = new URLSearchParams({ q: withSites(query, opts.domains), format: 'json', safesearch: '0' });
+      const range = searxngTimeRange(opts.from, opts.to);
+      if (range) params.set('time_range', range);
+      const url = `${base}/search?${params}`;
       const data = await getJson(
         doFetch,
         { url, method: 'GET', headers: { accept: 'application/json' } },
@@ -160,7 +203,8 @@ function searxng(base: string, doFetch: typeof fetch, timeoutMs: number): Search
 }
 
 // Brave Web Search API, https://api-dashboard.search.brave.com/app/documentation/web-search/query (checked
-// 2026-10-15): `X-Subscription-Token` header, `count` up to 20.
+// 2026-10-15): `X-Subscription-Token` header, `count` up to 20; `freshness` takes a custom range written
+// `YYYY-MM-DDtoYYYY-MM-DD` (checked 2026-10-15).
 const BraveSchema = z.object({
   web: z
     .object({
@@ -173,7 +217,8 @@ function brave(apiKey: string, doFetch: typeof fetch, timeoutMs: number): Search
   return {
     id: 'brave',
     async search(query, opts) {
-      const params = new URLSearchParams({ q: query, count: String(clampCount(opts.count)) });
+      const params = new URLSearchParams({ q: withSites(query, opts.domains), count: String(clampCount(opts.count)) });
+      if (opts.from && opts.to) params.set('freshness', `${isoDay(opts.from)}to${isoDay(opts.to)}`);
       const data = await getJson(
         doFetch,
         {
@@ -196,6 +241,8 @@ function brave(apiKey: string, doFetch: typeof fetch, timeoutMs: number): Search
 
 // Tavily Search API, https://docs.tavily.com/documentation/api-reference/endpoint/search (checked 2026-10-15):
 // bearer key, `max_results` 0..20. `published_date` is only returned with `include_published_date: true`.
+// `include_domains` (up to 300), `start_date` (on or after) and `end_date` (before), both YYYY-MM-DD (checked
+// 2026-10-15); `end_date` is the day after `to` so that day is included.
 const TavilySchema = z.object({
   results: z.array(z.object({ url: z.string(), title: optionalText, content: optionalText, published_date: optionalText })),
 });
@@ -216,6 +263,10 @@ function tavily(apiKey: string, doFetch: typeof fetch, timeoutMs: number): Searc
             search_depth: 'basic',
             include_answer: false,
             include_published_date: true,
+            ...(opts.domains?.length ? { include_domains: [...opts.domains] } : {}),
+            ...(opts.from && opts.to
+              ? { start_date: isoDay(opts.from), end_date: isoDay(new Date(opts.to.getTime() + DAY_MS)) }
+              : {}),
           }),
         },
         timeoutMs,
@@ -262,7 +313,7 @@ export function createSearchProvider(cfg: SearchProviderConfig): SearchProvider 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 
 /** Tags out, the five common entities decoded (in one pass, so `&amp;lt;` stays `&lt;`), whitespace collapsed. */
-function cleanSnippet(text: string): string {
+export function cleanSnippet(text: string): string {
   const plain = text
     .replace(/<[^>]*>/g, '')
     .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES[e] ?? e)
@@ -271,7 +322,8 @@ function cleanSnippet(text: string): string {
   return clipText(plain, 1000);
 }
 
-function hitUrl(raw: string): URL | undefined {
+/** An http(s) URL of at most 2,048 characters, else undefined. */
+export function hitUrl(raw: string): URL | undefined {
   try {
     const url = new URL(raw);
     return (url.protocol === 'http:' || url.protocol === 'https:') && url.href.length <= 2048 ? url : undefined;

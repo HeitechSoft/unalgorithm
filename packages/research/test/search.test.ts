@@ -1,8 +1,9 @@
 import { AIError } from '@unalgorithm/ai';
 import { FactcheckSourceSchema, MAX_RETRIEVED_SOURCES, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
+import { providerBucketSearcher } from '../src/coverage.ts';
 import type { RetrieveRequest } from '../src/retriever.ts';
-import { createSearchProvider, type SearchHit, type SearchProvider, searchRetriever } from '../src/search.ts';
+import { createSearchProvider, type SearchHit, type SearchProvider, searchRetriever, siteClause } from '../src/search.ts';
 import { startMockSearxng } from '../src/testing/mock-searxng.ts';
 
 interface Recorded {
@@ -145,6 +146,78 @@ describe('search adapters', () => {
       { url: 'https://a.example/1', title: 'A', snippet: 'Alpha', published: '2024-05-06' },
       { url: 'https://b.example/2', title: 'B', snippet: 'Beta', published: null },
     ]);
+  });
+
+  it('test_provider_hints_site_clause_dates_include_domains', async () => {
+    const domains = Array.from({ length: 10 }, (_, i) => `d${i}.example`);
+    expect(siteClause([])).toBe('');
+    expect(siteClause(['a.example', 'b.example'])).toBe('(site:a.example OR site:b.example)');
+    const eight = siteClause(domains);
+    expect(eight.match(/site:/g)).toHaveLength(8);
+    expect(eight).toContain('site:d7.example');
+    expect(eight).not.toContain('d8.example');
+
+    const day = 86_400_000;
+    const to = new Date(Date.now() - 60_000);
+    const from = new Date(to.getTime() - 6 * day);
+    const hints = { count: 20, domains, from, to };
+
+    const sx = fakeFetch(() => json({ results: [] }));
+    const searxng = createSearchProvider({ provider: 'searxng', url: 'http://searxng:8080', fetch: sx.fetch });
+    await searxng.search('bridge', hints);
+    await searxng.search('bridge', { count: 5 });
+    await searxng.search('bridge', { ...hints, from: new Date(Date.now() - 400 * day) });
+    const [withHints, plain, tooOld] = sx.calls.map((c) => new URL(c.url).searchParams);
+    expect(withHints?.get('q')).toBe(`bridge ${eight}`);
+    expect(withHints?.get('time_range')).toBe('week');
+    expect(plain?.get('q')).toBe('bridge');
+    expect(plain?.has('time_range')).toBe(false);
+    expect(tooOld?.has('time_range')).toBe(false);
+
+    const br = fakeFetch(() => json({}));
+    const brave = createSearchProvider({ provider: 'brave', apiKey: 'k', fetch: br.fetch });
+    const fixed = {
+      count: 20,
+      domains: domains.slice(0, 2),
+      from: new Date('2026-10-12T00:00:00Z'),
+      to: new Date('2026-10-15T12:00:00Z'),
+    };
+    await brave.search('bridge', fixed);
+    await brave.search('bridge', { count: 5 });
+    const [braveHints, bravePlain] = br.calls.map((c) => new URL(c.url).searchParams);
+    expect(braveHints?.get('q')).toBe('bridge (site:d0.example OR site:d1.example)');
+    expect(braveHints?.get('freshness')).toBe('2026-10-12to2026-10-15');
+    expect(bravePlain?.get('q')).toBe('bridge');
+    expect(bravePlain?.has('freshness')).toBe(false);
+
+    const tv = fakeFetch(() => json({ results: [] }));
+    const tavily = createSearchProvider({ provider: 'tavily', apiKey: 'k', fetch: tv.fetch });
+    await tavily.search('bridge', fixed);
+    await tavily.search('bridge', { count: 5 });
+    const [tavilyHints, tavilyPlain] = tv.calls.map((c) => JSON.parse(String(c.init.body)) as Record<string, unknown>);
+    expect(tavilyHints).toMatchObject({
+      query: 'bridge',
+      include_domains: ['d0.example', 'd1.example'],
+      start_date: '2026-10-12',
+      end_date: '2026-10-16',
+    });
+    expect(Object.keys(tavilyPlain ?? {}).sort()).toEqual(
+      ['include_answer', 'include_published_date', 'max_results', 'query', 'search_depth'].sort(),
+    );
+
+    // The bucket searcher asks 20 results with the hints and maps hits to one-snippet bucket hits.
+    const bs = fakeFetch(() =>
+      json({ results: [{ url: 'https://d0.example/a', title: 'A', content: 'Alpha', published_date: '2026-10-13' }] }),
+    );
+    const searcher = providerBucketSearcher(createSearchProvider({ provider: 'tavily', apiKey: 'k', fetch: bs.fetch }));
+    const res = await searcher.search({ query: 'bridge', domains: ['d0.example'], from: fixed.from, to: fixed.to, nonce: 'n' });
+    expect(JSON.parse(String(bs.calls[0]?.init.body))).toMatchObject({ max_results: 20, include_domains: ['d0.example'] });
+    expect(res).toEqual({
+      hits: [{ url: 'https://d0.example/a', title: 'A', snippets: ['Alpha'], published: '2026-10-13' }],
+      usage: ZERO_USAGE,
+      model: 'search:tavily',
+    });
+    expect(searcher.model).toBe('search:tavily');
   });
 
   it('test_search_errors_are_fixed_messages', async () => {

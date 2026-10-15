@@ -15,6 +15,7 @@
   "dependencies": {
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "zod": "^4.6.6"
   },

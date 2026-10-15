@@ -271,6 +271,9 @@ importers:
       '@unalgorithm/core':
         specifier: workspace:*
         version: link:../core
+      '@unalgorithm/outlets':
+        specifier: workspace:*
+        version: link:../outlets
       '@unalgorithm/protocol':
         specifier: workspace:*
         version: link:../protocol

@@ -37,6 +37,8 @@ export interface ResearchRequest {
   /** Tool `max_uses` across the whole call, continuations included. 1..MAX_FACTCHECK_SEARCHES. */
   maxSearches: number;
   blockedDomains: readonly string[];
+  /** Only results from these domains; when non-empty, `blockedDomains` is not sent: the API takes one or the other. */
+  allowedDomains?: readonly string[];
   effort: 'low' | 'medium';
   maxOutputTokens: number;
   /** Budget for the whole call, continuations included (each continuation gets what is left). Default 120_000. */

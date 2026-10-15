@@ -1,5 +1,7 @@
 export * from './blocklist.ts';
+export * from './coverage.ts';
 export * from './factcheck.ts';
+export * from './perspectives-prompts.ts';
 export * from './prompts.ts';
 export * from './retriever.ts';
 export * from './search.ts';

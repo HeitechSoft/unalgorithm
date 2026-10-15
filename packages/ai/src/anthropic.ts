@@ -243,7 +243,11 @@ export function anthropicClient(opts: { apiKey: string; capabilities: Capability
         name: 'web_search',
         max_uses: req.maxSearches - usage.webSearches,
         allowed_callers: ['direct'],
-        ...(req.blockedDomains.length ? { blocked_domains: [...req.blockedDomains] } : {}),
+        ...(req.allowedDomains?.length
+          ? { allowed_domains: [...req.allowedDomains] }
+          : req.blockedDomains.length
+            ? { blocked_domains: [...req.blockedDomains] }
+            : {}),
       };
       let msg: Anthropic.Messages.Message;
       try {
