@@ -3,7 +3,15 @@
  * the price shown before a check runs, then progress and the outcome.
  */
 import { act, cleanup, render, screen, within } from '@testing-library/react';
-import { type AISourceConfig, type Device, defaultDevice, defaultSettings, EMPTY_LEARNED, toPostForAI } from '@unalgorithm/core';
+import {
+  type AISourceConfig,
+  type Device,
+  defaultDevice,
+  defaultSettings,
+  EMPTY_LEARNED,
+  type ServerOffer,
+  toPostForAI,
+} from '@unalgorithm/core';
 import { facebookAdapter, linkedinAdapter, type PlatformAdapter } from '@unalgorithm/platforms';
 import type { Classification, FactcheckResult, PostKey } from '@unalgorithm/protocol';
 import { FeedItem } from '@unalgorithm/ui';
@@ -39,8 +47,8 @@ const device = (labs: boolean, aiSource: AISourceConfig = ANTHROPIC): Device => 
   labs: { factcheck: labs },
 });
 
-function runtime(d: Device): Runtime {
-  return { settings: defaultSettings(), device: d, learned: EMPTY_LEARNED, votes: {} };
+function runtime(d: Device, serverOffer: ServerOffer | null = null): Runtime {
+  return { settings: defaultSettings(), device: d, learned: EMPTY_LEARNED, votes: {}, serverOffer };
 }
 
 function bridge(over: Partial<Bridge> = {}): Bridge {
@@ -95,11 +103,16 @@ function io(onScreen: boolean) {
   };
 }
 
-async function feed(html: string, d: Device, b = bridge(), opts: { adapter?: PlatformAdapter; onScreen?: boolean } = {}) {
+async function feed(
+  html: string,
+  d: Device,
+  b = bridge(),
+  opts: { adapter?: PlatformAdapter; onScreen?: boolean; serverOffer?: ServerOffer | null } = {},
+) {
   vi.stubGlobal('IntersectionObserver', io(opts.onScreen ?? true));
   document.body.innerHTML = html;
   const c = new FeedController(opts.adapter ?? linkedinAdapter, b, mountUi);
-  const rt = runtime(d);
+  const rt = runtime(d, opts.serverOffer ?? null);
   c.start(rt);
   await vi.advanceTimersByTimeAsync(5000);
   expect(b.classify).toHaveBeenCalled();
@@ -119,8 +132,8 @@ function Item({ c, e }: { c: FeedController; e: Entry }) {
 const flush = () => act(async () => {});
 
 /** One checkable LinkedIn post with its "Check facts" action on screen. */
-async function offeredPost(b = bridge()) {
-  const f = await feed(feed2026(postCard(CLAIMS)), device(true), b);
+async function offeredPost(b = bridge(), d = device(true), serverOffer: ServerOffer | null = null) {
+  const f = await feed(feed2026(postCard(CLAIMS)), d, b, { serverOffer });
   // React's act waits on real timers.
   vi.useRealTimers();
   const e = entryOf(f.c, CLAIMS);
@@ -296,6 +309,64 @@ describe('Check facts: price first, then the check', () => {
     await user.click(screen.getByRole('button', { name: 'Check' }));
     await flush();
     expect(screen.getByText("Couldn't reach UnAlgorithm. Reload the page.")).toBeTruthy();
+    c.stop();
+  });
+});
+
+const ORIGIN = 'https://unalgo.example';
+const SERVER: AISourceConfig = { kind: 'server', baseUrl: ORIGIN };
+const FREE_OFFER: ServerOffer = { origin: ORIGIN, billing: false, factcheck: true, factcheckPrice: null };
+const BILLING_OFFER: ServerOffer = {
+  origin: ORIGIN,
+  billing: true,
+  factcheck: true,
+  factcheckPrice: { typicalMicros: 240_000, maxMicros: 400_000 },
+};
+
+describe('Check facts: a server source follows its offer (P3-22)', () => {
+  it('test_feed_server_offer_shows_free_price', async () => {
+    const { c, b } = await offeredPost(bridge(), device(true, SERVER), FREE_OFFER);
+    expect(screen.getByText('Free on this server')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check' })).toBeTruthy();
+    expect(b.factcheck).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it('test_feed_billing_server_shows_price_and_cap', async () => {
+    const { c, b } = await offeredPost(bridge(), device(true, SERVER), BILLING_OFFER);
+    expect(screen.getByText('About $0.24, at most $0.40')).toBeTruthy();
+    expect(b.factcheck).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it('test_feed_no_offer_no_button', async () => {
+    for (const serverOffer of [null, { ...FREE_OFFER, factcheck: false }]) {
+      const { c } = await feed(feed2026(postCard(CLAIMS)), device(true, SERVER), bridge(), { serverOffer });
+      expect(c.mounted()).toHaveLength(0);
+      expect(offered(c)).toHaveLength(0);
+      c.stop();
+    }
+  });
+
+  it('test_feed_follows_server_offer_changes', async () => {
+    const { c, b, rt } = await feed(feed2026(postCard(CLAIMS)), device(true, SERVER), bridge());
+    expect(c.mounted()).toHaveLength(0);
+    // What bootstrap's `serverOfferItem.watch` does: set `rt.serverOffer`, then `controller.update(rt)`.
+    rt.serverOffer = FREE_OFFER;
+    c.update(rt);
+    expect(offered(c).map((e) => e.id)).toStrictEqual([id(CLAIMS)]);
+    const e = entryOf(c, CLAIMS);
+    expect(c.modelFor(e).factcheck).toStrictEqual({ state: 'offered', price: 'Free on this server' });
+    // An offer the user opened but did not confirm goes away with the server's offer.
+    e.handlers?.onFactcheck?.('start');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.modelFor(e).factcheck?.state).toBe('confirming');
+    rt.serverOffer = null;
+    c.update(rt);
+    expect(c.mounted()).toHaveLength(0);
+    expect(e.factcheck).toBeUndefined();
+    expect(b.factcheck).not.toHaveBeenCalled();
+    expect(b.classify).toHaveBeenCalledTimes(1);
     c.stop();
   });
 });

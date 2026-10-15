@@ -15,7 +15,14 @@ import { type Bridge, type Entry, FeedController, type Runtime } from '../src/co
 import type { BgResponses, ClassifyItem, ClassifyItemResult } from '../src/lib/messages.ts';
 
 function runtime(over: Partial<Runtime> = {}): Runtime {
-  return { settings: defaultSettings(), device: defaultDevice('dev1'), learned: EMPTY_LEARNED, votes: {}, ...over };
+  return {
+    settings: defaultSettings(),
+    device: defaultDevice('dev1'),
+    learned: EMPTY_LEARNED,
+    votes: {},
+    serverOffer: null,
+    ...over,
+  };
 }
 
 function bridge(over: Partial<Bridge> = {}): Bridge {

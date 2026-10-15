@@ -20,6 +20,7 @@ import {
   presetOf,
   reasonKey,
   reasonLabel,
+  type ServerOffer,
   type Settings,
   snippet,
   type TabState,
@@ -65,6 +66,8 @@ export interface Runtime {
   device: Device;
   learned: LearnedPrefs;
   votes: Record<string, 'more' | 'less'>;
+  /** What the signed-in server offers (`local:serverOffer`); only a server source reads it. */
+  serverOffer: ServerOffer | null;
 }
 
 /** How the controller talks to the rest of the extension (mocked in tests). */
@@ -660,7 +663,12 @@ export class FeedController {
     if (!rt || e.kind !== 'post' || !e.post) return false;
     const state = e.el.getAttribute('data-unalgo');
     if (state !== null && state !== 'revealed' && state !== 'dimmed') return false;
-    return factcheckOffered({ device: rt.device, post: e.post, classification: e.classification });
+    return factcheckOffered({
+      device: rt.device,
+      post: e.post,
+      classification: e.classification,
+      serverOffer: rt.serverOffer,
+    });
   }
 
   private factcheckModel(e: Entry): { factcheck?: FactcheckItemModel } {
@@ -669,7 +677,7 @@ export class FeedController {
     return {
       factcheck: {
         state,
-        price: factcheckPriceLabel(this.rt?.device.aiSource ?? null) ?? '',
+        price: factcheckPriceLabel(this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null) ?? '',
         ...(e.factcheck?.message ? { message: e.factcheck.message } : {}),
       },
     };

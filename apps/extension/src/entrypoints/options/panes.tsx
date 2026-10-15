@@ -51,7 +51,7 @@ import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
-import { learnedItem, usageItem } from '../../lib/storage.ts';
+import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
 
@@ -720,14 +720,19 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
 
 export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
-  const capable = sourceCapabilities(device.aiSource).factcheck;
+  const offer = useStorageItem(serverOfferItem, null);
+  const capable = sourceCapabilities(device.aiSource, offer).factcheck;
+  const needs =
+    device.aiSource?.kind === 'server'
+      ? "Your server doesn't offer fact-check."
+      : 'Needs your own Anthropic key or a server that offers it.';
   return (
     <>
       <Title intro="Early features. They may change or go away.">Labs</Title>
-      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key, and shows the price first. AI can be wrong, so open the sources.">
+      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
         <ListRow
           title="Fact-check"
-          subtitle={capable ? undefined : 'Needs your own Anthropic key.'}
+          subtitle={capable ? undefined : needs}
           control={
             <Switch
               checked={capable && device.labs.factcheck}
