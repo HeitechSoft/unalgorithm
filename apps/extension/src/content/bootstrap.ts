@@ -35,6 +35,7 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
       window.open(reportProblemUrl(adapter, controller), '_blank', 'noopener');
     },
     factcheck: (key, input) => sendToBackground({ type: 'factcheck', key, input }),
+    perspectives: (key, req) => sendToBackground({ type: 'perspectives', key, ...req }),
     openFactcheck: async () => {
       if (!ctx.isValid) return false;
       return (await sendToBackground({ type: 'openFactcheck' }).catch(() => ({ ok: false }))).ok;

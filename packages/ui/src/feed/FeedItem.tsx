@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   type LucideIcon,
   Megaphone,
+  Newspaper,
   Repeat2,
   SearchCheck,
   Settings,
@@ -31,7 +32,10 @@ import type { WhyActionId, WhyModel } from './why.ts';
 
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
 
-/** "Check facts" on a flagged public post (Labs): offered, then the price, then running, then the outcome. */
+/**
+ * A Labs job on a public post ("Check facts", "Other perspectives"): offered, then the price, then running, then the
+ * outcome.
+ */
 export interface FactcheckItemModel {
   state: 'offered' | 'confirming' | 'running' | 'done' | 'failed';
   /** factcheckPriceLabel(...), e.g. 'About $0.12 on your Anthropic account'. */
@@ -61,6 +65,8 @@ export interface FeedItemModel {
   vote?: 'more' | 'less';
   coach?: boolean;
   factcheck?: FactcheckItemModel;
+  /** "Other perspectives" on a public news post that shares a link (Labs); same states as fact-check. */
+  perspectives?: FactcheckItemModel;
 }
 
 export interface FeedItemHandlers {
@@ -71,6 +77,7 @@ export interface FeedItemHandlers {
   onVote(v: 'more' | 'less' | null): void;
   onCoachDone(): void;
   onFactcheck(action: FactcheckAction): void;
+  onPerspectives(action: FactcheckAction): void;
 }
 
 const REASON_GLYPH: Partial<Record<FilterReason, LucideIcon>> = {
@@ -253,8 +260,37 @@ function Row({ children, bar, label }: { children: ReactNode; bar?: boolean; lab
   );
 }
 
-/** The quiet fact-check row. A check never starts without the price shown and a second click on "Check". */
-function FactcheckRow({ model, on }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void }) {
+/** Per-feature words of a job row. Copy is a draft (D37). */
+interface JobWords {
+  /** The row's group label. */
+  label: 'Fact-check' | 'Other perspectives';
+  start: 'Check facts' | 'Other perspectives';
+  confirm: 'Check' | 'Compare';
+  running: 'Checking facts…' | 'Comparing coverage…';
+  done: 'Checked.' | 'Compared.';
+  icon: LucideIcon;
+}
+
+const FACTCHECK_WORDS: JobWords = {
+  label: 'Fact-check',
+  start: 'Check facts',
+  confirm: 'Check',
+  running: 'Checking facts…',
+  done: 'Checked.',
+  icon: SearchCheck,
+};
+
+const PERSPECTIVES_WORDS: JobWords = {
+  label: 'Other perspectives',
+  start: 'Other perspectives',
+  confirm: 'Compare',
+  running: 'Comparing coverage…',
+  done: 'Compared.',
+  icon: Newspaper,
+};
+
+/** The quiet row of a Labs job. A job never starts without the price shown and a second click to confirm it. */
+function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void; words: JobWords }) {
   const checkRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (model.state === 'confirming') checkRef.current?.focus();
@@ -263,18 +299,18 @@ function FactcheckRow({ model, on }: { model: FactcheckItemModel; on: (action: F
     model.state === 'confirming'
       ? model.price
       : model.state === 'running'
-        ? 'Checking facts…'
+        ? words.running
         : model.state === 'done'
-          ? ['Checked.', model.message].filter(Boolean).join(' ')
+          ? [words.done, model.message].filter(Boolean).join(' ')
           : model.state === 'failed'
             ? model.message
             : '';
   return (
-    <div className="ua-row ua-row--bar ua-fc" role="group" aria-label="Fact-check">
+    <div className="ua-row ua-row--bar ua-fc" role="group" aria-label={words.label}>
       {model.state === 'offered' ? (
         <>
-          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={SearchCheck} onClick={() => on('start')}>
-            Check facts
+          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={words.icon} onClick={() => on('start')}>
+            {words.start}
           </Button>
           <Badge tone="ai">Labs</Badge>
         </>
@@ -286,7 +322,7 @@ function FactcheckRow({ model, on }: { model: FactcheckItemModel; on: (action: F
       {model.state === 'confirming' ? (
         <>
           <Button ref={checkRef} size="sm" variant="tinted" className="ua-btn ua-btn--tint" onClick={() => on('confirm')}>
-            Check
+            {words.confirm}
           </Button>
           <Button size="sm" variant="plain" className="ua-btn" onClick={() => on('cancel')}>
             Cancel
@@ -309,11 +345,12 @@ function FactcheckRow({ model, on }: { model: FactcheckItemModel; on: (action: F
 
 /** The UI UnAlgorithm adds to one feed item. Ordinary posts never render this at all. */
 export function FeedItem({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
-  // The fact-check row sits below whatever else the item shows; a plain shown post gets only the row.
+  // Job rows sit below whatever else the item shows (fact-check first); a plain shown post gets only the rows.
   return (
     <>
       <ItemMain model={model} on={on} />
-      {model.factcheck ? <FactcheckRow model={model.factcheck} on={on.onFactcheck} /> : null}
+      {model.factcheck ? <JobRow model={model.factcheck} on={on.onFactcheck} words={FACTCHECK_WORDS} /> : null}
+      {model.perspectives ? <JobRow model={model.perspectives} on={on.onPerspectives} words={PERSPECTIVES_WORDS} /> : null}
     </>
   );
 }

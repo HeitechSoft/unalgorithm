@@ -1,4 +1,5 @@
 import {
+  type Audience,
   authorKey,
   type Decision,
   type Device,
@@ -7,16 +8,17 @@ import {
   type FilterDecision,
   type FilterKey,
   factcheckOffered,
-  factcheckPriceLabel,
   HEALTHY,
   type HealthReport,
   type HealthSample,
   type HiddenItem,
   type HighlightItem,
+  jobPriceLabel,
   type LearnedPrefs,
   type ModuleInfo,
   type PostData,
   type PostSignals,
+  perspectivesOffered,
   presetOf,
   reasonKey,
   reasonLabel,
@@ -33,6 +35,7 @@ import {
   type PlatformId,
   type PostForAI,
   type PostKey,
+  type SharedLink,
   serverMayReceive,
   uuidv7,
 } from '@unalgorithm/protocol';
@@ -46,6 +49,7 @@ import {
   whyCopy,
 } from '@unalgorithm/ui';
 import type { BgError, BgResponses, ClassifyItem, SettingsAction } from '../lib/messages.ts';
+import { perspectivesRegistry } from '../lib/outlets.ts';
 import { GLOBAL_STYLE_ID, globalCss, sampleHostTheme } from './global-css.ts';
 
 const BATCH_SIZE = 6;
@@ -91,6 +95,24 @@ export interface Bridge {
   factcheck(key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<BgResponses['factcheck']>;
   /** True when the side panel opened (P3-06 `openFactcheck`); false when Chrome refused, or on a stale context. */
   openFactcheck(): Promise<boolean>;
+  /**
+   * "Other perspectives" for one post's shared link (P3-38). Only the link (URL and link-card title), the platform and
+   * the audience leave the content script, never post text; only ever called after the person confirmed the price.
+   */
+  perspectives(
+    key: PostKey,
+    req: { link: SharedLink; platform: PlatformId; audience?: Audience },
+  ): Promise<BgResponses['perspectives']>;
+}
+
+/** The Labs jobs a post can offer, in the order their rows render. */
+type Job = 'factcheck' | 'perspectives';
+const JOBS: readonly Job[] = ['factcheck', 'perspectives'];
+
+/** A job's progress on one post; absent means offered (when its offer rule holds). */
+interface JobProgress {
+  state: FactcheckItemModel['state'];
+  message?: string;
 }
 
 /** Where our per-item UI lives: a custom element with a shadow root, appended as the item's last child. */
@@ -127,7 +149,9 @@ export interface Entry {
   handlers?: FeedItemHandlers;
   coach?: boolean;
   /** "Check facts" progress; absent means offered (when the offer rule holds). */
-  factcheck?: { state: FactcheckItemModel['state']; message?: string };
+  factcheck?: JobProgress;
+  /** "Other perspectives" progress, as fact-check's. */
+  perspectives?: JobProgress;
 }
 
 type Listener = () => void;
@@ -541,16 +565,19 @@ export class FeedController {
     setAttr(e.el, 'data-unalgo', state);
     const pick = !e.applied && !!e.decision.highlight && rt.settings.display.forYou === 'ring';
     setAttr(e.el, 'data-unalgo-pick', pick ? '' : null);
-    const offered = this.factcheckOffered(e);
-    // Labs switched off, the source changed or the post folded: an offer not yet confirmed goes away.
-    if (!offered && (e.factcheck?.state === 'offered' || e.factcheck?.state === 'confirming')) e.factcheck = undefined;
+    let jobUi = false;
+    for (const job of JOBS) {
+      const offered = this.jobOffered(e, job);
+      // Labs switched off, the source changed or the post folded: an offer not yet confirmed goes away.
+      if (!offered && (e[job]?.state === 'offered' || e[job]?.state === 'confirming')) e[job] = undefined;
+      jobUi ||= offered || !!e[job];
+    }
     const wantsUi =
       state === 'collapsed' ||
       state === 'dimmed' ||
       state === 'revealed' ||
       (!e.applied && !!e.decision.highlight && rt.settings.display.forYou !== 'off') ||
-      offered ||
-      !!e.factcheck;
+      jobUi;
     if (wantsUi && !e.ui) {
       e.ui = this.mountUi(e);
       e.handlers = this.handlersFor(e);
@@ -653,63 +680,84 @@ export class FeedController {
       forYouStyle: rt.settings.display.forYou,
       ...(e.vote ? { vote: e.vote } : {}),
       ...(e.coach ? { coach: true } : {}),
-      ...this.factcheckModel(e),
+      ...this.jobModel(e, 'factcheck'),
+      ...this.jobModel(e, 'perspectives'),
     };
   }
 
-  /** The P3-05 offer rule, on a post that is not folded away (shown, revealed or dimmed). */
-  private factcheckOffered(e: Entry): boolean {
+  /**
+   * A job's offer rule (fact-check: P3-05; perspectives: P3-36, with this build's registry), on a post that is not
+   * folded away (shown, revealed or dimmed).
+   */
+  private jobOffered(e: Entry, job: Job): boolean {
     const rt = this.rt;
     if (!rt || e.kind !== 'post' || !e.post) return false;
     const state = e.el.getAttribute('data-unalgo');
     if (state !== null && state !== 'revealed' && state !== 'dimmed') return false;
-    return factcheckOffered({
-      device: rt.device,
-      post: e.post,
-      classification: e.classification,
-      serverOffer: rt.serverOffer,
-    });
+    const offer = { device: rt.device, post: e.post, classification: e.classification, serverOffer: rt.serverOffer };
+    return job === 'factcheck'
+      ? factcheckOffered(offer)
+      : perspectivesOffered({ ...offer, registryReady: perspectivesRegistry() !== null });
   }
 
-  private factcheckModel(e: Entry): { factcheck?: FactcheckItemModel } {
-    const state = e.factcheck?.state ?? 'offered';
-    if ((state === 'offered' || state === 'confirming') && !this.factcheckOffered(e)) return {};
+  private jobModel(e: Entry, job: Job): { factcheck?: FactcheckItemModel } | { perspectives?: FactcheckItemModel } {
+    const state = e[job]?.state ?? 'offered';
+    if ((state === 'offered' || state === 'confirming') && !this.jobOffered(e, job)) return {};
     return {
-      factcheck: {
+      [job]: {
         state,
-        price: factcheckPriceLabel(this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null) ?? '',
-        ...(e.factcheck?.message ? { message: e.factcheck.message } : {}),
+        price: jobPriceLabel(job, this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null) ?? '',
+        ...(e[job]?.message ? { message: e[job].message } : {}),
       },
     };
   }
 
-  /** Never automatic: `confirm`, after the price was shown, is the only way a check starts. */
-  private async onFactcheck(e: Entry, action: FactcheckAction): Promise<void> {
+  /** What a confirmed job sends: fact-check the post for AI; perspectives only the shared link, built field by field. */
+  private sendJob(post: PostData, job: Job): Promise<{ ok: true } | { ok: false; error: BgError }> {
+    if (job === 'factcheck') {
+      const { ref: _ref, ...input } = toPostForAI(post, {
+        ref: 'x',
+        redactMentions: (this.rt as Runtime).settings.ai.redactMentions,
+      });
+      return this.bridge.factcheck(post.id, input);
+    }
+    const shared = post.sharedLink as NonNullable<PostData['sharedLink']>;
+    const title = shared.title;
+    return this.bridge.perspectives(post.id, {
+      link: { url: shared.url, ...(title ? { title } : {}) },
+      platform: post.platform,
+      ...(post.audience ? { audience: post.audience } : {}),
+    });
+  }
+
+  /** Never automatic: `confirm`, after the price was shown, is the only way a job starts. */
+  private async onJob(e: Entry, job: Job, action: FactcheckAction): Promise<void> {
     const rt = this.rt;
-    if (!rt || !e.post) return;
+    const post = e.post;
+    if (!rt || !post) return;
     switch (action) {
       case 'start':
       case 'retry':
-        e.factcheck = { state: 'confirming' };
+        e[job] = { state: 'confirming' };
         break;
       case 'cancel':
-        e.factcheck = undefined;
+        e[job] = undefined;
         break;
       case 'open': {
+        // Both jobs show their result in the same side panel.
         const opened = await this.bridge.openFactcheck().catch(() => false);
-        if (!opened && e.factcheck?.state === 'done') e.factcheck = { state: 'done', message: FACTCHECK_TOOLBAR_HINT };
+        if (!opened && e[job]?.state === 'done') e[job] = { state: 'done', message: FACTCHECK_TOOLBAR_HINT };
         break;
       }
       case 'confirm': {
-        if (e.factcheck?.state !== 'confirming' || !this.factcheckOffered(e)) return;
-        e.factcheck = { state: 'running' };
+        if (e[job]?.state !== 'confirming' || !this.jobOffered(e, job)) return;
+        e[job] = { state: 'running' };
         this.notify();
-        const { ref: _ref, ...input } = toPostForAI(e.post, { ref: 'x', redactMentions: rt.settings.ai.redactMentions });
         try {
-          const res = await this.bridge.factcheck(e.post.id, input);
-          e.factcheck = res.ok ? { state: 'done' } : { state: 'failed', message: res.error.message };
+          const res = await this.sendJob(post, job);
+          e[job] = res.ok ? { state: 'done' } : { state: 'failed', message: res.error.message };
         } catch {
-          e.factcheck = { state: 'failed', message: FACTCHECK_STALE };
+          e[job] = { state: 'failed', message: FACTCHECK_STALE };
         }
         break;
       }
@@ -734,7 +782,8 @@ export class FeedController {
         e.coach = false;
         this.bridge.coachMarkShown();
       },
-      onFactcheck: (action) => void this.onFactcheck(e, action),
+      onFactcheck: (action) => void this.onJob(e, 'factcheck', action),
+      onPerspectives: (action) => void this.onJob(e, 'perspectives', action),
     };
   }
 

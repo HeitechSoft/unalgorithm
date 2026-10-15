@@ -1,6 +1,7 @@
 /**
  * Settings → Labs (P3-05): the Fact-check switch works only with a source that can fact-check (an own Anthropic key in
  * RM1), writes the device-local `labs.factcheck` flag, and otherwise points to AI setup. Settings search finds the pane.
+ * The Other perspectives row (P3-40) shows only when this build has a usable outlet registry.
  */
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { type AISourceConfig, type Device, defaultDevice } from '@unalgorithm/core';
@@ -11,6 +12,16 @@ import { App } from '../src/entrypoints/options/App.tsx';
 import { LabsPane } from '../src/entrypoints/options/panes.tsx';
 import { serverOfferItem } from '../src/lib/storage.ts';
 
+/** Whether this build has a usable registry (the fictional fixture); none by default, as in store builds today. */
+const registry = vi.hoisted(() => ({ ready: false }));
+vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
+  const { FIXTURE_REGISTRY } = await import('@unalgorithm/outlets/testing');
+  return {
+    ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
+    perspectivesRegistry: () => (registry.ready ? FIXTURE_REGISTRY : null),
+  };
+});
+
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
   sendToBackground: vi.fn(async () => undefined),
@@ -20,6 +31,7 @@ vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
 const device = (aiSource: AISourceConfig | null): Device => ({ ...defaultDevice('dev1'), aiSource });
 
 afterEach(() => {
+  registry.ready = false;
   cleanup();
   location.hash = '';
   fakeBrowser.reset();
@@ -98,5 +110,54 @@ describe('Labs pane', () => {
     const nav = screen.getByRole('navigation', { name: 'Settings' });
     const items = [...nav.querySelectorAll('.sidebar-item:not(.sidebar-identity)')].map((b) => b.textContent);
     expect(items).toEqual(['Labs']);
+  });
+
+  it('test_labs_perspectives_row_hidden_without_registry', () => {
+    render(<LabsPane device={device({ kind: 'anthropic', model: null })} saveDevice={vi.fn(async () => {})} />);
+    expect(screen.queryByText('Other perspectives')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Other perspectives' })).toBeNull();
+    const fc = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
+    expect(fc.disabled).toBe(false);
+  });
+
+  it('test_labs_perspectives_switch_and_disabled', async () => {
+    registry.ready = true;
+    const user = setupUser();
+    let stored = device({ kind: 'anthropic', model: null });
+    const saveDevice = vi.fn(async (m: (d: Device) => void) => {
+      const next = structuredClone(stored);
+      m(next);
+      stored = next;
+    });
+    render(<LabsPane device={stored} saveDevice={saveDevice} />);
+    expect(screen.getByText(/sends only the link and its title/)).toBeTruthy();
+    const sw = screen.getByRole('switch', { name: 'Other perspectives' }) as HTMLButtonElement;
+    expect(sw.disabled).toBe(false);
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    await user.click(sw);
+    expect(saveDevice).toHaveBeenCalledTimes(1);
+    expect(stored.labs).toStrictEqual({ factcheck: false, perspectives: true });
+    cleanup();
+
+    // A server whose offer has fact-check but not perspectives.
+    const origin = 'https://unalgo.example';
+    await serverOfferItem.setValue({
+      origin,
+      billing: false,
+      factcheck: true,
+      factcheckPrice: null,
+      perspectives: false,
+      perspectivesPrice: null,
+    });
+    const onServer = { ...device({ kind: 'server', baseUrl: origin }), labs: { factcheck: true, perspectives: true } };
+    const save = vi.fn(async () => {});
+    render(<LabsPane device={onServer} saveDevice={save} />);
+    await waitFor(() => expect((screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement).disabled).toBe(false));
+    const off = screen.getByRole('switch', { name: 'Other perspectives' }) as HTMLButtonElement;
+    expect(off.disabled).toBe(true);
+    expect(off.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText("Your server doesn't offer Other perspectives.")).toBeTruthy();
+    await user.click(off);
+    expect(save).not.toHaveBeenCalled();
   });
 });

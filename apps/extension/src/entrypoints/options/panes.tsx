@@ -49,6 +49,7 @@ import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
+import { perspectivesRegistry } from '../../lib/outlets.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
 import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
@@ -721,11 +722,10 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
 export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
   const offer = useStorageItem(serverOfferItem, null);
-  const capable = sourceCapabilities(device.aiSource, offer).factcheck;
-  const needs =
-    device.aiSource?.kind === 'server'
-      ? "Your server doesn't offer fact-check."
-      : 'Needs your own Anthropic key or a server that offers it.';
+  const can = sourceCapabilities(device.aiSource, offer);
+  const capable = can.factcheck;
+  const onServer = device.aiSource?.kind === 'server';
+  const needs = onServer ? "Your server doesn't offer fact-check." : 'Needs your own Anthropic key or a server that offers it.';
   return (
     <>
       <Title intro="Early features. They may change or go away.">Labs</Title>
@@ -750,6 +750,29 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
           </div>
         )}
       </ListGroup>
+      {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
+      {perspectivesRegistry() !== null ? (
+        <ListGroup footer="Adds Other perspectives to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.">
+          <ListRow
+            title="Other perspectives"
+            subtitle={
+              can.perspectives
+                ? undefined
+                : onServer
+                  ? "Your server doesn't offer Other perspectives."
+                  : 'Needs your own Anthropic key or a server that offers it.'
+            }
+            control={
+              <Switch
+                checked={can.perspectives && device.labs.perspectives}
+                disabled={!can.perspectives}
+                label="Other perspectives"
+                onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
+              />
+            }
+          />
+        </ListGroup>
+      ) : null}
     </>
   );
 }

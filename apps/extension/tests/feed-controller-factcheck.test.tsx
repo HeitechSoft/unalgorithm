@@ -70,6 +70,7 @@ function bridge(over: Partial<Bridge> = {}): Bridge {
     report: vi.fn(),
     factcheck: vi.fn(async (): Promise<BgResponses['factcheck']> => ({ ok: true, result: {} as FactcheckResult })),
     openFactcheck: vi.fn(async () => true),
+    perspectives: vi.fn(),
     ...over,
   };
 }

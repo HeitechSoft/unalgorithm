@@ -51,6 +51,7 @@ function bridge(over: Partial<Bridge> = {}): Bridge {
     report: vi.fn(),
     factcheck: vi.fn(),
     openFactcheck: vi.fn(async () => true),
+    perspectives: vi.fn(),
     ...over,
   };
 }
