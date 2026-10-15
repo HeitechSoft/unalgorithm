@@ -6,3 +6,4 @@ export * from './prompts.ts';
 export * from './retriever.ts';
 export * from './search.ts';
 export * from './validate.ts';
+export * from './validate-perspectives.ts';

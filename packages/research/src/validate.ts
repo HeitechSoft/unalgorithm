@@ -78,8 +78,23 @@ function decodeEntities(text: string): string {
 
 const QUOTE_MARKS = /["'‘’‚‛“”„‟]/g;
 
-function normalize(text: string): string {
+/** The key rule 3 de-duplicates on: case, whitespace and quote marks folded. */
+export function normalizeQuote(text: string): string {
   return canonicalText(text).toLowerCase().replace(QUOTE_MARKS, '').replace(/\s+/g, ' ').trim();
+}
+
+/** A cited quote as it is checked and kept: entities decoded, trimmed. */
+export function decodeQuote(quote: string): string {
+  return decodeEntities(quote).trim();
+}
+
+/** Why a citation's quote is refused, or null: decoded, ≤ MAX_QUOTE_WORDS words and ≤ 300 chars, matched in a snippet. */
+export function citationProblem(quote: string, snippets: readonly string[]): 'quoteTooLong' | 'quoteMismatch' | null {
+  const decoded = decodeQuote(quote);
+  const words = decoded.split(/\s+/).filter(Boolean).length;
+  if (words === 0 || words > MAX_QUOTE_WORDS || decoded.length > MAX_QUOTE_CHARS) return 'quoteTooLong';
+  if (!quoteMatches(decoded, snippets)) return 'quoteMismatch';
+  return null;
 }
 
 /**
@@ -87,15 +102,15 @@ function normalize(text: string): string {
  * the quote into segments that must all occur, in order, in the same snippet. No fuzzy matching.
  */
 export function quoteMatches(quote: string, snippets: readonly string[]): boolean {
-  // NFKC (inside `normalize`) turns `…` into `...`.
-  const q = normalize(quote).replace(/^(?:\.{3}\s*)+|(?:\s*\.{3})+$/g, '');
+  // NFKC (inside `normalizeQuote`) turns `…` into `...`.
+  const q = normalizeQuote(quote).replace(/^(?:\.{3}\s*)+|(?:\s*\.{3})+$/g, '');
   const segments = q
     .split(/\s*\.{3}\s*/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (segments.length === 0) return false;
   return snippets.some((snippet) => {
-    const text = normalize(snippet);
+    const text = normalizeQuote(snippet);
     let from = 0;
     for (const segment of segments) {
       const at = text.indexOf(segment, from);
@@ -163,24 +178,19 @@ export function validateVerdicts(input: {
         stats.blockedSource++;
         continue;
       }
-      const quote = decodeEntities(citation.quote).trim();
-      const words = quote.split(/\s+/).filter(Boolean).length;
-      if (words === 0 || words > MAX_QUOTE_WORDS || quote.length > MAX_QUOTE_CHARS) {
-        stats.quoteTooLong++;
+      const problem = citationProblem(citation.quote, source.snippets);
+      if (problem) {
+        stats[problem]++;
         continue;
       }
-      if (!quoteMatches(quote, source.snippets)) {
-        stats.quoteMismatch++;
-        continue;
-      }
-      valid.push({ sourceId: source.id, quote, domain: source.domain });
+      valid.push({ sourceId: source.id, quote: decodeQuote(citation.quote), domain: source.domain });
     }
 
     // Rule 3: de-duplicate on (sourceId, normalized quote), then cap.
     const seen = new Set<string>();
     const kept: typeof valid = [];
     for (const c of valid) {
-      const key = `${c.sourceId}\u0000${normalize(c.quote)}`;
+      const key = `${c.sourceId}\u0000${normalizeQuote(c.quote)}`;
       if (seen.has(key) || kept.length >= MAX_CITATIONS_PER_CLAIM) {
         stats.duplicate++;
         continue;
