@@ -83,6 +83,8 @@ export interface ServerOffer {
   billing: boolean;
   factcheck: boolean;
   factcheckPrice: JobPrice | null;
+  perspectives: boolean;
+  perspectivesPrice: JobPrice | null;
 }
 
 /** Null without an account or while it needs signing in again. */
@@ -94,12 +96,22 @@ export function serverOfferFrom(account: { origin: string; info: ServerInfo; nee
     billing: info.billing,
     factcheck: info.capabilities.factcheck === true,
     factcheckPrice: info.jobPrices?.factcheck ?? null,
+    perspectives: info.capabilities.perspectives === true,
+    perspectivesPrice: info.jobPrices?.perspectives ?? null,
   };
 }
 
-/** True when `offer` is for this server source's origin and it offers fact-check (with a price on a billing server). */
-function serverCanFactcheck(baseUrl: string, offer: ServerOffer | null): boolean {
-  if (!offer?.factcheck || (offer.billing && offer.factcheckPrice === null)) return false;
+/** An on-demand job task a server may offer. */
+export type ServerJobTask = 'factcheck' | 'perspectives';
+
+/** The price a server offer carries for `task` (null when it advertises none). */
+export function offerPrice(task: ServerJobTask, offer: ServerOffer): JobPrice | null {
+  return task === 'factcheck' ? offer.factcheckPrice : offer.perspectivesPrice;
+}
+
+/** True when `offer` is for this server source's origin and it offers `task` (with a price on a billing server). */
+function serverCan(task: ServerJobTask, baseUrl: string, offer: ServerOffer | null): boolean {
+  if (!offer?.[task] || (offer.billing && offerPrice(task, offer) === null)) return false;
   try {
     return offer.origin === new URL(baseUrl).origin;
   } catch {
@@ -108,16 +120,17 @@ function serverCanFactcheck(baseUrl: string, offer: ServerOffer | null): boolean
 }
 
 /**
- * No source can do nothing; an own Anthropic key classifies and fact-checks with web search; a server source
- * fact-checks when its signed-in server offers it (`offer`, ignored for every other kind); every other kind only
- * classifies for now (openai and openai-compatible: RM4).
+ * No source can do nothing; an own Anthropic key classifies, fact-checks and compares perspectives with web search; a
+ * server source does each job task its signed-in server offers (`offer`, ignored for every other kind); every other
+ * kind only classifies for now (openai and openai-compatible: RM4).
  */
 export function sourceCapabilities(cfg: AISourceConfig | null, offer: ServerOffer | null = null): SourceCapabilities {
   if (!cfg) return { classify: false, factcheck: false, perspectives: false, webSearch: false };
-  if (cfg.kind === 'anthropic') return { classify: true, factcheck: true, perspectives: false, webSearch: true };
+  if (cfg.kind === 'anthropic') return { classify: true, factcheck: true, perspectives: true, webSearch: true };
   if (cfg.kind === 'server') {
-    const factcheck = serverCanFactcheck(cfg.baseUrl, offer);
-    return { classify: true, factcheck, perspectives: false, webSearch: factcheck };
+    const factcheck = serverCan('factcheck', cfg.baseUrl, offer);
+    const perspectives = serverCan('perspectives', cfg.baseUrl, offer);
+    return { classify: true, factcheck, perspectives, webSearch: factcheck || perspectives };
   }
   return { classify: true, factcheck: false, perspectives: false, webSearch: false };
 }

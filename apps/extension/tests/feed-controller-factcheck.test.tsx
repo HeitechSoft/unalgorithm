@@ -44,7 +44,7 @@ const FLAGS: Record<string, Partial<Classification>> = {
 const device = (labs: boolean, aiSource: AISourceConfig = ANTHROPIC): Device => ({
   ...defaultDevice('d'),
   aiSource,
-  labs: { factcheck: labs },
+  labs: { factcheck: labs, perspectives: false },
 });
 
 function runtime(d: Device, serverOffer: ServerOffer | null = null): Runtime {
@@ -315,12 +315,21 @@ describe('Check facts: price first, then the check', () => {
 
 const ORIGIN = 'https://unalgo.example';
 const SERVER: AISourceConfig = { kind: 'server', baseUrl: ORIGIN };
-const FREE_OFFER: ServerOffer = { origin: ORIGIN, billing: false, factcheck: true, factcheckPrice: null };
+const FREE_OFFER: ServerOffer = {
+  origin: ORIGIN,
+  billing: false,
+  factcheck: true,
+  factcheckPrice: null,
+  perspectives: false,
+  perspectivesPrice: null,
+};
 const BILLING_OFFER: ServerOffer = {
   origin: ORIGIN,
   billing: true,
   factcheck: true,
   factcheckPrice: { typicalMicros: 240_000, maxMicros: 400_000 },
+  perspectives: false,
+  perspectivesPrice: null,
 };
 
 describe('Check facts: a server source follows its offer (P3-22)', () => {

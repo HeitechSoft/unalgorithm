@@ -1,5 +1,10 @@
-import { type Classification, FACTCHECK_TYPICAL_COST_MICROS, serverMayReceive } from '@unalgorithm/protocol';
-import { type AISourceConfig, type ServerOffer, sourceCapabilities } from './ai-source.ts';
+import {
+  type Classification,
+  FACTCHECK_TYPICAL_COST_MICROS,
+  PERSPECTIVES_TYPICAL_COST_MICROS,
+  serverMayReceive,
+} from '@unalgorithm/protocol';
+import { type AISourceConfig, offerPrice, type ServerJobTask, type ServerOffer, sourceCapabilities } from './ai-source.ts';
 import type { PostData } from './post.ts';
 import type { Device } from './settings/schema.ts';
 import { formatPrice } from './usage.ts';
@@ -26,16 +31,60 @@ export function factcheckOffered(i: {
   );
 }
 
+/** True when the post shares a link whose URL parses with an http: or https: protocol. */
+function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
+  const url = post.sharedLink?.url;
+  if (!url) return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The price shown before a check runs: "About $0.12 on your Anthropic account" for an own Anthropic key; "Free on this
- * server" or "About $0.24, at most $0.40" for a capable server source; null for a source that can't fact-check.
- * Copy is a draft (D21).
+ * The one offer rule for "Other perspectives": Labs flag on, a source that can compare, a usable outlet registry
+ * (`registryReady`, decided by the extension: P3-38's `perspectivesRegistry() !== null`), the classifier flagged the
+ * post as news, the post shares an http(s) link, and the post is public (decision D38).
  */
-export function factcheckPriceLabel(cfg: AISourceConfig | null, offer: ServerOffer | null = null): string | null {
-  if (!cfg || !sourceCapabilities(cfg, offer).factcheck) return null;
-  if (cfg.kind === 'anthropic') return `About ${formatPrice(FACTCHECK_TYPICAL_COST_MICROS)} on your Anthropic account`;
+export function perspectivesOffered(i: {
+  device: Pick<Device, 'aiSource' | 'labs'>;
+  post: Pick<PostData, 'platform' | 'audience' | 'sharedLink'>;
+  classification: Pick<Classification, 'isNews'> | undefined;
+  serverOffer?: ServerOffer | null;
+  registryReady: boolean;
+}): boolean {
+  const { device, post, classification, serverOffer = null, registryReady } = i;
+  return (
+    device.labs.perspectives === true &&
+    sourceCapabilities(device.aiSource, serverOffer).perspectives &&
+    registryReady &&
+    classification?.isNews === true &&
+    sharesWebLink(post) &&
+    serverMayReceive(post)
+  );
+}
+
+const OWN_KEY_TYPICAL_MICROS: Record<ServerJobTask, number> = {
+  factcheck: FACTCHECK_TYPICAL_COST_MICROS,
+  perspectives: PERSPECTIVES_TYPICAL_COST_MICROS,
+};
+
+/**
+ * The price shown before a job runs: "About $0.12" / "About $0.14 on your Anthropic account" for an own Anthropic key;
+ * "Free on this server" or "About $0.27, at most $0.50" for a capable server source; null for a source that can't do
+ * `task`. Copy is a draft (D21, D37).
+ */
+export function jobPriceLabel(task: ServerJobTask, cfg: AISourceConfig | null, offer: ServerOffer | null = null): string | null {
+  if (!cfg || !sourceCapabilities(cfg, offer)[task]) return null;
+  if (cfg.kind === 'anthropic') return `About ${formatPrice(OWN_KEY_TYPICAL_MICROS[task])} on your Anthropic account`;
   if (cfg.kind !== 'server' || !offer) return null;
   if (!offer.billing) return 'Free on this server';
-  const price = offer.factcheckPrice;
+  const price = offerPrice(task, offer);
   return price ? `About ${formatPrice(price.typicalMicros)}, at most ${formatPrice(price.maxMicros)}` : null;
 }
+
+/** The fact-check price label: `jobPriceLabel('factcheck', …)`. */
+export const factcheckPriceLabel = (cfg: AISourceConfig | null, offer: ServerOffer | null = null): string | null =>
+  jobPriceLabel('factcheck', cfg, offer);

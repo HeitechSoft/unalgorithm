@@ -51,7 +51,7 @@ describe('Labs pane', () => {
       const user = setupUser();
       const saveDevice = vi.fn(async () => {});
       // A flag stored earlier stays stored, but the switch shows off.
-      const d = { ...device(source), labs: { factcheck: true } };
+      const d = { ...device(source), labs: { factcheck: true, perspectives: false } };
       render(<LabsPane device={d} saveDevice={saveDevice} />);
       const sw = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
       expect(sw.disabled).toBe(true);
@@ -76,7 +76,14 @@ describe('Labs pane', () => {
     expect(screen.getByText("Your server doesn't offer fact-check.")).toBeTruthy();
     // The server starts offering it: the switch turns on live, without a reload (once the first read has settled).
     await act(async () => {});
-    await serverOfferItem.setValue({ origin, billing: false, factcheck: true, factcheckPrice: null });
+    await serverOfferItem.setValue({
+      origin,
+      billing: false,
+      factcheck: true,
+      factcheckPrice: null,
+      perspectives: false,
+      perspectivesPrice: null,
+    });
     await waitFor(() => expect((screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByText("Your server doesn't offer fact-check.")).toBeNull();
     expect(screen.queryByRole('button', { name: 'Set up AI' })).toBeNull();

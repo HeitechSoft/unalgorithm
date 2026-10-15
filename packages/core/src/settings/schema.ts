@@ -119,7 +119,7 @@ export const SettingsSchema = z.looseObject({
 export type Settings = z.infer<typeof SettingsSchema>;
 
 /** Experimental features, per device: Labs flags are never synced (DeviceSchema is never synced or exported). */
-export const LabsSchema = z.looseObject({ factcheck: z.boolean() });
+export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
 export type Labs = z.infer<typeof LabsSchema>;
 
 /** Device-local state, never synced or exported. */
