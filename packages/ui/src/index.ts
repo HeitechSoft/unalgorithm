@@ -5,6 +5,7 @@ export * from './components/factcheck.tsx';
 export * from './components/feedback.tsx';
 export * from './components/illustrations.tsx';
 export * from './components/lists.tsx';
+export * from './components/perspectives.tsx';
 export * from './feed/FeedItem.tsx';
 export * from './feed/Toasts.tsx';
 export * from './feed/why.ts';

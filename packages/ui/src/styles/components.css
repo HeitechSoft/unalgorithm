@@ -1095,4 +1095,80 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* ---------- Other perspectives sheet (side panel); builds on the .ua-factcheck classes ---------- */
+  .ua-perspectives-story,
+  .ua-perspectives-section {
+    display: grid;
+    gap: 8px;
+  }
+  .ua-perspectives-window {
+    font: var(--ua-type-footnote);
+    color: var(--ua-text-secondary);
+  }
+  .ua-perspectives-section-title {
+    font: var(--ua-type-headline);
+  }
+  .ua-perspectives-coverage,
+  .ua-perspectives-sources {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ua-perspectives-sources {
+    gap: 4px;
+  }
+  .ua-perspectives-bucket {
+    display: grid;
+    gap: 4px;
+    padding: 10px 14px;
+    border-radius: var(--ua-radius-lg);
+    background: var(--ua-bg-grouped-raised);
+  }
+  .ua-perspectives-bucket-label {
+    font: var(--ua-type-subhead);
+    font-weight: 600;
+  }
+  .ua-perspectives-gap {
+    font: var(--ua-type-callout);
+    color: var(--ua-text-secondary);
+  }
+  .ua-perspectives-source {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 6px;
+    font: var(--ua-type-footnote);
+    overflow-wrap: anywhere;
+  }
+  .ua-perspectives-outlet {
+    color: var(--ua-text);
+  }
+  .ua-perspectives-source a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--ua-accent);
+    text-decoration: none;
+  }
+  .ua-perspectives-source a:hover .ua-factcheck-source-title {
+    text-decoration: underline;
+  }
+  .ua-perspectives-source a:focus-visible {
+    outline: 2px solid var(--ua-focus);
+    outline-offset: 2px;
+    border-radius: var(--ua-radius-sm);
+  }
+  .ua-perspectives-source a > svg {
+    width: 12px;
+    height: 12px;
+    flex: none;
+  }
+  .ua-perspectives-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
 }

@@ -97,24 +97,31 @@ function ClaimItem({ claim, sources }: { claim: FactcheckClaim; sources: Factche
       </div>
       <p className="ua-factcheck-explanation">{claim.explanation}</p>
       {claim.downgraded === 'too-few-domains' ? <p className="ua-factcheck-note">Fewer than two independent sources.</p> : null}
-      {claim.citations.map((cite, i) => {
-        const source = sources.find((s) => s.id === cite.sourceId);
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: citations have no id of their own and never reorder
-          <figure key={i} className="ua-factcheck-cite">
-            <blockquote>{cite.quote}</blockquote>
-            {source ? (
-              <figcaption>
-                <a href={source.url} target="_blank" rel="noopener noreferrer">
-                  <span className="ua-factcheck-source-title">{source.title}</span>
-                  <span className="ua-factcheck-source-domain">{source.domain}</span>
-                  <ExternalLink aria-hidden="true" />
-                </a>
-              </figcaption>
-            ) : null}
-          </figure>
-        );
-      })}
+      {claim.citations.map((cite, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: citations have no id of their own and never reorder
+        <CitationFigure key={i} quote={cite.quote} source={sources.find((s) => s.id === cite.sourceId)} />
+      ))}
     </li>
+  );
+}
+
+/**
+ * One quoted source: the quote, then a link to the page (title, then the outlet name when the source has one, else its
+ * domain). Shared by the fact-check and perspectives sheets; text renders only as React text nodes.
+ */
+export function CitationFigure({ quote, source }: { quote: string; source?: FactcheckSource & { outlet?: string } }) {
+  return (
+    <figure className="ua-factcheck-cite">
+      <blockquote>{quote}</blockquote>
+      {source ? (
+        <figcaption>
+          <a href={source.url} target="_blank" rel="noopener noreferrer">
+            <span className="ua-factcheck-source-title">{source.title}</span>
+            <span className="ua-factcheck-source-domain">{source.outlet ?? source.domain}</span>
+            <ExternalLink aria-hidden="true" />
+          </a>
+        </figcaption>
+      ) : null}
+    </figure>
   );
 }

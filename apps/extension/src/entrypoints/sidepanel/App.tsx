@@ -10,6 +10,7 @@ import {
   IconButton,
   ListFilter,
   Newspaper,
+  PerspectivesSheet,
   SearchCheck,
   SegmentedControl,
   Settings,
@@ -76,19 +77,26 @@ export function App() {
   );
 
   if (openEntry) {
+    const sheet = {
+      label: openEntry.label,
+      status: openEntry.status,
+      errorMessage: openEntry.error?.message,
+      earlier: entries
+        .filter((e) => e !== openEntry)
+        .slice(0, 4)
+        .map((e) => ({
+          label: e.task === 'perspectives' ? `Other perspectives: ${e.label}` : e.label,
+          onOpen: () => setNav({ tabId, at: Date.now(), pick: e.startedAt }),
+        })),
+      onBack: () => setNav({ tabId, at: Date.now(), pick: null }),
+    };
     return (
       <main className="panel" data-density="compact">
-        <FactcheckSheet
-          label={openEntry.label}
-          status={openEntry.status}
-          result={openEntry.result}
-          errorMessage={openEntry.error?.message}
-          earlier={entries
-            .filter((e) => e !== openEntry)
-            .slice(0, 4)
-            .map((e) => ({ label: e.label, onOpen: () => setNav({ tabId, at: Date.now(), pick: e.startedAt }) }))}
-          onBack={() => setNav({ tabId, at: Date.now(), pick: null })}
-        />
+        {openEntry.task === 'perspectives' ? (
+          <PerspectivesSheet {...sheet} result={openEntry.perspectives} />
+        ) : (
+          <FactcheckSheet {...sheet} result={openEntry.result} />
+        )}
       </main>
     );
   }
