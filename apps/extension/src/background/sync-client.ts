@@ -79,6 +79,8 @@ export async function syncOnce(
   const stored = await syncStateItem.getValue();
   if (!stored.enabled || !account) return { ok: false, problem: 'unavailable' };
   const st: SyncState = structuredClone(stored);
+  // A state saved before `resyncKnown` existed has no resync under way.
+  st.resyncKnown ??= null;
   const save = () => syncStateItem.setValue(structuredClone(st));
   if (account.needsSignIn) {
     st.problem = 'auth';
@@ -92,7 +94,12 @@ export async function syncOnce(
   }
   const { origin } = account;
 
-  /** A fast clock stamped edits the server refuses; once the clock is right again, they get stamps it accepts. */
+  /**
+   * A fast clock stamped edits the server refuses; once the clock is right again, they get stamps it accepts. Only after
+   * the server refused a stamp as clock-ahead: `local:lastHlc` also holds stamps received from other computers, so on a
+   * computer whose clock runs slow it is always far ahead of `now()`, and re-stamping there would put stamps the server
+   * accepted, and this computer's later edits, below the edits they came after (they would never be pushed).
+   */
   const recoverClock = async () => {
     const last = await lastHlcItem.getValue();
     if (last && hlcMs(last) > now() + SYNC_MAX_HLC_AHEAD_MS) await restampFutureClocks(now());
@@ -238,18 +245,22 @@ export async function syncOnce(
   };
 
   try {
-    await recoverClock();
-    let resyncing = false;
+    if (stored.problem === 'clock') await recoverClock();
+    // One resync a run. One an earlier run started and did not finish starts over from 0 (`fetchSpace`), then drops.
+    let resynced = st.resyncKnown !== null;
     let refetched = false;
     for (;;) {
       try {
-        if (resyncing || !st.spaceId) await fetchSpace();
+        if (st.resyncKnown !== null || !st.spaceId) await fetchSpace();
         const { serverKeys, gcFloorHlc } = await pull();
-        if (resyncing) {
+        if (st.resyncKnown !== null) {
+          const wasKnown = new Set(st.resyncKnown);
           await applyRemoteSettings((s, c) => {
-            const r = dropAfterResync(s, c, serverKeys, gcFloorHlc);
+            const r = dropAfterResync(s, c, serverKeys, gcFloorHlc, wasKnown);
             return r.dropped.length ? { ...r, maxHlc: null } : null;
           });
+          st.resyncKnown = null;
+          await save();
         }
         const { stale, clockAhead } = await push();
         // Another device pushed between this run's pull and its push: that change is picked up now.
@@ -260,11 +271,14 @@ export async function syncOnce(
         }
         break;
       } catch (err) {
-        if (err instanceof Resync && !resyncing) {
-          resyncing = true;
+        if (err instanceof Resync && !resynced) {
+          resynced = true;
+          // Saved with the reset `fetchSpace` makes next, before `known` is cleared.
+          st.resyncKnown = Object.keys(st.known);
         } else if (err instanceof Gone && !refetched) {
           refetched = true;
-          Object.assign(st, { spaceId: null, epoch: null, cursor: 0, known: {} });
+          // Another space: nothing the old one held was deleted from it.
+          Object.assign(st, { spaceId: null, epoch: null, cursor: 0, known: {}, resyncKnown: null });
           await save();
         } else if (err instanceof Resync || err instanceof Gone) {
           throw new Stop('server');

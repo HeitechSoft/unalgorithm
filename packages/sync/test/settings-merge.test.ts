@@ -367,12 +367,17 @@ describe('resync', () => {
       'interests.more.deleted': day(10),
       'interests.muteWords.withheld': day(10),
       'interests.less.invalid': day(10),
+      // Added while this computer could not sync, before the newest cleaned-up deletion: it never reached the server.
+      'interests.more.offline': day(20),
     };
+    s.interests.more.offline = topic('Made offline');
     const serverKeys = new Set(['interests.more.onServer', 'interests.less.cleaned']);
+    // What the server held before it started over: every entry here but the one made offline.
+    const wasKnown = new Set(Object.keys(normalizeClocks(s, clocks)).filter((k) => k !== 'interests.more.offline'));
 
-    const result = dropAfterResync(s, clocks, serverKeys, day(100));
+    const result = dropAfterResync(s, clocks, serverKeys, day(100), wasKnown);
     expect(result.dropped.sort()).toEqual(['interests.more.old', 'platforms.facebook.alwaysHide.rule']);
-    expect(Object.keys(result.settings.interests.more).sort()).toEqual(['onServer', 'recent']);
+    expect(Object.keys(result.settings.interests.more).sort()).toEqual(['offline', 'onServer', 'recent']);
     expect(result.settings.platforms.facebook.alwaysHide).toEqual({});
     expect(result.settings.display.mode).toBe('hide');
     expect(result.settings.interests.muteWords.withheld).toEqual(s.interests.muteWords.withheld);
@@ -384,6 +389,7 @@ describe('resync', () => {
       'interests.more.deleted': day(10),
       'interests.muteWords.withheld': day(10),
       'interests.less.invalid': day(10),
+      'interests.more.offline': day(20),
     });
     // Dropped entries are neither kept nor sent; the rest still is, and the kept local-only entries stay unsent.
     const after = changedItems(result.settings, result.clocks, {});
@@ -392,13 +398,14 @@ describe('resync', () => {
       'interests.more.recent',
       'interests.more.onServer',
       'interests.more.deleted',
+      'interests.more.offline',
     ]);
     expect(after.withheld).toEqual(['interests.muteWords.withheld']);
     // Pure: the inputs are left as they were.
     expect(s.interests.more.old).toEqual(topic('Old'));
 
     // A brand-new space has no cleaned-up tombstones: nothing is dropped.
-    const fresh = dropAfterResync(s, clocks, new Set(), HLC_ZERO);
+    const fresh = dropAfterResync(s, clocks, new Set(), HLC_ZERO, wasKnown);
     expect(fresh.dropped).toEqual([]);
     expect(fresh.settings).toEqual(s);
     expect(fresh.clocks).toEqual(normalizeClocks(s, clocks));

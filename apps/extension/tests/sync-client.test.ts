@@ -419,6 +419,28 @@ describe('push', () => {
     expect(st.problem).toBeNull();
     expect(st.known['display.showAuthor']).toBe(hlc(NOW, LOCAL));
   });
+
+  it('test_slow_clock_keeps_received_stamps', async () => {
+    // The server and another computer have the right time; this computer runs an hour slow.
+    server = createFakeSyncServer({ now: () => NOW });
+    deps = makeDeps(server);
+    const slow = NOW - 3600_000;
+    vi.setSystemTime(slow);
+    const clock = { now: () => slow };
+    server.put(live('display.mode', 'hide', hlc(NOW)));
+    expect(await run({}, clock)).toMatchObject({ ok: true, pulled: 1 });
+    expect(await run({}, clock)).toMatchObject({ ok: true });
+    // A stamp the server accepted is never re-stamped here: only stamps it refused as clock-ahead are.
+    expect((await settingsClocksItem.getValue())['display.mode']).toBe(hlc(NOW));
+
+    // Edited here after the other computer's edit: the HLC stamps it above the received stamp, so it wins everywhere.
+    await updateSettings((s) => {
+      s.display.mode = 'dim';
+    });
+    expect(await run({}, clock)).toMatchObject({ ok: true, pushed: 1 });
+    expect(server.item('display.mode')).toMatchObject({ value: 'dim', hlc: hlc(NOW, LOCAL, 1) });
+    expect((await settingsClocksItem.getValue())['display.mode']).toBe(hlc(NOW, LOCAL, 1));
+  });
 });
 
 describe('resync and errors', () => {
@@ -457,6 +479,37 @@ describe('resync and errors', () => {
     // A second 410 in the same run is a server problem.
     server.failNext(SYNC_CHANGES_PATH, { status: 410, body: { code: 'resync-required', message: '' } }, 2);
     expect(await run()).toStrictEqual({ ok: false, problem: 'server' });
+  });
+
+  it('test_interrupted_resync_drops_on_next_run_and_keeps_unsent_entries', async () => {
+    expect(await run()).toMatchObject({ ok: true });
+    const old = hlc(NOW - 9000, LOCAL);
+    // Added while this computer could not sync: older than the cleaned-up deletion, but never on the server.
+    const offline = hlc(NOW - 8000, LOCAL);
+    await seedLocal(
+      (s) => {
+        s.interests.more.old = topic('Old');
+        s.interests.more.offline = topic('Offline');
+      },
+      { 'interests.more.old': old, 'interests.more.offline': offline },
+    );
+    await syncStateItem.setValue({ ...(await state()), known: { 'interests.more.old': old } });
+    server.newEpoch(hlc(NOW - 5000));
+
+    // The 410, then the download from 0 fails: the run ends before it could drop anything.
+    server.failNext(SYNC_CHANGES_PATH, { status: 410, body: { code: 'resync-required', message: '' } });
+    server.failNext(SYNC_CHANGES_PATH, 'network');
+    expect(await run()).toStrictEqual({ ok: false, problem: 'network' });
+    expect(pushedKeys()).toStrictEqual([]);
+
+    // The next run finishes the resync: the entry deleted elsewhere goes, the one that never reached the server stays.
+    expect(await run()).toMatchObject({ ok: true, pushed: 1 });
+    const more = (await readSettings()).interests.more;
+    expect(more).not.toHaveProperty('old');
+    expect(more.offline).toStrictEqual(topic('Offline'));
+    expect(pushedKeys()).toStrictEqual(['interests.more.offline']);
+    expect(server.item('interests.more.old')).toBeUndefined();
+    expect((await state()).resyncKnown).toBeNull();
   });
 
   it('test_sync_http_problems', async () => {

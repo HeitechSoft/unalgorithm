@@ -154,20 +154,23 @@ export function applyRemoteItems(
  * its clock. Its tombstone was cleaned up after 90 days, so the entry was deleted on another device, and sending it
  * again would bring it back. An entry edited after the newest cleaned-up deletion cannot be the one deleted, so it
  * stays and is pushed, as are plain settings. A brand-new space has `gcFloorHlc = HLC_ZERO`: nothing is dropped.
- * An entry `changedItems` never sends (`invalid` or `withheld`) never reached the server, so no other device deleted
- * it: it stays, local only.
+ * Only an entry the server held before it started over (`wasKnown`: the client's `known` keys then) can have been
+ * deleted elsewhere. One that never reached it, such as an entry added while this computer could not sync or had sync
+ * turned off, stays and is pushed however old its clock; so does one `changedItems` never sends (`invalid` or
+ * `withheld`), which stays local only.
  */
 export function dropAfterResync(
   settings: Settings,
   clocks: SettingsClocks,
   serverKeys: ReadonlySet<string>,
   gcFloorHlc: string,
+  wasKnown: ReadonlySet<string>,
 ): { settings: Settings; clocks: ItemClocks; dropped: string[] } {
   const norm = normalizeClocks(settings, clocks);
   const next = structuredClone(settings);
   const dropped: string[] = [];
   for (const [key, hlc] of Object.entries(norm)) {
-    if (!isSettingsEntryKey(key) || serverKeys.has(key) || compareHlc(hlc, gcFloorHlc) > 0) continue;
+    if (!isSettingsEntryKey(key) || !wasKnown.has(key) || serverKeys.has(key) || compareHlc(hlc, gcFloorHlc) > 0) continue;
     // A tombstone has nothing to drop, and an entry that is never sent was never on the server.
     const item = outgoingItem(next, key, hlc);
     if (typeof item === 'string' || item.deleted) continue;

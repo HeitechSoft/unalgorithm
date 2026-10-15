@@ -54,6 +54,12 @@ export interface SyncState {
   problem: SyncProblem | null;
   /** Set by CL3-20 when the person turns sync on; while set, the pull lets the server's copy win. */
   firstPull: boolean;
+  /**
+   * While a resync after `410 resync-required` is under way: the item keys the server held before it started over
+   * (`known` then). Kept until the download from 0 is applied, so a resync cut short still drops entries deleted
+   * elsewhere on the next run, and an entry that never reached the server is never taken for one.
+   */
+  resyncKnown: string[] | null;
 }
 export const DEFAULT_SYNC_STATE: SyncState = {
   enabled: false,
@@ -66,6 +72,7 @@ export const DEFAULT_SYNC_STATE: SyncState = {
   lastSyncAt: null,
   problem: null,
   firstPull: false,
+  resyncKnown: null,
 };
 export const syncStateItem = storage.defineItem<SyncState>('local:syncState', { fallback: DEFAULT_SYNC_STATE });
 
