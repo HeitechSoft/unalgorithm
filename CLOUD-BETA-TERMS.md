@@ -16,6 +16,11 @@ at any time.
 The beta is free. Each account has daily limits on how much it can use. When you reach a limit, the Cloud stops
 answering for that account until the next day (UTC).
 
+## Starter credit
+
+Starter credit: see https://unalgorithmfeed.com/credits. It is promotional, has no cash value, expires after 90 days and
+may be withheld or removed when it is abused.
+
 ## No availability promise
 
 The beta is a test. The Cloud may be slow, stop working, or change without notice. Don't rely on it for anything

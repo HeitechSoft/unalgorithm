@@ -1,6 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CLOUD_BETA_DOCUMENTS, CLOUD_BETA_NOTICE, CLOUD_BETA_TERMS, siteUrl, WEBSITE_ORIGIN } from '../src/index.ts';
+import {
+  CLOUD_BETA_DOCUMENTS,
+  CLOUD_BETA_NOTICE,
+  CLOUD_BETA_TERMS,
+  CLOUD_FOOTER_LINKS,
+  CREDITS_PAGE,
+  STARTER_CREDIT,
+  siteUrl,
+  WEBSITE_ORIGIN,
+} from '../src/index.ts';
 
 /**
  * The Cloud beta notice and terms (CL1-30, R47a): the website renders them from these files at these paths, with its own
@@ -21,6 +30,7 @@ describe('site documents', () => {
     for (const doc of CLOUD_BETA_DOCUMENTS) {
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
+    expect(read(CREDITS_PAGE.source).split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
   });
 
   it('test_site_urls', () => {
@@ -30,6 +40,15 @@ describe('site documents', () => {
       'https://unalgorithmfeed.com/cloud/beta-terms',
     ]);
     expect(CLOUD_BETA_DOCUMENTS.map((doc) => doc.linkText)).toEqual(['Beta privacy notice', 'Beta terms']);
+    expect(siteUrl(CREDITS_PAGE)).toBe('https://unalgorithmfeed.com/credits');
+  });
+
+  it('test_footer_links_credits', () => {
+    expect(CLOUD_FOOTER_LINKS.map((doc) => [doc.linkText, doc.path])).toEqual([
+      ['Beta privacy notice', '/cloud/beta-privacy'],
+      ['Beta terms', '/cloud/beta-terms'],
+      ['How credits work', '/credits'],
+    ]);
   });
 });
 
@@ -76,7 +95,33 @@ describe('cloud beta documents', () => {
     ]) {
       expect(text, topic).toContain(topic);
     }
-    expect(text).not.toMatch(/\$|\bprice|\brefund|\bcredit/i);
+    // Prices live only on "How credits work"; the terms mention credit only in their "Starter credit" section.
+    const starter = terms.slice(terms.indexOf('## Starter credit'), terms.indexOf('## No availability promise'));
+    expect(starter).toContain('## Starter credit');
+    expect(flat(terms.replace(starter, ''))).not.toMatch(/\$|\bprice|\brefund|\bcredit/i);
+  });
+
+  it('test_beta_notice_lists_credit_records', () => {
+    const stores = flat(notice.slice(notice.indexOf('## 3.'), notice.indexOf('## 4.')));
+    expect(stores).toContain(
+      'A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount charged; never the posts.',
+    );
+    expect(stores).toContain(
+      "Ledger entries cannot be changed or deleted; they stay after the account is deleted, under the account's internal id, for accounting.",
+    );
+    expect(stores).toContain(
+      'To give the starter credit once per person we keep a keyed hash of your normalised email address (not the address), also after the account is deleted, so the same mailbox cannot claim it again.',
+    );
+    // The deletion sentence names what stays.
+    expect(flat(notice)).toContain(
+      'removes all of it at once, except the credit ledger and the keyed hash described in section 3',
+    );
+
+    const text = flat(terms);
+    expect(text).toContain(`Starter credit: see ${siteUrl(CREDITS_PAGE)}.`);
+    expect(text).toContain(
+      `It is promotional, has no cash value, expires after ${STARTER_CREDIT.expiresAfterDays} days and may be withheld or removed when it is abused.`,
+    );
   });
 
   it('test_beta_docs_names_and_retention_claims', () => {

@@ -5,6 +5,7 @@ export * from './classify/input.ts';
 export * from './classify/profile.ts';
 export * from './classify/prompt.ts';
 export * from './classify/schema.ts';
+export * from './credit-facts.ts';
 export * from './decide.ts';
 export * from './hash.ts';
 export * from './health.ts';

@@ -175,7 +175,8 @@ effect by itself:
 
 - UnAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
 - The account page and the extension's "about N posts" use the time they show it.
-- The website is built from `main`.
+- The website is built from `main`: its "How credits work" page (`docs/site/credits.md`) is filled at build time by
+  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change.
 
 ### The rules
 
