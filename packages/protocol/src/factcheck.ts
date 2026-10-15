@@ -12,6 +12,11 @@ export const MAX_CITATIONS_PER_CLAIM = 4;
 export const MAX_RETRIEVED_SOURCES = 20;
 /** Typical own-key Anthropic cost of one check (spec: ~$0.12), shown before a check runs. */
 export const FACTCHECK_TYPICAL_COST_MICROS = 120_000;
+/** What a server's link check found for a URL: only `dead` removes citations. */
+export const LINK_STATUSES = ['live', 'dead', 'unknown'] as const;
+export type LinkStatus = (typeof LINK_STATUSES)[number];
+/** A check stops before its next model call once it has cost this much (decision 1: hold cap $0.40 at 2×). */
+export const FACTCHECK_COST_CEILING_MICROS = 200_000;
 
 export const FactcheckSourceSchema = z.object({
   id: z.string().regex(/^s\d{1,2}$/),

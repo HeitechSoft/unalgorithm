@@ -2,12 +2,14 @@ import { type AIClient, AIError, extractJson, type StructuredResult, toStrictJso
 import { canonicalText, clipText, makeNonce } from '@unalgorithm/core';
 import {
   type FactcheckResult,
+  type LinkStatus,
   MAX_FACTCHECK_CLAIMS,
   MAX_FACTCHECK_SEARCHES,
   MAX_MODEL_CHARS,
   type NormalizedUsage,
   type PostForAI,
   costMicros as priceOf,
+  type RetrievedSource,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
 import type { z } from 'zod';
@@ -22,7 +24,7 @@ import {
   VerdictsSchema,
 } from './prompts.ts';
 import type { Retriever } from './retriever.ts';
-import { type ValidationStats, validateVerdicts } from './validate.ts';
+import { type RawVerdict, sourceOrder, type ValidationStats, validateVerdicts } from './validate.ts';
 
 export const FACTCHECK_MODELS = {
   claims: 'claude-haiku-5-5',
@@ -48,7 +50,14 @@ export interface FactcheckDeps {
   nonce?: string;
   /** Default FACTCHECK_DEADLINE_MS; short in tests. */
   deadlineMs?: number;
+  /** Stop before a model call once the run has cost this much (priced runs only). Default: no ceiling (own key). */
+  maxCostMicros?: number;
+  /** The server's link check (P3-13). Default: none; every source counts as live. */
+  linkCheck?: LinkChecker;
 }
+
+/** Status of each URL, by URL; a URL left out counts as `unknown`. Must settle (or reject) when `signal` aborts. */
+export type LinkChecker = (urls: readonly string[], signal: AbortSignal) => Promise<ReadonlyMap<string, LinkStatus>>;
 
 export interface FactcheckOptions {
   signal?: AbortSignal;
@@ -67,6 +76,7 @@ const NO_STATS: ValidationStats = {
   raw: 0,
   kept: 0,
   unknownSource: 0,
+  deadLink: 0,
   blockedSource: 0,
   quoteTooLong: 0,
   quoteMismatch: 0,
@@ -153,6 +163,35 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
     }
   }
 
+  /** The ceiling: an unpriced run (`cost` undefined) has none. */
+  function checkCeiling(): void {
+    if (deps.maxCostMicros !== undefined && cost !== undefined && cost >= deps.maxCostMicros) {
+      throw new AIError('truncated', 'The check reached its cost limit.');
+    }
+  }
+
+  /** Ids of the cited sources whose URL the link check found dead. A broken checker never fails a check. */
+  async function deadSources(sources: readonly RetrievedSource[], verdicts: readonly RawVerdict[]): Promise<Set<string>> {
+    const dead = new Set<string>();
+    if (!deps.linkCheck) return dead;
+    const citedIds = new Set(verdicts.flatMap((v) => v.citations.map((c) => c.sourceId)));
+    const cited = sources.filter((s) => citedIds.has(s.id)).sort((a, b) => sourceOrder(a.id) - sourceOrder(b.id));
+    const urls = [...new Set(cited.map((s) => s.url))];
+    if (urls.length === 0) return dead;
+    let statuses: ReadonlyMap<string, LinkStatus>;
+    try {
+      statuses = await untilAborted(deps.linkCheck(urls, signal), signal);
+    } catch (err) {
+      if (signal.aborted) {
+        if (timedOut) throw new AIError('timeout', 'The fact-check took too long.', { cause: err });
+        throw err;
+      }
+      return dead;
+    }
+    for (const s of cited) if (statuses.get(s.url) === 'dead') dead.add(s.id);
+    return dead;
+  }
+
   async function structured<T>(
     model: string,
     schema: z.ZodType<T>,
@@ -192,10 +231,12 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
       };
     }
 
+    checkCeiling();
     const research = await step(models.research, () =>
       deps.retriever.retrieve({ claims, maxSearches: MAX_FACTCHECK_SEARCHES, blockedDomains: blocked, nonce, signal }),
     );
 
+    checkCeiling();
     const verdictRes = await structured(models.verdict, VerdictsSchema, {
       system: VERDICT_SYSTEM,
       user: buildVerdictUser(claims, research.sources, research.notes, nonce),
@@ -206,7 +247,9 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
       timeoutMs: 60_000,
     });
 
-    const validated = validateVerdicts({ claims, sources: research.sources, verdicts: verdictRes.data.verdicts, blocked });
+    const { verdicts } = verdictRes.data;
+    const dead = await deadSources(research.sources, verdicts);
+    const validated = validateVerdicts({ claims, sources: research.sources, verdicts, blocked, dead });
     return {
       result: {
         ...base,

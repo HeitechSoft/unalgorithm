@@ -27,6 +27,8 @@ export interface ValidationStats {
   raw: number;
   kept: number;
   unknownSource: number;
+  /** Cited a source the server's link check found gone (404, 410) or refused. */
+  deadLink: number;
   blockedSource: number;
   quoteTooLong: number;
   quoteMismatch: number;
@@ -104,7 +106,7 @@ export function quoteMatches(quote: string, snippets: readonly string[]): boolea
   });
 }
 
-function sourceOrder(id: string): number {
+export function sourceOrder(id: string): number {
   return Number(id.slice(1));
 }
 
@@ -113,11 +115,14 @@ export function validateVerdicts(input: {
   sources: readonly RetrievedSource[];
   verdicts: readonly RawVerdict[];
   blocked: readonly string[];
+  /** Ids of sources whose URL the server's link check found dead. */
+  dead?: ReadonlySet<string>;
 }): { claims: FactcheckClaim[]; sources: FactcheckSource[]; stats: ValidationStats } {
   const stats: ValidationStats = {
     raw: 0,
     kept: 0,
     unknownSource: 0,
+    deadLink: 0,
     blockedSource: 0,
     quoteTooLong: 0,
     quoteMismatch: 0,
@@ -142,12 +147,16 @@ export function validateVerdicts(input: {
     }
     stats.raw += raw.citations.length;
 
-    // Rule 2: provenance, blocked domains, quote length and quote match.
+    // Rule 2: provenance, dead links, blocked domains, quote length and quote match.
     const valid: { sourceId: string; quote: string; domain: string }[] = [];
     for (const citation of raw.citations) {
       const source = sourcesById.get(citation.sourceId);
       if (!source) {
         stats.unknownSource++;
+        continue;
+      }
+      if (input.dead?.has(source.id)) {
+        stats.deadLink++;
         continue;
       }
       if (isBlocked(source.domain, input.blocked)) {
