@@ -19,6 +19,7 @@ import { storage } from 'wxt/utils/storage';
 import type { BgError } from '../lib/messages.ts';
 import { serverLabel } from '../lib/server-label.ts';
 import { readBoundedJson } from './bounded-body.ts';
+import { deviceName } from './device-name.ts';
 import { getSecret, setSecret } from './idb.ts';
 
 /**
@@ -153,12 +154,15 @@ async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise
     throw new AIError('auth-required', 'Sign-in was cancelled.');
   }
   const back = redirect?.startsWith(redirectUri) ? new URL(redirect).searchParams : undefined;
+  // A short label the account page shows ("Chrome on Windows"); left out when the browser doesn't say.
+  const name = await deviceName();
   const request = TokenRequestSchema.safeParse({
     grant_type: 'authorization_code',
     code: back?.get('code') ?? undefined,
     code_verifier: verifier,
     client_id: clientId,
     redirect_uri: redirectUri,
+    ...(name ? { device_name: name } : {}),
   });
   if (back?.get('state') !== state || !request.success) throw new AIError('auth-required', UNFINISHED);
 

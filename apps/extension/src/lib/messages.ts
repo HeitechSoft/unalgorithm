@@ -1,5 +1,14 @@
 import type { AISourceConfig, FilterKey, HealthReport, PersonRule, Preset, TabState, Topic } from '@unalgorithm/core';
-import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, PostKey, ServerInfo } from '@unalgorithm/protocol';
+import type {
+  AccountDevice,
+  AIErrorCode,
+  Classification,
+  NoiseLabel,
+  PlatformId,
+  PostForAI,
+  PostKey,
+  ServerInfo,
+} from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { PublicBalance } from '../background/server-balance.ts';
 import type { ServerLabel } from './server-label.ts';
@@ -103,6 +112,10 @@ export type BgRequest =
   | { type: 'serverSignIn'; baseUrl: string }
   | { type: 'serverSignOut' }
   | { type: 'serverAccount' }
+  /** The account's devices (R11); ids and names only, no credentials. */
+  | { type: 'serverDevices' }
+  /** Signs a device out on the server; this computer's own id is the sign-out. */
+  | { type: 'serverRevokeDevice'; deviceId: string }
   | { type: 'syncStatus' }
   | { type: 'syncSetEnabled'; enabled: boolean }
   | { type: 'syncNow' };
@@ -126,6 +139,9 @@ export interface BgResponses {
   serverSignIn: { ok: true; account: PublicServerAccount } | { ok: false; error: BgError };
   serverSignOut: { ok: true };
   serverAccount: { account: PublicServerAccount | null };
+  serverDevices: { ok: true; devices: AccountDevice[] } | { ok: false; error: BgError };
+  /** `signedOut`: the device was this computer, which is now signed out. */
+  serverRevokeDevice: { ok: true; signedOut: boolean } | { ok: false; error: BgError };
   syncStatus: SyncStatus;
   syncSetEnabled: SyncStatus;
   syncNow: SyncStatus;

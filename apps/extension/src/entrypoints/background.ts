@@ -1,6 +1,7 @@
 import { ServerInfoSchema } from '@unalgorithm/protocol';
 import { type Browser, browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { z } from 'zod';
 import {
   aiStatus,
   classifyItems,
@@ -15,6 +16,7 @@ import {
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut } from '../background/server-auth.ts';
+import { listDevices, revokeDevice } from '../background/server-devices.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
@@ -86,6 +88,18 @@ function publicAccount(account: ServerAccount): PublicServerAccount {
 async function resumeFeedTabs(): Promise<void> {
   const tabs = await browser.tabs.query({ url: FEED_TAB_URLS }).catch(() => []);
   await Promise.all(tabs.map((tab) => (tab.id === undefined ? undefined : sendToTab(tab.id, { type: 'aiResume' }))));
+}
+
+/**
+ * Signs this computer out of the account's server: AI turns off rather than staying on a source that can only fail with
+ * "Sign in again" (rules keep working), sync is reset, and the device is ended on the server and forgotten here. AI goes
+ * off first, so feed tabs stop sending posts before the device's tokens go. Sync stays off after signing in again until
+ * the person turns it on.
+ */
+async function signOutOfServer(account: ServerAccount): Promise<void> {
+  if (isServerAt((await readDevice()).aiSource, account.origin)) await saveSource(null);
+  await resetSync();
+  await signOut(account.origin);
 }
 
 /** Every message type must have a handler: a missing one is a compile error. Exported for tests. */
@@ -210,19 +224,31 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   serverSignOut: async (_msg, sender) => {
     if (!fromExtensionPage(sender)) deny('serverSignOut');
     const account = await serverAccountItem.getValue();
-    if (!account) return { ok: true };
-    // AI turns off rather than staying on a source that can only fail with "Sign in again"; rules keep working. Off
-    // first, so feed tabs stop sending posts before the device's tokens go.
-    if (isServerAt((await readDevice()).aiSource, account.origin)) await saveSource(null);
-    // Sync is off again after a sign-out; signing in again leaves it off until the person turns it on.
-    await resetSync();
-    await signOut(account.origin);
+    if (account) await signOutOfServer(account);
     return { ok: true };
   },
   serverAccount: async (_msg, sender) => {
     if (!fromExtensionPage(sender)) deny('serverAccount');
     const account = await serverAccountItem.getValue();
     return { account: account ? publicAccount(account) : null };
+  },
+  serverDevices: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverDevices');
+    return listDevices();
+  },
+  serverRevokeDevice: async (msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('serverRevokeDevice');
+    if (!z.uuid().safeParse(msg.deviceId).success) {
+      return { ok: false, error: { code: 'bad-request', message: "That isn't one of this account's devices." } };
+    }
+    // This computer: the sign-out, not a second path.
+    const account = await serverAccountItem.getValue();
+    if (account?.deviceId === msg.deviceId) {
+      await signOutOfServer(account);
+      return { ok: true, signedOut: true };
+    }
+    const revoked = await revokeDevice(msg.deviceId);
+    return revoked.ok ? { ok: true, signedOut: false } : revoked;
   },
   syncStatus: async (_msg, sender) => {
     if (!fromExtensionPage(sender)) deny('syncStatus');
