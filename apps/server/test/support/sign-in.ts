@@ -1,7 +1,7 @@
 /**
  * Signing in from tests the way people and the extension do, through the real routes only: the emailed code on the
  * server's own page gives a web session (`signInWeb`); the page asks for a PKCE-bound code, and the extension trades it
- * for device tokens (`signInDevice`). The address must be on the test server's `SIGNUP_ALLOWLIST` or have an account.
+ * for device tokens (`signInDevice`). The address must be on the test server's `SIGNUP_ALLOWLIST`, be invited or have an account.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import {

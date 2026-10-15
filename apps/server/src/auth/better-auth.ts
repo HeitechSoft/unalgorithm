@@ -4,8 +4,8 @@
  * server's own sign-in page; and the EdDSA key that signs the extension's 15-minute access tokens. Only the routes
  * `authRoutesFor` lists are reachable over HTTP; everything else Better Auth offers stays unmounted.
  *
- * The server's operator pays for its AI, so accounts are created only for allow-listed addresses their provider
- * verified. Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
+ * The server's operator pays for its AI, so accounts are created only for addresses their provider verified that are
+ * allow-listed or invited (`admin/invites.ts`). Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
  * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
  * only.
  */
@@ -19,12 +19,12 @@ import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin } from 'better-auth/plugins/admin';
 import { emailOTP } from 'better-auth/plugins/email-otp';
 import { jwt } from 'better-auth/plugins/jwt';
-import { eq } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
+import { hasAccount, isInvited, mayCreateAccount, removeInvite } from '../admin/invites.ts';
 import { createRateLimiter } from '../ai/limits.ts';
 import type { Config } from '../config.ts';
 import * as authSchema from '../db/auth-schema.ts';
-import type { DbHandle } from '../db/client.ts';
+import { type DbHandle, queryErrorFields } from '../db/client.ts';
 import { type AppEnv, getClientIp } from '../http/middleware.ts';
 import { errorFields, type Logger } from '../log.ts';
 import { type Mailer, signInCodeEmail } from '../mail/mailer.ts';
@@ -138,22 +138,19 @@ export interface AuthDeps {
 }
 
 export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }: AuthDeps) {
-  async function hasUser(email: string): Promise<boolean> {
-    const { user } = authSchema;
-    const rows = await db.db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-    return rows.length > 0;
-  }
+  const hasUser = (email: string): Promise<boolean> => hasAccount(db.db, email);
 
   /**
    * Better Auth calls this after storing the code's hash; for a sign-in code, for every valid address. Only sign-in
-   * codes go out, and only to an allowed address or an existing account. The endpoint answers the same either way, so it
-   * never tells who may sign in.
+   * codes go out, and only to an existing account, an allow-listed address or an invited one. The endpoint answers the
+   * same either way, so it never tells who may sign in.
    */
   async function sendVerificationOTP({ email, otp, type }: { email: string; otp: string; type: string }) {
     if (type !== 'sign-in') return;
-    // Looked up for every address, so the answer takes as long whether a code goes out or not.
-    const known = await hasUser(email);
-    if (!known && !isEmailAllowed(email, config.signupAllowlist)) return;
+    // Both looked up for every address, before deciding, so the answer takes as long whether a code goes out or not,
+    // and whether the address is on the allowlist or not.
+    const [known, invited] = await Promise.all([hasUser(email), isInvited(db.db, email)]);
+    if (!known && !isEmailAllowed(email, config.signupAllowlist) && !invited) return;
     const message = signInCodeEmail({ code: otp, instanceName: config.instanceName, minutes: OTP_TTL_SECONDS / 60 });
     // Not awaited (Better Auth's advice against timing attacks); a failure is logged without its message.
     void mailer.send({ to: email, ...message }).catch((err: unknown) => log.error('mail.otp_failed', errorFields(err)));
@@ -262,14 +259,24 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
       user: {
         create: {
           before: async (user) => {
-            // Every new account needs an address its provider verified: email codes always are; Google says so in
-            // `email_verified`. The code turns the refusal into a redirect with `error=SIGNUP_CLOSED` in Better Auth's
-            // Google callback; without one it would fail the request.
-            if (user.emailVerified !== true || !isEmailAllowed(user.email, config.signupAllowlist)) {
+            // Every new account needs an address its provider verified (email codes always are; Google says so in
+            // `email_verified`) that is allow-listed or invited. The code turns the refusal into a redirect with
+            // `error=SIGNUP_CLOSED` in Better Auth's Google callback; without one it would fail the request.
+            if (user.emailVerified !== true || !(await mayCreateAccount({ db: db.db, config }, user.email)))
               throw new APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED', message: 'Sign-up is closed.' });
-            }
             // Only the address is kept: a name or an image sent with the first sign-in is dropped.
             return { data: { ...user, name: '', image: null } };
+          },
+          // Runs once the account is stored: its invite, if any, is used up. A failure leaves a harmless invite (the
+          // admin can remove it) and never fails the sign-in. Logged by name and SQLSTATE only: no message (a
+          // database error's can quote the address) and no stack (its package paths hold `@`, like an address).
+          after: async (user) => {
+            try {
+              await removeInvite(db.db, user.email);
+            } catch (err) {
+              const { err_name, err_code } = queryErrorFields(err);
+              log.warn('invites.consume_failed', { err_name, ...(err_code === undefined ? {} : { err_code }) });
+            }
           },
         },
       },

@@ -15,7 +15,19 @@
 import { AIError } from '@unalgorithm/ai';
 import { type AccountExport, AccountExportSchema } from '@unalgorithm/protocol';
 import { asc, eq, inArray, or, sql } from 'drizzle-orm';
-import { account, devices, passkey, session, syncItems, syncSpaces, usageEvents, user, verification } from '../db/schema.ts';
+import { normalizeEmail } from '../admin/invites.ts';
+import {
+  account,
+  devices,
+  passkey,
+  session,
+  signupInvites,
+  syncItems,
+  syncSpaces,
+  usageEvents,
+  user,
+  verification,
+} from '../db/schema.ts';
 import type { AppDeps } from '../http/app.ts';
 
 /** How recently the web session must have been signed in for its account to be deleted: 10 minutes. */
@@ -203,6 +215,8 @@ export async function deleteAccount({ db, billing }: Pick<AppDeps, 'db' | 'billi
         sql`strpos(${verification.value}, ${userId}) > 0`,
       ),
     );
+    // Keyed by address, so the cascade from `user` misses an invite a failed consume left behind.
+    await tx.delete(signupInvites).where(eq(signupInvites.email, normalizeEmail(owner.email)));
     await tx.delete(user).where(eq(user.id, userId));
     return true;
   });

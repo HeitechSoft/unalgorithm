@@ -187,6 +187,18 @@ export const userLimits = pgTable('user_limits', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Addresses an admin (or the setup link, CL4-04) has invited; a row is removed when its account is created
+ * (`admin/invites.ts`). Keyed by address, not by account: deleting an account deletes its address's row too (CL3-15).
+ */
+export const signupInvites = pgTable('signup_invites', {
+  /** Lowercased and trimmed. */
+  email: text('email').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** The admin who invited; null for a setup link, or once that admin's account is deleted. */
+  invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+});
+
 /*
  * Sync v2 (CL3). These tables hold a person's own settings, including the labels of people they chose to always show
  * or hide, and never post text. Deleting the account deletes them: every space cascades from `user`, and items and
