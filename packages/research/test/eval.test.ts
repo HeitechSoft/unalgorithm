@@ -1,12 +1,220 @@
 import { AIError } from '@unalgorithm/ai';
-import { FACTCHECK_VERDICTS, PostForAISchema } from '@unalgorithm/protocol';
+import {
+  FACTCHECK_VERDICTS,
+  type FactcheckResult,
+  type LinkStatus,
+  PostForAISchema,
+  type RetrievedSource,
+} from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { type CliDeps, main } from '../eval/cli.ts';
 import { FACTCHECK_EVAL_SET } from '../eval/factcheck-set.ts';
-import { mockDepsFor, runFactcheckEval } from '../eval/score.ts';
+import {
+  type FactcheckEvalReport,
+  mockDepsFor,
+  runFactcheckEval,
+  TRUST_GATES,
+  traceCitations,
+  trustGates,
+} from '../eval/score.ts';
+import type { FactcheckDeps, LinkChecker } from '../src/factcheck.ts';
 
 const SET = FACTCHECK_EVAL_SET;
 const byId = new Map(SET.map((i) => [i.id, i]));
+
+describe('set v1', () => {
+  it('test_eval_set_v1_pairs_and_spread', () => {
+    expect(SET).toHaveLength(56);
+    expect(new Set(SET.map((i) => i.id)).size).toBe(56);
+    expect(SET.filter((i) => i.smoke)).toHaveLength(5);
+    const paired = SET.filter((i) => i.pair);
+    expect(paired).toHaveLength(40);
+    for (const item of paired) {
+      const twin = byId.get(item.pair ?? '');
+      expect(twin?.pair, item.id).toBe(item.id);
+      expect(twin?.expect, item.id).toEqual(item.expect);
+    }
+    const firsts = paired.filter((i) => i.id < (i.pair ?? '')).map((i) => i.expect[0]);
+    expect(firsts).toHaveLength(20);
+    for (const verdict of FACTCHECK_VERDICTS) {
+      expect(firsts.filter((v) => v === verdict).length, verdict).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
+describe('report v1', () => {
+  it('test_eval_mock_report_v1', async () => {
+    const report = await runFactcheckEval(mockDepsFor(SET));
+    expect(report).toMatchObject({
+      provenance: 1,
+      citationsShown: 112,
+      pairsScored: 20,
+      pairConsistency: 1,
+      links: null,
+      liveLinks: null,
+    });
+  });
+
+  it('test_eval_strict_provenance_rechecks_retrieved', async () => {
+    const source = { id: 's1', url: 'https://a.example.com/x', domain: 'a.example.com', title: 'A', pageAge: null };
+    const result: FactcheckResult = {
+      v: 1,
+      checkedAt: '2026-10-15T12:00:00.000Z',
+      model: 'mock',
+      promptVersion: 1,
+      claims: [
+        {
+          id: 'c1',
+          claim: 'A claim.',
+          verdict: 'supported',
+          explanation: 'Because.',
+          citations: [{ sourceId: 's1', quote: 'Alpha beta gamma' }],
+        },
+      ],
+      sources: [source],
+    };
+    const recorded: RetrievedSource = { ...source, snippets: ['Alpha beta gamma'] };
+    expect(traceCitations(result, [recorded])).toEqual({ shown: 1, traced: 1 });
+    expect(traceCitations(result, [{ ...recorded, url: 'https://b.example.com/x' }])).toEqual({ shown: 1, traced: 0 });
+    expect(traceCitations(result, [{ ...recorded, snippets: ['Delta epsilon'] }])).toEqual({ shown: 1, traced: 0 });
+    expect(traceCitations(result, [])).toEqual({ shown: 1, traced: 0 });
+
+    // A retriever that changes its sources after returning them (here: during the verdict call) cannot change what
+    // was recorded, so the shown URL no longer traces.
+    const items = SET.slice(0, 2);
+    const base = mockDepsFor(items);
+    let returned: RetrievedSource[] = [];
+    const structured = base.client.structured.bind(base.client);
+    const deps: FactcheckDeps = {
+      ...base,
+      retriever: {
+        async retrieve(req) {
+          const res = await base.retriever.retrieve(req);
+          returned = res.sources;
+          return res;
+        },
+      },
+      client: {
+        ...base.client,
+        structured(req) {
+          if (req.schemaName === 'factcheck_verdicts' && req.user.includes('fc-02')) {
+            for (const s of returned) s.url = `https://moved.example.net/${s.id}`;
+          }
+          return structured(req);
+        },
+      },
+    };
+    const report = await runFactcheckEval(deps, items);
+    expect(report.citationsShown).toBe(4);
+    expect(report.provenance).toBe(0.5);
+  });
+
+  it('test_eval_links_counted_after_run', async () => {
+    const halfDead: LinkChecker = async (urls) =>
+      new Map(urls.map((u): [string, LinkStatus] => [u, u.includes('.example.com/') ? 'dead' : 'live']));
+    const report = await runFactcheckEval(mockDepsFor(SET), SET, { linkCheck: halfDead });
+    expect(report.links).toEqual({ live: 56, dead: 56, unknown: 0 });
+    expect(report.liveLinks).toBe(0.5);
+    expect(report.citationsShown).toBe(112);
+    expect(report.failures).toContainEqual({ id: 'fc-01', reason: 'dead link s1' });
+    for (const f of report.failures) expect(f.reason).not.toContain('http');
+
+    const rejecting: LinkChecker = async () => {
+      throw new Error('egress down');
+    };
+    const broken = await runFactcheckEval(mockDepsFor(SET), SET, { linkCheck: rejecting, linkTimeoutMs: 50 });
+    expect(broken.links).toEqual({ live: 0, dead: 0, unknown: 112 });
+    expect(broken.liveLinks).toBeNull();
+    expect(trustGates(broken).liveLinks.passed).toBeNull();
+  });
+
+  it('test_eval_run_has_no_link_check', async () => {
+    const depsChecks: string[][] = [];
+    const evalChecks: string[][] = [];
+    const deps: FactcheckDeps = {
+      ...mockDepsFor(SET),
+      linkCheck: async (urls) => {
+        depsChecks.push([...urls]);
+        return new Map(urls.map((u): [string, LinkStatus] => [u, 'dead']));
+      },
+    };
+    const report = await runFactcheckEval(deps, SET, {
+      linkCheck: async (urls) => {
+        evalChecks.push([...urls]);
+        return new Map(urls.map((u): [string, LinkStatus] => [u, 'dead']));
+      },
+    });
+    expect(depsChecks).toEqual([]);
+    expect(evalChecks).toHaveLength(SET.length);
+    // Dead citations were counted, not dropped by the run.
+    expect(report.citationsShown).toBe(112);
+    expect(report.links).toEqual({ live: 0, dead: 112, unknown: 0 });
+    expect(report.liveLinks).toBe(0);
+  });
+});
+
+function gateReport(over: Partial<FactcheckEvalReport> = {}): FactcheckEvalReport {
+  return {
+    total: 56,
+    agreement: 1,
+    pairConsistency: 0.95,
+    pairsScored: 20,
+    provenance: 1,
+    citationsShown: 40,
+    droppedCitationRate: 0,
+    links: { live: 97, dead: 3, unknown: 0 },
+    liveLinks: 0.97,
+    meanCostMicros: 120_000,
+    failures: [],
+    providerErrors: [],
+    ...over,
+  };
+}
+
+describe('gates', () => {
+  it('test_trust_gates_thresholds', () => {
+    expect(TRUST_GATES).toEqual({ slantFlip: 0.95, provenance: 1, liveLinks: 0.97, minPairs: 20, minCited: 20 });
+    const ok = trustGates(gateReport());
+    expect(ok.passed).toBe(true);
+    expect(ok.slantFlip).toEqual({ value: 0.95, min: 0.95, passed: true });
+    expect(ok.liveLinks).toEqual({ value: 0.97, min: 0.97, passed: true });
+
+    expect(trustGates(gateReport({ pairConsistency: 0.9 })).passed).toBe(false);
+    expect(trustGates(gateReport({ provenance: 0.99 })).passed).toBe(false);
+    expect(trustGates(gateReport({ links: { live: 96, dead: 4, unknown: 0 }, liveLinks: 0.96 })).passed).toBe(false);
+    const noLinks = trustGates(gateReport({ links: null, liveLinks: null }));
+    expect(noLinks.passed).toBe(false);
+    expect(noLinks.liveLinks).toEqual({ value: null, min: 0.97, passed: null });
+
+    const fewPairs = trustGates(gateReport({ pairsScored: 5 }));
+    expect(fewPairs.slantFlip.passed).toBeNull();
+    expect(fewPairs.passed).toBe(false);
+
+    const nothingCited = trustGates(gateReport({ citationsShown: 0, provenance: 1 }));
+    expect(nothingCited.provenance).toEqual({ value: 1, min: 1, passed: null });
+    expect(nothingCited.passed).toBe(false);
+
+    expect(trustGates(gateReport({ links: { live: 10, dead: 0, unknown: 0 }, liveLinks: 1 })).liveLinks.passed).toBeNull();
+    expect(trustGates(gateReport({ links: { live: 30, dead: 0, unknown: 40 }, liveLinks: 1 })).liveLinks.passed).toBeNull();
+  });
+
+  it('test_trust_gates_one_flip_allowed', async () => {
+    const live: LinkChecker = async (urls) => new Map(urls.map((u): [string, LinkStatus] => [u, 'live']));
+    const flip = (ids: string[]) =>
+      mockDepsFor(SET, { verdict: (item) => (ids.includes(item.id) ? 'needs-context' : item.expect[0]) });
+
+    const one = await runFactcheckEval(flip(['fc-26']), SET, { linkCheck: live });
+    expect(one.pairsScored).toBe(20);
+    expect(one.pairConsistency).toBe(0.95);
+    expect(trustGates(one).slantFlip.passed).toBe(true);
+    expect(trustGates(one).passed).toBe(true);
+
+    const two = await runFactcheckEval(flip(['fc-26', 'fc-40']), SET, { linkCheck: live });
+    expect(two.pairConsistency).toBe(0.9);
+    expect(trustGates(two).slantFlip.passed).toBe(false);
+    expect(trustGates(two).passed).toBe(false);
+  });
+});
 
 describe('set', () => {
   it('test_eval_set_items_are_valid_and_unique', () => {
@@ -157,7 +365,7 @@ describe('cli', () => {
     const live = countingLive();
     await main(['--live', '--all'], { ANTHROPIC_API_KEY: 'sk-ant-test' }, live.deps);
     expect(live.checks()).toBe(SET.length);
-    expect(live.lines[0]).toBe(`Live run: ${SET.length} checks, about $2.88 on your Anthropic account.`);
+    expect(live.lines[0]).toBe(`Live run: ${SET.length} checks, about $6.72 on your Anthropic account.`);
   });
 
   it('test_cli_exit_code_follows_cost_gate', async () => {

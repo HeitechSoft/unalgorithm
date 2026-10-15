@@ -221,9 +221,9 @@ describe('route-eval factcheck', { timeout: PGLITE_TIMEOUT }, () => {
     await expectNotAvailable(resolveFactcheckRoutes(db, config, log));
 
     expect(await run({ factcheckDeps: perfect })).toBe(0);
-    expect(lines[0]).toBe(`fact-check eval: ${FACTCHECK_EVAL_SET.length} checks on anthropic/claude-sonnet-5-5, about $2.88`);
+    expect(lines[0]).toBe(`fact-check eval: ${FACTCHECK_EVAL_SET.length} checks on anthropic/claude-sonnet-5-5, about $6.72`);
     expect(lines[1]).toMatch(
-      /^route synthesis anthropic\/claude-sonnet-5-5: agreement 1\.00 \(24\/24\), provenance 1\.00, pairs 1\.00, min 0\.80, PASSED, cost about \$\d+\.\d\d$/,
+      /^route synthesis anthropic\/claude-sonnet-5-5: agreement 1\.00 \(56\/56\), provenance 1\.00, pairs 1\.00, min 0\.80, PASSED, cost about \$\d+\.\d\d$/,
     );
     expect(lines).toHaveLength(2);
     expect(calls).toEqual([]);
@@ -245,7 +245,7 @@ describe('route-eval factcheck', { timeout: PGLITE_TIMEOUT }, () => {
     const { db, config, log, lines, run, byTask } = await setup();
     expect(await run({ factcheckDeps: wrong })).toBe(1);
     expect(lines[1]).toMatch(
-      /^route synthesis anthropic\/claude-sonnet-5-5: agreement 0\.\d\d \(\d+\/24\), provenance 1\.00, pairs \d\.\d\d, min 0\.80, FAILED, cost /,
+      /^route synthesis anthropic\/claude-sonnet-5-5: agreement 0\.\d\d \(\d+\/56\), provenance 1\.00, pairs \d\.\d\d, min 0\.80, FAILED, cost /,
     );
     const failures = lines.slice(2);
     expect(failures.length).toBeGreaterThan(0);
