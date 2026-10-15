@@ -1,7 +1,7 @@
 # The UnAlgorithm Feed server with Postgres, for running your own server.
 #
-# Postgres is never published. The server listens on 127.0.0.1 only; put your own HTTPS proxy in front (a guide comes
-# with CL4).
+# Postgres is never published. The server listens on 127.0.0.1 only. For HTTPS, turn on the caddy profile below
+# (COMPOSE_PROFILES=caddy in .env) or put your own HTTPS proxy in front; docs/self-hosting.md explains both.
 #
 #   cp .env.example .env                  then fill in .env (it documents every setting)
 #   docker compose up -d                  start, from this folder; the server applies database migrations itself
@@ -118,5 +118,40 @@ services:
     logging:
       driver: none
 
+  # HTTPS for PUBLIC_URL's host (caddy/Caddyfile), for a self-hosted server only: with COMPOSE_PROFILES=caddy in .env,
+  # every `docker compose up`, `pull` and `down` includes it. Caddy takes ports 80 and 443, gets a Let's Encrypt
+  # certificate and forwards to server:8787 on the project network; set TRUST_PROXY=one-hop with it. caddy-data holds
+  # the certificates and the ACME account: keep it (`down` without -v), or every start asks Let's Encrypt again.
+  caddy:
+    image: caddy:2.11.7
+    profiles: ['caddy']
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
 volumes:
   pgdata:
+  caddy-data:
+  caddy-config:

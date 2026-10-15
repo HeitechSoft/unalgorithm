@@ -110,9 +110,17 @@ describe('validation', () => {
     expect(local.publicUrl).toBe('http://127.0.0.1:8787');
     expect(local.instanceName).toBe('127.0.0.1:8787');
 
-    const trailing = loadConfig({ ...minimalEnv(), PUBLIC_URL: 'https://x.org/' });
-    expect(trailing.publicUrl).toBe('https://x.org');
-    expect(trailing.publicOrigin).toBe('https://x.org');
+    const plain = loadConfig({ ...minimalEnv(), PUBLIC_URL: 'https://x.org' });
+    expect(plain.publicUrl).toBe('https://x.org');
+    expect(plain.publicOrigin).toBe('https://x.org');
+
+    // The raw string, as the caddy profile's Caddyfile reads it: a trailing / would become a site path that proxies
+    // only `/`, so the server and check-config refuse it before Caddy runs.
+    for (const trailing of ['https://x.org/', 'http://127.0.0.1:8787/']) {
+      expect(configError({ ...minimalEnv(), PUBLIC_URL: trailing }).invalid, trailing).toEqual([
+        { name: 'PUBLIC_URL', reason: 'must be written without a trailing slash' },
+      ]);
+    }
 
     expect(invalidNames({ ...minimalEnv(), PUBLIC_URL: 'https://x.org/app' })).toEqual(['PUBLIC_URL']);
   });

@@ -172,8 +172,10 @@ jobs:
     # published ports, the read-only root, no .env in the image, route-eval inside the container, and a single-quoted
     # value with $ in .env reaching the server unchanged. Then the nightly encrypted backups with the real pg_dump, gpg
     # and Postgres: the key pair from keygen, an encrypted dump the private key opens, the status file, BACKUP_KEEP, and
-    # no password or private key in the backup logs. Last, a stack holding a several-MB backup is wiped, rebuilt and
-    # restored with restore.sh, and sync-new-epoch runs in the restored server.
+    # no password or private key in the backup logs. Then a stack holding a several-MB backup is wiped, rebuilt and
+    # restored with restore.sh, and sync-new-epoch runs in the restored server. Last, the optional caddy profile: HTTPS
+    # from Caddy's local CA, the 308 redirect, a read-only container with NET_BIND_SERVICE only, 502 while the server
+    # is stopped, and no client address in Caddy's log.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -186,6 +188,9 @@ jobs:
 
       - name: Restore smoke test
         run: bash apps/server/scripts/restore-smoke.sh
+
+      - name: Optional profiles smoke test
+        run: bash apps/server/scripts/profiles-smoke.sh
 
   public-scan:
     # The public repo holds no host address, host marker, key file or secret: every tracked file and the whole history.

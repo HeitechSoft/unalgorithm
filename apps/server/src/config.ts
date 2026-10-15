@@ -397,9 +397,17 @@ export function loadConfig(env: Env = process.env): Config {
     return Object.freeze(out);
   }
 
-  /** An origin only: https, or http for a loopback host; no path, query, fragment or credentials. */
+  /**
+   * An origin only: https, or http for a loopback host; no path, query, fragment or credentials, and no trailing slash.
+   * The slash is checked on the raw string (a URL's pathname is `/` either way): the caddy profile's Caddyfile uses the
+   * raw value as its site address, where `https://host/` would proxy the path `/` alone.
+   */
   function parsePublicUrl(value: string | undefined): URL | undefined {
     if (value === undefined) return undefined;
+    if (value.endsWith('/')) {
+      bad('PUBLIC_URL', 'must be written without a trailing slash');
+      return undefined;
+    }
     const url = URL.canParse(value) ? new URL(value) : undefined;
     if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
       bad('PUBLIC_URL', 'must be an https URL');

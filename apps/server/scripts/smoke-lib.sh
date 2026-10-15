@@ -1,6 +1,6 @@
-# Shared by the container smoke tests (compose-smoke.sh, backup-smoke.sh, restore-smoke.sh); not run on its own. A
-# script sets `project` (its own throwaway Compose project name) and `port` (the host port the server is published on),
-# then sources this from the repository root:
+# Shared by the container smoke tests (compose-smoke.sh, backup-smoke.sh, restore-smoke.sh, profiles-smoke.sh); not run
+# on its own. A script sets `project` (its own throwaway Compose project name) and `port` (the host port the server is
+# published on), then sources this from the repository root:
 #
 #   project="ua-smoke-$RANDOM"
 #   port=8788
@@ -8,7 +8,7 @@
 #
 # It refuses to start when apps/server/.env, apps/server/backups or apps/server/backup-key is already there, so a
 # self-hoster's own files are never touched. On exit it removes the .env it wrote (write_env), the project's containers
-# and volume, the image it built (`image`), the backups and key folders Docker made, and its temporary folder. For CI
+# and volumes, the image it built (`image`), the backups and key folders Docker made, and its temporary folder. For CI
 # and development machines only: never run it on a shared host, where removing volumes and images is not allowed.
 
 # Git Bash on Windows rewrites arguments that look like paths; container paths must reach Docker unchanged, and

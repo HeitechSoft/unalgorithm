@@ -1,0 +1,26 @@
+# The HTTPS front for an UnAlgorithm server (compose profile "caddy"). Caddy gets a certificate for the host in
+# PUBLIC_URL and forwards to the server. No access log is kept, and Caddy's own lines carry no client address,
+# request address or header.
+{
+	admin off
+	log {
+		format filter {
+			wrap json
+			request>remote_ip delete
+			request>remote_port delete
+			request>client_ip delete
+			request>headers delete
+			request>uri delete
+			# ACME's "served key authentication" line names the caller in a top-level remote field.
+			remote delete
+		}
+	}
+}
+
+# PUBLIC_URL as written in .env (the server refuses one with a trailing slash, which would proxy the path / alone).
+{$PUBLIC_URL} {
+	# Replaces whatever the client sent: the server's TRUST_PROXY=one-hop reads the last entry as the client address.
+	reverse_proxy server:8787 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

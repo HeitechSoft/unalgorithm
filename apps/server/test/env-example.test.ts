@@ -10,7 +10,16 @@ import { CONFIG_VARIABLES, ConfigError, loadConfig } from '../src/config.ts';
 const ENV_EXAMPLE = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 
 /** Read by compose.yaml only (interpolation), never by the server. */
-const COMPOSE_ONLY = ['POSTGRES_PASSWORD', 'BIND_ADDRESS', 'UNALGORITHM_VERSION', 'BACKUP_TIME', 'BACKUP_KEEP', 'BACKUP_DIR'];
+const COMPOSE_ONLY = [
+  'POSTGRES_PASSWORD',
+  'BIND_ADDRESS',
+  'UNALGORITHM_VERSION',
+  'BACKUP_TIME',
+  'BACKUP_KEEP',
+  'BACKUP_DIR',
+  // Read by Compose itself from the .env: the optional services `up`, `pull` and `down` include.
+  'COMPOSE_PROFILES',
+];
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
 const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL'];
 /** Their values are secrets: the example leaves every one of them empty. */
@@ -174,6 +183,20 @@ describe('configuration parity', () => {
       ['D', 'Shared,\non two lines.'],
       ['E', 'Not=an entry'],
     ]);
+  });
+
+  it('test_trust_proxy_comment_names_caddy', () => {
+    const entries = parseEnvExample(ENV_EXAMPLE);
+    // The caddy profile sets X-Forwarded-For, so its operators need one-hop; the server never sees a client otherwise.
+    expect(entries.find((e) => e.name === 'TRUST_PROXY')?.comment).toBe(
+      'one-hop when an HTTPS proxy in front sets X-Forwarded-For (the caddy profile does; its last entry is then the client address); none otherwise.',
+    );
+    const profiles = entries.find((e) => e.name === 'COMPOSE_PROFILES');
+    expect(profiles).toMatchObject({ commented: true, value: '' });
+    expect(profiles?.comment).toMatch(/^Optional services, comma-separated: caddy \(.*TRUST_PROXY=one-hop/);
+    // In the Compose group, right after PORT.
+    const names = entries.map((e) => e.name);
+    expect(names.indexOf('COMPOSE_PROFILES')).toBe(names.indexOf('PORT') + 1);
   });
 
   it('test_env_example_has_no_hosts_or_secrets', () => {
