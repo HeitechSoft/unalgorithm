@@ -164,6 +164,13 @@ export function factcheckRoutes(
       const served = routes;
       const release = releaseLimits;
 
+      // Checked in the same tick as `jobs.start`: a stopping server aborted its jobs when the stop began, so a job
+      // started after that would never be aborted, would outlive the drain and leave its hold open as the database closes.
+      if (stopping?.aborted) {
+        await recordRefused(rid, userId, deviceId, served);
+        release();
+        throw new AIError('overloaded', 'The server is stopping.');
+      }
       const job = jobs.start(userId);
       if (!job.ok) {
         await recordRefused(rid, userId, deviceId, served);

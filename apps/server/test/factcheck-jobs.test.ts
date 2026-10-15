@@ -611,6 +611,23 @@ describe('fact-check jobs: polling and lifecycle', { timeout: PGLITE_TIMEOUT }, 
     research.open();
     classifyHeld.open();
   });
+
+  it('test_factcheck_job_refused_once_stopping', async () => {
+    // A start whose gates were passing when the stop began: `stopServing` has already aborted the jobs, so a job started
+    // now would never be aborted, outlive the drain and leave its hold open under a closed database.
+    const holds = fixtureModule.openHolds();
+    const stopping = new AbortController();
+    const jobs = createJobStore<FactcheckResult>({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 });
+    const t = await anthropicApp(happy, { billed: true, stopping: stopping.signal, factcheckJobs: jobs });
+    stopping.abort();
+    const res = await startCheck(t, await publicPost());
+    expect(res.status).toBe(503);
+    expect(await errorOf(res)).toBe('overloaded');
+    expect(t.bodies).toEqual([]);
+    expect(jobs.size).toBe(0);
+    expect(fixtureModule.openHolds()).toBe(holds);
+    expect(await usageRows(t)).toMatchObject([{ outcome: 'refused-before-call', calls: 0 }]);
+  });
 });
 
 /** The signed-in user's id: the only user of the app's database. */
