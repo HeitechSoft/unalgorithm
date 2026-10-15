@@ -27,6 +27,23 @@ A fact (owner, parent company, founding, headquarters) needs a source link and t
 The bundled registry is a draft until the panel reviews v0. `usableRegistry()` is the runtime rule: perspectives
 uses a registry only when it is reviewed, sound and has at least one labelled outlet in every lean bucket.
 
+## Draft seed
+
+`data/registry.json` ships a **candidate list for the review panel**: about 115 US and 55 Canadian general-news outlets
+that publish online daily or weekly (national newspapers and broadcasters, wire services, national digital-native news
+sites, the largest regional dailies, and a few major Spanish- and French-language outlets). Satire, opinion-only blogs
+and aggregators were left out, and so were outlets based outside the US and Canada (the schema only has `US` and
+`CA`). The panel decides the final scope.
+
+How it was made: an agent listed each outlet's name, main web host(s) and country. No source page was opened while
+preparing it, so **every outlet is `verified: false` with `facts: []`**, and its domains are unverified too. A fact
+(owner, parent company, founding, headquarters) is added later only by someone who opened its source page and read it
+there, with that page's link and the day it was checked.
+
+What it is not: not an endorsement, not a ranking, not a grouping. Outlets are sorted by id, so the file's order means
+nothing. **No outlet has a lean label** (every `lean: null`), the registry stays `draft` with an empty panel, and
+perspectives stays hidden with this data. Labels come only from the panel's review.
+
 ## Commands
 
 Run from the repository root:
