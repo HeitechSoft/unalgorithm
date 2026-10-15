@@ -21,7 +21,7 @@ export const TASK_UNITS: Readonly<Record<CreditTask, CreditUnit>> = Object.freez
 
 export interface CreditPriceCard {
   /**
-   * Retail = our AI cost × multiplier, rounded up to a whole micro-dollar per request. Published on unalgorithm.app.
+   * Retail = our AI cost × multiplier, rounded up to a whole micro-dollar per request. Published on unalgorithmfeed.com.
    * Whole basis points only (at most four decimal places, e.g. 1.15): `retailMicros` refuses anything finer.
    */
   multiplier: number;

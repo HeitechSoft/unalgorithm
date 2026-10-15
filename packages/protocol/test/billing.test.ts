@@ -568,13 +568,13 @@ describe('schemas', () => {
   it('test_credit_account_limits', () => {
     const minimal = { v: 1, balance, history: [usageLine, starterGrant] };
     expect(CreditAccountSchema.parse(minimal)).toEqual(minimal);
-    const full = { ...minimal, pricingUrl: 'https://unalgorithm.app/credits', addCreditPath: '/account/credit' };
+    const full = { ...minimal, pricingUrl: 'https://unalgorithmfeed.com/credits', addCreditPath: '/account/credit' };
     expect(CreditAccountSchema.parse(full)).toEqual(full);
     const history = Array.from({ length: MAX_CREDIT_HISTORY + 1 }, () => usageLine);
     expect(MAX_CREDIT_HISTORY).toBe(200);
     expect(CreditAccountSchema.safeParse({ ...minimal, history: history.slice(1) }).success).toBe(true);
     expect(CreditAccountSchema.safeParse({ ...minimal, history }).success).toBe(false);
-    expect(CreditAccountSchema.safeParse({ ...minimal, pricingUrl: 'http://unalgorithm.app/credits' }).success).toBe(false);
+    expect(CreditAccountSchema.safeParse({ ...minimal, pricingUrl: 'http://unalgorithmfeed.com/credits' }).success).toBe(false);
     expect(CreditAccountSchema.safeParse({ ...minimal, addCreditPath: '//evil.example' }).success).toBe(false);
   });
 });

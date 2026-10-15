@@ -57,7 +57,7 @@ Cloud or another UnAlgorithm server (Settings → AI and onboarding), the `ident
 `apps/extension/wxt.config.ts`; development and e2e builds always have them). A store build may carry them only when
 all nine of these are done:
 
-1. The UnAlgorithm Cloud beta privacy notice and beta terms are live on unalgorithm.app.
+1. The UnAlgorithm Cloud beta privacy notice and beta terms are live on unalgorithmfeed.com.
 2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
    submit with this release.
 3. PRIVACY.md describes the server source (what is sent, to whom, what UnAlgorithm Cloud keeps), in the same release.
