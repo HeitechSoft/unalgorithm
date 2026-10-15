@@ -65,3 +65,14 @@ If it speaks the OpenAI chat completions API:
 
 Otherwise implement an `AIClient` in `packages/ai/src/` and add a source kind to `AISourceConfigSchema` in
 `packages/core/src/ai-source.ts`.
+
+## Fact-check (Labs)
+
+With your own Anthropic key, **Settings → Labs → Fact-check** checks the claims in a public post you choose. It is
+three calls on your key, directly from your browser: Claude Haiku 5.5 picks up to 3 claims, Claude Sonnet 5.5
+researches them with Anthropic's web search (at most 5 searches; web search must be turned on for your Anthropic
+organization), and Sonnet gives a verdict per claim, keeping only citations that trace to the sources it found.
+A check ends within 4 minutes. Its cost is added to today's cost in Settings but does not count toward the daily post
+limit. Results stay in the tab's session storage (the 5 newest per tab) and go when the tab closes. Facebook posts
+that aren't public are never checked. Other sources can't fact-check yet. See the
+[privacy model](privacy-model.md#fact-check-labs).

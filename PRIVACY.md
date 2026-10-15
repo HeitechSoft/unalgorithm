@@ -40,6 +40,15 @@ It **never** sends author names, profile links, group names, comments, images or
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
+**Fact-check (Labs, off by default).** When you turn on Settings → Labs → Fact-check, use your own Anthropic key and
+confirm a check on a public post, UnAlgorithm sends that one post to Anthropic, directly from your browser with your
+key: the same post fields classification sends, with the same masking described above (email addresses and phone
+numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most 2,000
+characters, a shared link's domain and title). Your interests are not sent. Anthropic then runs web searches based
+on the claims it found in the post. The result stays in this browser's temporary session storage for that tab and is
+removed when the tab closes or the browser restarts. Facebook posts that aren't public are never checked, and nothing
+goes to HeitechSoft.
+
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.
 

@@ -10,8 +10,9 @@ import {
   type TabState,
   type UsageLedger,
 } from '@unalgorithm/core';
-import { uuid } from '@unalgorithm/protocol';
+import { type FactcheckResult, type PostKey, uuid } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
+import type { BgError } from './messages.ts';
 
 /**
  * Every storage key UnAlgorithm uses. `local:settings` and its clocks are the only data sync reads; `local:syncState`
@@ -82,6 +83,22 @@ export const ORIGIN_RULE_ID = 1;
 export function tabStateItem(tabId: number) {
   return storage.defineItem<TabState>(`session:tab:${tabId}`, { fallback: emptyTabState() });
 }
+
+/** One fact-check of a post on this tab. Session storage only: gone when the browser closes, never synced. */
+export interface FactcheckEntry {
+  key: PostKey;
+  /** First 80 characters of the post text, for the sheet's header. Display only. */
+  label: string;
+  startedAt: number;
+  status: 'running' | 'done' | 'failed';
+  result?: FactcheckResult;
+  error?: BgError;
+  costMicros?: number;
+}
+
+/** A tab's fact-checks, newest first (at most 5). Removed when the tab closes. */
+export const factcheckItem = (tabId: number) =>
+  storage.defineItem<{ entries: FactcheckEntry[] }>(`session:factcheck:${tabId}`, { fallback: { entries: [] } });
 
 export async function readSettings(): Promise<Settings> {
   return migrateSettings(await settingsItem.getValue());

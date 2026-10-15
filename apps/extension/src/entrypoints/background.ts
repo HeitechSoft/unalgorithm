@@ -13,6 +13,7 @@ import {
   saveSource,
   testSource,
 } from '../background/ai.ts';
+import { openFactcheckPanel, runFactcheckForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut } from '../background/server-auth.ts';
@@ -261,6 +262,19 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   syncNow: async (_msg, sender) => {
     if (!fromExtensionPage(sender)) deny('syncNow');
     return runSync();
+  },
+  factcheck: async (msg, sender) => {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined || !fromFeedTab(sender)) deny('factcheck');
+    // Before any `await`, so Chrome still sees the click's user gesture (relayed from the content script).
+    void openFactcheckPanel(tabId);
+    return runFactcheckForTab(tabId, msg.key, msg.input);
+  },
+  openFactcheck: async (_msg, sender) => {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined || !fromFeedTab(sender)) deny('openFactcheck');
+    // When Chrome refuses, the in-feed item points to the toolbar button, whose popup opens the side panel.
+    return { ok: await openFactcheckPanel(tabId) };
   },
 };
 

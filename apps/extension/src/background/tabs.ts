@@ -1,6 +1,6 @@
 import type { TabState } from '@unalgorithm/core';
 import { browser } from 'wxt/browser';
-import { statsItem, tabStateItem } from '../lib/storage.ts';
+import { factcheckItem, statsItem, tabStateItem } from '../lib/storage.ts';
 import { createLock, dateKey, readSettingsSafe } from './util.ts';
 
 const lock = createLock();
@@ -62,6 +62,7 @@ export async function updateBadge(tabId: number, s: TabState): Promise<void> {
     .catch(() => undefined);
 }
 
+/** A closed tab's live state and its fact-checks go with it. */
 export async function forgetTab(tabId: number): Promise<void> {
-  await tabStateItem(tabId).removeValue();
+  await Promise.all([tabStateItem(tabId).removeValue(), factcheckItem(tabId).removeValue()]);
 }

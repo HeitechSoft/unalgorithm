@@ -46,6 +46,9 @@ importers:
       '@unalgorithm/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@unalgorithm/research':
+        specifier: workspace:*
+        version: link:../../packages/research
       '@unalgorithm/sync':
         specifier: workspace:*
         version: link:../../packages/sync

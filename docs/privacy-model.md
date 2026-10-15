@@ -61,6 +61,24 @@ For both kinds of UnAlgorithm server, Facebook posts that aren't public are neve
 by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
 
+### Fact-check (Labs)
+
+Fact-check (RM1) runs only on the user's own Anthropic key, only when Settings → Labs → Fact-check is on, and only
+after the user confirms a check of one post. The background (`apps/extension/src/background/factcheck.ts`) checks
+every gate again: Labs on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
+author name are dropped, the text is capped at 2,000 characters with the same masking as above), and
+`serverMayReceive` passes, so a Facebook post that isn't public is never checked, on an own key too. Three calls go
+directly from the browser to Anthropic:
+
+1. Claims (Haiku): the post's text, platform, language and shared link's domain and title. No interests, no ref
+   derived from the post.
+2. Research (Sonnet with Anthropic's web search tool): only the claims picked in step 1. Anthropic runs the searches.
+3. Verdicts (Sonnet, no tools): the claims, the retrieved snippets and the research notes.
+
+The result is kept in session storage under `session:factcheck:<tabId>` (the 5 newest checks per tab), removed when
+the tab closes, when the browser restarts and by "Erase everything". Usage goes to the local usage ledger with no post
+counted. Nothing goes to HeitechSoft.
+
 Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
 keys.
 

@@ -36,7 +36,13 @@ import {
   SOURCE_LIMITS,
   sourceId,
 } from '@unalgorithm/core';
-import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema, serverMayReceive } from '@unalgorithm/protocol';
+import {
+  BLOCKING_AI_ERRORS,
+  type NormalizedUsage,
+  type PostForAI,
+  PostForAISchema,
+  serverMayReceive,
+} from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
@@ -113,7 +119,7 @@ export function sourcePermission(cfg: AISourceConfig): string | null {
 let onDevice: AIClient | undefined;
 
 /** A `server` source has no client here: the server calls the model (`classifyViaServer`). */
-async function clientFor(cfg: Exclude<AISourceConfig, { kind: 'server' }>, apiKey?: string): Promise<AIClient> {
+export async function clientFor(cfg: Exclude<AISourceConfig, { kind: 'server' }>, apiKey?: string): Promise<AIClient> {
   await loadCapabilities();
   const key = apiKey ?? (await getSecret(sourceId(cfg)));
   switch (cfg.kind) {
@@ -147,7 +153,7 @@ function modelFor(cfg: AISourceConfig): string {
   throw new AIError('no-model', 'Choose a model in Settings → AI.');
 }
 
-async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
+export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
   const pattern = sourcePermission(cfg);
   if (!pattern) return true;
   try {
@@ -164,6 +170,35 @@ const limiters = new Map<string, ReturnType<typeof createLimiter>>();
 
 function toBgError(e: AIError, cfg: AISourceConfig): BgError {
   return { code: e.code, message: describeError(e.code, providerName(cfg)) };
+}
+
+/**
+ * What a content script sent, as the AI may see it: only the fields in PostForAISchema survive (zod strips anything
+ * else, an author name for one), and the text is clipped to `maxChars`. `ref` is a placeholder the caller replaces.
+ * Null when the input is not a post.
+ */
+export function parsePostInput(input: Omit<PostForAI, 'ref'> | undefined, maxChars: number): PostForAI | null {
+  const raw = String(input?.text ?? '');
+  const cut = raw.length > maxChars;
+  const parsed = PostForAISchema.safeParse({
+    ...input,
+    ref: 'x',
+    text: cut ? `${raw.slice(0, maxChars - 1).trimEnd()}…` : raw,
+    textComplete: Boolean(input?.textComplete) && !cut,
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+/** Add one model call to the usage ledger. `posts` counts toward the daily post cap. */
+export async function recordSpend(
+  model: string,
+  usage: NormalizedUsage,
+  opts: { posts: number; failed: boolean },
+): Promise<void> {
+  await usageLock(async () => {
+    const ledger = await usageItem.getValue();
+    await usageItem.setValue(recordUsage(ledger, { model, usage, posts: opts.posts, failed: opts.failed }));
+  });
 }
 
 /**
@@ -210,16 +245,8 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const results: ClassifyItemResult[] = [];
   const prepared = [];
   for (const it of items) {
-    // Only the fields in PostForAISchema survive (zod strips anything else), whatever the content script sent.
-    const raw = String(it.input?.text ?? '');
-    const cut = raw.length > limits.maxPostChars;
-    const parsed = PostForAISchema.safeParse({
-      ...it.input,
-      ref: 'x',
-      text: cut ? `${raw.slice(0, limits.maxPostChars - 1).trimEnd()}…` : raw,
-      textComplete: Boolean(it.input?.textComplete) && !cut,
-    });
-    if (!parsed.success) {
+    const input = parsePostInput(it.input, limits.maxPostChars);
+    if (!input) {
       results.push({
         key: it.key,
         status: 'failed',
@@ -229,7 +256,6 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
       });
       continue;
     }
-    const input: PostForAI = parsed.data;
     // R23: a Facebook post that isn't public never leaves this computer for a server, whatever the server would do.
     if (cfg.kind === 'server' && !serverMayReceive(input)) {
       results.push({ key: it.key, status: 'skipped', reason: 'not-public' });
@@ -318,16 +344,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
           }
         }
         await putCached(fresh).catch(() => undefined);
-        await usageLock(async () => {
-          const ledger = await usageItem.getValue();
-          await usageItem.setValue(
-            recordUsage(ledger, {
-              model: cfg.kind === 'server' ? SERVER_USAGE_MODEL : outcome.model,
-              usage: outcome.usage,
-              posts: isLocalSource(cfg) ? 0 : ok,
-              failed: outcome.failedCalls > 0,
-            }),
-          );
+        await recordSpend(cfg.kind === 'server' ? SERVER_USAGE_MODEL : outcome.model, outcome.usage, {
+          posts: isLocalSource(cfg) ? 0 : ok,
+          failed: outcome.failedCalls > 0,
         });
       }),
     ),

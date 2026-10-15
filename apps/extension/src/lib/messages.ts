@@ -3,6 +3,7 @@ import type {
   AccountDevice,
   AIErrorCode,
   Classification,
+  FactcheckResult,
   NoiseLabel,
   PlatformId,
   PostForAI,
@@ -118,7 +119,11 @@ export type BgRequest =
   | { type: 'serverRevokeDevice'; deviceId: string }
   | { type: 'syncStatus' }
   | { type: 'syncSetEnabled'; enabled: boolean }
-  | { type: 'syncNow' };
+  | { type: 'syncNow' }
+  /** Fact-check one public post on the person's own Anthropic key (Labs). Opens the side panel for the tab. */
+  | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
+  /** Opens the side panel for the sending feed tab, where the newest check shows. */
+  | { type: 'openFactcheck' };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -145,6 +150,9 @@ export interface BgResponses {
   syncStatus: SyncStatus;
   syncSetEnabled: SyncStatus;
   syncNow: SyncStatus;
+  factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
+  /** False when Chrome refused to open the side panel (no user gesture reached it). */
+  openFactcheck: { ok: boolean };
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */
