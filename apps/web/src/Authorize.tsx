@@ -10,7 +10,7 @@ import { Banner, Button, ListGroup } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, authorize, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
-import { failureMessage, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
+import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const INTRO = 'Sign in to use AI in the UnAlgorithm Feed extension.';
 
@@ -34,6 +34,7 @@ export function Authorize() {
   const [request] = useState(linkRequest);
   /** Google sent the browser back with `?error=`: said on the first sign-in step only, not after a later sign-out. */
   const [googleFailed, setGoogleFailed] = useState(googleSignInFailed);
+  const [googleError] = useState(googleSignInError);
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [step, setStep] = useState<Step>({ name: 'loading' });
   /** Counts the returns to the sign-in step: each starts a fresh SignIn, even when no other step rendered in between. */
@@ -138,6 +139,7 @@ export function Authorize() {
           // Google comes back to this page with the extension's request, and without the `error` of an earlier try.
           returnTo={`${window.location.pathname}?${new URLSearchParams(request)}`}
           googleFailed={googleFailed}
+          googleError={googleError}
           onSignedIn={(address) => {
             setStep({ name: 'continue', email: address });
             void toExtension(request, address);

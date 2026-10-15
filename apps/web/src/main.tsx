@@ -1,10 +1,11 @@
 import '@unalgorithm/ui/styles.css';
 import './web.css';
-import { ACCOUNT_PAGE_PATH, AUTHORIZE_PAGE_PATH, SETUP_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, AUTHORIZE_PAGE_PATH, SETUP_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, ToastProvider } from '@unalgorithm/ui';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
+import { Admin } from './Admin.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
 import { Page } from './Page.tsx';
@@ -53,6 +54,8 @@ if (root) {
           <Account />
         ) : pathname === SETUP_PAGE_PATH ? (
           <Setup />
+        ) : pathname === ADMIN_PAGE_PATH ? (
+          <Admin />
         ) : (
           <Home />
         )}

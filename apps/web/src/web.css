@@ -94,3 +94,19 @@
   justify-items: center;
   text-align: center;
 }
+/* The admin page's accounts: the badges and numbers under each address, wrapping as one line. */
+.web-user-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ua-space-1) var(--ua-space-2);
+}
+/* The admin page's per-person dialog: one titled block for each change. */
+.web-dialog-section {
+  display: grid;
+  gap: var(--ua-space-2);
+  margin-top: var(--ua-space-4);
+}
+.web-dialog-section h3 {
+  font: var(--ua-type-headline);
+}

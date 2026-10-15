@@ -1,10 +1,11 @@
 /**
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
- * bills, the account's devices and passkeys, and the setup link's claim that makes the first admin. All same-origin, so
- * the browser sends the session cookie and the `Origin` header the server checks. Every failure is an `ApiError`
- * carrying the HTTP status (0: no answer at all), except the browser's passkey prompt: a cancelled one is
- * `PasskeyCancelled`, and its other errors keep their name.
+ * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
+ * accounts and the changes an admin makes to one. All same-origin, so the browser sends the session cookie and the
+ * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all) and
+ * the error body's `code` when it has one, except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`,
+ * and its other errors keep their name.
  */
 import {
   type AuthenticationResponseJSON,
@@ -22,10 +23,15 @@ import {
   AccountDevicesResponseSchema,
   AccountExportSchema,
   ADMIN_SETUP_PATH,
+  ADMIN_USERS_PATH,
   AdminOkSchema,
+  type AdminRole,
+  type AdminUsers,
+  AdminUsersSchema,
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
+  adminUserActionPath,
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
   CreditAccountSchema,
@@ -33,7 +39,11 @@ import {
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
+  type SetAccessRequest,
+  type SetCapRequest,
+  type SetRoleRequest,
   type SetupRequest,
+  type UserAccess,
 } from '@unalgorithm/protocol';
 import { z } from 'zod';
 
@@ -52,8 +62,11 @@ export const PASSKEY_REGISTER_VERIFY_PATH = '/api/auth/passkey/verify-registrati
 export const PASSKEY_LIST_PATH = '/api/auth/passkey/list-user-passkeys';
 export const PASSKEY_DELETE_PATH = '/api/auth/passkey/delete-passkey';
 
-/** `get-session` answers `null` without a session; the page only needs the address. */
-const SessionSchema = z.object({ user: z.object({ email: z.string() }) }).nullable();
+/**
+ * `get-session` answers `null` without a session; the pages need the address, and the admin plugin's `role` (absent or
+ * null for an account it never gave one).
+ */
+const SessionSchema = z.object({ user: z.object({ email: z.string(), role: z.string().nullish() }) }).nullable();
 
 /**
  * `sign-in/social` with `disableRedirect` answers where to send the browser instead of redirecting it. Only Google's own
@@ -92,11 +105,14 @@ export type Passkey = z.output<typeof PasskeySchema>;
 export class ApiError extends Error {
   /** The HTTP status (a 2xx one when the answer could not be used), or 0 when the server could not be reached. */
   readonly status: number;
+  /** The error body's `code`: Better Auth's (such as `BANNED_USER`) or the server's own `AIErrorCode`. */
+  readonly code?: string;
 
-  constructor(status: number) {
+  constructor(status: number, code?: string) {
     super(status ? `The server answered ${status}.` : 'The server could not be reached.');
     this.name = 'ApiError';
     this.status = status;
+    if (code !== undefined) this.code = code;
   }
 }
 
@@ -114,7 +130,11 @@ async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown): P
   } catch {
     throw new ApiError(0);
   }
-  if (!res.ok) throw new ApiError(res.status);
+  if (!res.ok) {
+    const failure: unknown = await res.json().catch(() => undefined);
+    const code = typeof failure === 'object' && failure !== null ? (failure as { code?: unknown }).code : undefined;
+    throw new ApiError(res.status, typeof code === 'string' ? code : undefined);
+  }
   const parsed = schema.safeParse(await res.json().catch(() => undefined));
   if (!parsed.success) throw new ApiError(res.status);
   return parsed.data;
@@ -125,10 +145,10 @@ export async function serverInfo(): Promise<ServerInfo> {
   return request(SERVER_INFO_PATH, ServerInfoSchema);
 }
 
-/** Who is signed in on this page, if anyone. */
-export async function getSession(): Promise<{ email: string } | null> {
+/** Who is signed in on this page, if anyone, and their role (`admin` for an admin of this server). */
+export async function getSession(): Promise<{ email: string; role: string | null } | null> {
   const session = await request(SESSION_PATH, SessionSchema);
-  return session ? { email: session.user.email } : null;
+  return session ? { email: session.user.email, role: session.user.role ?? null } : null;
 }
 
 /** Emails a sign-in code. The server answers the same whether or not the address may sign in. */
@@ -253,4 +273,27 @@ export async function deleteAccount(confirm: string): Promise<void> {
 export async function claimSetup(token: string): Promise<void> {
   const body: SetupRequest = { token };
   await request(ADMIN_SETUP_PATH, AdminOkSchema, body);
+}
+
+/** The server's accounts with their numbers, its invites and its default cap; 401 without a session, 403 for a non-admin. */
+export async function adminUsers(): Promise<AdminUsers> {
+  return request(ADMIN_USERS_PATH, AdminUsersSchema);
+}
+
+/** Sets the account's own daily post cap; `null` lets the server's cap apply. */
+export async function setUserCap(id: string, cap: number | null): Promise<void> {
+  const body: SetCapRequest = { dailyPostCap: cap };
+  await request(adminUserActionPath(id, 'cap'), AdminOkSchema, body);
+}
+
+/** Removes the account's access (it is signed out everywhere) or restores it; 400 for the admin's own account. */
+export async function setUserAccess(id: string, access: UserAccess): Promise<void> {
+  const body: SetAccessRequest = { access };
+  await request(adminUserActionPath(id, 'access'), AdminOkSchema, body);
+}
+
+/** Makes the account an admin or a regular user; 400 for the admin's own account. */
+export async function setUserRole(id: string, role: AdminRole): Promise<void> {
+  const body: SetRoleRequest = { role };
+  await request(adminUserActionPath(id, 'role'), AdminOkSchema, body);
 }

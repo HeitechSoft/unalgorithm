@@ -3,6 +3,9 @@
  * accepted code leaves Better Auth's session cookie set. Below the email form, the other ways in that the discovery
  * document lists: Google leaves the page and comes back to `returnTo`, where the page finds the session as it finds any;
  * a passkey signs in on the page, as the code does. The page around it decides what happens next.
+ *
+ * An admin can remove a person's access (CL4-06): the admin plugin then refuses a session on every way in, answering
+ * `BANNED_USER` (Google: `?error=BANNED_USER` in the address it sends the browser back to), and SignIn says so.
  */
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { EMAIL_OTP_METHOD, GOOGLE_METHOD, PASSKEY_METHOD } from '@unalgorithm/protocol';
@@ -23,6 +26,9 @@ const PASSKEY_CANCELLED = 'Passkey sign-in was cancelled.';
 /** Better Auth answers 401 for a passkey it doesn't know and 400 for one it can't verify. */
 const PASSKEY_UNKNOWN =
   "That passkey isn't set up for this server. Sign in with your email, then add a passkey on your account page.";
+/** The admin plugin's error code for an account whose access an admin removed. */
+const BANNED_USER = 'BANNED_USER';
+const REMOVED = "This account can't sign in to this server. Ask its admin.";
 
 const EMAIL_ONLY: readonly string[] = [EMAIL_OTP_METHOD];
 
@@ -44,6 +50,11 @@ export function googleSignInFailed(): boolean {
   return new URLSearchParams(window.location.search).has('error');
 }
 
+/** Why Google sign-in failed: the `error` value Better Auth put in this page's address, if any. */
+export function googleSignInError(): string | undefined {
+  return new URLSearchParams(window.location.search).get('error') ?? undefined;
+}
+
 export interface SignInProps {
   /** Called once the emailed code or a passkey was accepted; the server has set the session cookie. */
   onSignedIn(email: string): void;
@@ -57,6 +68,8 @@ export interface SignInProps {
   returnTo?: string;
   /** The page was opened by a failed Google sign-in (`?error=` in its address); said as `notice` is. */
   googleFailed?: boolean;
+  /** That `error` value (`googleSignInError()`): `BANNED_USER` says the account was removed instead. */
+  googleError?: string;
 }
 
 type Step = { name: 'email' } | { name: 'code'; email: string };
@@ -70,13 +83,16 @@ export function SignIn({
   methods = EMAIL_ONLY,
   returnTo,
   googleFailed = false,
+  googleError,
 }: SignInProps) {
   const [step, setStep] = useState<Step>({ name: 'email' });
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState<Busy | null>(null);
   // The page's message shows as an error would, and the first request clears it as it clears any error.
-  const [error, setError] = useState<string | null>(pageNotice ?? (googleFailed ? GOOGLE_FAILED : null));
+  const [error, setError] = useState<string | null>(
+    pageNotice ?? (googleFailed ? (googleError === BANNED_USER ? REMOVED : GOOGLE_FAILED) : null),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   /** Set while a request is out, so a second submit before the busy buttons render sends nothing. */
   const inFlight = useRef(false);
@@ -107,7 +123,8 @@ export function SignIn({
       await action();
       return true;
     } catch (err) {
-      setError(describe(err));
+      // Whichever way in, the server refuses a removed account the same way.
+      setError(err instanceof ApiError && err.code === BANNED_USER ? REMOVED : describe(err));
       return false;
     } finally {
       if (!leaving.current) {

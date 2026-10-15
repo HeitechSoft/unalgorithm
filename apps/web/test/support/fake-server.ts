@@ -5,6 +5,10 @@
  * passkeys are kept too: revoking or removing one takes it off its list and adding a passkey puts one on. The account
  * exports as `EXPORT`, and deleting it (with the address typed again) ends the session. The setup link's `SETUP_TOKEN`
  * can be claimed once, as CL4-04's can. Without a session those routes answer 401, as the real ones do.
+ *
+ * The session's `role` is the admin plugin's: the admin routes answer 403 unless it is `admin`. The accounts the admin
+ * page lists (`adminUsers`) are kept too: setting one's cap, access or role changes the next list, as CL4-06's routes
+ * do, and changing the signed-in admin's own access or role answers 400.
  */
 import {
   ACCOUNT_DELETE_PATH,
@@ -14,7 +18,10 @@ import {
   type AccountDevice,
   type AccountExport,
   ADMIN_SETUP_PATH,
+  ADMIN_USERS_PATH,
+  type AdminUsers,
   AUTHORIZE_API_PATH,
+  adminUserActionPath,
   chromiumRedirectUri,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -112,6 +119,13 @@ export const ADDED_PASSKEY = passkeyRow('pk-added', 'Google Password Manager', '
 /** What the account routes answer without a session. */
 export const SESSION_GONE = { status: 401, body: { code: 'auth-required', message: 'Sign in again.' } };
 
+/** What the admin routes answer for an account that isn't an admin (CL4-05's `NOT_ADMIN`). */
+export const NOT_ADMIN = { status: 403, body: { code: 'permission', message: "This account isn't an admin of this server." } };
+/** What CL4-06's routes answer for a change to the signed-in admin's own access or role. */
+export const OWN_ACCOUNT = { status: 400, body: { code: 'bad-request', message: "You can't change your own account here." } };
+/** No accounts listed: the admin page's routes answer this unless a test passes its own. */
+export const NO_ADMIN_USERS: AdminUsers = { users: [], truncated: false, invites: [], defaultDailyPostCap: 1000 };
+
 /** A setup link's token (CL4-04): 43 URL-safe base64 characters, from the fragment of `/setup#<token>`. */
 export const SETUP_TOKEN = 'c2V0dXAtbGluay10b2tlbi1mb3ItdGhlLWZpcnN0LWE';
 /** What `POST /v1/admin/setup` answers for a token that doesn't work: unknown, expired, used, or another address's. */
@@ -173,12 +187,17 @@ export type Reply = Answer | 'offline' | ((call: Call) => Answer | Promise<Answe
  */
 export function fakeServer({
   session = null,
+  role = null,
+  adminUsers = NO_ADMIN_USERS,
   info = INFO,
   devices = [],
   passkeys = [],
   routes = {},
 }: {
   session?: string | null;
+  /** The session user's `role`, whoever signs in. */
+  role?: string | null;
+  adminUsers?: AdminUsers;
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -189,11 +208,16 @@ export function fakeServer({
   let deviceList = [...devices];
   let passkeyList = [...passkeys];
   let setupClaimed = false;
+  let accounts = structuredClone(adminUsers);
   /** `answer` with a session, 401 without one. */
   const withSession =
     (answer: (call: Call) => Answer): Reply =>
     (call) =>
       current ? answer(call) : SESSION_GONE;
+  /** `answer` for an admin's session; 401 without a session and 403 for anyone else, as the admin routes answer. */
+  function asAdmin(answer: (call: Call) => Answer): Reply {
+    return withSession((call) => (role === 'admin' ? answer(call) : NOT_ADMIN));
+  }
   /** The body's field `name`, when it is a string. */
   const field = (call: Call, name: string): string | undefined => {
     const value = (call.body as Record<string, unknown> | undefined)?.[name];
@@ -203,7 +227,7 @@ export function fakeServer({
     [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: info },
     [`GET ${SESSION_PATH}`]: () => ({
       status: 200,
-      body: current ? { session: { userId: 'u1' }, user: { email: current } } : null,
+      body: current ? { session: { userId: 'u1' }, user: { email: current, role } } : null,
     }),
     [`POST ${SEND_CODE_PATH}`]: { status: 200, body: { success: true } },
     [`POST ${SIGN_IN_PATH}`]: () => {
@@ -253,6 +277,22 @@ export function fakeServer({
       setupClaimed = true;
       return { status: 200, body: { ok: true } };
     }),
+    [`GET ${ADMIN_USERS_PATH}`]: asAdmin(() => ({ status: 200, body: accounts })),
+    ...Object.fromEntries(
+      adminUsers.users.flatMap(({ id, email }) => {
+        /** Changes the account's row in the next list; the admin's own access and role are refused. */
+        const change = (action: 'cap' | 'access' | 'role', own: boolean): [string, Reply] => [
+          `POST ${adminUserActionPath(id, action)}`,
+          asAdmin((call) => {
+            if (own && email === current) return OWN_ACCOUNT;
+            const update = call.body as Record<string, unknown>;
+            accounts = { ...accounts, users: accounts.users.map((u) => (u.id === id ? { ...u, ...update } : u)) };
+            return { status: 200, body: { ok: true } };
+          }),
+        ];
+        return [change('cap', false), change('access', true), change('role', true)];
+      }),
+    ),
     ...routes,
   };
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

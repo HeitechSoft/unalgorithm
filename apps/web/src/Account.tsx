@@ -3,10 +3,11 @@
  * out, or the sign-in (`SignIn`) when nobody is, which Google comes back to. The page names the server only by its
  * discovery document. Sections go below the account row: the credits when the server advertises billing (`Credits`),
  * the devices signed in (`Devices`), the passkeys (`Passkeys`), and the account's export and deletion (`AccountData`).
+ * An admin of the server also gets a link to the admin page under the account row.
  * A section that finds the session gone sends the person back to the sign-in, saying so. Once the account is deleted
  * the page says so and shows nothing else: the session went with the account.
  */
-import { ACCOUNT_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountData } from './AccountData.tsx';
@@ -15,7 +16,7 @@ import { Credits } from './Credits.tsx';
 import { Devices } from './Devices.tsx';
 import { Page } from './Page.tsx';
 import { Passkeys } from './Passkeys.tsx';
-import { failureMessage, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
+import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const UNREACHABLE = "Couldn't reach the server. Try again.";
 /** The server deletes an account only for a session signed in within the last 10 minutes (CL3-15). */
@@ -25,7 +26,7 @@ type Step =
   | { name: 'loading' }
   | { name: 'unavailable' }
   | { name: 'signed-out'; notice?: string }
-  | { name: 'signed-in'; email: string }
+  | { name: 'signed-in'; email: string; admin: boolean }
   | { name: 'deleted' };
 
 export function Account() {
@@ -35,6 +36,7 @@ export function Account() {
   const [error, setError] = useState<string | null>(null);
   /** Google sent the browser back with `?error=`: said until the person signs out, when it no longer applies. */
   const [googleFailed, setGoogleFailed] = useState(googleSignInFailed);
+  const [googleError] = useState(googleSignInError);
 
   /** Asks the server for its discovery document and who is signed in, and shows the step they call for. */
   const load = useCallback(async () => {
@@ -44,7 +46,7 @@ export function Account() {
       const [found, session] = await Promise.all([serverInfo(), getSession()]);
       setInfo(found);
       document.title = `Account · ${found.name}`;
-      setStep(session ? { name: 'signed-in', email: session.email } : { name: 'signed-out' });
+      setStep(session ? { name: 'signed-in', email: session.email, admin: session.role === 'admin' } : { name: 'signed-out' });
     } catch {
       setStep({ name: 'unavailable' });
     }
@@ -101,6 +103,7 @@ export function Account() {
           methods={info.auth.methods}
           returnTo={ACCOUNT_PAGE_PATH}
           googleFailed={googleFailed}
+          googleError={googleError}
           notice={step.notice}
           onSignedIn={() => void load()}
         />
@@ -119,6 +122,7 @@ export function Account() {
             </Button>
           }
         />
+        {step.admin ? <ListRow title={<a href={ADMIN_PAGE_PATH}>Admin</a>} accessory="chevron" /> : null}
       </ListGroup>
       {info.billing ? <Credits onSignedOut={sessionEnded} /> : null}
       <Devices onSignedOut={sessionEnded} />

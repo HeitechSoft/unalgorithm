@@ -11,6 +11,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
 import {
   ACCOUNT_PAGE_PATH,
+  ADMIN_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
   EMAIL_OTP_METHOD,
@@ -240,6 +241,7 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get(AUTHORIZE_PAGE_PATH, page);
   app.get(ACCOUNT_PAGE_PATH, page);
   app.get(SETUP_PAGE_PATH, page);
+  app.get(ADMIN_PAGE_PATH, page);
 
   // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
   let assets: MiddlewareHandler | undefined;
