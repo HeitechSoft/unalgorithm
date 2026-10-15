@@ -342,6 +342,13 @@ describe('resolve', () => {
     expect(await aborted.egress.resolve(ARTICLE, controller.signal)).toEqual({ kind: 'failed' });
     expect(aborted.sends).toEqual([]);
 
+    // No lookup is left to notice the abort (an address literal, the server's own addresses cached): still no request.
+    const warm = harness(dns);
+    await warm.egress.resolve(ARTICLE);
+    expect(await warm.egress.resolve(`https://${PUBLIC_A}/a`, controller.signal)).toEqual({ kind: 'failed' });
+    expect(await warm.egress.probe(`https://${PUBLIC_A}/a`, controller.signal)).toEqual({ kind: 'failed' });
+    expect(warm.sends).toHaveLength(1);
+
     // Aborted while the first hop is in flight: no request to the redirect target follows.
     const midway = new AbortController();
     const hanging = harness(dns, () => new Promise<SendResult>(() => {}));

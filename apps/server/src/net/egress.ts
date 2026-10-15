@@ -301,8 +301,11 @@ export function createEgress(opts: EgressOptions): Egress {
     for (let redirects = 0; ; ) {
       const hop = await checkHop(url, signal);
       if (!hop.ok) return { kind: 'refused', reason: hop.reason };
+      // Checked before send is called: a hop with no lookup left to notice an abort must not go out either.
       const request = (method: 'HEAD' | 'GET') =>
-        raceAbort(send({ url, address: hop.address, family: hop.family, method, signal, userAgent }), signal);
+        signal.aborted
+          ? Promise.reject(new Aborted())
+          : raceAbort(send({ url, address: hop.address, family: hop.family, method, signal, userAgent }), signal);
       let result = await request('HEAD');
       if (result.status === 405 || result.status === 501) result = await request('GET');
       if (!REDIRECTS.has(result.status) || !result.location)
