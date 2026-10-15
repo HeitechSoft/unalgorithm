@@ -229,6 +229,10 @@ three optional ones:
   does not implement it).
 - `deleteAccount?(userId)`: called before the account is deleted; a rejection stops the deletion. It may be called
   again for the same account, so it is idempotent per userId.
+- `alerts?(now)`: asked at each alert check (`ops.check-alerts`), the module's alerts open now, each a `billing-<code>`
+  key, a level and one number, which open, close and notify as the server's own do. Invalid ones are dropped and at
+  most 20 kept; a rejection, or no answer within 5 s, keeps the module's open alerts as they are and opens
+  `billing-alerts-failed`.
 
 A module's rows are keyed by user id with no foreign key, so a module that implements neither keeps them after the
 account is deleted.
@@ -243,7 +247,8 @@ The host (`BillingHost`, `apps/server/src/billing/host.ts`) is all a module is o
 for the module's own `billing` schema; its own migrations, under a lock of their own; an account's id, email address,
 verified flag and creation time; the two auth checks for its routes (the extension's bearer token and the server
 pages' session); the job registry; the logger; the server's origin, name and version; and the running release's
-`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
+`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`); and the server's metered
+AI cost per UTC day and model (`usage.costByDay`: summed cost and request counts, no user or request id). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
 reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
 (its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests
 as any server route does. Adding to `BillingHost` is a reviewed public change. UnAlgorithm Cloud's billing module lives

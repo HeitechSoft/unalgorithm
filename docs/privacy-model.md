@@ -260,6 +260,8 @@ What the seam passes to a module:
 - **Export and deletion:** the account's id when the person downloads their data, for the module's own records in the
   download, and before the account is deleted, so the module applies its deletion policy (`exportAccount`,
   `deleteAccount`). A module that implements neither keeps its records after the account is deleted.
+- **The server's AI cost per day:** for each UTC day and model, the summed cost and the number of requests, with no
+  account or request id, so the module can compare it with the AI vendor's bill.
 
 A module's own routes (`mount`), such as the balance route the extension reads, receive each request like any route of
 the server, the client's IP address and headers included. The module also runs inside the server process with the

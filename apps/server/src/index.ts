@@ -110,12 +110,13 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     registerAuthJobs(jobs, { db: db.db });
     registerClaimCacheJobs(jobs, { db: db.db });
     registerSyncJobs(jobs, { db: db.db });
-    const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
-    registerAlertJobs(jobs, { db: db.db, config, log, errors, notify: notifier.notify });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
     const billing = await loadBilling(config, host, log);
+    // After loadBilling, so the alert check also asks the module for its alerts; before the jobs start.
+    const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
+    registerAlertJobs(jobs, { db: db.db, config, log, errors, notify: notifier.notify, billing });
     const search = searchProviderFor(config);
     const egress = createEgress({ publicUrl: config.publicUrl, deny: config.egressDeny, version: config.version });
     const app = createApp({

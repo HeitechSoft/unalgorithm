@@ -25,6 +25,7 @@ import * as protocol from '@unalgorithm/protocol';
 import { eq, type SQL, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
+import { costByDay, type DayModelCost } from '../ai/metering.ts';
 import { type DeviceEnv, requireDevice } from '../auth/bearer.ts';
 import type { Auth } from '../auth/better-auth.ts';
 import { ownPageOnly, requireWebSession, type WebSessionEnv, type WebUser, webUserFrom } from '../auth/web-session.ts';
@@ -106,6 +107,13 @@ export interface BillingHost {
     formatPostsEstimate: typeof formatPostsEstimate;
     formatPrice: typeof formatPrice;
   }>;
+  /**
+   * The server's own metered AI cost (`usage_events`), content-free: per UTC day and model, the summed cost and the
+   * request counts, for days in [from, to) (both 00:00 UTC, at most 62 days, else a `RangeError`). Never a user id,
+   * request id or token count. `usage_events` rows are deleted with their account (`onDelete: 'cascade'`), so a day's
+   * total can fall after the day when an account is deleted: compare it with the vendor's report allowing a tolerance.
+   */
+  readonly usage: Readonly<{ costByDay(from: Date, to: Date): Promise<DayModelCost[]> }>;
 }
 
 /** What `BILLING_MODULE` exports. */
@@ -179,6 +187,7 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
     html,
     pages: Object.freeze({ render: (c: Context, page: ModulePage) => renderModulePage(c, { config, log }, page) }),
     format: Object.freeze({ formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice }),
+    usage: Object.freeze({ costByDay: (from: Date, to: Date) => costByDay(db.db, from, to) }),
   });
 }
 
