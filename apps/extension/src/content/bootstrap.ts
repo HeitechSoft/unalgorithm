@@ -33,6 +33,11 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     report: () => {
       window.open(reportProblemUrl(adapter, controller), '_blank', 'noopener');
     },
+    factcheck: (key, input) => sendToBackground({ type: 'factcheck', key, input }),
+    openFactcheck: async () => {
+      if (!ctx.isValid) return false;
+      return (await sendToBackground({ type: 'openFactcheck' }).catch(() => ({ ok: false }))).ok;
+    },
   };
 
   const controller = new FeedController(adapter, bridge, mountUiHost, () => ctx.isValid);

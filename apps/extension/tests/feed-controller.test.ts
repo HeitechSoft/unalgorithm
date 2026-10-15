@@ -42,6 +42,8 @@ function bridge(over: Partial<Bridge> = {}): Bridge {
     coachMarkShown: vi.fn(),
     openSettings: vi.fn(),
     report: vi.fn(),
+    factcheck: vi.fn(),
+    openFactcheck: vi.fn(async () => true),
     ...over,
   };
 }

@@ -6,6 +6,8 @@ import {
   evaluateHealth,
   type FilterDecision,
   type FilterKey,
+  factcheckOffered,
+  factcheckPriceLabel,
   HEALTHY,
   type HealthReport,
   type HealthSample,
@@ -28,11 +30,20 @@ import {
   BLOCKING_AI_ERRORS,
   type Classification,
   type PlatformId,
+  type PostForAI,
   type PostKey,
   serverMayReceive,
   uuidv7,
 } from '@unalgorithm/protocol';
-import { type FeedItemHandlers, type FeedItemModel, type ToastModel, type WhyActionId, whyCopy } from '@unalgorithm/ui';
+import {
+  type FactcheckAction,
+  type FactcheckItemModel,
+  type FeedItemHandlers,
+  type FeedItemModel,
+  type ToastModel,
+  type WhyActionId,
+  whyCopy,
+} from '@unalgorithm/ui';
 import type { BgError, BgResponses, ClassifyItem, SettingsAction } from '../lib/messages.ts';
 import { GLOBAL_STYLE_ID, globalCss, sampleHostTheme } from './global-css.ts';
 
@@ -46,6 +57,8 @@ const HEALTH_WINDOW = 30;
 const MAX_HIGHLIGHTS = 20;
 const MAX_HIDDEN_ITEMS = 60;
 const TOAST_MS = 6000;
+const FACTCHECK_STALE = "Couldn't reach UnAlgorithm. Reload the page.";
+const FACTCHECK_TOOLBAR_HINT = 'Open UnAlgorithm from the toolbar to see it.';
 
 export interface Runtime {
   settings: Settings;
@@ -71,6 +84,10 @@ export interface Bridge {
   coachMarkShown(): void;
   openSettings(hash?: string): void;
   report(): void;
+  /** Fact-check one post on the person's own key (P3-06). Only ever called after the person confirmed the price. */
+  factcheck(key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<BgResponses['factcheck']>;
+  /** True when the side panel opened (P3-06 `openFactcheck`); false when Chrome refused, or on a stale context. */
+  openFactcheck(): Promise<boolean>;
 }
 
 /** Where our per-item UI lives: a custom element with a shadow root, appended as the item's last child. */
@@ -106,6 +123,8 @@ export interface Entry {
   ui?: UiHost;
   handlers?: FeedItemHandlers;
   coach?: boolean;
+  /** "Check facts" progress; absent means offered (when the offer rule holds). */
+  factcheck?: { state: FactcheckItemModel['state']; message?: string };
 }
 
 type Listener = () => void;
@@ -519,11 +538,16 @@ export class FeedController {
     setAttr(e.el, 'data-unalgo', state);
     const pick = !e.applied && !!e.decision.highlight && rt.settings.display.forYou === 'ring';
     setAttr(e.el, 'data-unalgo-pick', pick ? '' : null);
+    const offered = this.factcheckOffered(e);
+    // Labs switched off, the source changed or the post folded: an offer not yet confirmed goes away.
+    if (!offered && (e.factcheck?.state === 'offered' || e.factcheck?.state === 'confirming')) e.factcheck = undefined;
     const wantsUi =
       state === 'collapsed' ||
       state === 'dimmed' ||
       state === 'revealed' ||
-      (!e.applied && !!e.decision.highlight && rt.settings.display.forYou !== 'off');
+      (!e.applied && !!e.decision.highlight && rt.settings.display.forYou !== 'off') ||
+      offered ||
+      !!e.factcheck;
     if (wantsUi && !e.ui) {
       e.ui = this.mountUi(e);
       e.handlers = this.handlersFor(e);
@@ -626,7 +650,63 @@ export class FeedController {
       forYouStyle: rt.settings.display.forYou,
       ...(e.vote ? { vote: e.vote } : {}),
       ...(e.coach ? { coach: true } : {}),
+      ...this.factcheckModel(e),
     };
+  }
+
+  /** The P3-05 offer rule, on a post that is not folded away (shown, revealed or dimmed). */
+  private factcheckOffered(e: Entry): boolean {
+    const rt = this.rt;
+    if (!rt || e.kind !== 'post' || !e.post) return false;
+    const state = e.el.getAttribute('data-unalgo');
+    if (state !== null && state !== 'revealed' && state !== 'dimmed') return false;
+    return factcheckOffered({ device: rt.device, post: e.post, classification: e.classification });
+  }
+
+  private factcheckModel(e: Entry): { factcheck?: FactcheckItemModel } {
+    const state = e.factcheck?.state ?? 'offered';
+    if ((state === 'offered' || state === 'confirming') && !this.factcheckOffered(e)) return {};
+    return {
+      factcheck: {
+        state,
+        price: factcheckPriceLabel(this.rt?.device.aiSource ?? null) ?? '',
+        ...(e.factcheck?.message ? { message: e.factcheck.message } : {}),
+      },
+    };
+  }
+
+  /** Never automatic: `confirm`, after the price was shown, is the only way a check starts. */
+  private async onFactcheck(e: Entry, action: FactcheckAction): Promise<void> {
+    const rt = this.rt;
+    if (!rt || !e.post) return;
+    switch (action) {
+      case 'start':
+      case 'retry':
+        e.factcheck = { state: 'confirming' };
+        break;
+      case 'cancel':
+        e.factcheck = undefined;
+        break;
+      case 'open': {
+        const opened = await this.bridge.openFactcheck().catch(() => false);
+        if (!opened && e.factcheck?.state === 'done') e.factcheck = { state: 'done', message: FACTCHECK_TOOLBAR_HINT };
+        break;
+      }
+      case 'confirm': {
+        if (e.factcheck?.state !== 'confirming' || !this.factcheckOffered(e)) return;
+        e.factcheck = { state: 'running' };
+        this.notify();
+        const { ref: _ref, ...input } = toPostForAI(e.post, { ref: 'x', redactMentions: rt.settings.ai.redactMentions });
+        try {
+          const res = await this.bridge.factcheck(e.post.id, input);
+          e.factcheck = res.ok ? { state: 'done' } : { state: 'failed', message: res.error.message };
+        } catch {
+          e.factcheck = { state: 'failed', message: FACTCHECK_STALE };
+        }
+        break;
+      }
+    }
+    if (this.active && this.entries.get(e.el) === e) this.apply(e);
   }
 
   private handlersFor(e: Entry): FeedItemHandlers {
@@ -646,6 +726,7 @@ export class FeedController {
         e.coach = false;
         this.bridge.coachMarkShown();
       },
+      onFactcheck: (action) => void this.onFactcheck(e, action),
     };
   }
 

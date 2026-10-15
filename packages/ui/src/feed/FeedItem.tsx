@@ -1,6 +1,8 @@
 import type { FilterReason } from '@unalgorithm/core';
 import type { PlatformId } from '@unalgorithm/protocol';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { Button } from '../components/controls.tsx';
+import { Badge } from '../components/feedback.tsx';
 import {
   CircleSlash2,
   Clapperboard,
@@ -11,9 +13,11 @@ import {
   Flame,
   FoldVertical,
   LayoutGrid,
+  LoaderCircle,
   type LucideIcon,
   Megaphone,
   Repeat2,
+  SearchCheck,
   Settings,
   Share2,
   Sparkle,
@@ -26,6 +30,17 @@ import {
 import type { WhyActionId, WhyModel } from './why.ts';
 
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
+
+/** "Check facts" on a flagged public post (Labs): offered, then the price, then running, then the outcome. */
+export interface FactcheckItemModel {
+  state: 'offered' | 'confirming' | 'running' | 'done' | 'failed';
+  /** factcheckPriceLabel(...), e.g. 'About $0.12 on your Anthropic account'. */
+  price: string;
+  /** failed: the error; done: the toolbar hint when the panel could not open. */
+  message?: string;
+}
+
+export type FactcheckAction = 'start' | 'confirm' | 'cancel' | 'open' | 'retry';
 
 export interface FeedItemModel {
   key: string;
@@ -45,6 +60,7 @@ export interface FeedItemModel {
   forYouStyle: 'ring' | 'label' | 'off';
   vote?: 'more' | 'less';
   coach?: boolean;
+  factcheck?: FactcheckItemModel;
 }
 
 export interface FeedItemHandlers {
@@ -54,6 +70,7 @@ export interface FeedItemHandlers {
   onWhyAction(id: WhyActionId): void;
   onVote(v: 'more' | 'less' | null): void;
   onCoachDone(): void;
+  onFactcheck(action: FactcheckAction): void;
 }
 
 const REASON_GLYPH: Partial<Record<FilterReason, LucideIcon>> = {
@@ -236,8 +253,72 @@ function Row({ children, bar, label }: { children: ReactNode; bar?: boolean; lab
   );
 }
 
+/** The quiet fact-check row. A check never starts without the price shown and a second click on "Check". */
+function FactcheckRow({ model, on }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void }) {
+  const checkRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (model.state === 'confirming') checkRef.current?.focus();
+  }, [model.state]);
+  const text =
+    model.state === 'confirming'
+      ? model.price
+      : model.state === 'running'
+        ? 'Checking facts…'
+        : model.state === 'done'
+          ? ['Checked.', model.message].filter(Boolean).join(' ')
+          : model.state === 'failed'
+            ? model.message
+            : '';
+  return (
+    <div className="ua-row ua-row--bar ua-fc" role="group" aria-label="Fact-check">
+      {model.state === 'offered' ? (
+        <>
+          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={SearchCheck} onClick={() => on('start')}>
+            Check facts
+          </Button>
+          <Badge tone="ai">Labs</Badge>
+        </>
+      ) : null}
+      <span className="ua-fc-status" aria-live="polite">
+        {model.state === 'running' ? <LoaderCircle className="ua-glyph ua-spin" aria-hidden="true" /> : null}
+        {text}
+      </span>
+      {model.state === 'confirming' ? (
+        <>
+          <Button ref={checkRef} size="sm" variant="tinted" className="ua-btn ua-btn--tint" onClick={() => on('confirm')}>
+            Check
+          </Button>
+          <Button size="sm" variant="plain" className="ua-btn" onClick={() => on('cancel')}>
+            Cancel
+          </Button>
+        </>
+      ) : null}
+      {model.state === 'done' ? (
+        <Button size="sm" variant="plain" className="ua-btn ua-btn--accent" onClick={() => on('open')}>
+          See result
+        </Button>
+      ) : null}
+      {model.state === 'failed' ? (
+        <Button size="sm" variant="plain" className="ua-btn ua-btn--accent" onClick={() => on('retry')}>
+          Try again
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** The UI UnAlgorithm adds to one feed item. Ordinary posts never render this at all. */
 export function FeedItem({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
+  // The fact-check row sits below whatever else the item shows; a plain shown post gets only the row.
+  return (
+    <>
+      <ItemMain model={model} on={on} />
+      {model.factcheck ? <FactcheckRow model={model.factcheck} on={on.onFactcheck} /> : null}
+    </>
+  );
+}
+
+function ItemMain({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
   const [confirm, setConfirm] = useState<'more' | 'less' | null>(null);
   const anchorId = useId().replace(/:/g, '');
   const anchor = `--ua-stub-${anchorId}`;
