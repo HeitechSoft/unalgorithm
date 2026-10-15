@@ -163,7 +163,7 @@
       }
     },
     {
-      "includes": ["packages/platforms/**", "packages/ai/**"],
+      "includes": ["packages/platforms/**", "packages/ai/**", "packages/research/**"],
       "linter": {
         "rules": {
           "style": {

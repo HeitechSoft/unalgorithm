@@ -248,6 +248,21 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
 
+  packages/research:
+    dependencies:
+      '@unalgorithm/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@unalgorithm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@unalgorithm/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
+
   packages/sync:
     dependencies:
       '@unalgorithm/ai':

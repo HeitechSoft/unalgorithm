@@ -3,6 +3,7 @@ export * from './admin.ts';
 export * from './billing.ts';
 export * from './classify.ts';
 export * from './errors.ts';
+export * from './factcheck.ts';
 export * from './hlc.ts';
 export * from './ids.ts';
 export * from './platform.ts';
