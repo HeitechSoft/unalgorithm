@@ -393,7 +393,8 @@ describe('flow', () => {
     await user.keyboard('{Enter}');
     expect(await screen.findByLabelText('Server address')).toBeTruthy();
     expect(sentTypes()).toEqual(expect.arrayContaining(['serverDiscover', 'serverSignIn', 'saveSource', 'serverSignOut']));
-  });
+    // A long keyboard walk through the whole card: about 0.6 s alone, over 5 s under full-suite load.
+  }, 15_000);
 });
 
 describe('manifest', () => {
