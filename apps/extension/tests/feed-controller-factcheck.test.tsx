@@ -9,6 +9,7 @@ import {
   defaultDevice,
   defaultSettings,
   EMPTY_LEARNED,
+  jobPriceLabel,
   type ServerOffer,
   toPostForAI,
 } from '@unalgorithm/core';
@@ -192,6 +193,25 @@ describe('Check facts: where it is offered', () => {
     const noKey = await feed(feed2026(postCard(CLAIMS)), device(true, compat));
     expect(noKey.c.mounted()).toHaveLength(0);
     noKey.c.stop();
+  });
+
+  it('test_feed_price_line_passes_web_search', async () => {
+    // P3-45: the feed passes this device's web search key, so the price is P3-44's compat line.
+    const compat: AISourceConfig = {
+      kind: 'openai-compatible',
+      preset: 'ollama',
+      baseUrl: 'http://localhost:11434/v1',
+      auth: 'none',
+      model: null,
+    };
+    const d: Device = { ...device(true, compat), webSearch: { provider: 'brave' } };
+    const { c } = await feed(feed2026(postCard(CLAIMS)), d);
+    const price = c.modelFor(entryOf(c, CLAIMS)).factcheck;
+    expect(price).toStrictEqual({ state: 'offered', price: jobPriceLabel('factcheck', compat, null, { provider: 'brave' }) });
+    expect(price).toMatchObject({
+      price: expect.stringMatching(/^Free on this computer, plus up to \d+ searches on your Brave key$/),
+    });
+    c.stop();
   });
 
   it('test_no_action_on_collapsed_post_until_revealed', async () => {

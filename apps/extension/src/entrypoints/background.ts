@@ -16,6 +16,7 @@ import {
 import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
+import { forgetSearchKey, saveSearchKey } from '../background/search-key.ts';
 import {
   discoverServer,
   type ServerAccount,
@@ -214,6 +215,15 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   forgetKey: async (msg, sender) => {
     if (!fromExtensionPage(sender)) deny('forgetKey');
     await forgetKey(msg.config);
+    return { ok: true };
+  },
+  saveSearchKey: async (msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('saveSearchKey');
+    return saveSearchKey(msg.provider, msg.apiKey);
+  },
+  forgetSearchKey: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('forgetSearchKey');
+    await forgetSearchKey();
     return { ok: true };
   },
   serverDiscover: async (msg, sender) => {

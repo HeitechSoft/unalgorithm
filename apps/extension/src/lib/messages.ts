@@ -1,4 +1,13 @@
-import type { AISourceConfig, FilterKey, HealthReport, PersonRule, Preset, TabState, Topic } from '@unalgorithm/core';
+import type {
+  AISourceConfig,
+  FilterKey,
+  HealthReport,
+  PersonRule,
+  Preset,
+  TabState,
+  Topic,
+  WebSearchProviderId,
+} from '@unalgorithm/core';
 import type {
   AccountDevice,
   AIErrorCode,
@@ -112,6 +121,9 @@ export type BgRequest =
   | { type: 'clearData'; what: 'cache' | 'learned' | 'stats' | 'all' }
   | { type: 'onDeviceStatus' }
   | { type: 'forgetKey'; config: AISourceConfig }
+  /** The person's own Brave or Tavily key for an OpenAI-compatible source (P3-45), tested with one fixed search. */
+  | { type: 'saveSearchKey'; provider: WebSearchProviderId; apiKey: string }
+  | { type: 'forgetSearchKey' }
   | { type: 'serverDiscover'; baseUrl: string }
   | { type: 'serverSignIn'; baseUrl: string }
   | { type: 'serverSignOut' }
@@ -154,6 +166,8 @@ export interface BgResponses {
   clearData: { ok: true };
   onDeviceStatus: { availability: 'no-api' | 'unavailable' | 'downloadable' | 'downloading' | 'available' };
   forgetKey: { ok: true };
+  saveSearchKey: { ok: true } | { ok: false; error: BgError };
+  forgetSearchKey: { ok: true };
   serverDiscover: { ok: true; origin: string; label: ServerLabel; info: ServerInfo } | { ok: false; error: BgError };
   serverSignIn: { ok: true; account: PublicServerAccount } | { ok: false; error: BgError };
   serverSignOut: { ok: true };

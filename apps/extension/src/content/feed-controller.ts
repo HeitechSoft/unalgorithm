@@ -706,7 +706,8 @@ export class FeedController {
     return {
       [job]: {
         state,
-        price: jobPriceLabel(job, this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null) ?? '',
+        price:
+          jobPriceLabel(job, this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null, this.rt?.device.webSearch) ?? '',
         ...(e[job]?.message ? { message: e[job].message } : {}),
       },
     };

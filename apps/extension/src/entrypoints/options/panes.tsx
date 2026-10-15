@@ -47,6 +47,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
+import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { perspectivesRegistry } from '../../lib/outlets.ts';
@@ -722,13 +723,20 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
 export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
   const offer = useStorageItem(serverOfferItem, null);
-  const can = sourceCapabilities(device.aiSource, offer);
+  const can = sourceCapabilities(device.aiSource, offer, device.webSearch);
   const capable = can.factcheck;
   const onServer = device.aiSource?.kind === 'server';
-  const needs = onServer ? "Your server doesn't offer fact-check." : 'Needs your own Anthropic key or a server that offers it.';
+  const onCompat = device.aiSource?.kind === 'openai-compatible';
+  const needsKey = 'Needs a web search key (above).';
+  const needs = onServer
+    ? "Your server doesn't offer fact-check."
+    : onCompat
+      ? needsKey
+      : 'Needs your own Anthropic key or a server that offers it.';
   return (
     <>
       <Title intro="Early features. They may change or go away.">Labs</Title>
+      {onCompat ? <WebSearchKey device={device} /> : null}
       <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
         <ListRow
           title="Fact-check"
@@ -742,7 +750,7 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
             />
           }
         />
-        {capable ? null : (
+        {capable || onCompat ? null : (
           <div style={{ padding: '0 12px 12px' }}>
             <Button variant="plain" size="sm" onClick={() => (location.hash = '#/ai')}>
               Set up AI
@@ -760,7 +768,9 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
                 ? undefined
                 : onServer
                   ? "Your server doesn't offer Other perspectives."
-                  : 'Needs your own Anthropic key or a server that offers it.'
+                  : onCompat
+                    ? needsKey
+                    : 'Needs your own Anthropic key or a server that offers it.'
             }
             control={
               <Switch
