@@ -45,4 +45,10 @@ shows at most once a day, and never in your feed.
 
 ## Buying credit
 
-You can't buy credit during the beta. Credit packs arrive with the public launch.
+Buy credit on your account page at [cloud.unalgorithm.app](https://cloud.unalgorithm.app/account). Credit comes in
+these packs:
+
+{{packs}}
+
+Prices are in US dollars. Purchased credit never expires. Refunds of unused credit on request: see the
+[refund policy](/refunds).

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import {
+  CREDIT_PACKS,
   CREDIT_PRICE_SCHEDULE,
   CREDITS_PAGE,
   type CreditPriceSchedule,
@@ -8,7 +9,10 @@ import {
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  CALCULATOR_INPUT_ERROR,
   CREDITS_PLACEHOLDERS,
+  calculatorData,
+  calculatorResult,
   creditFacts,
   creditsMarkdown,
   EXAMPLE_AMOUNTS_MICROS,
@@ -170,5 +174,121 @@ describe('credits page copy', () => {
     // The scheduled change follows the price sentence.
     const changed = flat(creditsMarkdown(template, S, OCT_14));
     expect(changed).toContain(`per thousand posts on Claude Haiku 5.5. ${creditFacts(S, OCT_14).priceChange}`);
+  });
+});
+
+/** CL5-09: a stub whose classify card doubles its multiplier 20 days after OCT_14. */
+const NOV_3 = '2026-11-03T00:00:00Z';
+const DOUBLED: CreditPriceSchedule = [
+  LAUNCH,
+  Object.freeze({
+    effectiveFrom: NOV_3,
+    cards: { classify: { ...LAUNCH_CLASSIFY, multiplier: LAUNCH_CLASSIFY.multiplier * 2 } },
+  }),
+];
+const packRows = (packs: string): string[] => packs.split('\n').filter((line) => /^\| \$/.test(line));
+
+describe('pricing: credit packs (CL5-09)', () => {
+  it('test_pricing_packs_table_at_fixed_date', () => {
+    const { packs } = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    expect(
+      packs
+        .split('\n')
+        .filter((line) => line.startsWith('|'))
+        .slice(0, 2),
+    ).toEqual(['| Pack | You pay | Credit added | About |', '|---|---|---|---|']);
+    expect(packRows(packs)).toEqual([
+      '| $5.00 | $5.00 + tax where it applies | $5.00 | about 34,000 posts |',
+      '| $10.00 (default) | $10.00 + tax where it applies | $10.00 | about 68,000 posts |',
+      '| $25.00 | $25.00 + tax where it applies | $25.00 | about 170,000 posts |',
+    ]);
+    expect(packs.match(/\(default\)/g)).toHaveLength(1);
+    expect(packRows(packs)).toHaveLength(CREDIT_PACKS.length);
+    // In the page, the table follows the section's words.
+    const page = creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14);
+    const buying = page.slice(page.indexOf('## Buying credit'));
+    expect(buying).toContain(packs);
+    expect(flat(buying)).toContain('Purchased credit never expires.');
+    expect(buying).toContain('(/refunds)');
+  });
+
+  it('test_pricing_packs_table_dated_caption', () => {
+    const dated = creditFacts(DOUBLED, OCT_14).packs;
+    expect(dated.split('\n')[0]).toBe('At the price until Nov 3, 2026 (UTC).');
+    expect(packRows(dated)).toHaveLength(CREDIT_PACKS.length); // one table, dated: no second column set
+    expect(dated.split('\n')[2]).toBe('| Pack | You pay | Credit added | About |');
+    const undated = creditFacts([LAUNCH], OCT_14).packs;
+    expect(undated.startsWith('|')).toBe(true);
+    expect(undated).not.toContain('At the price until');
+  });
+
+  it('test_credits_markdown_still_figure_free', () => {
+    expect(template).not.toMatch(/\$\d/);
+    expect(template).not.toContain('×');
+    expect(template).not.toMatch(/\d[\d,.]*\s+posts/);
+    expect(template).not.toMatch(/^\|/m);
+    expect(template).toContain('{{packs}}');
+    expect(template).not.toMatch(/\(default\)/); // the default marker comes from DEFAULT_CREDIT_PACK
+    expect(() => creditsMarkdown(`${template}\n{{packz}}`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/packz/);
+    expect(() => creditsMarkdown(`${template}\n{{packs`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/left over/);
+    expect(creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14)).not.toMatch(/\{\{|\}\}/);
+  });
+});
+
+describe('pricing: credit calculator (CL5-09)', () => {
+  it('test_calculator_data_covers_next_change', () => {
+    const data = calculatorData(DOUBLED, OCT_14);
+    expect(data.packs.map((pack) => [pack.id, pack.label, pack.isDefault])).toEqual([
+      ['pack-5', '$5.00', false],
+      ['pack-10', '$10.00', true],
+      ['pack-25', '$25.00', false],
+    ]);
+    for (const pack of data.packs) {
+      expect(pack.posts).toHaveLength(2);
+      const [now, next] = pack.posts;
+      expect(now?.from).toBe(LAUNCH.effectiveFrom);
+      expect(next?.from).toBe(NOV_3);
+      expect(next!.posts / now!.posts).toBeGreaterThan(0.45);
+      expect(next!.posts / now!.posts).toBeLessThan(0.55);
+    }
+    // The real schedule at the fixed date: the figures of the packs table.
+    const real = calculatorData(CREDIT_PRICE_SCHEDULE, OCT_14);
+    expect(real.packs.map((pack) => pack.posts[0]?.posts)).toEqual([34_000, 68_000, 170_000]);
+    // No later change: one entry each.
+    expect(calculatorData([LAUNCH], OCT_14).packs.every((pack) => pack.posts.length === 1)).toBe(true);
+  });
+
+  it('test_calculator_days_and_input_errors', () => {
+    const data = calculatorData([LAUNCH], OCT_14);
+    const now = OCT_14;
+    expect(calculatorResult(data, 'pack-10', '150', now)).toEqual({
+      ok: true,
+      days: 453,
+      text: 'A $10.00 pack lasts about 453 days at 150 posts a day.',
+    });
+    expect(calculatorResult(data, 'pack-25', '150', now)).toMatchObject({
+      ok: true,
+      text: 'A $25.00 pack lasts about 1,133 days at 150 posts a day.',
+    });
+    expect(calculatorResult(data, 'pack-5', '5000', now)).toMatchObject({
+      text: 'A $5.00 pack lasts about 6 days at 5,000 posts a day.',
+    });
+    for (const input of ['0', '5001', '', '  ', 'abc', '1.5', '-3', 'Infinity']) {
+      expect(calculatorResult(data, 'pack-10', input, now), input).toEqual({ ok: false, error: CALCULATOR_INPUT_ERROR });
+    }
+    expect(CALCULATOR_INPUT_ERROR).toBe('Enter a number from 1 to 5,000.');
+    expect(calculatorResult(data, 'pack-10', ' 1 ', now)).toMatchObject({ ok: true, days: 68_000 });
+    // What runs in the browser imports nothing at run time (the protocol would bundle zod).
+    const browser = readFileSync(new URL('packages/core/src/credit-calculator.ts', REPO_ROOT), 'utf8');
+    expect(browser.match(/^import .*$/gm)).toEqual(["import type { CreditPackId } from '@unalgorithm/protocol';"]);
+  });
+
+  it('test_calculator_switches_card_after_change_date', () => {
+    const data = calculatorData(DOUBLED, OCT_14);
+    const before = calculatorResult(data, 'pack-10', '150', new Date('2026-11-02T23:59:59Z'));
+    const after = calculatorResult(data, 'pack-10', '150', new Date(NOV_3));
+    const [now, next] = data.packs[1]!.posts;
+    expect(before).toMatchObject({ ok: true, days: Math.floor(now!.posts / 150) });
+    expect(after).toMatchObject({ ok: true, days: Math.floor(next!.posts / 150) });
   });
 });
