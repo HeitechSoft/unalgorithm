@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { MAX_DAILY_POST_CAP } from '@unalgorithm/protocol';
 import { eq } from 'drizzle-orm';
 import { setDailyCap } from '../ai/limits.ts';
 import { type Config, ConfigError, loadConfig } from '../config.ts';
@@ -23,15 +24,14 @@ export interface UserCapDeps {
 }
 
 const USAGE = 'usage: node apps/server/src/cli/user-cap.ts <email> <posts-per-day | default>';
-/** The largest value the `daily_post_cap` column (a Postgres integer) holds. */
-const MAX_CAP = 2_147_483_647;
 
 /** The cap argument: a whole number of posts, `null` for `default`, `undefined` when it is neither. */
 function parseCap(arg: string | undefined): number | null | undefined {
   if (arg === 'default') return null;
   if (arg === undefined || !/^\d+$/.test(arg)) return undefined;
   const n = Number(arg);
-  return n <= MAX_CAP ? n : undefined;
+  // The admin page's cap route has the same bound (`SetCapRequestSchema`).
+  return n <= MAX_DAILY_POST_CAP ? n : undefined;
 }
 
 export async function main(argv: readonly string[], deps: UserCapDeps = {}): Promise<number> {
