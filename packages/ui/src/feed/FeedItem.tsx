@@ -1,6 +1,8 @@
 import type { FilterReason } from '@unalgorithm/core';
 import type { PlatformId } from '@unalgorithm/protocol';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { Button } from '../components/controls.tsx';
+import { Badge } from '../components/feedback.tsx';
 import {
   CircleSlash2,
   Clapperboard,
@@ -11,9 +13,12 @@ import {
   Flame,
   FoldVertical,
   LayoutGrid,
+  LoaderCircle,
   type LucideIcon,
   Megaphone,
+  Newspaper,
   Repeat2,
+  SearchCheck,
   Settings,
   Share2,
   Sparkle,
@@ -26,6 +31,20 @@ import {
 import type { WhyActionId, WhyModel } from './why.ts';
 
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
+
+/**
+ * A Labs job on a public post ("Check facts", "Other perspectives"): offered, then the price, then running, then the
+ * outcome.
+ */
+export interface FactcheckItemModel {
+  state: 'offered' | 'confirming' | 'running' | 'done' | 'failed';
+  /** factcheckPriceLabel(...), e.g. 'About $0.12 on your Anthropic account'. */
+  price: string;
+  /** failed: the error; done: the toolbar hint when the panel could not open. */
+  message?: string;
+}
+
+export type FactcheckAction = 'start' | 'confirm' | 'cancel' | 'open' | 'retry';
 
 export interface FeedItemModel {
   key: string;
@@ -45,6 +64,9 @@ export interface FeedItemModel {
   forYouStyle: 'ring' | 'label' | 'off';
   vote?: 'more' | 'less';
   coach?: boolean;
+  factcheck?: FactcheckItemModel;
+  /** "Other perspectives" on a public news post that shares a link (Labs); same states as fact-check. */
+  perspectives?: FactcheckItemModel;
 }
 
 export interface FeedItemHandlers {
@@ -54,6 +76,8 @@ export interface FeedItemHandlers {
   onWhyAction(id: WhyActionId): void;
   onVote(v: 'more' | 'less' | null): void;
   onCoachDone(): void;
+  onFactcheck(action: FactcheckAction): void;
+  onPerspectives(action: FactcheckAction): void;
 }
 
 const REASON_GLYPH: Partial<Record<FilterReason, LucideIcon>> = {
@@ -236,8 +260,102 @@ function Row({ children, bar, label }: { children: ReactNode; bar?: boolean; lab
   );
 }
 
+/** Per-feature words of a job row. Copy is a draft (D37). */
+interface JobWords {
+  /** The row's group label. */
+  label: 'Fact-check' | 'Other perspectives';
+  start: 'Check facts' | 'Other perspectives';
+  confirm: 'Check' | 'Compare';
+  running: 'Checking facts…' | 'Comparing coverage…';
+  done: 'Checked.' | 'Compared.';
+  icon: LucideIcon;
+}
+
+const FACTCHECK_WORDS: JobWords = {
+  label: 'Fact-check',
+  start: 'Check facts',
+  confirm: 'Check',
+  running: 'Checking facts…',
+  done: 'Checked.',
+  icon: SearchCheck,
+};
+
+const PERSPECTIVES_WORDS: JobWords = {
+  label: 'Other perspectives',
+  start: 'Other perspectives',
+  confirm: 'Compare',
+  running: 'Comparing coverage…',
+  done: 'Compared.',
+  icon: Newspaper,
+};
+
+/** The quiet row of a Labs job. A job never starts without the price shown and a second click to confirm it. */
+function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void; words: JobWords }) {
+  const checkRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (model.state === 'confirming') checkRef.current?.focus();
+  }, [model.state]);
+  const text =
+    model.state === 'confirming'
+      ? model.price
+      : model.state === 'running'
+        ? words.running
+        : model.state === 'done'
+          ? [words.done, model.message].filter(Boolean).join(' ')
+          : model.state === 'failed'
+            ? model.message
+            : '';
+  return (
+    <div className="ua-row ua-row--bar ua-fc" role="group" aria-label={words.label}>
+      {model.state === 'offered' ? (
+        <>
+          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={words.icon} onClick={() => on('start')}>
+            {words.start}
+          </Button>
+          <Badge tone="ai">Labs</Badge>
+        </>
+      ) : null}
+      <span className="ua-fc-status" aria-live="polite">
+        {model.state === 'running' ? <LoaderCircle className="ua-glyph ua-spin" aria-hidden="true" /> : null}
+        {text}
+      </span>
+      {model.state === 'confirming' ? (
+        <>
+          <Button ref={checkRef} size="sm" variant="tinted" className="ua-btn ua-btn--tint" onClick={() => on('confirm')}>
+            {words.confirm}
+          </Button>
+          <Button size="sm" variant="plain" className="ua-btn" onClick={() => on('cancel')}>
+            Cancel
+          </Button>
+        </>
+      ) : null}
+      {model.state === 'done' ? (
+        <Button size="sm" variant="plain" className="ua-btn ua-btn--accent" onClick={() => on('open')}>
+          See result
+        </Button>
+      ) : null}
+      {model.state === 'failed' ? (
+        <Button size="sm" variant="plain" className="ua-btn ua-btn--accent" onClick={() => on('retry')}>
+          Try again
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** The UI UnAlgorithm adds to one feed item. Ordinary posts never render this at all. */
 export function FeedItem({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
+  // Job rows sit below whatever else the item shows (fact-check first); a plain shown post gets only the rows.
+  return (
+    <>
+      <ItemMain model={model} on={on} />
+      {model.factcheck ? <JobRow model={model.factcheck} on={on.onFactcheck} words={FACTCHECK_WORDS} /> : null}
+      {model.perspectives ? <JobRow model={model.perspectives} on={on.onPerspectives} words={PERSPECTIVES_WORDS} /> : null}
+    </>
+  );
+}
+
+function ItemMain({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
   const [confirm, setConfirm] = useState<'more' | 'less' | null>(null);
   const anchorId = useId().replace(/:/g, '');
   const anchor = `--ua-stub-${anchorId}`;

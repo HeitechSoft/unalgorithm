@@ -1,10 +1,10 @@
-import type { AuthorKind, MediaKind, PlatformId, PostKey } from '@unalgorithm/protocol';
+import type { AUDIENCES, AuthorKind, MediaKind, PlatformId, PostKey } from '@unalgorithm/protocol';
 
 /** Whether the user follows the author. `unknown` never hides a post (fail open). */
 export type Relationship = 'followed' | 'not-followed' | 'unknown';
 
 /** Facebook shows who can see a post; non-public posts are never sent to a cloud AI. */
-export type Audience = 'public' | 'friends' | 'custom' | 'unknown';
+export type Audience = (typeof AUDIENCES)[number];
 
 /** Platform-neutral noise signals an adapter can detect from the rendered page. */
 export interface PostSignals {

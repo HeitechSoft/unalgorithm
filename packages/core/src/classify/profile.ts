@@ -2,19 +2,26 @@ import type { InterestProfile } from '@unalgorithm/protocol';
 import { cyrb53 } from '../hash.ts';
 import type { LearnedPrefs } from '../learn.ts';
 import type { Settings } from '../settings/schema.ts';
-import { stableStringify } from '../util.ts';
+import { clipText, stableStringify } from '../util.ts';
 import { neutralize } from './fence.ts';
 
 const MAX_INTERESTS = 20;
 const MAX_LESS = 20;
 const MAX_EXAMPLES = 4;
 
-/** The user's interests as the AI sees them. Rated examples are summaries, never raw post text. */
-export function buildInterestProfile(settings: Settings, learned?: LearnedPrefs): InterestProfile {
+/**
+ * The user's interests as the AI sees them. Rated examples are summaries, never raw post text. For a server
+ * (`forServer`), only summaries of posts a server may receive are included (R23).
+ */
+export function buildInterestProfile(
+  settings: Settings,
+  learned?: LearnedPrefs,
+  opts: { forServer?: boolean } = {},
+): InterestProfile {
   const examples =
     settings.ai.learnFromFeedback && learned
       ? learned.events
-          .filter((e) => e.summary)
+          .filter((e) => e.summary && (!opts.forServer || e.shareable === true))
           .slice(0, MAX_EXAMPLES)
           .map((e) => ({ summary: (e.summary ?? '').slice(0, 240), verdict: e.verdict }))
       : [];
@@ -26,7 +33,7 @@ export function buildInterestProfile(settings: Settings, learned?: LearnedPrefs)
     lessOf: Object.values(settings.interests.less)
       .map((t) => t.label)
       .slice(0, MAX_LESS),
-    about: settings.interests.about.slice(0, 500),
+    about: clipText(settings.interests.about, 500),
     examples,
   };
 }

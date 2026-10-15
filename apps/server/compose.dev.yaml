@@ -1,0 +1,57 @@
+# Development only: Postgres and Mailpit for running the UnAlgorithm Feed server on your own computer.
+# Never use this file on a server. Its database password is fixed, and every port is published on 127.0.0.1 only.
+#
+#   docker compose -f apps/server/compose.dev.yaml up -d     start both (from the repository root)
+#   docker compose -f apps/server/compose.dev.yaml down      stop them (add -v to delete the database too)
+#
+# Sign-in codes land in Mailpit's inbox at http://127.0.0.1:8025.
+#
+# The server's local settings, for apps/server/.env (git ignores .env files). Fill in BETTER_AUTH_SECRET with the
+# output of `openssl rand -base64 48`; the server refuses to start while it is empty.
+#
+#   PUBLIC_URL=http://127.0.0.1:8787
+#   DATABASE_URL=postgres://postgres:dev@127.0.0.1:5432/unalgorithm
+#   BETTER_AUTH_SECRET=
+#   SMTP_HOST=127.0.0.1
+#   SMTP_PORT=1025
+#   SMTP_SECURE=none
+#   MAIL_FROM=signin@example.com
+#   AI_PROVIDER=openai-compatible
+#   AI_BASE_URL=http://127.0.0.1:8788/v1
+#   AI_MODEL=mock-model
+#   AI_DATA_POLICY=self-hosted
+#   SIGNUP_ALLOWLIST=you@example.com
+#
+# AI_BASE_URL is the mock AI server (CL1-02): `node packages/ai/src/testing/mock-openai-server.ts --port 8788`.
+# Then start the server from apps/server: `node --env-file=.env --import ./src/require-node.js src/index.ts`.
+
+name: unalgorithm-dev
+
+services:
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: unalgorithm
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d unalgorithm']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.31
+    environment:
+      # Accept any SMTP login, over a plain connection: the server may be configured with or without SMTP_USER.
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+    ports:
+      - '127.0.0.1:1025:1025' # SMTP
+      - '127.0.0.1:8025:8025' # web inbox and API
+
+volumes:
+  pgdata-dev:

@@ -5,12 +5,16 @@ import { learnedItem, votesItem } from '../lib/storage.ts';
 const lock = createLock();
 const MAX_VOTES = 500;
 
-/** "More like this" / "Not for me" on a post: remember the vote and teach the topic weights. */
+/**
+ * "More like this" / "Not for me" on a post: remember the vote and teach the topic weights. `shareable` says whether a
+ * server may receive the post, and so its summary (R23).
+ */
 export async function recordVote(
   key: PostKey,
   verdict: 'more' | 'less' | null,
   topics: string[],
   summary: string | undefined,
+  shareable = false,
 ): Promise<void> {
   await lock(async () => {
     const votes = { ...(await votesItem.getValue()) };
@@ -27,7 +31,7 @@ export async function recordVote(
         at: Date.now(),
         verdict,
         topics,
-        ...(summary ? { summary: summary.slice(0, 240) } : {}),
+        ...(summary ? { summary: summary.slice(0, 240), ...(shareable ? { shareable: true } : {}) } : {}),
       }),
     );
   });

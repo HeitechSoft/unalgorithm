@@ -1,4 +1,4 @@
-import { dateKey, isPaused, type Preset, presetOf } from '@unalgorithm/core';
+import { balanceLine, dateKey, isPaused, type Preset, presetOf } from '@unalgorithm/core';
 import type { PlatformId } from '@unalgorithm/protocol';
 import {
   Banner,
@@ -21,8 +21,9 @@ import {
   Tile,
   UsersRound,
 } from '@unalgorithm/ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { BalancePill, shouldShowLowBalance } from '../../components/BalancePill.tsx';
 import {
   FEED_URLS,
   platformOfUrl,
@@ -33,8 +34,8 @@ import {
   useStorageItem,
   useTabState,
 } from '../../lib/hooks.ts';
-import { sendQuietly, sendToBackground, sendToTab } from '../../lib/messages.ts';
-import { statsItem } from '../../lib/storage.ts';
+import { type AiStatus, sendQuietly, sendToBackground, sendToTab } from '../../lib/messages.ts';
+import { lowBalanceNoticeItem, statsItem } from '../../lib/storage.ts';
 
 const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
 const NEW_ISSUE = 'https://github.com/HeitechSoft/unalgorithm/issues/new/choose';
@@ -49,6 +50,34 @@ function openSettings(hash = '') {
   window.close();
 }
 
+/**
+ * Whether the low-balance banner shows: at most once a local day (R31). The stamp is read once, not watched (stamping
+ * would then hide the banner a moment after it showed); the answer is decided once both the stamp and `ai` are in, and
+ * kept; only then is today stamped, whether or not the banner is dismissed. Dismissing hides it until the popup closes.
+ */
+function useLowBalanceNotice(ai: AiStatus | undefined): [boolean, () => void] {
+  /** undefined until read; a stamp that can't be read never shows the banner. */
+  const [stamp, setStamp] = useState<string | null>();
+  const [show, setShow] = useState<boolean>();
+  useEffect(() => {
+    let alive = true;
+    lowBalanceNoticeItem
+      .getValue()
+      .then((on) => alive && setStamp(on))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (show === undefined && ai && stamp !== undefined) setShow(shouldShowLowBalance(ai.balance, stamp, dateKey()));
+  }, [ai, stamp, show]);
+  useEffect(() => {
+    if (show) void lowBalanceNoticeItem.setValue(dateKey()).catch(() => undefined);
+  }, [show]);
+  return [show === true, () => setShow(false)];
+}
+
 export function App() {
   const tab = useActiveTab();
   const tabState = useTabState(tab?.id);
@@ -57,10 +86,39 @@ export function App() {
   const ai = useAiStatus(JSON.stringify(device?.aiSource ?? null));
   const stats = useStorageItem(statsItem, {});
   const [peek, setPeek] = useState(false);
+  const [lowBalance, dismissLowBalance] = useLowBalanceNotice(ai);
   const platform = tab ? platformOfUrl(tab.url) : null;
 
   if (!settings || !device) return null;
   const today = stats[dateKey()]?.hidden ?? 0;
+  const balance = ai?.balance;
+
+  // Only the account page the background allows (CL2-10).
+  const openAccount = () => {
+    if (!balance?.accountUrl) return;
+    void browser.tabs.create({ url: balance.accountUrl });
+    window.close();
+  };
+  const addCredit = balance?.accountUrl ? { label: 'Add credit', onAction: openAccount } : undefined;
+
+  // R27: AI is paused while the balance is empty. A state, not a promotion: shown whenever it holds, never dismissed.
+  const creditBanners = (
+    <>
+      {balance?.empty ? (
+        <Banner tone="warning" title="AI is paused" action={addCredit}>
+          {ai?.message ? <p>{ai.message}</p> : null}
+          <Button variant="plain" size="sm" onClick={() => openSettings('#/ai')} style={{ marginInlineStart: -8 }}>
+            Switch AI
+          </Button>
+        </Banner>
+      ) : null}
+      {lowBalance && balance?.low ? (
+        <Banner tone="info" title="Your balance is low" action={addCredit} onDismiss={dismissLowBalance}>
+          {balanceLine(balance.balanceMicros, new Date())}
+        </Banner>
+      ) : null}
+    </>
+  );
 
   const openPanel = () => {
     if (tab) void browser.sidePanel.open({ windowId: tab.windowId });
@@ -94,16 +152,22 @@ export function App() {
   );
 
   const footer = (
-    <footer className="ua-hstack ua-footnote" style={{ justifyContent: 'space-between', padding: '4px 6px 0', minHeight: 32 }}>
-      <button
-        type="button"
-        className="ua-button ua-button--plain ua-button--sm"
-        onClick={() => openSettings('#/ai')}
-        style={{ paddingInline: 4 }}
-      >
-        <Cpu aria-hidden="true" />
-        {ai?.configured ? `${ai.label} · ${ai.state === 'ready' ? 'Ready' : 'Needs attention'}` : 'AI off · rules only'}
-      </button>
+    <footer
+      className="ua-hstack ua-footnote"
+      style={{ justifyContent: 'space-between', flexWrap: 'wrap', padding: '4px 6px 0', minHeight: 32 }}
+    >
+      <span className="ua-hstack ua-wrap" style={{ gap: 4 }}>
+        <button
+          type="button"
+          className="ua-button ua-button--plain ua-button--sm"
+          onClick={() => openSettings('#/ai')}
+          style={{ paddingInline: 4 }}
+        >
+          <Cpu aria-hidden="true" />
+          {ai?.configured ? `${ai.label} · ${ai.state === 'ready' ? 'Ready' : 'Needs attention'}` : 'AI off · rules only'}
+        </button>
+        {balance ? <BalancePill balance={balance} onOpen={openAccount} /> : null}
+      </span>
       <span className="ua-hstack" style={{ gap: 12 }}>
         {platform ? (
           <button
@@ -128,6 +192,7 @@ export function App() {
       <main className="popup" data-density="compact">
         {header}
         <div className="ua-stack">
+          {creditBanners}
           {setupBanner}
           <ListGroup footer={`Today: ${today} post${today === 1 ? '' : 's'} hidden`}>
             {(['linkedin', 'facebook'] as const).map((p) => (
@@ -172,6 +237,7 @@ export function App() {
     <main className="popup" data-density="compact">
       {header}
       <div className="ua-stack">
+        {creditBanners}
         {setupBanner}
         {tabState.health.status === 'broken' && on ? (
           <Banner

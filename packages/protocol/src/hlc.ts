@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Hybrid logical clock: wall time plus a counter plus the device id, so every edit gets a unique, ordered stamp
  * even when two devices edit in the same millisecond or their clocks drift. Settings sync (Phase 2) merges field
@@ -11,6 +13,12 @@ export interface Hlc {
 }
 
 export const HLC_ZERO = '000000000:0000:0';
+
+/** `<ms base36, 9>:<counter base36, 4>:<device>`, as `formatHlc` writes it. Device ids are uuids (or `0` in `HLC_ZERO`). */
+export const HlcSchema = z
+  .string()
+  .max(80)
+  .regex(/^[0-9a-z]{9}:[0-9a-z]{4}:[A-Za-z0-9_-]{1,64}$/);
 
 export function formatHlc(h: Hlc): string {
   return `${h.ms.toString(36).padStart(9, '0')}:${h.counter.toString(36).padStart(4, '0')}:${h.device}`;
@@ -30,4 +38,14 @@ export function tickHlc(last: string | undefined, device: string, now = Date.now
 
 export function compareHlc(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Wall-clock milliseconds of a stamp (`parseHlc(s).ms`). */
+export function hlcMs(s: string): number {
+  return parseHlc(s).ms;
+}
+
+/** The later of two stamps by `compareHlc`; `undefined` counts as older than anything. */
+export function maxHlc(a: string | undefined, b: string): string {
+  return a === undefined || compareHlc(b, a) > 0 ? b : a;
 }

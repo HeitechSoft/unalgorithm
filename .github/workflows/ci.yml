@@ -46,9 +46,32 @@ jobs:
       - name: Fixtures contain no personal data
         run: pnpm fixtures:check
 
+      - name: Server migrations match the schema
+        if: matrix.os == 'ubuntu-latest'
+        # db:generate writes nothing when the committed migrations already describe apps/server/src/db/schema.ts.
+        shell: bash
+        run: |
+          pnpm --filter @unalgorithm/server db:generate
+          changes=$(git status --porcelain -- apps/server/drizzle)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "Run pnpm --filter @unalgorithm/server db:generate and commit what it writes."
+            exit 1
+          fi
+
       - name: Third-party notices match the bundle
         if: matrix.os == 'ubuntu-latest'
         run: pnpm notices:check
+
+      - name: Server licences
+        if: matrix.os == 'ubuntu-latest'
+        # Stricter than dependency-review.yml: no third-party GPL, AGPL or LGPL in the server and its web page, and MPL
+        # only after legal review (ADR 0007). Reviewed exceptions are in scripts/license-review.json.
+        run: pnpm licenses:server
+
+      - name: Outlet registry gate
+        # No unreviewed lean label, no fixture and no unsigned reviewed registry ships (packages/outlets).
+        run: pnpm outlets:check
 
       - name: Build
         run: pnpm zip
@@ -77,3 +100,214 @@ jobs:
           name: playwright-report-${{ matrix.os }}
           path: apps/extension/playwright-report
           retention-days: 7
+
+  server:
+    # The server against real Postgres 17 and Mailpit, and the extension signing in to it end to end (e2e/cloud.spec.ts),
+    # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts),
+    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and Other perspectives through
+    # the server with the fixture outlet registry (e2e/perspectives-server.spec.ts).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: unalgorithm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d unalgorithm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.31
+        env:
+          # Accept any SMTP login over a plain connection, as compose.dev.yaml does.
+          MP_SMTP_AUTH_ACCEPT_ANY: '1'
+          MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+        ports:
+          - 1025:1025 # SMTP
+          - 8025:8025 # API
+    env:
+      # Only used to create and drop each test's own database.
+      TEST_DATABASE_URL: postgres://postgres:dev@127.0.0.1:5432/unalgorithm
+      MAILPIT_URL: http://127.0.0.1:8025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the sign-in page
+        # The server serves apps/web/dist; without it, / and /authorize answer 503.
+        run: pnpm --filter @unalgorithm/web build
+
+      - name: Server tests on Postgres and Mailpit
+        run: pnpm vitest run --project server
+
+      - name: Build the extension for end-to-end tests
+        run: pnpm --filter @unalgorithm/extension build:e2e
+
+      - name: Install Chromium
+        working-directory: apps/extension
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Sign in to a local server, label the feed, show the balance, sync two profiles and check facts
+        run: pnpm --filter @unalgorithm/extension exec playwright test e2e/cloud.spec.ts e2e/credits.spec.ts e2e/sync.spec.ts e2e/factcheck-server.spec.ts e2e/perspectives-server.spec.ts
+        env:
+          UA_SERVER_E2E: '1'
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-server
+          path: apps/extension/playwright-report
+          retention-days: 7
+
+  compose-smoke:
+    # The server image and the public compose file as self-hosters run them: the build, configuration errors, the
+    # published ports, the read-only root, no .env in the image, route-eval inside the container, and a single-quoted
+    # value with $ in .env reaching the server unchanged. Then the nightly encrypted backups with the real pg_dump, gpg
+    # and Postgres: the key pair from keygen, an encrypted dump the private key opens, the status file, BACKUP_KEEP, and
+    # no password or private key in the backup logs. Then a stack holding a several-MB backup is wiped, rebuilt and
+    # restored with restore.sh, and sync-new-epoch runs in the restored server. Last, the optional caddy profile: HTTPS
+    # from Caddy's local CA, the 308 redirect, a read-only container with NET_BIND_SERVICE only, 502 while the server
+    # is stopped, and no client address in Caddy's log; and the optional ollama profile: its documented values pass
+    # check-config, Ollama is healthy and unpublished, and the server reaches it by its service name (no model pulled).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compose smoke test
+        run: bash apps/server/scripts/compose-smoke.sh
+
+      - name: Backup smoke test
+        run: bash apps/server/scripts/backup-smoke.sh
+
+      - name: Restore smoke test
+        run: bash apps/server/scripts/restore-smoke.sh
+
+      - name: Optional profiles smoke test
+        run: bash apps/server/scripts/profiles-smoke.sh
+
+  public-scan:
+    # The public repo holds no host address, host marker, key file or secret: every tracked file and the whole history.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every commit of every branch and tag: both scans read the full history.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Public IPv4, host markers and key files
+        run: pnpm scan:public
+        env:
+          # Host names and addresses, one per line. Never printed; empty on fork PRs, which get no secrets.
+          PUBLIC_SCAN_EXTRA_PATTERNS: ${{ secrets.PUBLIC_SCAN_EXTRA_PATTERNS }}
+
+      - name: Install gitleaks
+        id: install-gitleaks
+        if: ${{ !cancelled() }}
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          base=https://github.com/gitleaks/gitleaks/releases/download/v8.30.1
+          curl -fsSLO "$base/gitleaks_8.30.1_linux_x64.tar.gz"
+          curl -fsSLO "$base/gitleaks_8.30.1_checksums.txt"
+          # The checksums file lists every release archive, so check this archive's line only: this fails when the
+          # line is missing or does not match.
+          grep ' gitleaks_8.30.1_linux_x64.tar.gz$' gitleaks_8.30.1_checksums.txt | sha256sum -c -
+          # Both files come from the same release, so a replaced release asset would pass the check above. The archive
+          # must also match the SHA-256 reviewed when this version was pinned, as actions are pinned by commit.
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz' |
+            sha256sum -c -
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz
+
+      - name: Secrets (gitleaks, full history)
+        if: ${{ !cancelled() && steps.install-gitleaks.outcome == 'success' }}
+        # Reviewed false positives are listed in .gitleaksignore, which gitleaks reads from the repository root.
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose --exit-code 1 .
+
+  price-schedule:
+    # A price in effect never changes, a raise gives PRICE_NOTICE_DAYS of notice, and a cut may start at the next
+    # 00:00 UTC (docs/release.md → Changing a price card). Compares the schedule with the base commit's, read from this
+    # checkout's git history.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The base commit must be in the checkout: every ref, as the public-scan job fetches.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prices in effect never change
+        env:
+          # A pull request's base commit; on a push to main, the commit main pointed at before the push.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node --import ./apps/server/src/require-node.js scripts/check-price-schedule.mjs --base "$BASE_SHA"
+
+  cla-gate:
+    # No outside pull request merges before the final CLA is signed (CONTRIBUTING.md). Until the CLA bot is on, this job
+    # fails outside pull requests that change code shipped in the server image, which HeitechSoft must be able to
+    # license (ADR 0007). Remove it when cla.yml is switched on.
+    #
+    # It runs only for pull requests from a fork whose author is not an owner, member or collaborator, and never for the
+    # bots on cla.yml's allowlist, so Dependabot updates pass. A branch in this repository needs write access; checking
+    # for a fork as well matters because author_association can read CONTRIBUTOR for an organization member whose
+    # membership is private. It reads the changed file names through the API and never checks out pull request code.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.login != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Server paths need the signed CLA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # There is no checkout, so gh needs the repository named.
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          changed=$(gh pr diff "$PR_NUMBER" --name-only)
+          # Everything the server image is built from (apps/server/Dockerfile, CL1-25), and packages/sync, which the
+          # server will import. Keep this list in step with the Dockerfile.
+          server_paths='^(apps/server|apps/web|packages/sync|packages/protocol|packages/core|packages/ai|packages/ui)/'
+          if blocked=$(grep -E "$server_paths" <<<"$changed"); then
+            echo "::error::Server paths need the signed CLA, which is not live yet."
+            echo "Changed server paths:"
+            echo "$blocked"
+            exit 1
+          fi
+          echo "No server paths changed."

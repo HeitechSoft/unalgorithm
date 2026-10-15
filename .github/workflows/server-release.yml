@@ -1,0 +1,119 @@
+name: Server release
+
+# Runs when a server version tag is pushed (server-vX.Y.Z, see "Server releases" in docs/release.md). Verifies, builds
+# the server image, pushes it to GHCR as :<version> and :latest with an SBOM and provenance, attests build provenance
+# and creates a GitHub Release that is not marked Latest (the extension release stays Latest). release.yml's v*.*.*
+# filter never matches a server-v tag, and this filter never matches an extension tag.
+#
+# Two jobs, so third-party code never runs next to a write token. `verify` installs the dependencies and runs every
+# check with a read-only token. `publish` holds the write, OIDC and attestation rights and runs no pnpm and no project
+# dependency on the runner: only node on the repository's own scripts, buildx (whose RUN steps get no runner token)
+# and gh. Neither job restores a dependency cache, and neither checkout keeps the token in the git config.
+
+on:
+  push:
+    tags: ['server-v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Every tag and the history behind it: the price check compares with the previous server release.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm check && pnpm licenses:server
+
+      - name: Prices in effect never change between server releases
+        # Rule 1 only, against the previous server-v* tag at this run's clock (docs/release.md → Changing a price card).
+        # The notice rule is measured from a merge, which ci.yml's price-schedule job checks. This job runs before
+        # publish, so no image is built from a release that drops or changes a price in effect.
+        run: |
+          PREV="$(git tag --list 'server-v*' --sort=-v:refname | { grep -vxF "$GITHUB_REF_NAME" || true; } | head -n 1)"
+          if [ -z "$PREV" ]; then echo "No earlier server release: nothing to compare."; exit 0; fi
+          node --import ./apps/server/src/require-node.js scripts/check-price-schedule.mjs --base "$PREV" --in-effect-only
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Its deployment tag rules must allow server-v*.*.* next to v*.*.*, or the job is rejected before any step runs.
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check the tag matches the server version
+        id: version
+        run: |
+          version=$(node -p "require('./apps/server/package.json').version")
+          if [ "server-v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match apps/server version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: true
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ghcr.io/heitechsoft/unalgorithm-server:${{ steps.version.outputs.version }}
+            ghcr.io/heitechsoft/unalgorithm-server:latest
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/heitechsoft/unalgorithm-server
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "UnAlgorithm Feed server ${VERSION}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            --latest=false

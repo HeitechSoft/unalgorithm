@@ -1,5 +1,14 @@
-import { addUsage, costMicros, type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
-import { dateKey } from './util.ts';
+import {
+  addUsage,
+  CREDIT_PRICE_SCHEDULE,
+  type CreditPriceSchedule,
+  costMicros,
+  estimatePosts,
+  MAX_MODEL_CHARS,
+  type NormalizedUsage,
+  ZERO_USAGE,
+} from '@unalgorithm/protocol';
+import { clipText, dateKey } from './util.ts';
 
 export interface ModelUsage {
   calls: number;
@@ -23,7 +32,10 @@ export function emptyDay(): DayUsage {
   return { posts: 0, calls: 0, failedCalls: 0, byModel: {} };
 }
 
-/** Record one AI call, including failed ones (tokens were still spent). */
+/**
+ * Record one AI call, including failed ones (tokens were still spent). The model name comes from a provider or a server,
+ * so it is cut to `MAX_MODEL_CHARS` here, for every source: a long one cannot fill the extension's storage.
+ */
 export function recordUsage(
   ledger: UsageLedger,
   entry: { model: string; usage: NormalizedUsage; posts: number; failed?: boolean; now?: Date },
@@ -31,14 +43,15 @@ export function recordUsage(
   const now = entry.now ?? new Date();
   const date = dateKey(now);
   const day = ledger[date] ?? emptyDay();
-  const prev = day.byModel[entry.model] ?? { calls: 0, usage: ZERO_USAGE };
+  const model = clipText(entry.model, MAX_MODEL_CHARS);
+  const prev = day.byModel[model] ?? { calls: 0, usage: ZERO_USAGE };
   const next: UsageLedger = {
     ...ledger,
     [date]: {
       posts: day.posts + entry.posts,
       calls: day.calls + 1,
       failedCalls: day.failedCalls + (entry.failed ? 1 : 0),
-      byModel: { ...day.byModel, [entry.model]: { calls: prev.calls + 1, usage: addUsage(prev.usage, entry.usage) } },
+      byModel: { ...day.byModel, [model]: { calls: prev.calls + 1, usage: addUsage(prev.usage, entry.usage) } },
     },
   };
   const keep = new Set(Array.from({ length: KEEP_DAYS }, (_, i) => dateKey(new Date(now.getTime() - i * 86_400_000))));
@@ -67,4 +80,54 @@ export function formatApproxCost(micros: number): string {
   if (cents < 1) return 'less than 1¢';
   if (cents < 100) return `about ${Math.round(cents)}¢`;
   return `about $${(cents / 100).toFixed(2)}`;
+}
+
+const MICROS_PER_CENT = 10_000;
+const GROUPED = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+/** Whole cents in a non-negative whole number of micro-dollars, rounded down, without floating-point division. */
+function wholeCents(micros: number): number {
+  return (micros - (micros % MICROS_PER_CENT)) / MICROS_PER_CENT;
+}
+
+/** "$0.97", "$1,234.56". */
+function dollars(cents: number): string {
+  return `$${GROUPED.format(Math.floor(cents / 100))}.${String(cents % 100).padStart(2, '0')}`;
+}
+
+/** A credit balance, floored to the cent so it is never overstated: "$0.00", "<$0.01", "$1,234.56". */
+export function formatBalance(micros: number): string {
+  if (!(micros > 0)) return '$0.00';
+  if (micros < MICROS_PER_CENT) return '<$0.01';
+  return dollars(wholeCents(Math.floor(micros)));
+}
+
+/** A price, rounded half up to the cent: "$0.15" for 146,000; "<$0.01" when above 0 but under half a cent; "$0.00" for 0 or less. */
+export function formatPrice(micros: number): string {
+  if (!(micros > 0)) return '$0.00';
+  const cents = wholeCents(Math.floor(micros) + MICROS_PER_CENT / 2);
+  return cents === 0 ? '<$0.01' : dollars(cents);
+}
+
+/** A history amount, rounded half up to the cent: "+$1.00", "−$0.06", "−<$0.01", "$0.00". */
+export function formatCreditAmount(micros: number): string {
+  if (micros === 0) return '$0.00';
+  const sign = micros > 0 ? '+' : '−'; // MINUS SIGN, not a hyphen
+  return `${sign}${formatPrice(Math.abs(micros))}`;
+}
+
+/** "no posts", "about 1 post", "about 6,600 posts". */
+export function formatPostsEstimate(posts: number): string {
+  if (posts <= 0) return 'no posts';
+  if (posts === 1) return 'about 1 post';
+  return `about ${GROUPED.format(posts)} posts`;
+}
+
+/**
+ * The balance wording every surface shows: "$0.97 left · about 6,600 posts", or "$0.00 left". The estimate uses the
+ * price card in effect at `at` (the surface passes the time it shows the line).
+ */
+export function balanceLine(balanceMicros: number, at: Date, schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE): string {
+  if (!(balanceMicros > 0)) return '$0.00 left';
+  return `${formatBalance(balanceMicros)} left · ${formatPostsEstimate(estimatePosts(balanceMicros, at, 'classify', schedule))}`;
 }

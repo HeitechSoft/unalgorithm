@@ -5,18 +5,21 @@ import {
   type LearnedPrefs,
   migrateDevice,
   migrateSettings,
+  type ServerOffer,
   type Settings,
   type SettingsClocks,
   type TabState,
   type UsageLedger,
 } from '@unalgorithm/core';
-import { uuid } from '@unalgorithm/protocol';
+import { type FactcheckResult, type PerspectivesResult, type PostKey, uuid } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
+import type { BgError } from './messages.ts';
 
 /**
- * Every storage key UnAlgorithm uses. `local:settings` (+ its field clocks) is the only thing Phase 2 will sync.
- * Device state, usage, learned preferences and caches stay on this machine. API keys are not here at all: they
- * live in the extension's own IndexedDB (see background/idb.ts), which content scripts cannot read.
+ * Every storage key UnAlgorithm uses. `local:settings` and its clocks are the only data sync reads; `local:syncState`
+ * is this device's own bookkeeping and never leaves it. Device state, usage, learned preferences and caches stay on
+ * this machine. API keys are not here at all: they live in the extension's own IndexedDB (see background/idb.ts),
+ * which content scripts cannot read.
  */
 export const settingsItem = storage.defineItem<unknown>('local:settings');
 export const settingsClocksItem = storage.defineItem<SettingsClocks>('local:settingsClocks', { fallback: {} });
@@ -30,6 +33,57 @@ export const usageItem = storage.defineItem<UsageLedger>('local:usage', { fallba
 export const statsItem = storage.defineItem<Record<string, { hidden: number; seen: number }>>('local:stats', {
   fallback: {},
 });
+/** The local date (`dateKey()`) the popup last showed the low-balance banner: a date only, no amount. */
+export const lowBalanceNoticeItem = storage.defineItem<string | null>('local:lowBalanceNoticeOn', { fallback: null });
+
+/**
+ * What the signed-in server offers (fact-check, and its price on a billing server), derived from its discovery
+ * document. Written only by the background; content scripts may read it because it holds nothing personal (no email,
+ * device id or token). Null without an account or while it needs signing in again.
+ */
+export const serverOfferItem = storage.defineItem<ServerOffer | null>('local:serverOffer', { fallback: null });
+
+/** Why the last sync run failed: a code only, never the server's message. */
+export type SyncProblem = 'auth' | 'network' | 'quota' | 'clock' | 'server' | 'unavailable';
+
+/** Sync bookkeeping for one server and one account (CL3-19, CL3-20). */
+export interface SyncState {
+  /** The person turned sync on for this account (CL3-20). */
+  enabled: boolean;
+  /** The server this state (and its consent) belongs to. */
+  origin: string | null;
+  /** The account on that server. */
+  email: string | null;
+  spaceId: string | null;
+  epoch: string | null;
+  cursor: number;
+  /** Item key → the HLC the server is known to hold (pulled, or pushed and applied). */
+  known: Record<string, string>;
+  lastSyncAt: number | null;
+  problem: SyncProblem | null;
+  /** Set by CL3-20 when the person turns sync on; while set, the pull lets the server's copy win. */
+  firstPull: boolean;
+  /**
+   * While a resync after `410 resync-required` is under way: the item keys the server held before it started over
+   * (`known` then). Kept until the download from 0 is applied, so a resync cut short still drops entries deleted
+   * elsewhere on the next run, and an entry that never reached the server is never taken for one.
+   */
+  resyncKnown: string[] | null;
+}
+export const DEFAULT_SYNC_STATE: SyncState = {
+  enabled: false,
+  origin: null,
+  email: null,
+  spaceId: null,
+  epoch: null,
+  cursor: 0,
+  known: {},
+  lastSyncAt: null,
+  problem: null,
+  firstPull: false,
+  resyncKnown: null,
+};
+export const syncStateItem = storage.defineItem<SyncState>('local:syncState', { fallback: DEFAULT_SYNC_STATE });
 
 /** Dynamic declarativeNetRequest rule that lets a local AI server (Ollama) accept our requests. See ADR 0004. */
 export const ORIGIN_RULE_ID = 1;
@@ -37,6 +91,32 @@ export const ORIGIN_RULE_ID = 1;
 export function tabStateItem(tabId: number) {
   return storage.defineItem<TabState>(`session:tab:${tabId}`, { fallback: emptyTabState() });
 }
+
+/** One fact-check of a post on this tab. Session storage only: gone when the browser closes, never synced. */
+/** A fact-check or an "Other perspectives" comparison, kept for the side panel. */
+export interface FactcheckEntry {
+  key: PostKey;
+  /** Absent: a fact-check (entries stored before RM3 read as before). */
+  task?: 'perspectives';
+  /**
+   * For the sheet's header, display only. A fact-check: the post text's first 80 characters. A comparison: the link
+   * title clipped to 80, else the link's host (never post text).
+   */
+  label: string;
+  startedAt: number;
+  status: 'running' | 'done' | 'failed';
+  result?: FactcheckResult;
+  /** A comparison's result (`task: 'perspectives'`). */
+  perspectives?: PerspectivesResult;
+  error?: BgError;
+  costMicros?: number;
+  /** What the server charged for this check (a billing server only). */
+  chargedMicros?: number;
+}
+
+/** A tab's fact-checks and comparisons, newest first (at most 5). Removed when the tab closes. */
+export const factcheckItem = (tabId: number) =>
+  storage.defineItem<{ entries: FactcheckEntry[] }>(`session:factcheck:${tabId}`, { fallback: { entries: [] } });
 
 export async function readSettings(): Promise<Settings> {
   return migrateSettings(await settingsItem.getValue());

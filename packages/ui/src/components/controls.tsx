@@ -1,4 +1,4 @@
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, useId, useState } from 'react';
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, useId, useState } from 'react';
 import { Eye, EyeOff, LoaderCircle, type LucideIcon } from '../icons.ts';
 
 type Variant = 'primary' | 'secondary' | 'tinted' | 'plain' | 'destructive' | 'destructive-solid';
@@ -12,6 +12,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   fullWidth?: boolean;
   type?: 'button' | 'submit';
   href?: string;
+  /** The `<button>` itself (not set for a link button). */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 function cls(...parts: (string | false | undefined)[]): string {

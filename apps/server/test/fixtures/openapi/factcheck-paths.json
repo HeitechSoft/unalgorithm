@@ -1,0 +1,1099 @@
+{
+  "/v1/jobs/factcheck": {
+    "post": {
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "type": "number",
+                  "enum": [1]
+                },
+                "post": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": ["linkedin", "facebook"]
+                    },
+                    "text": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "textComplete": {
+                      "type": "boolean"
+                    },
+                    "lang": {
+                      "type": "string",
+                      "maxLength": 16
+                    },
+                    "authorKind": {
+                      "type": "string",
+                      "enum": ["person", "page", "group", "unknown"]
+                    },
+                    "isReshare": {
+                      "type": "boolean"
+                    },
+                    "media": {
+                      "type": "string",
+                      "enum": ["none", "image", "video", "reel", "document", "link", "poll", "event", "other"]
+                    },
+                    "link": {
+                      "type": "object",
+                      "properties": {
+                        "domain": {
+                          "type": "string",
+                          "maxLength": 253
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 300
+                        }
+                      },
+                      "required": ["domain"]
+                    },
+                    "audience": {
+                      "type": "string",
+                      "enum": ["public", "friends", "custom", "unknown"]
+                    }
+                  },
+                  "required": ["ref", "platform", "text", "textComplete", "authorKind", "isReshare", "media"]
+                }
+              },
+              "required": ["v", "post"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "202": {
+          "description": "The check is running",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "v": {
+                    "type": "number",
+                    "enum": [1]
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["running", "done", "failed", "cancelled"]
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "v": {
+                        "type": "number",
+                        "enum": [1]
+                      },
+                      "checkedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "promptVersion": {
+                        "type": "integer"
+                      },
+                      "claims": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^c[1-3]$"
+                            },
+                            "claim": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "verdict": {
+                              "type": "string",
+                              "enum": ["supported", "disputed", "misleading", "unverifiable", "needs-context"]
+                            },
+                            "explanation": {
+                              "type": "string",
+                              "maxLength": 280
+                            },
+                            "citations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sourceId": {
+                                    "type": "string",
+                                    "maxLength": 8
+                                  },
+                                  "quote": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  }
+                                },
+                                "required": ["sourceId", "quote"]
+                              },
+                              "maxItems": 4
+                            },
+                            "downgraded": {
+                              "type": "string",
+                              "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": ["id", "claim", "verdict", "explanation", "citations"]
+                        },
+                        "maxItems": 3
+                      },
+                      "sources": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^s\\d{1,2}$"
+                            },
+                            "url": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "format": "uri"
+                            },
+                            "domain": {
+                              "type": "string",
+                              "maxLength": 253
+                            },
+                            "title": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "pageAge": {
+                              "type": ["string", "null"],
+                              "maxLength": 64
+                            }
+                          },
+                          "required": ["id", "url", "domain", "title", "pageAge"]
+                        },
+                        "maxItems": 12
+                      }
+                    },
+                    "required": ["v", "checkedAt", "model", "promptVersion", "claims", "sources"]
+                  },
+                  "error": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "no-key",
+                          "no-model",
+                          "auth",
+                          "permission",
+                          "host-permission",
+                          "origin-blocked",
+                          "model-not-found",
+                          "rate-limit",
+                          "quota",
+                          "overloaded",
+                          "refusal",
+                          "truncated",
+                          "bad-request",
+                          "context-overflow",
+                          "unsupported",
+                          "not-available",
+                          "timeout",
+                          "network",
+                          "cap-reached",
+                          "insufficient-credits",
+                          "auth-required",
+                          "unknown"
+                        ]
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": ["code", "message"]
+                  },
+                  "billing": {
+                    "type": "object",
+                    "properties": {
+                      "chargedMicros": {
+                        "type": "integer"
+                      },
+                      "balanceMicros": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["chargedMicros", "balanceMicros"]
+                  }
+                },
+                "required": ["v", "id", "status"]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "The request was not valid, or the post is not public",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "No valid device token",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "402": {
+          "description": "The balance is empty",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "429": {
+          "description": "Too many requests, a check already running, or today's limit is reached",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "The server failed",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Fact-check is not offered, no AI route is available, or the server is busy",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/v1/jobs/factcheck/{id}": {
+    "get": {
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "required": true,
+          "name": "id",
+          "in": "path"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "maxLength": 8
+          },
+          "required": false,
+          "name": "wait",
+          "in": "query"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The job's state, and its result once done",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "v": {
+                    "type": "number",
+                    "enum": [1]
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["running", "done", "failed", "cancelled"]
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "v": {
+                        "type": "number",
+                        "enum": [1]
+                      },
+                      "checkedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "promptVersion": {
+                        "type": "integer"
+                      },
+                      "claims": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^c[1-3]$"
+                            },
+                            "claim": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "verdict": {
+                              "type": "string",
+                              "enum": ["supported", "disputed", "misleading", "unverifiable", "needs-context"]
+                            },
+                            "explanation": {
+                              "type": "string",
+                              "maxLength": 280
+                            },
+                            "citations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sourceId": {
+                                    "type": "string",
+                                    "maxLength": 8
+                                  },
+                                  "quote": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  }
+                                },
+                                "required": ["sourceId", "quote"]
+                              },
+                              "maxItems": 4
+                            },
+                            "downgraded": {
+                              "type": "string",
+                              "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": ["id", "claim", "verdict", "explanation", "citations"]
+                        },
+                        "maxItems": 3
+                      },
+                      "sources": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^s\\d{1,2}$"
+                            },
+                            "url": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "format": "uri"
+                            },
+                            "domain": {
+                              "type": "string",
+                              "maxLength": 253
+                            },
+                            "title": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "pageAge": {
+                              "type": ["string", "null"],
+                              "maxLength": 64
+                            }
+                          },
+                          "required": ["id", "url", "domain", "title", "pageAge"]
+                        },
+                        "maxItems": 12
+                      }
+                    },
+                    "required": ["v", "checkedAt", "model", "promptVersion", "claims", "sources"]
+                  },
+                  "error": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "no-key",
+                          "no-model",
+                          "auth",
+                          "permission",
+                          "host-permission",
+                          "origin-blocked",
+                          "model-not-found",
+                          "rate-limit",
+                          "quota",
+                          "overloaded",
+                          "refusal",
+                          "truncated",
+                          "bad-request",
+                          "context-overflow",
+                          "unsupported",
+                          "not-available",
+                          "timeout",
+                          "network",
+                          "cap-reached",
+                          "insufficient-credits",
+                          "auth-required",
+                          "unknown"
+                        ]
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": ["code", "message"]
+                  },
+                  "billing": {
+                    "type": "object",
+                    "properties": {
+                      "chargedMicros": {
+                        "type": "integer"
+                      },
+                      "balanceMicros": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["chargedMicros", "balanceMicros"]
+                  }
+                },
+                "required": ["v", "id", "status"]
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "No valid device token",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "No such job for this account, or it has expired",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/v1/jobs/factcheck/{id}/cancel": {
+    "post": {
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "required": true,
+          "name": "id",
+          "in": "path"
+        }
+      ],
+      "responses": {
+        "202": {
+          "description": "Cancelling: the job ends as cancelled unless it has already ended",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "v": {
+                    "type": "number",
+                    "enum": [1]
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["running", "done", "failed", "cancelled"]
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "v": {
+                        "type": "number",
+                        "enum": [1]
+                      },
+                      "checkedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "promptVersion": {
+                        "type": "integer"
+                      },
+                      "claims": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^c[1-3]$"
+                            },
+                            "claim": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "verdict": {
+                              "type": "string",
+                              "enum": ["supported", "disputed", "misleading", "unverifiable", "needs-context"]
+                            },
+                            "explanation": {
+                              "type": "string",
+                              "maxLength": 280
+                            },
+                            "citations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sourceId": {
+                                    "type": "string",
+                                    "maxLength": 8
+                                  },
+                                  "quote": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  }
+                                },
+                                "required": ["sourceId", "quote"]
+                              },
+                              "maxItems": 4
+                            },
+                            "downgraded": {
+                              "type": "string",
+                              "enum": ["too-few-domains", "no-verdict"]
+                            },
+                            "cachedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": ["id", "claim", "verdict", "explanation", "citations"]
+                        },
+                        "maxItems": 3
+                      },
+                      "sources": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^s\\d{1,2}$"
+                            },
+                            "url": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "format": "uri"
+                            },
+                            "domain": {
+                              "type": "string",
+                              "maxLength": 253
+                            },
+                            "title": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "pageAge": {
+                              "type": ["string", "null"],
+                              "maxLength": 64
+                            }
+                          },
+                          "required": ["id", "url", "domain", "title", "pageAge"]
+                        },
+                        "maxItems": 12
+                      }
+                    },
+                    "required": ["v", "checkedAt", "model", "promptVersion", "claims", "sources"]
+                  },
+                  "error": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "no-key",
+                          "no-model",
+                          "auth",
+                          "permission",
+                          "host-permission",
+                          "origin-blocked",
+                          "model-not-found",
+                          "rate-limit",
+                          "quota",
+                          "overloaded",
+                          "refusal",
+                          "truncated",
+                          "bad-request",
+                          "context-overflow",
+                          "unsupported",
+                          "not-available",
+                          "timeout",
+                          "network",
+                          "cap-reached",
+                          "insufficient-credits",
+                          "auth-required",
+                          "unknown"
+                        ]
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": ["code", "message"]
+                  },
+                  "billing": {
+                    "type": "object",
+                    "properties": {
+                      "chargedMicros": {
+                        "type": "integer"
+                      },
+                      "balanceMicros": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["chargedMicros", "balanceMicros"]
+                  }
+                },
+                "required": ["v", "id", "status"]
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "No valid device token",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "No such job for this account, or it has expired",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "no-key",
+                      "no-model",
+                      "auth",
+                      "permission",
+                      "host-permission",
+                      "origin-blocked",
+                      "model-not-found",
+                      "rate-limit",
+                      "quota",
+                      "overloaded",
+                      "refusal",
+                      "truncated",
+                      "bad-request",
+                      "context-overflow",
+                      "unsupported",
+                      "not-available",
+                      "timeout",
+                      "network",
+                      "cap-reached",
+                      "insufficient-credits",
+                      "auth-required",
+                      "unknown"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@unalgorithm/sync",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@unalgorithm/ai": "workspace:*",
+    "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/protocol": "workspace:*",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {}
+}

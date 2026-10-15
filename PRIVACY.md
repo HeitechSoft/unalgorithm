@@ -42,6 +42,66 @@ It **never** sends author names, profile links, group names, comments, images or
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
+**Fact-check (Labs, off by default).** When you turn on Settings → Labs → Fact-check, use your own Anthropic or OpenAI
+key and confirm a check on a public post, UnAlgorithm sends that one post to that provider, directly from your browser
+with your key: the same post fields classification sends, with the same masking described above (email addresses and
+phone numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most
+2,000 characters, a shared link's domain and title). Your interests are not sent. The provider then runs web searches
+based on the claims it found in the post (for Other perspectives, below, on the story's search words). Requests to
+OpenAI ask it not to store responses (`store: false`), and no approximate location is sent with OpenAI's web search.
+The result stays in this browser's temporary session storage for that tab and is removed when the tab closes or the
+browser restarts. Facebook posts that aren't public are never checked, and nothing goes to HeitechSoft.
+
+**Fact-check's cache on this device.** So that meeting the same public post again doesn't pay for the same research
+twice, a check on your own key (Anthropic, OpenAI, or your own AI server with a web search key) keeps, for each claim
+that two independent sources settled, a row in this browser's own storage: a keyed hash of the claim (under a random
+key created on this device and never synced or exported), the verdict, the public sources' addresses, titles and short
+quotes, and the hour it was checked. Never the claim, the post's text, the explanation, the post or its author, and no
+source on Facebook or LinkedIn. For 24 hours, a later check of the same claim on this device still sends the post to
+find its claims, then shows the kept verdict instead of searching and judging again, marked with when it was checked.
+Feed pages can't read this storage. Settings → Clear AI results cache removes the rows; Erase everything removes the
+rows and the key. Checks on an UnAlgorithm server never use or fill it.
+
+**Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
+Cloud) and it offers fact-check, turning on Settings → Labs → Fact-check and confirming a check on a public post sends
+that one post to **that server only**, with your device's sign-in: the same post fields and masking as above (at most
+2,000 characters, a shared link's domain and title, no author names, no interests). The server keeps the check in its
+memory only, for at most 10 minutes, and stores no post content; its usage records hold the time, model, outcome and
+cost, never the post. To check the claims it may search the web through the search service its operator configured,
+sending it the claims, not the post. On a server that charges for checks, a check costs at most the price shown before
+you confirm it; a check that stops early is not charged. Closing the tab cancels a check that is still running. The
+result is kept in this browser exactly as above. Unless its operator turned it off, the server keeps a claim cache: for
+each claim that two independent sources settled, a row with a keyed hash of the claim, the verdict, the public sources'
+addresses, titles and short quotes, and the hour it was checked, for 24 hours. Never the claim, the post's text, the
+explanation, who checked, or a source on Facebook or LinkedIn. A later check of the same claim on that server, by
+anyone, still sends the post to find its claims, then gets the kept verdict, marked with when it was checked, and costs
+only that one step. So a result dated earlier tells the person who asked that someone on that server checked the same
+public claim within the last day, never who. The cache stays on that server and is never shared with another.
+
+**Other perspectives (Labs, off by default).** When you turn on Settings → Labs → Other perspectives, use your own
+Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
+per-click parameters removed first) and its link-card title go from your browser to that provider, which searches news
+sites from our outlet list for coverage of the same story and compares it. The post's text is never sent, nor its
+author, your interests or anything else about you. Lean labels come only from UnAlgorithm's reviewed outlet list,
+never from the AI. The result stays in this browser's temporary session storage for that tab, as a fact-check's does,
+and nothing goes to HeitechSoft.
+
+**Fact-check and Other perspectives with your own AI server and a web search key.** If your AI option is a local or
+self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → Labs,
+a fact-check sends the post (with the same fields and masking as above) and Other perspectives sends the link and
+title (with tracking parameters removed) **only to the AI server address you entered**. The web searches go from your
+browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for Other
+perspectives, the story's search words and the outlet sites to search. The post itself is never sent to Brave or
+Tavily. Saving the key sends one test search for the word "UnAlgorithm". The key is stored only in this browser, like
+an API key, and Facebook posts that aren't public are never checked.
+
+**Other perspectives on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers Other
+perspectives, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
+with your device's sign-in, never the post's text. The server follows the link's redirects to find the story's address
+and searches through the search provider its operator configured; it keeps the comparison in its memory only, for at
+most 10 minutes. Closing the tab cancels a comparison that is still running. This browser shows a result only when
+every outlet's lean in it matches this version's own reviewed outlet list.
+
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.
 
@@ -62,6 +122,7 @@ review the issue and submit it yourself, under GitHub's terms and privacy statem
 | Side panel | To show Highlights: the posts picked for you and the ones that were hidden |
 | Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
+| Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → Labs, for that one service |
 | Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses UnAlgorithm. It removes the `Origin` header from UnAlgorithm's own requests to that one server |
 
 ## This website

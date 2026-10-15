@@ -4,7 +4,7 @@ import { uuid } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { type ContentRequest, type ContentResponses, sendQuietly, sendToBackground } from '../lib/messages.ts';
-import { deviceItem, learnedItem, readDevice, readSettings, settingsItem, votesItem } from '../lib/storage.ts';
+import { deviceItem, learnedItem, readDevice, readSettings, serverOfferItem, settingsItem, votesItem } from '../lib/storage.ts';
 import { type Bridge, FeedController, type Runtime } from './feed-controller.ts';
 import { reportProblemUrl } from './report.ts';
 import { mountUiHost, UiLayer } from './ui-layer.tsx';
@@ -16,21 +16,29 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     device: await readDevice(),
     learned: await learnedItem.getValue(),
     votes: await votesItem.getValue(),
+    serverOffer: await serverOfferItem.getValue(),
   };
 
   const bridge: Bridge = {
-    classify: (items) => sendToBackground({ type: 'classify', platform: adapter.id, items }),
+    classify: (items, opts) =>
+      sendToBackground({ type: 'classify', platform: adapter.id, items, cacheOnly: opts?.cacheOnly === true }),
     pushTabState: (patch) => {
       if (ctx.isValid) void sendToBackground({ type: 'tabState', patch }).catch(() => undefined);
     },
-    vote: async (key, verdict, topics, summary) => {
-      await sendToBackground({ type: 'vote', key, verdict, topics, ...(summary ? { summary } : {}) });
+    vote: async (key, verdict, topics, summary, shareable) => {
+      await sendToBackground({ type: 'vote', key, verdict, topics, ...(summary ? { summary, shareable } : {}) });
     },
     settingsAction: async (action) => (await sendToBackground({ type: 'settingsAction', action })).undo,
     coachMarkShown: () => void sendToBackground({ type: 'coachMarkShown', platform: adapter.id }).catch(() => undefined),
     openSettings: (hash) => sendQuietly({ type: 'openPage', page: 'options', ...(hash ? { hash } : {}) }),
     report: () => {
       window.open(reportProblemUrl(adapter, controller), '_blank', 'noopener');
+    },
+    factcheck: (key, input) => sendToBackground({ type: 'factcheck', key, input }),
+    perspectives: (key, req) => sendToBackground({ type: 'perspectives', key, ...req }),
+    openFactcheck: async () => {
+      if (!ctx.isValid) return false;
+      return (await sendToBackground({ type: 'openFactcheck' }).catch(() => ({ ok: false }))).ok;
     },
   };
 
@@ -77,6 +85,10 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
       rt.votes = v;
       refresh();
     }),
+    serverOfferItem.watch((v) => {
+      rt.serverOffer = v;
+      refresh();
+    }),
   ];
 
   // Single-page apps: follow client-side navigation.
@@ -113,6 +125,11 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
       }
       case 'reportUrl':
         reply<'reportUrl'>({ url: reportProblemUrl(adapter, controller) });
+        return false;
+      // Signed in to the server again: the device may not have changed, so no watch above fires. Clears the AI pause.
+      case 'aiResume':
+        refresh();
+        reply<'aiResume'>({ ok: true });
         return false;
     }
   };

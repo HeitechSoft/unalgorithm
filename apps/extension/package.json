@@ -8,9 +8,9 @@
   "scripts": {
     "dev": "wxt",
     "dev:fb": "cross-env UA_START=facebook wxt",
-    "build": "wxt build",
-    "build:e2e": "wxt build --mode e2e",
-    "zip": "wxt zip",
+    "build": "node ../../packages/outlets/src/cli.ts check && wxt build",
+    "build:e2e": "node ../../packages/outlets/src/cli.ts check && wxt build --mode e2e",
+    "zip": "node ../../packages/outlets/src/cli.ts check && wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
     "e2e": "pnpm build:e2e && playwright test",
     "postinstall": "wxt prepare"
@@ -18,8 +18,11 @@
   "dependencies": {
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/platforms": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
+    "@unalgorithm/research": "workspace:*",
+    "@unalgorithm/sync": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
     "lucide-react": "^1.55.0",
     "react": "^19.3.0",
@@ -30,6 +33,7 @@
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.64.0",
     "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@wxt-dev/module-react": "^1.2.2",

@@ -1,0 +1,22 @@
+# The searxng profile's SearXNG instance (compose.yaml), reached by the server only, at http://searxng:8080 on the
+# project network: it publishes no port and is never a public instance. Its secret key comes from SEARXNG_SECRET in
+# .env, never from this file.
+#
+# Fact-check sends each search here, and SearXNG forwards the query from this machine, from its own IP address, to the
+# search engines its default settings turn on. Change engines below (https://docs.searxng.org/admin/settings/).
+use_default_settings: true
+
+server:
+  # Internal only: the server is its one client, so no rate limiter (it needs Valkey), no image proxy.
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  # json is the API the server's SearXNG adapter calls (/search?format=json).
+  formats: [html, json]
+  safe_search: 0
+
+outgoing:
+  # Seconds per engine request; the server's own deadline per search is longer.
+  request_timeout: 5.0

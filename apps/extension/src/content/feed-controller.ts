@@ -1,4 +1,5 @@
 import {
+  type Audience,
   authorKey,
   type Decision,
   type Device,
@@ -6,27 +7,49 @@ import {
   evaluateHealth,
   type FilterDecision,
   type FilterKey,
+  factcheckOffered,
   HEALTHY,
   type HealthReport,
   type HealthSample,
   type HiddenItem,
   type HighlightItem,
+  jobPriceLabel,
   type LearnedPrefs,
   type ModuleInfo,
   type PostData,
   type PostSignals,
+  perspectivesOffered,
   presetOf,
   reasonKey,
   reasonLabel,
+  type ServerOffer,
   type Settings,
   snippet,
   type TabState,
   toPostForAI,
 } from '@unalgorithm/core';
 import { type InspectContext, MAX_FRUITLESS, type PlatformAdapter, rearmMarker, shouldRearm } from '@unalgorithm/platforms';
-import { BLOCKING_AI_ERRORS, type Classification, type PlatformId, type PostKey, uuidv7 } from '@unalgorithm/protocol';
-import { type FeedItemHandlers, type FeedItemModel, type ToastModel, type WhyActionId, whyCopy } from '@unalgorithm/ui';
+import {
+  BLOCKING_AI_ERRORS,
+  type Classification,
+  type PlatformId,
+  type PostForAI,
+  type PostKey,
+  type SharedLink,
+  serverMayReceive,
+  uuidv7,
+} from '@unalgorithm/protocol';
+import {
+  type FactcheckAction,
+  type FactcheckItemModel,
+  type FeedItemHandlers,
+  type FeedItemModel,
+  type ToastModel,
+  type WhyActionId,
+  whyCopy,
+} from '@unalgorithm/ui';
 import type { BgError, BgResponses, ClassifyItem, SettingsAction } from '../lib/messages.ts';
+import { perspectivesRegistry } from '../lib/outlets.ts';
 import { GLOBAL_STYLE_ID, globalCss, sampleHostTheme } from './global-css.ts';
 
 const BATCH_SIZE = 6;
@@ -39,23 +62,57 @@ const HEALTH_WINDOW = 30;
 const MAX_HIGHLIGHTS = 20;
 const MAX_HIDDEN_ITEMS = 60;
 const TOAST_MS = 6000;
+const FACTCHECK_STALE = "Couldn't reach UnAlgorithm. Reload the page.";
+const FACTCHECK_TOOLBAR_HINT = 'Open UnAlgorithm from the toolbar to see it.';
 
 export interface Runtime {
   settings: Settings;
   device: Device;
   learned: LearnedPrefs;
   votes: Record<string, 'more' | 'less'>;
+  /** What the signed-in server offers (`local:serverOffer`); only a server source reads it. */
+  serverOffer: ServerOffer | null;
 }
 
 /** How the controller talks to the rest of the extension (mocked in tests). */
 export interface Bridge {
-  classify(items: ClassifyItem[]): Promise<BgResponses['classify']>;
+  /** `cacheOnly`: AI is paused, so only the background's cache answers (no network). */
+  classify(items: ClassifyItem[], opts?: { cacheOnly?: boolean }): Promise<BgResponses['classify']>;
   pushTabState(patch: Partial<TabState>): void;
-  vote(key: PostKey, verdict: 'more' | 'less' | null, topics: string[], summary?: string): Promise<void>;
+  /** `shareable`: a server may receive the rated post, and so its summary (R23). */
+  vote(
+    key: PostKey,
+    verdict: 'more' | 'less' | null,
+    topics: string[],
+    summary: string | undefined,
+    shareable: boolean,
+  ): Promise<void>;
   settingsAction(action: SettingsAction): Promise<SettingsAction | null>;
   coachMarkShown(): void;
   openSettings(hash?: string): void;
   report(): void;
+  /** Fact-check one post on the person's own key (P3-06). Only ever called after the person confirmed the price. */
+  factcheck(key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<BgResponses['factcheck']>;
+  /** True when the side panel opened (P3-06 `openFactcheck`); false when Chrome refused, or on a stale context. */
+  openFactcheck(): Promise<boolean>;
+  /**
+   * "Other perspectives" for one post's shared link (P3-38). Only the link (URL and link-card title), the platform and
+   * the audience leave the content script, never post text; only ever called after the person confirmed the price.
+   */
+  perspectives(
+    key: PostKey,
+    req: { link: SharedLink; platform: PlatformId; audience?: Audience },
+  ): Promise<BgResponses['perspectives']>;
+}
+
+/** The Labs jobs a post can offer, in the order their rows render. */
+type Job = 'factcheck' | 'perspectives';
+const JOBS: readonly Job[] = ['factcheck', 'perspectives'];
+
+/** A job's progress on one post; absent means offered (when its offer rule holds). */
+interface JobProgress {
+  state: FactcheckItemModel['state'];
+  message?: string;
 }
 
 /** Where our per-item UI lives: a custom element with a shadow root, appended as the item's last child. */
@@ -91,6 +148,10 @@ export interface Entry {
   ui?: UiHost;
   handlers?: FeedItemHandlers;
   coach?: boolean;
+  /** "Check facts" progress; absent means offered (when the offer rule holds). */
+  factcheck?: JobProgress;
+  /** "Other perspectives" progress, as fact-check's. */
+  perspectives?: JobProgress;
 }
 
 type Listener = () => void;
@@ -455,10 +516,6 @@ export class FeedController {
 
   // ---------- deciding & applying ----------
 
-  private aiActive(): boolean {
-    return !!this.rt?.device.aiSource && !this.aiPause;
-  }
-
   private decideAndApply(e: Entry): void {
     const rt = this.rt;
     if (!rt) return;
@@ -467,7 +524,9 @@ export class FeedController {
         item: { kind: 'post', post: e.post },
         settings: rt.settings,
         ...(e.classification ? { classification: e.classification } : {}),
-        aiActive: this.aiActive(),
+        // A configured source, paused or not: what is already known about a post keeps applying while AI is paused
+        // (R27); only new AI calls stop.
+        aiActive: !!rt.device.aiSource,
         learned: rt.learned,
         ...(e.vote ? { vote: e.vote } : {}),
         degraded: this.degraded,
@@ -506,11 +565,19 @@ export class FeedController {
     setAttr(e.el, 'data-unalgo', state);
     const pick = !e.applied && !!e.decision.highlight && rt.settings.display.forYou === 'ring';
     setAttr(e.el, 'data-unalgo-pick', pick ? '' : null);
+    let jobUi = false;
+    for (const job of JOBS) {
+      const offered = this.jobOffered(e, job);
+      // Labs switched off, the source changed or the post folded: an offer not yet confirmed goes away.
+      if (!offered && (e[job]?.state === 'offered' || e[job]?.state === 'confirming')) e[job] = undefined;
+      jobUi ||= offered || !!e[job];
+    }
     const wantsUi =
       state === 'collapsed' ||
       state === 'dimmed' ||
       state === 'revealed' ||
-      (!e.applied && !!e.decision.highlight && rt.settings.display.forYou !== 'off');
+      (!e.applied && !!e.decision.highlight && rt.settings.display.forYou !== 'off') ||
+      jobUi;
     if (wantsUi && !e.ui) {
       e.ui = this.mountUi(e);
       e.handlers = this.handlersFor(e);
@@ -613,7 +680,90 @@ export class FeedController {
       forYouStyle: rt.settings.display.forYou,
       ...(e.vote ? { vote: e.vote } : {}),
       ...(e.coach ? { coach: true } : {}),
+      ...this.jobModel(e, 'factcheck'),
+      ...this.jobModel(e, 'perspectives'),
     };
+  }
+
+  /**
+   * A job's offer rule (fact-check: P3-05; perspectives: P3-36, with this build's registry), on a post that is not
+   * folded away (shown, revealed or dimmed).
+   */
+  private jobOffered(e: Entry, job: Job): boolean {
+    const rt = this.rt;
+    if (!rt || e.kind !== 'post' || !e.post) return false;
+    const state = e.el.getAttribute('data-unalgo');
+    if (state !== null && state !== 'revealed' && state !== 'dimmed') return false;
+    const offer = { device: rt.device, post: e.post, classification: e.classification, serverOffer: rt.serverOffer };
+    return job === 'factcheck'
+      ? factcheckOffered(offer)
+      : perspectivesOffered({ ...offer, registryReady: perspectivesRegistry() !== null });
+  }
+
+  private jobModel(e: Entry, job: Job): { factcheck?: FactcheckItemModel } | { perspectives?: FactcheckItemModel } {
+    const state = e[job]?.state ?? 'offered';
+    if ((state === 'offered' || state === 'confirming') && !this.jobOffered(e, job)) return {};
+    return {
+      [job]: {
+        state,
+        price:
+          jobPriceLabel(job, this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null, this.rt?.device.webSearch) ?? '',
+        ...(e[job]?.message ? { message: e[job].message } : {}),
+      },
+    };
+  }
+
+  /** What a confirmed job sends: fact-check the post for AI; perspectives only the shared link, built field by field. */
+  private sendJob(post: PostData, job: Job): Promise<{ ok: true } | { ok: false; error: BgError }> {
+    if (job === 'factcheck') {
+      const { ref: _ref, ...input } = toPostForAI(post, {
+        ref: 'x',
+        redactMentions: (this.rt as Runtime).settings.ai.redactMentions,
+      });
+      return this.bridge.factcheck(post.id, input);
+    }
+    const shared = post.sharedLink as NonNullable<PostData['sharedLink']>;
+    const title = shared.title;
+    return this.bridge.perspectives(post.id, {
+      link: { url: shared.url, ...(title ? { title } : {}) },
+      platform: post.platform,
+      ...(post.audience ? { audience: post.audience } : {}),
+    });
+  }
+
+  /** Never automatic: `confirm`, after the price was shown, is the only way a job starts. */
+  private async onJob(e: Entry, job: Job, action: FactcheckAction): Promise<void> {
+    const rt = this.rt;
+    const post = e.post;
+    if (!rt || !post) return;
+    switch (action) {
+      case 'start':
+      case 'retry':
+        e[job] = { state: 'confirming' };
+        break;
+      case 'cancel':
+        e[job] = undefined;
+        break;
+      case 'open': {
+        // Both jobs show their result in the same side panel.
+        const opened = await this.bridge.openFactcheck().catch(() => false);
+        if (!opened && e[job]?.state === 'done') e[job] = { state: 'done', message: FACTCHECK_TOOLBAR_HINT };
+        break;
+      }
+      case 'confirm': {
+        if (e[job]?.state !== 'confirming' || !this.jobOffered(e, job)) return;
+        e[job] = { state: 'running' };
+        this.notify();
+        try {
+          const res = await this.sendJob(post, job);
+          e[job] = res.ok ? { state: 'done' } : { state: 'failed', message: res.error.message };
+        } catch {
+          e[job] = { state: 'failed', message: FACTCHECK_STALE };
+        }
+        break;
+      }
+    }
+    if (this.active && this.entries.get(e.el) === e) this.apply(e);
   }
 
   private handlersFor(e: Entry): FeedItemHandlers {
@@ -633,6 +783,8 @@ export class FeedController {
         e.coach = false;
         this.bridge.coachMarkShown();
       },
+      onFactcheck: (action) => void this.onJob(e, 'factcheck', action),
+      onPerspectives: (action) => void this.onJob(e, 'perspectives', action),
     };
   }
 
@@ -715,7 +867,9 @@ export class FeedController {
     else delete e.vote;
     this.decideAndApply(e);
     this.recomputeRuns();
-    await this.bridge.vote(e.post.id, v, e.classification?.topics ?? [], e.classification?.reason).catch(() => undefined);
+    await this.bridge
+      .vote(e.post.id, v, e.classification?.topics ?? [], e.classification?.reason, serverMayReceive(e.post))
+      .catch(() => undefined);
   }
 
   // ---------- AI classification queue ----------
@@ -749,7 +903,8 @@ export class FeedController {
 
   private maybeQueue(e: Entry): void {
     const rt = this.rt;
-    if (!rt || !this.aiActive() || e.kind !== 'post' || !e.post || e.aiStatus !== 'idle') return;
+    // Queued while AI is paused too: the batch then asks the cache only (see flush).
+    if (!rt?.device.aiSource || e.kind !== 'post' || !e.post || e.aiStatus !== 'idle') return;
     if (e.retryAt && Date.now() < e.retryAt) return;
     // Posts already hidden by a rule or the user's own lists never cost an AI call.
     if (e.decision.filter && e.decision.filter.source !== 'ai') return;
@@ -767,9 +922,11 @@ export class FeedController {
     this.flushTimer = undefined;
     // Nearest to the viewport first.
     this.queue.sort((a, b) => Number(b.onScreen) - Number(a.onScreen));
-    while (this.queue.length && this.rt && !this.aiPause) {
+    while (this.queue.length && this.rt) {
       const batch = this.queue.splice(0, BATCH_SIZE).filter((e) => e.aiStatus === 'queued' && e.post);
       if (!batch.length) continue;
+      // While AI is paused the background answers from its cache only: no AI call, no network (R27).
+      const cacheOnly = !!this.aiPause;
       const redactMentions = this.rt.settings.ai.redactMentions;
       const items: ClassifyItem[] = batch.map((e) => {
         const { ref: _ref, ...input } = toPostForAI(e.post as PostData, { ref: 'x', redactMentions });
@@ -781,7 +938,7 @@ export class FeedController {
       this.schedulePush();
       let res: BgResponses['classify'];
       try {
-        res = await this.bridge.classify(items);
+        res = await this.bridge.classify(items, { cacheOnly });
       } catch (err) {
         res = { results: [], pause: undefined };
         for (const e of batch) {
@@ -804,7 +961,9 @@ export class FeedController {
           e.classification = r.classification;
           e.aiStatus = 'done';
         } else if (r.status === 'skipped') {
-          e.aiStatus = 'skipped';
+          // Not in the cache while AI is paused: update() queues it again on resume. If AI resumed while this lookup
+          // was on its way, it is asked again now.
+          e.aiStatus = r.reason === 'paused' && !this.aiPause ? 'idle' : 'skipped';
           e.aiMessage =
             r.reason === 'cap-reached' ? 'Daily limit reached' : r.reason === 'declined' ? 'The AI declined this post' : '';
         } else if (r.retryable) {
@@ -815,12 +974,10 @@ export class FeedController {
           e.aiMessage = r.message;
         }
         this.decideAndApply(e);
+        if (e.aiStatus === 'idle' && e.near) this.maybeQueue(e);
       }
-      if (res.pause && BLOCKING_AI_ERRORS.has(res.pause.code)) {
-        this.aiPause = res.pause;
-        for (const e of this.queue) e.aiStatus = 'idle';
-        this.queue = [];
-      }
+      // The rest of the queue stays: the next batches go out as cache-only lookups.
+      if (res.pause && BLOCKING_AI_ERRORS.has(res.pause.code)) this.aiPause = res.pause;
       this.recomputeRuns();
       this.schedulePush();
     }

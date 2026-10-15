@@ -1,6 +1,6 @@
 import { NOISE_LABELS, type PLATFORMS } from '@unalgorithm/protocol';
 import { z } from 'zod';
-import { AISourceConfigSchema } from '../ai-source.ts';
+import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
 
 /**
  * Synced settings (Phase 2 syncs them field by field). Objects are "loose" so a field written by a newer
@@ -118,6 +118,10 @@ export const SettingsSchema = z.looseObject({
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
+/** Experimental features, per device: Labs flags are never synced (DeviceSchema is never synced or exported). */
+export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
+export type Labs = z.infer<typeof LabsSchema>;
+
 /** Device-local state, never synced or exported. */
 export const DeviceSchema = z.looseObject({
   version: z.literal(1),
@@ -135,6 +139,9 @@ export const DeviceSchema = z.looseObject({
     facebook: z.union([z.null(), z.number(), z.literal('manual')]),
   }),
   dev: z.looseObject({ debugOverlay: z.boolean() }),
+  labs: LabsSchema,
+  /** The web search key this device uses with an OpenAI-compatible source (which provider; the key is a secret). */
+  webSearch: WebSearchKeySchema.nullable(),
 });
 export type Device = z.infer<typeof DeviceSchema>;
 

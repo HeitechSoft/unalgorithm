@@ -16,6 +16,8 @@
       "!**/test-results",
       "!screens",
       "!**/fixtures/**/*.html",
+      "!apps/server/drizzle",
+      "!apps/server/src/db/auth-schema.ts",
       "!**/pnpm-lock.yaml"
     ]
   },
@@ -106,6 +108,33 @@
       }
     },
     {
+      "includes": ["packages/sync/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@unalgorithm/ai": "Import @unalgorithm/ai/presets: the package root pulls in the vendor SDKs."
+                },
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui", "@unalgorithm/platforms"],
+                    "message": "sync is shared by the server and the extension: protocol, core, zod and the SDK-free @unalgorithm/ai/presets only."
+                  },
+                  {
+                    "group": ["@unalgorithm/ai/*", "!@unalgorithm/ai/presets", "@unalgorithm/platforms/*", "@unalgorithm/ui/*"],
+                    "message": "sync is shared by the server and the extension: these subpaths need Chrome, Node or the DOM. Import @unalgorithm/ai/presets."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/core/**"],
       "linter": {
         "rules": {
@@ -134,7 +163,7 @@
       }
     },
     {
-      "includes": ["packages/platforms/**", "packages/ai/**"],
+      "includes": ["packages/platforms/**", "packages/ai/**", "packages/research/**"],
       "linter": {
         "rules": {
           "style": {
@@ -145,6 +174,46 @@
                   {
                     "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui"],
                     "message": "Adapters and AI clients never depend on the extension runtime or UI."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/server/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "react", "react-dom", "@unalgorithm/ui", "@unalgorithm/platforms"],
+                    "message": "the server never imports the extension runtime, UI or DOM adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["wxt", "wxt/*", "@unalgorithm/platforms"],
+                    "message": "the server's web page never imports the extension runtime or the feed adapters."
                   }
                 ]
               }

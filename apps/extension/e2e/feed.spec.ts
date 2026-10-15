@@ -1,5 +1,4 @@
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   FRIEND_POST,
   fbFeed,
@@ -65,42 +64,12 @@ test('Facebook: hides Sponsored, Suggested, Reels tray and unjoined groups; keep
 });
 
 test.describe('AI through a local OpenAI-compatible server', () => {
-  let server: Server;
-  let port = 0;
-  const bodies: string[] = [];
+  let ai: MockOpenAI;
 
   test.beforeAll(async () => {
-    server = createServer((req, res) => {
-      let body = '';
-      req.on('data', (c) => (body += c));
-      req.on('end', () => {
-        res.setHeader('content-type', 'application/json');
-        if (req.url?.endsWith('/models')) return res.end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
-        bodies.push(body);
-        const user =
-          (JSON.parse(body).messages as { role: string; content: string }[]).find((m) => m.role === 'user')?.content ?? '';
-        const posts = [...user.matchAll(/<post_\w+ id="(p\d+)"[^>]*>\n([\s\S]*?)\n<\/post_/g)];
-        const results = posts.map(([, id, text]) => ({
-          id,
-          topics: /automat|AI/i.test(text ?? '') ? ['automation'] : ['other'],
-          noise: [],
-          reason: 'Test verdict.',
-          relevance: /automat|AI/i.test(text ?? '') ? 92 : 40,
-          isNews: false,
-          hasCheckableClaims: false,
-        }));
-        res.end(
-          JSON.stringify({
-            model: 'mock-model',
-            choices: [{ message: { content: JSON.stringify({ results }) }, finish_reason: 'stop' }],
-          }),
-        );
-      });
-    });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    port = (server.address() as AddressInfo).port;
+    ai = await startMockOpenAI();
   });
-  test.afterAll(() => server.close());
+  test.afterAll(() => ai.close());
 
   test('classifies posts ahead of the viewport, highlights picks, and never sends author names', async ({
     context,
@@ -115,15 +84,15 @@ test.describe('AI through a local OpenAI-compatible server', () => {
       const test = await chrome.runtime.sendMessage({ type: 'testSource', config });
       if (test?.ok) await chrome.runtime.sendMessage({ type: 'saveSource', config: { ...config, model: test.model } });
       return test;
-    }, `http://127.0.0.1:${port}/v1`);
+    }, ai.baseUrl);
     expect(result).toMatchObject({ ok: true, model: 'mock-model' });
 
     const page = await feed();
     const friend = page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
     await expect(friend).toHaveAttribute('data-unalgo-pick', '');
     await expect(friend.locator('unalgo-post').getByText('For you')).toBeVisible();
-    expect(bodies.length).toBeGreaterThan(0);
-    for (const b of bodies) {
+    expect(ai.bodies.length).toBeGreaterThan(0);
+    for (const b of ai.bodies) {
       expect(b).not.toContain('Morgan Ellis');
       expect(b).not.toContain('linkedin.com/in/');
     }

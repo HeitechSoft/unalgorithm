@@ -1,18 +1,25 @@
-import type { Classification } from '@unalgorithm/protocol';
+import { type Classification, type CreditPriceSchedule, MAX_MODEL_CHARS, ZERO_USAGE as ZERO } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   adjustRelevance,
   applyFeedback,
   applyPreset,
+  balanceLine,
   buildInterestProfile,
   buildSystemPrompt,
   buildUserPrompt,
   changedPaths,
+  clipText,
   decide,
   defaultSettings,
   EMPTY_LEARNED,
   evaluateHealth,
   findKeyword,
+  formatBalance,
+  formatBytes,
+  formatCreditAmount,
+  formatPostsEstimate,
+  formatPrice,
   migrateSettings,
   NO_SIGNALS,
   neutralize,
@@ -21,6 +28,7 @@ import {
   presetOf,
   recordUsage,
   ruleFilter,
+  safeExternalUrl,
   stampClocks,
   toPostForAI,
 } from '../src/index.ts';
@@ -260,6 +268,47 @@ describe('classification prompt', () => {
   it('escapes the nonce-free basics', () => {
     expect(neutralize('a & <b>')).toBe('a &amp; &lt;b&gt;');
   });
+
+  it('masks contacts in linear time on hostile text', () => {
+    const started = performance.now();
+    const text = toPostForAI(post({ text: `${'+'.repeat(1900)} write to a.b+c@mail.example.org` }), {
+      ref: 'p1',
+      redactMentions: true,
+    }).text;
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(text).not.toContain('@mail.example.org');
+  });
+});
+
+describe('safeExternalUrl', () => {
+  it('trims trailing punctuation and stays linear', () => {
+    expect(safeExternalUrl('example.org/a).,;')).toBe('https://example.org/a');
+    expect(safeExternalUrl('  https://example.org/x)  ')).toBe('https://example.org/x');
+    expect(safeExternalUrl(null)).toBeNull();
+    const started = performance.now();
+    expect(safeExternalUrl(`${')'.repeat(100_000)}x`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+});
+
+describe('toPostForAI audience', () => {
+  const fb = (over: Partial<PostData> = {}) => post({ id: 'fb:1', platform: 'facebook', ...over });
+
+  it('test_to_post_for_ai_sets_facebook_audience', () => {
+    expect(toPostForAI(fb({ audience: 'friends' }), { ref: 'p1', redactMentions: true }).audience).toBe('friends');
+    expect(toPostForAI(fb(), { ref: 'p1', redactMentions: true }).audience).toBe('unknown');
+  });
+
+  it('test_to_post_for_ai_linkedin_has_no_audience', () => {
+    const result = toPostForAI(post({ audience: 'friends' }), { ref: 'p1', redactMentions: true });
+    expect('audience' in result).toBe(false);
+  });
+
+  it('test_user_prompt_never_renders_audience', () => {
+    const input = toPostForAI(fb({ text: 'Lunch', audience: 'friends' }), { ref: 'p1', redactMentions: true });
+    expect(input.audience).toBe('friends');
+    expect(buildUserPrompt([input], 'deadbeef')).not.toContain('friends');
+  });
 });
 
 describe('learning', () => {
@@ -268,6 +317,17 @@ describe('learning', () => {
     for (let i = 0; i < 6; i++) prefs = applyFeedback(prefs, { id: `${i}`, at: i, verdict: 'less', topics: ['crypto'] });
     expect(prefs.weights.crypto).toBe(-3);
     expect(adjustRelevance(50, ['Crypto'], prefs.weights)).toBe(26);
+  });
+
+  it('sends a server only the rated examples a server may receive (R23)', () => {
+    let prefs = EMPTY_LEARNED;
+    prefs = applyFeedback(prefs, { id: '1', at: 1, verdict: 'more', topics: [], summary: 'Older rating, unmarked.' });
+    prefs = applyFeedback(prefs, { id: '2', at: 2, verdict: 'less', topics: [], summary: 'Friends-only post.' });
+    prefs = applyFeedback(prefs, { id: '3', at: 3, verdict: 'more', topics: [], summary: 'Public post.', shareable: true });
+    const local = buildInterestProfile(defaultSettings(), prefs).examples.map((e) => e.summary);
+    expect(local).toEqual(['Public post.', 'Friends-only post.', 'Older rating, unmarked.']);
+    const server = buildInterestProfile(defaultSettings(), prefs, { forServer: true }).examples;
+    expect(server).toEqual([{ summary: 'Public post.', verdict: 'more' }]);
   });
 });
 
@@ -314,5 +374,97 @@ describe('usage', () => {
     expect(ledger['2026-01-01']).toMatchObject({ posts: 6, calls: 2, failedCalls: 1 });
     ledger = recordUsage(ledger, { model: 'm', usage: z, posts: 1, now: new Date(2026, 2, 1) });
     expect(Object.keys(ledger)).toEqual(['2026-03-01']);
+  });
+
+  it('test_ledger_model_key_is_bounded', () => {
+    // A provider or server that names a 4 MiB model still adds one short key, whatever the source.
+    const huge = 'm'.repeat(4 * 1024 * 1024);
+    const ledger = recordUsage({}, { model: huge, usage: ZERO, posts: 1, now: new Date(2026, 0, 1) });
+    expect(Object.keys(ledger['2026-01-01']?.byModel ?? {})).toEqual(['m'.repeat(MAX_MODEL_CHARS)]);
+    // Names that agree up to the bound count as one model, and the cut never leaves half an emoji behind.
+    const again = recordUsage(ledger, { model: `${huge}x`, usage: ZERO, posts: 1, now: new Date(2026, 0, 1) });
+    expect(again['2026-01-01']?.byModel['m'.repeat(MAX_MODEL_CHARS)]?.calls).toBe(2);
+    const emoji = recordUsage({}, { model: `${'m'.repeat(MAX_MODEL_CHARS - 1)}\u{1F600}`, usage: ZERO, posts: 0 });
+    expect(Object.keys(Object.values(emoji)[0]?.byModel ?? {})).toEqual(['m'.repeat(MAX_MODEL_CHARS - 1)]);
+  });
+});
+
+describe('clipText', () => {
+  it('test_clip_text_never_splits_a_code_point', () => {
+    expect(clipText('hello', 10)).toBe('hello');
+    expect(clipText('hello', 3)).toBe('hel');
+    expect(clipText('hello', 0)).toBe('');
+    // An emoji is two UTF-16 units: one that doesn't fit whole is dropped, never cut in half.
+    expect(clipText(`${'a'.repeat(499)}\u{1F600}`, 500)).toBe('a'.repeat(499));
+    expect(clipText(`${'a'.repeat(498)}\u{1F600}b`, 500)).toBe(`${'a'.repeat(498)}\u{1F600}`);
+    expect(clipText('\u{1F600}\u{1F600}', 3)).toBe('\u{1F600}');
+  });
+
+  it('test_profile_about_is_cut_between_code_points', () => {
+    const settings = defaultSettings();
+    settings.interests.about = `${'a'.repeat(499)}\u{1F600} and more`;
+    expect(buildInterestProfile(settings).about).toBe('a'.repeat(499));
+  });
+});
+
+describe('formatBytes', () => {
+  it('test_format_bytes', () => {
+    expect(formatBytes(5_250_000_000)).toBe('5.3 GB');
+    expect(formatBytes(48_000_000)).toBe('48 MB');
+    expect(formatBytes(null)).toBe('unknown');
+    expect(formatBytes(1_000_000_000)).toBe('1.0 GB');
+    expect(formatBytes(0)).toBe('0 MB');
+  });
+});
+
+describe('credit wording', () => {
+  const MINUS = String.fromCodePoint(0x2212); // MINUS SIGN, not a hyphen
+  const DOT = String.fromCodePoint(0x00b7); // MIDDLE DOT
+
+  it('test_format_balance_floors_to_cent', () => {
+    expect(formatBalance(0)).toBe('$0.00');
+    expect(formatBalance(-1)).toBe('$0.00');
+    expect(formatBalance(9_999)).toBe('<$0.01');
+    expect(formatBalance(10_000)).toBe('$0.01');
+    expect(formatBalance(979_999)).toBe('$0.97');
+    expect(formatBalance(1_234_569_999)).toBe('$1,234.56');
+  });
+
+  it('test_format_credit_amount_signs_and_rounding', () => {
+    expect(formatCreditAmount(1_000_000)).toBe('+$1.00');
+    expect(formatCreditAmount(-60_000)).toBe(`${MINUS}$0.06`);
+    expect(formatCreditAmount(-5_000)).toBe(`${MINUS}$0.01`);
+    expect(formatCreditAmount(-4_999)).toBe(`${MINUS}<$0.01`);
+    expect(formatCreditAmount(4_999)).toBe('+<$0.01');
+    expect(formatCreditAmount(0)).toBe('$0.00');
+  });
+
+  it('test_format_price_rounds_half_up', () => {
+    expect(formatPrice(146_000)).toBe('$0.15');
+    expect(formatPrice(182_500)).toBe('$0.18');
+    expect(formatPrice(145_000)).toBe('$0.15');
+    expect(formatPrice(144_999)).toBe('$0.14');
+    expect(formatPrice(5_000)).toBe('$0.01');
+    expect(formatPrice(4_999)).toBe('<$0.01');
+    expect(formatPrice(0)).toBe('$0.00');
+    expect(formatPrice(-1)).toBe('$0.00');
+  });
+
+  it('test_balance_line', () => {
+    // A fixed instant: no test reads a price from the real schedule at the real clock.
+    const at = new Date('2026-10-14T12:00:00Z');
+    expect(balanceLine(970_000, at)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    expect(balanceLine(146, at)).toBe(`<$0.01 left ${DOT} about 1 post`);
+    expect(balanceLine(0, at)).toBe('$0.00 left');
+    expect(balanceLine(-5, at)).toBe('$0.00 left');
+    const card = (multiplier: number) => ({ multiplier, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73_000 });
+    const S: CreditPriceSchedule = [
+      { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
+      { effectiveFrom: '2026-11-15T00:00:00Z', cards: { classify: card(2.5) } },
+    ];
+    expect(balanceLine(970_000, new Date('2026-11-15T00:00:00Z'), S)).toBe(`$0.97 left ${DOT} about 5,300 posts`);
+    expect(formatPostsEstimate(0)).toBe('no posts');
+    expect(formatPostsEstimate(1)).toBe('about 1 post');
+    expect(formatPostsEstimate(33_000)).toBe('about 33,000 posts');
   });
 });

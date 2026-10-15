@@ -11,13 +11,21 @@ export const NoiseLabelSchema = z.enum(NOISE_LABELS);
 
 export const MAX_POST_CHARS = 2000;
 export const MAX_POSTS_PER_REQUEST = 12;
+/** The longest model name a server may report, and the longest the extension's usage ledger keeps. */
+export const MAX_MODEL_CHARS = 200;
+
+/** Who can see a post, as the platform shows it. Only Facebook reports this. */
+export const AUDIENCES = ['public', 'friends', 'custom', 'unknown'] as const;
 
 /**
  * Everything about a post that may leave the device for classification. Deliberately has no author name,
  * profile URL, group name, comments or images. Text is normalized and capped; mentions/emails/phones masked.
  */
 export const PostForAISchema = z.object({
-  /** Batch-local id ("p1") for local sources, or `pk_<sha256>` when sent to a server. */
+  /**
+   * Batch-local id ("p1", "p2"…) for every source, servers included, mapped back to the post on the device. Never
+   * derived from the post key: a hash of a key built from the author's name and the text would give the name away.
+   */
   ref: z.string().min(1).max(64),
   platform: PlatformIdSchema,
   text: z.string().max(MAX_POST_CHARS),
@@ -29,8 +37,18 @@ export const PostForAISchema = z.object({
   media: z.enum(MEDIA_KINDS),
   /** Only the domain and title of a shared link, never the URL. */
   link: z.object({ domain: z.string().max(253), title: z.string().max(300).optional() }).optional(),
+  /** Facebook only: who can see the post. Servers drop anything not public (R23). */
+  audience: z.enum(AUDIENCES).optional(),
 });
 export type PostForAI = z.infer<typeof PostForAISchema>;
+
+/**
+ * R23: a server may receive a post, or a summary of one, unless it is a Facebook post whose audience isn't public
+ * (friends, custom, unknown or missing).
+ */
+export function serverMayReceive(post: Pick<PostForAI, 'platform' | 'audience'>): boolean {
+  return post.platform !== 'facebook' || post.audience === 'public';
+}
 
 /** What the user wants more and less of, as sent with every classification request. */
 export const InterestProfileSchema = z.object({
@@ -66,17 +84,19 @@ export const ClassificationSchema = z.object({
 });
 export type Classification = z.infer<typeof ClassificationSchema>;
 
+const ResultRefSchema = z.string().max(64);
 export const PostClassificationResultSchema = z.discriminatedUnion('status', [
-  z.object({ ref: z.string(), status: z.literal('ok'), classification: ClassificationSchema }),
-  z.object({ ref: z.string(), status: z.literal('declined') }),
-  z.object({ ref: z.string(), status: z.literal('error'), message: z.string() }),
+  z.object({ ref: ResultRefSchema, status: z.literal('ok'), classification: ClassificationSchema }),
+  z.object({ ref: ResultRefSchema, status: z.literal('declined') }),
+  z.object({ ref: ResultRefSchema, status: z.literal('error'), message: z.string().max(500) }),
 ]);
 export type PostClassificationResult = z.infer<typeof PostClassificationResultSchema>;
 
+/** Every field is bounded: the extension reads this from a server it may not trust, and keeps parts of it. */
 export const ClassifyResponseSchema = z.object({
   v: z.literal(1),
-  results: z.array(PostClassificationResultSchema),
-  source: z.object({ kind: z.string(), model: z.string(), promptVersion: z.number().int() }),
+  results: z.array(PostClassificationResultSchema).max(MAX_POSTS_PER_REQUEST),
+  source: z.object({ kind: z.string().max(40), model: z.string().max(MAX_MODEL_CHARS), promptVersion: z.number().int() }),
   /** Present only when the server bills (UnAlgorithm Cloud); absent for self-hosted servers. */
   billing: z.object({ chargedMicros: z.number().int(), balanceMicros: z.number().int() }).optional(),
 });

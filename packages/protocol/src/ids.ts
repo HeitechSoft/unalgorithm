@@ -1,17 +1,8 @@
 /** base64url without padding. */
-function b64url(bytes: Uint8Array): string {
+export function b64url(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/**
- * Opaque reference for a post when it leaves the device: `pk_` + base64url(sha256(postKey)).
- * Servers can de-duplicate and cache by it without learning the platform id.
- */
-export async function toPostRef(postKey: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(postKey));
-  return `pk_${b64url(new Uint8Array(digest))}`;
 }
 
 /** Random UUID v4 (device ids). */

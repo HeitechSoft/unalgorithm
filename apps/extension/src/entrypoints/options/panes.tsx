@@ -1,4 +1,5 @@
 import {
+  clipText,
   type Device,
   dayCostMicros,
   dayUsage,
@@ -16,6 +17,7 @@ import {
   type Settings,
   STARTER_LESS_OF,
   STARTER_TOPICS,
+  sourceCapabilities,
   type Topic,
 } from '@unalgorithm/core';
 import { NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
@@ -44,10 +46,14 @@ import {
 import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
-import { useStorageItem } from '../../lib/hooks.ts';
+import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
+import { WebSearchKey } from '../../components/WebSearchKey.tsx';
+import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
+import { perspectivesRegistry } from '../../lib/outlets.ts';
+import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
-import { learnedItem, usageItem } from '../../lib/storage.ts';
+import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
 
@@ -567,7 +573,7 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
             placeholder="e.g. I run a small software company and follow AI, hiring and local tech events."
             value={about}
             onChange={(e) => setAbout(e.target.value)}
-            onBlur={() => void save((s) => void (s.interests.about = about.slice(0, 500))).then(() => toast({ title: 'Saved' }))}
+            onBlur={() => void save((s) => void (s.interests.about = clipText(about, 500))).then(() => toast({ title: 'Saved' }))}
             aria-label="About you"
           />
         </div>
@@ -712,6 +718,75 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
   );
 }
 
+// ---------- Labs ----------
+
+export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
+  // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
+  const offer = useStorageItem(serverOfferItem, null);
+  const can = sourceCapabilities(device.aiSource, offer, device.webSearch);
+  const capable = can.factcheck;
+  const onServer = device.aiSource?.kind === 'server';
+  const onCompat = device.aiSource?.kind === 'openai-compatible';
+  const needsKey = 'Needs a web search key (above).';
+  const needs = onServer
+    ? "Your server doesn't offer fact-check."
+    : onCompat
+      ? needsKey
+      : 'Needs your own Anthropic key or a server that offers it.';
+  return (
+    <>
+      <Title intro="Early features. They may change or go away.">Labs</Title>
+      {onCompat ? <WebSearchKey device={device} /> : null}
+      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
+        <ListRow
+          title="Fact-check"
+          subtitle={capable ? undefined : needs}
+          control={
+            <Switch
+              checked={capable && device.labs.factcheck}
+              disabled={!capable}
+              label="Fact-check"
+              onCheckedChange={(v) => void saveDevice((d) => void (d.labs.factcheck = v))}
+            />
+          }
+        />
+        {capable || onCompat ? null : (
+          <div style={{ padding: '0 12px 12px' }}>
+            <Button variant="plain" size="sm" onClick={() => (location.hash = '#/ai')}>
+              Set up AI
+            </Button>
+          </div>
+        )}
+      </ListGroup>
+      {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
+      {perspectivesRegistry() !== null ? (
+        <ListGroup footer="Adds Other perspectives to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.">
+          <ListRow
+            title="Other perspectives"
+            subtitle={
+              can.perspectives
+                ? undefined
+                : onServer
+                  ? "Your server doesn't offer Other perspectives."
+                  : onCompat
+                    ? needsKey
+                    : 'Needs your own Anthropic key or a server that offers it.'
+            }
+            control={
+              <Switch
+                checked={can.perspectives && device.labs.perspectives}
+                disabled={!can.perspectives}
+                label="Other perspectives"
+                onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
+              />
+            }
+          />
+        </ListGroup>
+      ) : null}
+    </>
+  );
+}
+
 // ---------- Privacy & Data ----------
 
 export function PrivacyPane({ settings, device }: { settings: Settings; device: Device }) {
@@ -724,20 +799,26 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
       .then((p) => setOrigins((p.origins ?? []).filter((o) => !/linkedin\.com|facebook\.com/.test(o))));
   useEffect(refreshPermissions, []);
 
+  // Settings, interests and exceptions go to the server while sync is on, whatever the AI source (CL3-22).
+  const syncedWith = useSyncedServer(CLOUD_ENABLED);
   const src = device.aiSource;
-  const flow = !src
-    ? { to: null, text: 'Rules run in your browser. Nothing leaves your computer.' }
+  const flow: { to: string | null; text: string; stays?: string } = !src
+    ? { to: null, text: 'Rules run in your browser.', stays: 'Nothing leaves your computer.' }
     : src.kind === 'on-device'
-      ? { to: null, text: "Chrome's built-in AI runs on this computer. Nothing leaves it." }
+      ? { to: null, text: "Chrome's built-in AI runs on this computer.", stays: 'Nothing leaves it.' }
       : src.kind === 'openai-compatible'
         ? {
             to: new URL(src.baseUrl).host,
             text: `Post text goes from your browser straight to ${new URL(src.baseUrl).host}. HeitechSoft never sees it.`,
           }
-        : {
-            to: src.kind === 'anthropic' ? 'Anthropic' : src.kind === 'openai' ? 'OpenAI' : 'UnAlgorithm Cloud',
-            text: `Post text goes from your browser straight to ${src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI'}. HeitechSoft never sees it. Author names, emails and phone numbers are never sent.`,
-          };
+        : src.kind === 'server'
+          ? recipientText(serverLabel(src.baseUrl))
+          : {
+              to: src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI',
+              text: `Post text goes from your browser straight to ${src.kind === 'anthropic' ? 'Anthropic' : 'OpenAI'}. HeitechSoft never sees it. Author names, emails and phone numbers are never sent.`,
+            };
+
+  const recipients = [...new Set([flow.to, syncedWith].filter((to): to is string => !!to))];
 
   const exportSettings = () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
@@ -767,13 +848,24 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   return (
     <>
       <Title>Privacy &amp; Data</Title>
-      <ListGroup header="Where your data goes" footer={flow.text}>
+      <ListGroup
+        header="Where your data goes"
+        footer={
+          syncedWith
+            ? `${flow.text} Your settings, interests and exceptions are synced with ${syncedWith}.`
+            : [flow.text, flow.stays].filter(Boolean).join(' ')
+        }
+      >
         <div className="flow-diagram">
           <span className="flow-box">This browser</span>
-          {flow.to ? (
+          {recipients.length ? (
             <>
               <span aria-hidden="true">→</span>
-              <span className="flow-box">{flow.to}</span>
+              {recipients.map((to) => (
+                <span key={to} className="flow-box">
+                  {to}
+                </span>
+              ))}
             </>
           ) : null}
         </div>
@@ -800,7 +892,8 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
               .catch(() => toast({ title: "Couldn't clear stats. Try again." }))
           }
         />
-        {src && src.kind !== 'on-device' ? (
+        {/* A server source has no saved API key, only a sign-in, which this row can't end. */}
+        {src && src.kind !== 'on-device' && src.kind !== 'server' ? (
           <ListRow
             title="Remove saved API key"
             tone="destructive"
@@ -834,7 +927,8 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
           />
         ))}
       </ListGroup>
-      <ListGroup footer="No analytics. No tracking. No account.">
+      {/* With a server source the person has an account there: they signed in with an email. */}
+      <ListGroup footer={src?.kind === 'server' ? 'No analytics. No tracking.' : 'No analytics. No tracking. No account.'}>
         <ListRow
           title="Erase everything…"
           tone="destructive"
@@ -847,7 +941,9 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
         onOpenChange={setErase}
         alert
         title="Erase everything?"
-        description="This removes your settings, exceptions, what UnAlgorithm learned, stats, AI usage history and saved API keys from this browser. This can't be undone."
+        // The background ends the device on the server before it erases the refresh token. Store builds have no
+        // server card yet, so nobody can be signed in to a server there.
+        description={`This removes your settings, exceptions, what UnAlgorithm learned, stats, AI usage history and saved API keys from this browser${CLOUD_ENABLED ? ', and signs it out of any UnAlgorithm server' : ''}. This can't be undone.`}
         actions={
           <>
             <Button onClick={() => setErase(false)} autoFocus>

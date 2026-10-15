@@ -6,4 +6,5 @@ export * from './models.ts';
 export * from './openai-compatible.ts';
 export * from './openai-responses.ts';
 export * from './presets.ts';
+export * from './research-sources.ts';
 export * from './types.ts';

@@ -10,6 +10,9 @@ may not use the names or logo to brand your own build or service.
 - Say that your project is "based on UnAlgorithm" or "a fork of UnAlgorithm".
 - Use the name to refer to this project accurately, for example in articles, reviews and talks.
 - Build, run and modify the code for yourself or your organization.
+- Run the unmodified UnAlgorithm server (`apps/server`) for yourself or your organization, under a name of your own
+  (`INSTANCE_NAME`). Don't call your server "UnAlgorithm Cloud": that name is only HeitechSoft's hosted service at
+  cloud.unalgorithm.app.
 
 ## Please don't, without written permission
 

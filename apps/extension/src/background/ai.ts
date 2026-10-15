@@ -5,6 +5,7 @@ import {
   anthropicClient,
   type Capabilities,
   type CapabilityStore,
+  type ClassifyOutcome,
   COMPAT_PREFERENCES,
   COMPAT_PRESET_INFO,
   classifyPosts,
@@ -35,13 +36,23 @@ import {
   SOURCE_LIMITS,
   sourceId,
 } from '@unalgorithm/core';
-import { BLOCKING_AI_ERRORS, type PostForAI, PostForAISchema } from '@unalgorithm/protocol';
+import {
+  BLOCKING_AI_ERRORS,
+  type NormalizedUsage,
+  type PostForAI,
+  PostForAISchema,
+  serverMayReceive,
+} from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
+import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from '../lib/storage.ts';
-import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
+import { clearCache, clearClaimChecks, getCached, getSecret, putCached, setSecret } from './idb.ts';
+import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
+import { balanceStatus } from './server-balance.ts';
+import { classifyViaServer, SERVER_USAGE_MODEL } from './server-source.ts';
 
 // ---------- capability learning, persisted across service-worker restarts ----------
 
@@ -60,6 +71,13 @@ async function loadCapabilities(): Promise<void> {
 
 // ---------- sources ----------
 
+type ServerSource = Extract<AISourceConfig, { kind: 'server' }>;
+
+/** The browser's language, sent with every server request (`ClassifyRequest.locale`). */
+function uiLocale(): string {
+  return (globalThis.navigator?.language || 'en').slice(0, 16);
+}
+
 export function sourceLabel(cfg: AISourceConfig | null): string {
   if (!cfg) return 'Off';
   switch (cfg.kind) {
@@ -72,16 +90,17 @@ export function sourceLabel(cfg: AISourceConfig | null): string {
     case 'openai-compatible':
       return COMPAT_PRESET_INFO[cfg.preset].label;
     case 'server':
-      return 'UnAlgorithm Cloud';
+      return serverLabel(cfg.baseUrl).title;
   }
 }
 
-function providerName(cfg: AISourceConfig): string {
+/** Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title. */
+export function providerName(cfg: AISourceConfig): string {
   if (cfg.kind === 'anthropic') return 'Anthropic';
   if (cfg.kind === 'openai') return 'OpenAI';
   if (cfg.kind === 'openai-compatible') return COMPAT_PRESET_INFO[cfg.preset].label;
   if (cfg.kind === 'on-device') return 'Chrome';
-  return 'UnAlgorithm Cloud';
+  return serverLabel(cfg.baseUrl).title;
 }
 
 /** The host permission a source needs, as a match pattern (null when it needs none). */
@@ -100,7 +119,8 @@ export function sourcePermission(cfg: AISourceConfig): string | null {
 
 let onDevice: AIClient | undefined;
 
-async function clientFor(cfg: AISourceConfig, apiKey?: string): Promise<AIClient> {
+/** A `server` source has no client here: the server calls the model (`classifyViaServer`). */
+export async function clientFor(cfg: Exclude<AISourceConfig, { kind: 'server' }>, apiKey?: string): Promise<AIClient> {
   await loadCapabilities();
   const key = apiKey ?? (await getSecret(sourceId(cfg)));
   switch (cfg.kind) {
@@ -123,8 +143,6 @@ async function clientFor(cfg: AISourceConfig, apiKey?: string): Promise<AIClient
           ? { extraHeaders: { 'HTTP-Referer': 'https://github.com/HeitechSoft/unalgorithm', 'X-Title': 'UnAlgorithm' } }
           : {}),
       });
-    case 'server':
-      throw new AIError('not-available', 'UnAlgorithm Cloud is coming soon.');
   }
 }
 
@@ -136,7 +154,7 @@ function modelFor(cfg: AISourceConfig): string {
   throw new AIError('no-model', 'Choose a model in Settings → AI.');
 }
 
-async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
+export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
   const pattern = sourcePermission(cfg);
   if (!pattern) return true;
   try {
@@ -156,10 +174,40 @@ function toBgError(e: AIError, cfg: AISourceConfig): BgError {
 }
 
 /**
- * Classify posts with the chosen source: cache first, then the daily cap (paid sources only), then the AI.
- * Rules-only (no source) never touches the network.
+ * What a content script sent, as the AI may see it: only the fields in PostForAISchema survive (zod strips anything
+ * else, an author name for one), and the text is clipped to `maxChars`. `ref` is a placeholder the caller replaces.
+ * Null when the input is not a post.
  */
-export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses['classify']> {
+export function parsePostInput(input: Omit<PostForAI, 'ref'> | undefined, maxChars: number): PostForAI | null {
+  const raw = String(input?.text ?? '');
+  const cut = raw.length > maxChars;
+  const parsed = PostForAISchema.safeParse({
+    ...input,
+    ref: 'x',
+    text: cut ? `${raw.slice(0, maxChars - 1).trimEnd()}…` : raw,
+    textComplete: Boolean(input?.textComplete) && !cut,
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+/** Add one model call to the usage ledger. `posts` counts toward the daily post cap. */
+export async function recordSpend(
+  model: string,
+  usage: NormalizedUsage,
+  opts: { posts: number; failed: boolean },
+): Promise<void> {
+  await usageLock(async () => {
+    const ledger = await usageItem.getValue();
+    await usageItem.setValue(recordUsage(ledger, { model, usage, posts: opts.posts, failed: opts.failed }));
+  });
+}
+
+/**
+ * Classify posts with the chosen source: cache first, then the daily cap (paid sources only), then the AI.
+ * Rules-only (no source) never touches the network. `cacheOnly` (AI is paused, R27) stops after the cache: a miss is
+ * skipped as `paused`, with no daily cap, no AI call, no network and no usage.
+ */
+export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: boolean } = {}): Promise<BgResponses['classify']> {
   const [device, settings, learned] = await Promise.all([readDevice(), readSettings(), learnedItem.getValue()]);
   const cfg = device.aiSource;
   if (!cfg) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'ai-off' })) };
@@ -175,33 +223,31 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
     ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: toBgError(e, cfg) } : {}),
   });
 
+  const limits = SOURCE_LIMITS[cfg.kind];
+  const profile = buildInterestProfile(settings, learned, { forServer: cfg.kind === 'server' });
+  const pHash = profileHash(profile);
   let model: string;
-  let client: AIClient;
+  let classify: (posts: PostForAI[]) => Promise<ClassifyOutcome>;
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission for the AI server.');
     model = modelFor(cfg);
-    client = await clientFor(cfg);
+    if (cfg.kind === 'server') {
+      classify = (posts) => classifyViaServer(cfg, posts, { profile, profileHash: pHash, locale: uiLocale() });
+    } else {
+      const client = await clientFor(cfg);
+      classify = (posts) =>
+        classifyPosts(client, posts, { model, profile, compact: cfg.kind === 'on-device', timeoutMs: limits.timeoutMs });
+    }
   } catch (err) {
     return fail(err instanceof AIError ? err : new AIError('unknown', String(err)));
   }
 
   const sid = sourceId(cfg);
-  const limits = SOURCE_LIMITS[cfg.kind];
-  const profile = buildInterestProfile(settings, learned);
-  const pHash = profileHash(profile);
   const results: ClassifyItemResult[] = [];
   const prepared = [];
   for (const it of items) {
-    // Only the fields in PostForAISchema survive (zod strips anything else), whatever the content script sent.
-    const raw = String(it.input?.text ?? '');
-    const cut = raw.length > limits.maxPostChars;
-    const parsed = PostForAISchema.safeParse({
-      ...it.input,
-      ref: 'x',
-      text: cut ? `${raw.slice(0, limits.maxPostChars - 1).trimEnd()}…` : raw,
-      textComplete: Boolean(it.input?.textComplete) && !cut,
-    });
-    if (!parsed.success) {
+    const input = parsePostInput(it.input, limits.maxPostChars);
+    if (!input) {
       results.push({
         key: it.key,
         status: 'failed',
@@ -211,7 +257,11 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
       });
       continue;
     }
-    const input: PostForAI = parsed.data;
+    // R23: a Facebook post that isn't public never leaves this computer for a server, whatever the server would do.
+    if (cfg.kind === 'server' && !serverMayReceive(input)) {
+      results.push({ key: it.key, status: 'skipped', reason: 'not-public' });
+      continue;
+    }
     const key = classificationCacheKey({
       postKey: it.key,
       inputHash: inputHash(input),
@@ -230,6 +280,10 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
     return !hit;
   });
   if (!misses.length) return { results };
+  if (opts.cacheOnly) {
+    for (const p of misses) results.push({ key: p.item.key, status: 'skipped', reason: 'paused' });
+    return { results };
+  }
 
   let pause: BgError | undefined;
   if (!isLocalSource(cfg)) {
@@ -251,17 +305,14 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
   await Promise.all(
     groups.map((group) =>
       (limit as ReturnType<typeof createLimiter>)(async () => {
-        const posts = group.map((p, i) => ({ ...p.input, ref: `p${i + 1}` }));
-        const outcome = await classifyPosts(client, posts, {
-          model,
-          profile,
-          compact: cfg.kind === 'on-device',
-          timeoutMs: limits.timeoutMs,
-        });
+        // Every source, a server too, sees batch-local refs, mapped back here. Nothing derived from a post key leaves
+        // the device: `fb:h:`/`li:h:` keys hash the author's name with the text, so a hashed key would give it away.
+        const sent = group.map((p, i) => ({ p, ref: `p${i + 1}` }));
+        const outcome = await classify(sent.map(({ p, ref }) => ({ ...p.input, ref })));
         const fresh = [];
         let ok = 0;
-        for (const [i, p] of group.entries()) {
-          const r = outcome.byRef.get(`p${i + 1}`);
+        for (const { p, ref } of sent) {
+          const r = outcome.byRef.get(ref);
           if (r?.ok) {
             ok++;
             results.push({
@@ -294,16 +345,9 @@ export async function classifyItems(items: ClassifyItem[]): Promise<BgResponses[
           }
         }
         await putCached(fresh).catch(() => undefined);
-        await usageLock(async () => {
-          const ledger = await usageItem.getValue();
-          await usageItem.setValue(
-            recordUsage(ledger, {
-              model: outcome.model,
-              usage: outcome.usage,
-              posts: isLocalSource(cfg) ? 0 : ok,
-              failed: outcome.failedCalls > 0,
-            }),
-          );
+        await recordSpend(cfg.kind === 'server' ? SERVER_USAGE_MODEL : outcome.model, outcome.usage, {
+          posts: isLocalSource(cfg) ? 0 : ok,
+          failed: outcome.failedCalls > 0,
         });
       }),
     ),
@@ -331,6 +375,7 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
   const started = Date.now();
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
+    if (cfg.kind === 'server') return await testServer(cfg, started);
     if (cfg.kind === 'on-device') {
       const a = await onDeviceAvailability();
       if (a !== 'available') throw new AIError('not-available', `On-device AI is ${a}.`);
@@ -371,10 +416,30 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
   }
 }
 
+/**
+ * A server source: discovery says whether the address is an UnAlgorithm server, then the probe post goes through the
+ * signed-in device like any batch. The server chooses its model, so there is no list to pick from.
+ */
+async function testServer(cfg: ServerSource, started: number): Promise<TestSourceResult> {
+  const found = await discoverServer(cfg.baseUrl);
+  if (!found.ok) return found;
+  const profile = buildInterestProfile(defaultSettings());
+  const out = await classifyViaServer(cfg, [PROBE], {
+    profile,
+    profileHash: profileHash(profile),
+    locale: uiLocale(),
+  });
+  const r = out.byRef.get(PROBE.ref);
+  if (!r?.ok) throw r?.error ?? new AIError('unknown', 'No answer.');
+  return { ok: true, model: out.model, mode: 'server', latencyMs: Date.now() - started, models: [] };
+}
+
 /** The models a configured source offers, using its saved key. Nothing is classified. */
 export async function listSourceModels(cfg: AISourceConfig): Promise<BgResponses['listModels']> {
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
+    // A server chooses its own model.
+    if (cfg.kind === 'server') return { ok: true, models: [] };
     const client = await clientFor(cfg);
     try {
       return { ok: true, models: (await client.listModels()).map((m) => m.id) };
@@ -427,27 +492,52 @@ export async function forgetKey(cfg: AISourceConfig): Promise<void> {
 }
 
 export async function aiStatus(): Promise<AiStatus> {
-  const [device, settings, ledger] = await Promise.all([readDevice(), readSettings(), usageItem.getValue()]);
+  const [device, settings, ledger, account] = await Promise.all([
+    readDevice(),
+    readSettings(),
+    usageItem.getValue(),
+    serverAccountItem.getValue(),
+  ]);
   const cfg = device.aiSource;
+  const label = sourceLabel(cfg);
   const day = dayUsage(ledger);
   let model: string | undefined;
   try {
-    model = cfg ? modelLabel(modelFor(cfg)) : undefined;
+    // A server chooses its own model.
+    model = cfg && cfg.kind !== 'server' ? modelLabel(modelFor(cfg)) : undefined;
   } catch {
     model = undefined;
   }
+  // R26: a server source works only while this device is signed in to that server.
+  const signInAgain = cfg?.kind === 'server' && !signedInTo(cfg, account);
+  // R5, R31: a balance only for a server that advertises billing, and none while the account must sign in again (that
+  // message comes first). Never throws; waits at most BALANCE_WAIT_MS.
+  const balance = await balanceStatus(cfg, account);
+  // R27: an empty balance pauses AI until credit is added or another source is chosen.
+  const message = signInAgain
+    ? describeError('auth-required', label)
+    : balance?.empty
+      ? describeError('insufficient-credits', label)
+      : undefined;
   const cost = dayCostMicros(day);
   return {
     configured: !!cfg,
     kind: cfg?.kind ?? null,
-    label: sourceLabel(cfg),
+    label,
     ...(model ? { model } : {}),
-    state: cfg ? 'ready' : 'off',
+    state: !cfg ? 'off' : message ? 'needs-attention' : 'ready',
+    ...(message ? { message } : {}),
     postsToday: day.posts,
     dailyCap: settings.ai.dailyCap,
     capApplies: !!cfg && !isLocalSource(cfg),
     ...(cost !== undefined ? { costTodayMicros: cost } : {}),
+    ...(balance ? { balance } : {}),
   };
+}
+
+/** True when the account is signed in to the source's server and the server still accepts it. */
+function signedInTo(cfg: ServerSource, account: ServerAccount | null): boolean {
+  return !!account && !account.needsSignIn && isServerAt(cfg, account.origin);
 }
 
 export async function onDeviceStatus(): Promise<OnDeviceAvailability> {
@@ -455,7 +545,7 @@ export async function onDeviceStatus(): Promise<OnDeviceAvailability> {
 }
 
 export async function clearAiData(): Promise<void> {
-  await clearCache();
+  await Promise.all([clearCache(), clearClaimChecks()]);
 }
 
 /** Forget what was learned about AI servers (their addresses and supported output modes). */

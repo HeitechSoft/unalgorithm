@@ -14,9 +14,13 @@ updates:
         patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
       ai-sdks:
         patterns: ['@anthropic-ai/sdk', 'openai']
+      # Better Auth is pinned exactly and its advisories are watched: auth updates arrive in a PR of their own. The CLI
+      # (`auth`) pins `better-auth` exactly, so the two must move together.
+      auth:
+        patterns: ['better-auth', '@better-auth/*', 'auth']
       dev-tooling:
         dependency-type: development
-        exclude-patterns: ['wxt', '@wxt-dev/*', '@types/react', '@types/react-dom']
+        exclude-patterns: ['wxt', '@wxt-dev/*', '@types/react', '@types/react-dom', 'better-auth', '@better-auth/*', 'auth']
         update-types: [minor, patch]
     labels: [dependencies]
 

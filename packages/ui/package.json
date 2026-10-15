@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles/index.css",
-    "./feed.css": "./src/styles/feed.css"
+    "./feed.css": "./src/styles/feed.css",
+    "./testing": "./src/testing/user-event.ts",
+    "./test-support/dialog": "./test-support/dialog.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

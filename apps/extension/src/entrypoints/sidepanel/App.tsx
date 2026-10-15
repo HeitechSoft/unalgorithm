@@ -1,4 +1,4 @@
-import { dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
+import { checkCostLine, dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
 import type { PlatformId, PostKey } from '@unalgorithm/protocol';
 import {
   Banner,
@@ -6,20 +6,36 @@ import {
   Chip,
   EmptyState,
   Eye,
+  FactcheckSheet,
   IconButton,
   ListFilter,
   Newspaper,
+  PerspectivesSheet,
+  SearchCheck,
   SegmentedControl,
   Settings,
   Sparkles,
 } from '@unalgorithm/ui';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { FEED_URLS, platformOfUrl, useActiveTab, useStorageItem, useTabState } from '../../lib/hooks.ts';
 import { sendQuietly, sendToTab } from '../../lib/messages.ts';
-import { statsItem } from '../../lib/storage.ts';
+import { type FactcheckEntry, factcheckItem, statsItem } from '../../lib/storage.ts';
 
 const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
+const NO_CHECKS: { entries: FactcheckEntry[] } = { entries: [] };
+/** No tab yet: an item nothing writes, so the hook has something to subscribe to. */
+const NO_TAB = -1;
+
+/**
+ * Where the reader last navigated in the fact-check sheet, per tab: `at` is the time of the last Back or pick, `pick`
+ * the `startedAt` of the check they opened (null after Back). A check started after `at` opens the sheet on it.
+ */
+interface SheetNav {
+  tabId: number;
+  at: number;
+  pick: number | null;
+}
 
 export function App() {
   const tab = useActiveTab();
@@ -28,6 +44,19 @@ export function App() {
   const [view, setView] = useState<'foryou' | 'hidden'>('foryou');
   const [filter, setFilter] = useState<string | null>(null);
   const platform = tab ? platformOfUrl(tab.url) : null;
+  const tabId = tab?.id ?? NO_TAB;
+  const checksItem = useMemo(() => factcheckItem(tabId), [tabId]);
+  const { entries } = useStorageItem(checksItem, NO_CHECKS);
+  const [nav, setNav] = useState<SheetNav>({ tabId, at: 0, pick: null });
+  const sheetNav = nav.tabId === tabId ? nav : { tabId, at: 0, pick: null };
+  const newest = entries[0];
+  const openEntry = !newest
+    ? undefined
+    : newest.startedAt > sheetNav.at
+      ? newest
+      : sheetNav.pick !== null
+        ? (entries.find((e) => e.startedAt === sheetNav.pick) ?? newest)
+        : undefined;
 
   const goTo = async (key: PostKey, permalink?: string) => {
     if (!tab) return;
@@ -46,6 +75,31 @@ export function App() {
       </div>
     </>
   );
+
+  if (openEntry) {
+    const sheet = {
+      label: openEntry.label,
+      status: openEntry.status,
+      errorMessage: openEntry.error?.message,
+      earlier: entries
+        .filter((e) => e !== openEntry)
+        .slice(0, 4)
+        .map((e) => ({
+          label: e.task === 'perspectives' ? `Other perspectives: ${e.label}` : e.label,
+          onOpen: () => setNav({ tabId, at: Date.now(), pick: e.startedAt }),
+        })),
+      onBack: () => setNav({ tabId, at: Date.now(), pick: null }),
+    };
+    return (
+      <main className="panel" data-density="compact">
+        {openEntry.task === 'perspectives' ? (
+          <PerspectivesSheet {...sheet} result={openEntry.perspectives} />
+        ) : (
+          <FactcheckSheet {...sheet} result={openEntry.result} costLine={checkCostLine(openEntry)} />
+        )}
+      </main>
+    );
+  }
 
   if (!platform || !state.onFeed) {
     return (
@@ -97,6 +151,18 @@ export function App() {
           >
             {state.ai.message}
           </Banner>
+        ) : null}
+        {newest ? (
+          <button
+            type="button"
+            className="ua-card ua-card--interactive panel-item panel-row"
+            onClick={() => setNav({ tabId, at: Date.now(), pick: newest.startedAt })}
+          >
+            <span className="ua-hstack" style={{ gap: 8 }}>
+              <SearchCheck aria-hidden="true" width={16} height={16} />
+              <span className="ua-headline">Fact-checks · {entries.length}</span>
+            </span>
+          </button>
         ) : null}
         <div className="ua-card ua-card--pad ua-footnote">
           On this page: {state.counts.posts} posts seen · {state.counts.hiddenTotal} hidden · {state.counts.highlighted} for you

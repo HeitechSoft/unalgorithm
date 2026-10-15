@@ -1,6 +1,31 @@
-import type { AISourceConfig, FilterKey, HealthReport, PersonRule, Preset, TabState, Topic } from '@unalgorithm/core';
-import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, PostKey } from '@unalgorithm/protocol';
+import type {
+  AISourceConfig,
+  FilterKey,
+  HealthReport,
+  PersonRule,
+  Preset,
+  TabState,
+  Topic,
+  WebSearchProviderId,
+} from '@unalgorithm/core';
+import type {
+  AccountDevice,
+  AIErrorCode,
+  Classification,
+  FactcheckResult,
+  NoiseLabel,
+  PerspectivesJobRequest,
+  PerspectivesResult,
+  PlatformId,
+  PostForAI,
+  PostKey,
+  ServerInfo,
+  SharedLink,
+} from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
+import type { PublicBalance } from '../background/server-balance.ts';
+import type { ServerLabel } from './server-label.ts';
+import type { SyncProblem } from './storage.ts';
 
 /** A post to classify: its local key and exactly what the AI may see (no names, no URLs). */
 export interface ClassifyItem {
@@ -10,7 +35,7 @@ export interface ClassifyItem {
 
 export type ClassifyItemResult =
   | { key: PostKey; status: 'ok'; classification: Classification; model: string; cached: boolean }
-  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' }
+  | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' | 'not-public' | 'paused' }
   | { key: PostKey; status: 'failed'; code: AIErrorCode; message: string; retryable: boolean };
 
 export interface BgError {
@@ -41,16 +66,50 @@ export interface AiStatus {
   dailyCap: number;
   capApplies: boolean;
   costTodayMicros?: number;
+  /** The server account's credit balance, only for a server that advertises billing (CL2-10). Extension pages only. */
+  balance?: PublicBalance;
 }
 
 export type TestSourceResult =
   | { ok: true; model: string; mode: string; latencyMs: number; models: string[] }
   | { ok: false; error: BgError };
 
+/** The server account as extension pages see it: no tokens and no device id, which stay in the background. */
+export interface PublicServerAccount {
+  origin: string;
+  email: string;
+  signedInAt: number;
+  needsSignIn: boolean;
+  label: ServerLabel;
+  /** Present (true) when the server's discovery advertises billing, so `aiStatus` reports a balance once signed in. */
+  billing?: boolean;
+}
+
+/** Settings sync as the server card shows it (CL3-20). */
+export interface SyncStatus {
+  /** Signed in to a server (whether it offers sync is learned when turning sync on). */
+  available: boolean;
+  enabled: boolean;
+  state: 'off' | 'syncing' | 'ok' | 'problem';
+  lastSyncAt: number | null;
+  problem?: SyncProblem;
+  /** Plain text for `problem`, naming the server by `serverLabel(origin).title`. */
+  message?: string;
+}
+
 export type BgRequest =
-  | { type: 'classify'; platform: PlatformId; items: ClassifyItem[] }
+  /** `cacheOnly`: AI is paused, so only the cache answers (nothing is sent, nothing is metered). */
+  | { type: 'classify'; platform: PlatformId; items: ClassifyItem[]; cacheOnly?: boolean }
   | { type: 'tabState'; patch: Partial<TabState> }
-  | { type: 'vote'; key: PostKey; verdict: 'more' | 'less' | null; topics: string[]; summary?: string }
+  | {
+      type: 'vote';
+      key: PostKey;
+      verdict: 'more' | 'less' | null;
+      topics: string[];
+      summary?: string;
+      /** Whether a server may receive the rated post, and so its summary (R23). */
+      shareable?: boolean;
+    }
   | { type: 'settingsAction'; action: SettingsAction }
   | { type: 'pause'; platform: PlatformId; until: number | 'manual' | null }
   | { type: 'coachMarkShown'; platform: PlatformId }
@@ -61,7 +120,36 @@ export type BgRequest =
   | { type: 'saveSource'; config: AISourceConfig | null; apiKey?: string }
   | { type: 'clearData'; what: 'cache' | 'learned' | 'stats' | 'all' }
   | { type: 'onDeviceStatus' }
-  | { type: 'forgetKey'; config: AISourceConfig };
+  | { type: 'forgetKey'; config: AISourceConfig }
+  /** The person's own Brave or Tavily key for an OpenAI-compatible source (P3-45), tested with one fixed search. */
+  | { type: 'saveSearchKey'; provider: WebSearchProviderId; apiKey: string }
+  | { type: 'forgetSearchKey' }
+  | { type: 'serverDiscover'; baseUrl: string }
+  | { type: 'serverSignIn'; baseUrl: string }
+  | { type: 'serverSignOut' }
+  | { type: 'serverAccount' }
+  /** The account's devices (R11); ids and names only, no credentials. */
+  | { type: 'serverDevices' }
+  /** Signs a device out on the server; this computer's own id is the sign-out. */
+  | { type: 'serverRevokeDevice'; deviceId: string }
+  | { type: 'syncStatus' }
+  | { type: 'syncSetEnabled'; enabled: boolean }
+  | { type: 'syncNow' }
+  /** Fact-check one public post on the person's own Anthropic key (Labs). Opens the side panel for the tab. */
+  | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
+  /** Opens the side panel for the sending feed tab, where the newest check shows. */
+  | { type: 'openFactcheck' }
+  /**
+   * "Other perspectives" for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
+   * browser, never post text. Opens the side panel for the tab.
+   */
+  | {
+      type: 'perspectives';
+      key: PostKey;
+      link: SharedLink;
+      platform: PlatformId;
+      audience?: PerspectivesJobRequest['audience'];
+    };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -78,6 +166,22 @@ export interface BgResponses {
   clearData: { ok: true };
   onDeviceStatus: { availability: 'no-api' | 'unavailable' | 'downloadable' | 'downloading' | 'available' };
   forgetKey: { ok: true };
+  saveSearchKey: { ok: true } | { ok: false; error: BgError };
+  forgetSearchKey: { ok: true };
+  serverDiscover: { ok: true; origin: string; label: ServerLabel; info: ServerInfo } | { ok: false; error: BgError };
+  serverSignIn: { ok: true; account: PublicServerAccount } | { ok: false; error: BgError };
+  serverSignOut: { ok: true };
+  serverAccount: { account: PublicServerAccount | null };
+  serverDevices: { ok: true; devices: AccountDevice[] } | { ok: false; error: BgError };
+  /** `signedOut`: the device was this computer, which is now signed out. */
+  serverRevokeDevice: { ok: true; signedOut: boolean } | { ok: false; error: BgError };
+  syncStatus: SyncStatus;
+  syncSetEnabled: SyncStatus;
+  syncNow: SyncStatus;
+  factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
+  /** False when Chrome refused to open the side panel (no user gesture reached it). */
+  openFactcheck: { ok: boolean };
+  perspectives: { ok: true; result: PerspectivesResult; costMicros?: number } | { ok: false; error: BgError };
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */
@@ -112,7 +216,9 @@ export type ContentRequest =
   | { type: 'reveal'; key: PostKey }
   | { type: 'diagnostics' }
   /** The prefilled "Filtering looks wrong" issue URL for this page (content-free diagnostics only). */
-  | { type: 'reportUrl' };
+  | { type: 'reportUrl' }
+  /** The person signed in to the server again: try AI again (the device in storage may not have changed). */
+  | { type: 'aiResume' };
 
 export interface Diagnostics {
   adapter: string;
@@ -133,6 +239,7 @@ export interface ContentResponses {
   reveal: { ok: boolean };
   diagnostics: Diagnostics;
   reportUrl: { url: string };
+  aiResume: { ok: true };
 }
 
 export async function sendToTab<T extends ContentRequest['type']>(

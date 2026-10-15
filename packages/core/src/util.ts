@@ -29,6 +29,16 @@ export function dateKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * `text` cut to at most `max` UTF-16 units between code points: a character that doesn't fit whole is dropped, never
+ * cut in half, so no lone surrogate is left (Postgres `jsonb` refuses one, and sync with it).
+ */
+export function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const last = text.charCodeAt(max - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
 export function snippet(text: string, max = 140): string {
   const t = text.replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
@@ -58,9 +68,16 @@ export function stableStringify(value: unknown): string {
   );
 }
 
+/** `s` without any of `chars` at its end; a loop, so a long run of them stays linear. */
+function trimTrailing(s: string, chars: string): string {
+  let end = s.length;
+  while (end > 0 && chars.includes(s[end - 1] as string)) end--;
+  return s.slice(0, end);
+}
+
 /** Accept only http(s) links (adds https:// to bare domains). Returns null when unusable. */
 export function safeExternalUrl(raw: string | null | undefined): string | null {
-  let s = raw?.trim().replace(/[).,;]+$/, '');
+  let s = raw == null ? raw : trimTrailing(raw.trim(), ').,;');
   if (!s || /\s/.test(s)) return null;
   if (s.startsWith('//')) s = `https:${s}`;
   else if (!/^[a-z][a-z\d+.-]*:/i.test(s)) {
@@ -73,6 +90,18 @@ export function safeExternalUrl(raw: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+const GIGABYTES = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/**
+ * A size in decimal units: GB with one decimal from 1 GB, else whole MB, so 48,000,000 bytes reads "48 MB" rather than
+ * "0.0 GB"; "unknown" when it could not be read. The admin page's status and the server's alert messages use it.
+ */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null) return 'unknown';
+  const megabytes = Math.round(bytes / 1e6);
+  return megabytes < 1000 ? `${megabytes} MB` : `${GIGABYTES.format(bytes / 1e9)} GB`;
 }
 
 export function clamp(n: number, min: number, max: number): number {

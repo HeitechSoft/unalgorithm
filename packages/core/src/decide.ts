@@ -26,7 +26,7 @@ export interface DecideInput {
   item: FeedItem;
   settings: Settings;
   classification?: Classification;
-  /** False when the AI source is off, paused or failing: AI-only filters are skipped (rules still apply). */
+  /** False when no AI source is configured: AI-only filters are skipped (rules still apply). */
   aiActive: boolean;
   learned?: LearnedPrefs;
   /** The user's explicit vote on this exact post. */

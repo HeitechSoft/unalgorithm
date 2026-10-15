@@ -8,6 +8,7 @@ import {
   normalizeItem,
 } from '@unalgorithm/core';
 import {
+  type AIErrorCode,
   addUsage,
   type Classification,
   type InterestProfile,
@@ -23,10 +24,23 @@ const BATCH_JSON_SCHEMA = toStrictJsonSchema(ClassificationBatchSchema);
 
 export type PostOutcome = { ok: true; classification: Classification } | { ok: false; error: AIError };
 
+/**
+ * Errors about one call's posts or the model's answer to them: the rest of a run goes on. Any other error (a bad key,
+ * no credit, a busy or unreachable provider) says nothing about the posts and would fail every call, so the run stops.
+ */
+export const POST_ERROR_CODES: ReadonlySet<AIErrorCode> = new Set<AIErrorCode>([
+  'refusal',
+  'truncated',
+  'context-overflow',
+  'bad-request',
+]);
+
 export interface ClassifyOutcome {
   byRef: Map<string, PostOutcome>;
   /** Every token spent, including on calls that failed. */
   usage: NormalizedUsage;
+  /** The tokens of calls that returned a valid answer: the part a server may charge for (failed calls never are). */
+  okUsage: NormalizedUsage;
   model: string;
   mode?: StructuredMode;
   calls: number;
@@ -43,12 +57,24 @@ export interface ClassifyOptions {
   timeoutMs?: number;
 }
 
+/**
+ * The rubric part of the full system prompt, up to and including the blank line before `<user_profile>`, so providers
+ * with several cache breakpoints can share it across users. Profile values are escaped and the rubric only mentions
+ * the tag inline, so the last `\n\n<user_profile>\n` is the boundary.
+ */
+function rubricPrefix(system: string): string | undefined {
+  const index = system.lastIndexOf('\n\n<user_profile>\n');
+  return index > 0 ? system.slice(0, index + 2) : undefined;
+}
+
 async function callOnce(client: AIClient, posts: PostForAI[], opts: ClassifyOptions) {
   const system = opts.compact ? buildCompactSystemPrompt(opts.profile) : buildSystemPrompt(opts.profile);
+  const cachePrefix = opts.compact ? undefined : rubricPrefix(system);
   const user = buildUserPrompt(posts, opts.nonce ?? makeNonce());
   const res = await client.structured({
     model: opts.model,
     system,
+    ...(cachePrefix ? { cachePrefix } : {}),
     user,
     jsonSchema: BATCH_JSON_SCHEMA,
     schemaName: CLASSIFICATION_SCHEMA_NAME,
@@ -73,26 +99,24 @@ async function callOnce(client: AIClient, posts: PostForAI[], opts: ClassifyOpti
 
 /**
  * Classify a batch with one call. If the model refuses, split the batch until only the offending post fails.
- * Posts the model skipped are retried once on their own. Usage from failed calls still counts.
+ * Posts the model skipped are retried once on their own. Usage from failed calls still counts in `usage`, never in
+ * `okUsage`.
  */
 export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: ClassifyOptions): Promise<ClassifyOutcome> {
-  const out: ClassifyOutcome = { byRef: new Map(), usage: ZERO_USAGE, model: opts.model, calls: 0, failedCalls: 0 };
+  const out: ClassifyOutcome = {
+    byRef: new Map(),
+    usage: ZERO_USAGE,
+    okUsage: ZERO_USAGE,
+    model: opts.model,
+    calls: 0,
+    failedCalls: 0,
+  };
 
   async function run(group: PostForAI[], retryMissing: boolean): Promise<void> {
     out.calls++;
+    let res: Awaited<ReturnType<typeof callOnce>>;
     try {
-      const res = await callOnce(client, group, opts);
-      out.usage = addUsage(out.usage, res.usage);
-      out.model = res.model;
-      out.mode = res.mode;
-      for (const [ref, c] of res.byRef) out.byRef.set(ref, { ok: true, classification: c });
-      const missing = group.filter((p) => !res.byRef.has(p.ref));
-      if (missing.length) {
-        if (retryMissing) for (const p of missing) await run([p], false);
-        else
-          for (const p of missing)
-            out.byRef.set(p.ref, { ok: false, error: new AIError('refusal', 'The AI skipped this post.') });
-      }
+      res = await callOnce(client, group, opts);
     } catch (err) {
       const e = err instanceof AIError ? err : new AIError('unknown', String(err));
       out.failedCalls++;
@@ -105,7 +129,19 @@ export async function classifyPosts(client: AIClient, posts: PostForAI[], opts: 
       }
       for (const p of group) out.byRef.set(p.ref, { ok: false, error: e });
       // Errors that affect every request (bad key, no credit) should not be retried per post.
-      if (!['refusal', 'truncated', 'context-overflow', 'bad-request'].includes(e.code)) throw e;
+      if (!POST_ERROR_CODES.has(e.code)) throw e;
+      return;
+    }
+    out.usage = addUsage(out.usage, res.usage);
+    out.okUsage = addUsage(out.okUsage, res.usage);
+    out.model = res.model;
+    out.mode = res.mode;
+    for (const [ref, c] of res.byRef) out.byRef.set(ref, { ok: true, classification: c });
+    // Outside the `try`: a retry that stops the run must not turn this call's results into errors.
+    for (const p of group) {
+      if (res.byRef.has(p.ref)) continue;
+      if (retryMissing) await run([p], false);
+      else out.byRef.set(p.ref, { ok: false, error: new AIError('refusal', 'The AI skipped this post.') });
     }
   }
 

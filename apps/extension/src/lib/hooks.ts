@@ -5,7 +5,7 @@ import { browser } from 'wxt/browser';
 import type { WxtStorageItem } from 'wxt/utils/storage';
 import { type AiStatus, sendToBackground } from './messages.ts';
 import { updateDevice, updateSettings } from './settings-store.ts';
-import { deviceItem, settingsItem, tabStateItem } from './storage.ts';
+import { deviceItem, settingsItem, syncStateItem, tabStateItem } from './storage.ts';
 
 /** Subscribe to one storage item. */
 export function useStorageItem<T>(item: WxtStorageItem<T, Record<string, unknown>>, fallback: T): T {
@@ -102,6 +102,29 @@ export function useAiStatus(refreshKey: string | undefined = undefined): AiStatu
     };
   }, [refreshKey]);
   return status;
+}
+
+/**
+ * The name of the server settings sync with while sync is on (CL3-22), following every change to the sync state; null
+ * when sync is off, nobody is signed in or the background doesn't answer. With `active` false nothing is sent.
+ */
+export function useSyncedServer(active: boolean): string | null {
+  const [title, setTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const refresh = () =>
+      void Promise.all([sendToBackground({ type: 'syncStatus' }), sendToBackground({ type: 'serverAccount' })])
+        .then(([status, { account }]) => alive && setTitle(status.enabled && account ? account.label.title : null))
+        .catch(() => alive && setTitle(null));
+    refresh();
+    const unwatch = syncStateItem.watch(refresh);
+    return () => {
+      alive = false;
+      unwatch();
+    };
+  }, [active]);
+  return title;
 }
 
 export function platformOfUrl(url: string): 'linkedin' | 'facebook' | null {

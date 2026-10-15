@@ -1,0 +1,24 @@
+{
+  "name": "@unalgorithm/research",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./eval": "./eval/score.ts",
+    "./eval/perspectives": "./eval/perspectives-score.ts",
+    "./testing": "./src/testing/mock-searxng.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@unalgorithm/ai": "workspace:*",
+    "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
+    "@unalgorithm/protocol": "workspace:*",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {}
+}

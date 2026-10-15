@@ -1,0 +1,1533 @@
+{
+  "meta": {
+    "version": "0.0.0-draft",
+    "status": "draft",
+    "license": "CC-BY-4.0",
+    "updatedOn": "2026-10-15",
+    "panel": [],
+    "notice": "DRAFT. Not reviewed. No outlet has a lean label. Not for use."
+  },
+  "outlets": [
+    {
+      "id": "abc-news",
+      "name": "ABC News",
+      "domains": ["abcnews.go.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "aptn-news",
+      "name": "APTN News",
+      "domains": ["aptnnews.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "associated-press",
+      "name": "Associated Press",
+      "domains": ["apnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "atlanta-journal-constitution",
+      "name": "Atlanta Journal-Constitution",
+      "domains": ["ajc.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "axios",
+      "name": "Axios",
+      "domains": ["axios.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "bloomberg",
+      "name": "Bloomberg",
+      "domains": ["bloomberg.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "bnn-bloomberg",
+      "name": "BNN Bloomberg",
+      "domains": ["bnnbloomberg.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "boston-herald",
+      "name": "Boston Herald",
+      "domains": ["bostonherald.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "breitbart",
+      "name": "Breitbart",
+      "domains": ["breitbart.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "business-insider",
+      "name": "Business Insider",
+      "domains": ["businessinsider.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "calgary-herald",
+      "name": "Calgary Herald",
+      "domains": ["calgaryherald.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "calgary-sun",
+      "name": "Calgary Sun",
+      "domains": ["calgarysun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "calmatters",
+      "name": "CalMatters",
+      "domains": ["calmatters.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "canadas-national-observer",
+      "name": "Canada's National Observer",
+      "domains": ["nationalobserver.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "cbc-news",
+      "name": "CBC News",
+      "domains": ["cbc.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "cbs-news",
+      "name": "CBS News",
+      "domains": ["cbsnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "chicago-sun-times",
+      "name": "Chicago Sun-Times",
+      "domains": ["suntimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "chicago-tribune",
+      "name": "Chicago Tribune",
+      "domains": ["chicagotribune.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "citynews",
+      "name": "CityNews",
+      "domains": ["citynews.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "cnbc",
+      "name": "CNBC",
+      "domains": ["cnbc.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "cnn",
+      "name": "CNN",
+      "domains": ["cnn.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "common-dreams",
+      "name": "Common Dreams",
+      "domains": ["commondreams.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "ctv-news",
+      "name": "CTV News",
+      "domains": ["ctvnews.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "daily-hive",
+      "name": "Daily Hive",
+      "domains": ["dailyhive.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "detroit-free-press",
+      "name": "Detroit Free Press",
+      "domains": ["freep.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "edmonton-journal",
+      "name": "Edmonton Journal",
+      "domains": ["edmontonjournal.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "edmonton-sun",
+      "name": "Edmonton Sun",
+      "domains": ["edmontonsun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "el-nuevo-herald",
+      "name": "El Nuevo Herald",
+      "domains": ["elnuevoherald.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "forbes",
+      "name": "Forbes",
+      "domains": ["forbes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "fox-business",
+      "name": "Fox Business",
+      "domains": ["foxbusiness.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "fox-news",
+      "name": "Fox News",
+      "domains": ["foxnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "global-news",
+      "name": "Global News",
+      "domains": ["globalnews.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "houston-chronicle",
+      "name": "Houston Chronicle",
+      "domains": ["houstonchronicle.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "huffpost",
+      "name": "HuffPost",
+      "domains": ["huffpost.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "ipolitics",
+      "name": "iPolitics",
+      "domains": ["ipolitics.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "just-the-news",
+      "name": "Just the News",
+      "domains": ["justthenews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "la-opinion",
+      "name": "La Opinión",
+      "domains": ["laopinion.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "la-presse",
+      "name": "La Presse",
+      "domains": ["lapresse.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "la-tribune",
+      "name": "La Tribune",
+      "domains": ["latribune.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "las-vegas-review-journal",
+      "name": "Las Vegas Review-Journal",
+      "domains": ["reviewjournal.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-devoir",
+      "name": "Le Devoir",
+      "domains": ["ledevoir.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-droit",
+      "name": "Le Droit",
+      "domains": ["ledroit.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-journal-de-montreal",
+      "name": "Le Journal de Montréal",
+      "domains": ["journaldemontreal.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-journal-de-quebec",
+      "name": "Le Journal de Québec",
+      "domains": ["journaldequebec.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-nouvelliste",
+      "name": "Le Nouvelliste",
+      "domains": ["lenouvelliste.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "le-soleil",
+      "name": "Le Soleil",
+      "domains": ["lesoleil.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "london-free-press",
+      "name": "London Free Press",
+      "domains": ["lfpress.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "los-angeles-times",
+      "name": "Los Angeles Times",
+      "domains": ["latimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "macleans",
+      "name": "Maclean's",
+      "domains": ["macleans.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "miami-herald",
+      "name": "Miami Herald",
+      "domains": ["miamiherald.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "milwaukee-journal-sentinel",
+      "name": "Milwaukee Journal Sentinel",
+      "domains": ["jsonline.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "montreal-gazette",
+      "name": "Montreal Gazette",
+      "domains": ["montrealgazette.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "mother-jones",
+      "name": "Mother Jones",
+      "domains": ["motherjones.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "ms-now",
+      "name": "MS NOW",
+      "domains": ["ms.now", "msnbc.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "national-post",
+      "name": "National Post",
+      "domains": ["nationalpost.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "national-review",
+      "name": "National Review",
+      "domains": ["nationalreview.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "nbc-news",
+      "name": "NBC News",
+      "domains": ["nbcnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "new-york-daily-news",
+      "name": "New York Daily News",
+      "domains": ["nydailynews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "new-york-post",
+      "name": "New York Post",
+      "domains": ["nypost.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "newsday",
+      "name": "Newsday",
+      "domains": ["newsday.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "newsmax",
+      "name": "Newsmax",
+      "domains": ["newsmax.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "newsnation",
+      "name": "NewsNation",
+      "domains": ["newsnationnow.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "newsweek",
+      "name": "Newsweek",
+      "domains": ["newsweek.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "nj-com",
+      "name": "NJ.com",
+      "domains": ["nj.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "noovo-info",
+      "name": "Noovo Info",
+      "domains": ["noovo.info"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "notus",
+      "name": "NOTUS",
+      "domains": ["notus.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "npr",
+      "name": "NPR",
+      "domains": ["npr.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "one-america-news",
+      "name": "One America News",
+      "domains": ["oann.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "orange-county-register",
+      "name": "Orange County Register",
+      "domains": ["ocregister.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "orlando-sentinel",
+      "name": "Orlando Sentinel",
+      "domains": ["orlandosentinel.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "ottawa-citizen",
+      "name": "Ottawa Citizen",
+      "domains": ["ottawacitizen.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "ottawa-sun",
+      "name": "Ottawa Sun",
+      "domains": ["ottawasun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "pbs-news",
+      "name": "PBS News",
+      "domains": ["pbs.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "pittsburgh-post-gazette",
+      "name": "Pittsburgh Post-Gazette",
+      "domains": ["post-gazette.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "politico",
+      "name": "Politico",
+      "domains": ["politico.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "propublica",
+      "name": "ProPublica",
+      "domains": ["propublica.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "punchbowl-news",
+      "name": "Punchbowl News",
+      "domains": ["punchbowl.news"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "radio-canada-info",
+      "name": "Radio-Canada Info",
+      "domains": ["radio-canada.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "raw-story",
+      "name": "Raw Story",
+      "domains": ["rawstory.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "reason",
+      "name": "Reason",
+      "domains": ["reason.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "rebel-news",
+      "name": "Rebel News",
+      "domains": ["rebelnews.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "regina-leader-post",
+      "name": "Regina Leader-Post",
+      "domains": ["leaderpost.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "salon",
+      "name": "Salon",
+      "domains": ["salon.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "saltwire",
+      "name": "SaltWire",
+      "domains": ["saltwire.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "san-antonio-express-news",
+      "name": "San Antonio Express-News",
+      "domains": ["expressnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "san-diego-union-tribune",
+      "name": "San Diego Union-Tribune",
+      "domains": ["sandiegouniontribune.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "san-francisco-chronicle",
+      "name": "San Francisco Chronicle",
+      "domains": ["sfchronicle.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "saskatoon-starphoenix",
+      "name": "Saskatoon StarPhoenix",
+      "domains": ["thestarphoenix.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "scripps-news",
+      "name": "Scripps News",
+      "domains": ["scrippsnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "semafor",
+      "name": "Semafor",
+      "domains": ["semafor.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "slate",
+      "name": "Slate",
+      "domains": ["slate.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "south-florida-sun-sentinel",
+      "name": "South Florida Sun Sentinel",
+      "domains": ["sun-sentinel.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "st-louis-post-dispatch",
+      "name": "St. Louis Post-Dispatch",
+      "domains": ["stltoday.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "star-tribune",
+      "name": "Star Tribune",
+      "domains": ["startribune.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "straight-arrow-news",
+      "name": "Straight Arrow News",
+      "domains": ["san.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "tampa-bay-times",
+      "name": "Tampa Bay Times",
+      "domains": ["tampabay.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "telegraph-journal",
+      "name": "Telegraph-Journal",
+      "domains": ["telegraphjournal.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "telemundo",
+      "name": "Telemundo",
+      "domains": ["telemundo.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "texas-tribune",
+      "name": "Texas Tribune",
+      "domains": ["texastribune.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-19th",
+      "name": "The 19th",
+      "domains": ["19thnews.org"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-arizona-republic",
+      "name": "The Arizona Republic",
+      "domains": ["azcentral.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-atlantic",
+      "name": "The Atlantic",
+      "domains": ["theatlantic.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-baltimore-sun",
+      "name": "The Baltimore Sun",
+      "domains": ["baltimoresun.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-blaze",
+      "name": "The Blaze",
+      "domains": ["theblaze.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-boston-globe",
+      "name": "The Boston Globe",
+      "domains": ["bostonglobe.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-bulwark",
+      "name": "The Bulwark",
+      "domains": ["thebulwark.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-canadian-press",
+      "name": "The Canadian Press",
+      "domains": ["thecanadianpress.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-center-square",
+      "name": "The Center Square",
+      "domains": ["thecentersquare.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-charlotte-observer",
+      "name": "The Charlotte Observer",
+      "domains": ["charlotteobserver.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-christian-science-monitor",
+      "name": "The Christian Science Monitor",
+      "domains": ["csmonitor.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-chronicle-herald",
+      "name": "The Chronicle Herald",
+      "domains": ["thechronicleherald.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-cincinnati-enquirer",
+      "name": "The Cincinnati Enquirer",
+      "domains": ["cincinnati.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-columbus-dispatch",
+      "name": "The Columbus Dispatch",
+      "domains": ["dispatch.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-daily-beast",
+      "name": "The Daily Beast",
+      "domains": ["thedailybeast.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-daily-caller",
+      "name": "The Daily Caller",
+      "domains": ["dailycaller.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-daily-signal",
+      "name": "The Daily Signal",
+      "domains": ["dailysignal.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-daily-wire",
+      "name": "The Daily Wire",
+      "domains": ["dailywire.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-dallas-morning-news",
+      "name": "The Dallas Morning News",
+      "domains": ["dallasnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-denver-post",
+      "name": "The Denver Post",
+      "domains": ["denverpost.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-detroit-news",
+      "name": "The Detroit News",
+      "domains": ["detroitnews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-dispatch",
+      "name": "The Dispatch",
+      "domains": ["thedispatch.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-epoch-times",
+      "name": "The Epoch Times",
+      "domains": ["theepochtimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-federalist",
+      "name": "The Federalist",
+      "domains": ["thefederalist.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-free-press",
+      "name": "The Free Press",
+      "domains": ["thefp.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-globe-and-mail",
+      "name": "The Globe and Mail",
+      "domains": ["theglobeandmail.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-hamilton-spectator",
+      "name": "The Hamilton Spectator",
+      "domains": ["thespec.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-hill",
+      "name": "The Hill",
+      "domains": ["thehill.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-hill-times",
+      "name": "The Hill Times",
+      "domains": ["hilltimes.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-hub",
+      "name": "The Hub",
+      "domains": ["thehub.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-indianapolis-star",
+      "name": "The Indianapolis Star",
+      "domains": ["indystar.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-intercept",
+      "name": "The Intercept",
+      "domains": ["theintercept.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-kansas-city-star",
+      "name": "The Kansas City Star",
+      "domains": ["kansascity.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-logic",
+      "name": "The Logic",
+      "domains": ["thelogic.co"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-mercury-news",
+      "name": "The Mercury News",
+      "domains": ["mercurynews.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-narwhal",
+      "name": "The Narwhal",
+      "domains": ["thenarwhal.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-nation",
+      "name": "The Nation",
+      "domains": ["thenation.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-new-york-times",
+      "name": "The New York Times",
+      "domains": ["nytimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-new-yorker",
+      "name": "The New Yorker",
+      "domains": ["newyorker.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-oregonian",
+      "name": "The Oregonian",
+      "domains": ["oregonlive.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-philadelphia-inquirer",
+      "name": "The Philadelphia Inquirer",
+      "domains": ["inquirer.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-plain-dealer",
+      "name": "The Plain Dealer",
+      "domains": ["cleveland.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-province",
+      "name": "The Province",
+      "domains": ["theprovince.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-sacramento-bee",
+      "name": "The Sacramento Bee",
+      "domains": ["sacbee.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-seattle-times",
+      "name": "The Seattle Times",
+      "domains": ["seattletimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-tennessean",
+      "name": "The Tennessean",
+      "domains": ["tennessean.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-times-picayune",
+      "name": "The Times-Picayune",
+      "domains": ["nola.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-tyee",
+      "name": "The Tyee",
+      "domains": ["thetyee.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-wall-street-journal",
+      "name": "The Wall Street Journal",
+      "domains": ["wsj.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-washington-post",
+      "name": "The Washington Post",
+      "domains": ["washingtonpost.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "the-washington-times",
+      "name": "The Washington Times",
+      "domains": ["washingtontimes.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "domains": ["time.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "times-colonist",
+      "name": "Times Colonist",
+      "domains": ["timescolonist.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "toronto-star",
+      "name": "Toronto Star",
+      "domains": ["thestar.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "toronto-sun",
+      "name": "Toronto Sun",
+      "domains": ["torontosun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "townhall",
+      "name": "Townhall",
+      "domains": ["townhall.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "true-north",
+      "name": "True North",
+      "domains": ["tnc.news"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "tva-nouvelles",
+      "name": "TVA Nouvelles",
+      "domains": ["tvanouvelles.ca"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "univision",
+      "name": "Univision",
+      "domains": ["univision.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "upi",
+      "name": "UPI",
+      "domains": ["upi.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "usa-today",
+      "name": "USA Today",
+      "domains": ["usatoday.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "vancouver-sun",
+      "name": "Vancouver Sun",
+      "domains": ["vancouversun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "vox",
+      "name": "Vox",
+      "domains": ["vox.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "washington-examiner",
+      "name": "Washington Examiner",
+      "domains": ["washingtonexaminer.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "washington-free-beacon",
+      "name": "Washington Free Beacon",
+      "domains": ["freebeacon.com"],
+      "country": "US",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "waterloo-region-record",
+      "name": "Waterloo Region Record",
+      "domains": ["therecord.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "western-standard",
+      "name": "Western Standard",
+      "domains": ["westernstandard.news"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "windsor-star",
+      "name": "Windsor Star",
+      "domains": ["windsorstar.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "winnipeg-free-press",
+      "name": "Winnipeg Free Press",
+      "domains": ["winnipegfreepress.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    },
+    {
+      "id": "winnipeg-sun",
+      "name": "Winnipeg Sun",
+      "domains": ["winnipegsun.com"],
+      "country": "CA",
+      "verified": false,
+      "facts": [],
+      "lean": null
+    }
+  ]
+}

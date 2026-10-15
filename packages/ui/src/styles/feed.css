@@ -185,6 +185,50 @@
     animation: ua-fade-in var(--ua-dur-2) var(--ua-ease-out);
   }
 
+  /* Fact-check row (Labs) */
+  .ua-btn--tint {
+    background: var(--ua-accent-tint);
+    color: var(--ua-accent);
+  }
+
+  .ua-btn--tint:hover {
+    background: var(--ua-accent-tint);
+    color: var(--ua-accent-hover);
+  }
+
+  .ua-fc-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--ua-ink-2);
+  }
+
+  .ua-fc .ua-badge {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: var(--ua-radius-full);
+    background: var(--ua-ai-tint);
+    color: var(--ua-ai);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .ua-spin {
+    animation: ua-spin 900ms linear infinite;
+  }
+
+  @keyframes ua-spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+
   /* Popovers (top layer) */
   .ua-popover {
     margin: 0;

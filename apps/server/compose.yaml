@@ -1,0 +1,222 @@
+# The UnAlgorithm Feed server with Postgres, for running your own server.
+#
+# Postgres is never published. The server listens on 127.0.0.1 only. For HTTPS, turn on the caddy profile below
+# (COMPOSE_PROFILES=caddy in .env) or put your own HTTPS proxy in front; docs/self-hosting.md explains both.
+#
+#   cp .env.example .env                  then fill in .env (it documents every setting)
+#   docker compose up -d                  start, from this folder; the server applies database migrations itself
+#   docker compose logs -f server         follow the server's log
+#   docker compose pull && docker compose up -d   upgrade to the release UNALGORITHM_VERSION names
+#   docker compose run --rm -T keygen     make the backup key pair once; save the private key it prints elsewhere
+#
+# The backup service dumps the database every night at BACKUP_TIME (UTC) into ./backups (BACKUP_DIR), encrypted to the
+# public key in ./backup-key, and keeps the newest BACKUP_KEEP. Docker creates both folders on the first `up`; do not
+# create them yourself. Copy the backups folder somewhere else too: a backup on the same disk dies with it.
+#
+# The server always listens on 0.0.0.0:8787 inside its container: `environment:` below wins over .env, so HOST, PORT,
+# WEB_DIST, DATABASE_URL and BACKUP_STATUS_DIR in .env cannot move it. PORT in .env is only the host port published on
+# BIND_ADDRESS.
+
+services:
+  server:
+    image: ghcr.io/heitechsoft/unalgorithm-server:${UNALGORITHM_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://unalgorithm:${POSTGRES_PASSWORD}@postgres:5432/unalgorithm
+      HOST: 0.0.0.0
+      PORT: '8787'
+      WEB_DIST: /app/apps/web/dist
+      BACKUP_STATUS_DIR: /backup-status
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-8787}:8787'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # A stop lets requests finish (up to 30 s) and handlers end (up to 10 s more) before the database closes; Docker's
+    # default of 10 s would kill it first.
+    stop_grace_period: 45s
+    # The server writes nothing to disk.
+    read_only: true
+    tmpfs:
+      - /tmp
+    # The backup service's status files, read-only, for the admin page's status; Docker makes the folder on the first
+    # `up` when the backup service has not yet.
+    volumes:
+      - ${BACKUP_DIR:-./backups}/status:/backup-status:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: unalgorithm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: unalgorithm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U unalgorithm -d unalgorithm']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # No ports: only the server reaches Postgres, over the project's own network.
+
+  # Nightly encrypted backups (backup/backup.sh), on the Postgres image: its pg_dump matches the server's Postgres and it
+  # ships GnuPG. It runs as the image's root user, so it can write the folder Docker creates for the bind mount, and it
+  # only reads the key folder: keygen alone writes it.
+  backup:
+    image: postgres:17.11
+    command: ['bash', '/scripts/backup.sh']
+    environment:
+      PGHOST: postgres
+      PGUSER: unalgorithm
+      PGDATABASE: unalgorithm
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_TIME: ${BACKUP_TIME:-03:17}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./backup:/scripts:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - ./backup-key:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  # Makes the backup key pair (backup/keygen.sh): `docker compose run --rm -T keygen`, or `... keygen --replace`. Never
+  # started by `up` (profile tools); naming it on the command line turns its profile on. `entrypoint`, not `command`, so
+  # the arguments after the service name reach the script.
+  keygen:
+    image: postgres:17.11
+    profiles: ['tools']
+    entrypoint: ['bash', '/scripts/keygen.sh']
+    volumes:
+      - ./backup:/scripts:ro
+      - ./backup-key:/keys
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt: ['no-new-privileges:true']
+    # The private key keygen.sh prints must never reach a log file on this machine: `run` still shows it in the
+    # caller's terminal (or ssh pipe), and no log driver writes it to disk.
+    logging:
+      driver: none
+
+  # HTTPS for PUBLIC_URL's host (caddy/Caddyfile), for a self-hosted server only: with COMPOSE_PROFILES=caddy in .env,
+  # every `docker compose up`, `pull` and `down` includes it. Caddy takes ports 80 and 443, gets a Let's Encrypt
+  # certificate and forwards to server:8787 on the project network; set TRUST_PROXY=one-hop with it. caddy-data holds
+  # the certificates and the ACME account: keep it (`down` without -v), or every start asks Let's Encrypt again.
+  caddy:
+    image: caddy:2.11.7
+    profiles: ['caddy']
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  # A local model next to the server, for a self-hosted server only: with COMPOSE_PROFILES=ollama in .env (or
+  # caddy,ollama), set AI_PROVIDER=openai-compatible, AI_BASE_URL=http://ollama:11434/v1, AI_MODEL to a model you pulled
+  # (`docker compose exec ollama ollama pull llama3.2:3b`) and AI_DATA_POLICY=self-hosted. Posts never leave this
+  # machine. CPU only here: for a GPU, add the device in a compose.override.yaml next to this file (Compose merges it).
+  # The models live in the ollama volume, several GB each: `down` keeps them, `down -v` deletes them. The server does
+  # not depend on it: until Ollama answers, classification reports the route as not available.
+  ollama:
+    image: ollama/ollama:0.40.4
+    profiles: ['ollama']
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    # Not read-only: Ollama writes runner files outside its model folder at start, and a tmpfs (noexec) would stop them.
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # No ports: only the server reaches Ollama, at http://ollama:11434/v1 on this project's network.
+
+  # Web search for fact-check next to the server, for a self-hosted server only: with COMPOSE_PROFILES=searxng in .env
+  # (or caddy,searxng), set FACTCHECK=on, SEARCH_PROVIDER=searxng, SEARCH_URL=http://searxng:8080, and SEARXNG_SECRET to
+  # `openssl rand -hex 32`. Searches leave from this machine to the engines SearXNG asks (searxng/settings.yml). SearXNG
+  # has no version numbers, so the image is pinned to an exact dated tag (pushed 2026-10-13); Dependabot proposes newer
+  # ones. The server does not depend on it: until SearXNG answers, a fact-check fails as overloaded.
+  searxng:
+    image: searxng/searxng:2026.10.13-22c64b8d3
+    profiles: ['searxng']
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/searxng/.venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=4)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    # Not read-only and SearXNG's own capabilities, as its container docs run it: the image starts as root, takes
+    # ownership of its config and cache volumes, and updates its CA certificates before it serves.
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # No ports: only the server reaches SearXNG, at http://searxng:8080 on this project's network.
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:
+  ollama:
