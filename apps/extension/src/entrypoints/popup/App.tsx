@@ -115,13 +115,7 @@ export function App() {
             <MessageSquareWarning aria-hidden="true" /> Report a problem
           </button>
         ) : null}
-        <a
-          href="https://github.com/HeitechSoft/unalgorithm#readme"
-          target="_blank"
-          rel="noreferrer"
-          className="ua-hstack"
-          style={{ gap: 4 }}
-        >
+        <a href="https://unalgorithmfeed.com/help/" target="_blank" rel="noreferrer" className="ua-hstack" style={{ gap: 4 }}>
           <CircleHelp size={14} aria-hidden="true" /> Help
         </a>
       </span>

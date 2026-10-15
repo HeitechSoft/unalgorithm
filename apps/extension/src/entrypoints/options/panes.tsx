@@ -880,6 +880,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
 
 export function AboutPane() {
   const version = browser.runtime.getManifest().version;
+  const site = 'https://unalgorithmfeed.com';
   const repo = 'https://github.com/HeitechSoft/unalgorithm';
   return (
     <>
@@ -890,10 +891,12 @@ export function AboutPane() {
         <span className="ua-footnote">by HeitechSoft · Ontario, Canada</span>
       </div>
       <ListGroup footer="UnAlgorithm is free software under the GNU AGPL, version 3 only. Not affiliated with LinkedIn or Meta.">
+        <ListRow title="Website" accessory="external" href={`${site}/`} />
+        <ListRow title="Help" accessory="external" href={`${site}/help/`} />
         <ListRow title="Source code" accessory="external" href={repo} />
         <ListRow title="Report a problem" accessory="external" href={`${repo}/issues/new/choose`} />
-        <ListRow title="Privacy policy" accessory="external" href={`${repo}/blob/main/PRIVACY.md`} />
-        <ListRow title="What's new" accessory="external" href={`${repo}/releases`} />
+        <ListRow title="Privacy policy" accessory="external" href={`${site}/privacy/`} />
+        <ListRow title="What's new" accessory="external" href={`${site}/whats-new/`} />
         <ListRow title="Licenses & acknowledgements" accessory="external" href={`${repo}/blob/main/THIRD_PARTY_NOTICES.md`} />
         <ListRow
           title="Replay setup"
