@@ -10,6 +10,8 @@ export const MAX_FACTCHECK_SEARCHES = 5;
 export const MAX_QUOTE_WORDS = 25;
 export const MIN_INDEPENDENT_DOMAINS = 2;
 export const MAX_CITATIONS_PER_CLAIM = 4;
+/** A verdict's explanation: the model's short reason, at most this many characters (a cache entry's too). */
+export const MAX_EXPLANATION_CHARS = 280;
 export const MAX_RETRIEVED_SOURCES = 20;
 /** Typical own-key Anthropic cost of one check (spec: ~$0.12), shown before a check runs. */
 export const FACTCHECK_TYPICAL_COST_MICROS = 120_000;
@@ -34,11 +36,14 @@ export const FactcheckClaimSchema = z.object({
   id: z.string().regex(/^c[1-3]$/),
   claim: z.string().max(300),
   verdict: z.enum(FACTCHECK_VERDICTS),
-  explanation: z.string().max(280),
+  explanation: z.string().max(MAX_EXPLANATION_CHARS),
   citations: z.array(FactcheckCitationSchema).max(MAX_CITATIONS_PER_CLAIM),
   /** Set when validation replaced the model's verdict with `unverifiable`. */
   downgraded: z.enum(['too-few-domains', 'no-verdict']).optional(),
-  /** When the verdict and citations came from an earlier check's cache entry: that check's time, to the hour. Explanation is then ''. */
+  /**
+   * When the verdict and citations came from an earlier check's cache entry: that check's time, to the hour. Explanation
+   * is then the entry's, or '' when it was not kept (it repeated the post's words).
+   */
   cachedAt: z.iso.datetime().optional(),
 });
 export type FactcheckClaim = z.infer<typeof FactcheckClaimSchema>;

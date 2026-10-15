@@ -540,15 +540,22 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     expect(first.result?.claims[0]?.cachedAt).toBeUndefined();
     expect(second.result?.claims[0]).toMatchObject({ claim, verdict: 'supported' });
     expect(second.result?.claims[0]?.cachedAt).toBeDefined();
+    // The explanation (the mock's, which repeats none of the post) is kept and served with the cached verdict.
+    expect(first.result?.claims[0]?.explanation).toBe('Test verdict.');
+    expect(second.result?.claims[0]?.explanation).toBe('Test verdict.');
     expect(checkCacheSecond.sent).toHaveLength(1);
     expect(run.cacheSearched).toEqual([]);
 
     const cached = run.tables.get('public.claim_cache') ?? '[]';
-    expect(JSON.parse(cached).length).toBeGreaterThanOrEqual(1);
-    // No claim the mock returned, no post's first sentence and no marker: only keyed hashes, verdicts and sources.
+    const cacheRows = JSON.parse(cached) as { explanation: string | null }[];
+    expect(cacheRows.length).toBeGreaterThanOrEqual(1);
+    expect(cacheRows.map((row) => row.explanation)).toContain('Test verdict.');
+    // No claim the mock returned, no post's first sentence and no marker, in any column, explanations included: only
+    // keyed hashes, verdicts, explanations and sources.
     const claims = [first, second].flatMap((job) => job.result?.claims.map((c) => c.claim) ?? []);
     for (const text of [...claims, CACHEABLE_TEXT, 'Cacheable', 'Quarterly update', CANARY]) {
       expect(cached).not.toContain(text);
+      for (const row of cacheRows) expect(row.explanation ?? '').not.toContain(text);
     }
     expect([...run.tables].filter(([, r]) => r.includes(CANARY)).map(([table]) => table)).toEqual([]);
     expect(run.log.filter((line) => line.includes(CANARY) || line.includes('Cacheable'))).toEqual([]);

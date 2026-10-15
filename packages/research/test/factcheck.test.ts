@@ -588,6 +588,7 @@ describe('claim cache', () => {
     await seed(inner, 'It cost $10 million.', {
       ...CACHED,
       verdict: 'supported',
+      explanation: 'Two archives agree on the cost.',
       citations: [cite('archive.net', 'b', 'quote b2'), cite('third.org', 'c', 'quote c')],
     });
     const out = await run({ claims: ['The bridge opened in 1932.', 'It cost $10 million.'] }, SOURCES, { claimCache: cache });
@@ -599,7 +600,7 @@ describe('claim cache', () => {
     expect(FactcheckResultSchema.safeParse(out.result).success).toBe(true);
     expect(out.result.claims.map((c) => [c.id, c.verdict, c.explanation, c.cachedAt])).toEqual([
       ['c1', 'disputed', '', CACHED.checkedAt],
-      ['c2', 'supported', '', CACHED.checkedAt],
+      ['c2', 'supported', 'Two archives agree on the cost.', CACHED.checkedAt],
     ]);
     expect(out.result.sources.map((s) => [s.id, s.url, s.pageAge])).toEqual([
       ['s1', 'https://cached.com/a', null],
@@ -662,6 +663,7 @@ describe('claim cache', () => {
     expect(entries[0]?.key).toBe(await cache.key('The bridge opened in 1932.'));
     expect(entries[0]?.entry.citations.map((c) => c.url)).toEqual(['https://www.example.com/s1', 'https://news.other.org/s2']);
     expect(entries[0]?.entry.checkedAt).toBe(NOW.toISOString());
+    expect(entries[0]?.entry.explanation).toBe('Agree.');
   });
 
   it('test_factcheck_cache_unused_for_non_public_post', async () => {

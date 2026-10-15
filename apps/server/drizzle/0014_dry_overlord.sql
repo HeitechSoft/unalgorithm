@@ -1,0 +1,1 @@
+ALTER TABLE "claim_cache" ADD COLUMN "explanation" text;

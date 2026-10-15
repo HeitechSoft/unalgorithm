@@ -81,12 +81,14 @@ counted. Nothing goes to HeitechSoft.
 
 Own-key checks (Anthropic, OpenAI, OpenAI-compatible) use a per-device claim cache (P3-60,
 `apps/extension/src/background/claim-cache.ts`) under P3-57's rules, for public posts only. It lives in the
-`claimChecks` store of the extension's IndexedDB, which content scripts cannot open (ADR 0005). A row is `{ key,
-entry, expiresAt }`: `key` is HMAC-SHA-256 of the normalized claim under `claim-cache-key`, 32 random bytes kept in
-`secrets` (never synced or exported); `entry` is the verdict, at least two public sources on independent domains
-(URL, host, title, a short quote; none on Facebook or LinkedIn, none echoing the post) and the hour checked;
-`expiresAt` is that hour plus 24 hours. No claim text, post text, explanation, post id, author or account id. A later
-check whose claims all hit sends only the claims call (step 1) and replays the kept verdicts, marked `cachedAt`; it
+`claimChecks` store of the extension's IndexedDB, which content scripts cannot open (ADR 0005). A row is `{ key, entry,
+expiresAt }`: `key` is HMAC-SHA-256 of the normalized claim under `claim-cache-key`, 32 random bytes kept in `secrets`
+(never synced or exported); `entry` is the verdict, the model's explanation (at most 280 characters, left out when it
+echoes the post), at least two public sources on independent domains (URL, host, title, a short quote; none on Facebook
+or LinkedIn, none echoing the post) and the hour checked; `expiresAt` is that hour plus 24 hours. No claim text, post
+text, post id, author or account id. "Echoing" is P3-57's rule: six consecutive words shared with the post text or its
+link title (all of them when it has fewer), with Chinese, Japanese and Thai text split into words. A later check whose
+claims all hit sends only the claims call (step 1) and replays the kept verdicts and explanations, marked `cachedAt`; it
 costs that call. Expired rows are deleted on the next write. "Clear cache" empties the store; "Erase everything" also
 deletes the key. A `server` source never reads or writes it.
 
@@ -163,15 +165,16 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   synced: API keys, endpoint tokens, refresh tokens, AI source settings, learned topics, votes, statistics or cached
   results ([Sync](ARCHITECTURE.md#sync)).
 - **Shared claim cache:** for each claim checked in a public post on this server, one row: a keyed hash of the
-  normalized claim (HMAC-SHA-256 under a key derived from the server's `BETTER_AUTH_SECRET`, never stored), the
-  verdict, up to 4 public source URLs with each one's title and a quote of 25 words at most, and when it was checked
-  and when it expires, both to the hour (`claim_cache`). Never the claim, the post text, the explanation, who checked
-  it (no account, device or post id, and no exact time that would match a usage row), or a source on Facebook or
-  LinkedIn. A row is served for 24 hours from its check and deleted by an hourly job after that. The cache is this
-  server's own: it is filled only from checks of public posts made here, is never sent to another server, and a
-  different server's key finds nothing in it; a new `BETTER_AUTH_SECRET` makes every row unreachable. A hit tells the
-  next person on this server who checks the same claim that someone here checked that same public claim that day,
-  never who.
+  normalized claim (HMAC-SHA-256 under a key derived from the server's `BETTER_AUTH_SECRET`, never stored), the verdict,
+  the model's explanation of it (at most 280 characters; left out when it repeats six or more consecutive words of the
+  post text or its link title, the rule quotes and titles follow), up to 4 public source URLs with each one's title and
+  a quote of 25 words at most, and when it was checked and when it expires, both to the hour (`claim_cache`). Never the
+  claim, the post text, who checked it (no account, device or post id, and no exact time that would match a usage row),
+  or a source on Facebook or LinkedIn. A row is served for 24 hours from its check and deleted by an hourly job after
+  that. The cache is this server's own: it is filled only from checks of public posts made here, is never sent to
+  another server, and a different server's key finds nothing in it; a new `BETTER_AUTH_SECRET` makes every row
+  unreachable. A hit tells the next person on this server who checks the same claim that someone here checked that same
+  public claim that day, never who.
 - **Background jobs:** the hourly purge of expired sign-in rows above, the hourly purge of expired claim cache rows
   (`factcheck.purge-claim-cache`), the sync cleanup every 6 hours (`sync.gc`, which
   removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers

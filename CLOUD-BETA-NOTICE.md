@@ -52,8 +52,8 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
   beta; how records of purchases are kept will be stated here before it is.
 - Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions. Never API keys or
   post text.
-- For fact-checks of public posts: a 24-hour shared cache of verdicts, keyed by a hash of each claim, with the public
-  sources found. Never the claim, the post, or who checked it.
+- For fact-checks of public posts: a 24-hour shared cache of verdicts and their short explanations, keyed by a hash of
+  each claim, with the public sources found. Never the claim, the post, or who checked it.
 - A nightly encrypted backup of the database, kept for 14 nights.
 
 Access logs and the server's own logs hold no post content, query strings or IP addresses. When a request fails, the

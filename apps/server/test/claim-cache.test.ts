@@ -25,14 +25,16 @@ const SECRET = claimCacheSecret('test-only-auth-secret-0123456789abcdef');
 const ENTRY: CachedClaim = {
   v: 1,
   verdict: 'disputed',
+  explanation: 'Two outlets give a different year.',
   checkedAt: '2026-10-15T12:00:00.000Z',
   citations: [
     { url: 'https://a.com/1', domain: 'a.com', title: 'A', quote: 'q a' },
     { url: 'https://b.org/1', domain: 'news.b.org', title: 'B', quote: 'q b' },
   ],
 };
+const { explanation: _, ...UNEXPLAINED } = ENTRY;
 const OTHER: CachedClaim = {
-  ...ENTRY,
+  ...UNEXPLAINED,
   verdict: 'supported',
   citations: [ENTRY.citations[1], { url: 'https://c.net/1', domain: 'c.net', title: 'C', quote: 'q c' }].filter(
     (c) => c !== undefined,
@@ -68,6 +70,10 @@ describe('store', { timeout: PGLITE_TIMEOUT }, () => {
     const got = await cache.get([key, key]);
     expect([...got.keys()]).toEqual([key]);
     expect(got.get(key)).toEqual(ENTRY);
+    // An entry without an explanation comes back without one (not as null).
+    const plain = await cache.key('The bridge is 3 km long.');
+    await cache.put([{ key: plain, entry: UNEXPLAINED }]);
+    expect((await cache.get([plain])).get(plain)).toStrictEqual(UNEXPLAINED);
     await expect(cache.get(Array.from({ length: 17 }, (_, i) => `k${i}`))).rejects.toThrow(TypeError);
   });
 
@@ -104,6 +110,7 @@ describe('store', { timeout: PGLITE_TIMEOUT }, () => {
     const stored = await rows(h);
     expect(stored).toHaveLength(1);
     expect(stored[0]?.verdict).toBe('supported');
+    expect(stored[0]?.explanation).toBeNull();
     expect(stored[0]?.citations).toEqual(OTHER.citations);
     expect(stored[0]?.checkedAt.getTime()).toBe(NOON + CLAIM_CACHE_TTL_MS);
     expect(stored[0]?.expiresAt.getTime()).toBe(NOON + 2 * CLAIM_CACHE_TTL_MS);
@@ -167,7 +174,7 @@ describe('privacy', { timeout: PGLITE_TIMEOUT }, () => {
       h,
       sql`select column_name from information_schema.columns where table_name = 'claim_cache' order by ordinal_position`,
     );
-    expect(columns.map((c) => c.column_name)).toEqual(['key', 'verdict', 'citations', 'checked_at', 'expires_at']);
+    expect(columns.map((c) => c.column_name)).toEqual(['key', 'verdict', 'citations', 'checked_at', 'expires_at', 'explanation']);
 
     const cache = cacheOn(h, { now: Date.parse('2026-10-15T12:40:00.000Z') });
     const key = await cache.key('claim');

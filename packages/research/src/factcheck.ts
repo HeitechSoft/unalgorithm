@@ -142,7 +142,7 @@ function pickClaims(raw: readonly { claim: string }[]): { id: string; text: stri
 }
 
 /**
- * Claims in their order c1…c3, cached ones from `hits` (explanation '', `cachedAt`), fresh ones from `fresh`; sources
+ * Claims in their order c1…c3, cached ones from `hits` (their explanation or '', `cachedAt`), fresh ones from `fresh`; sources
  * de-duplicated by URL in first-citation order and renumbered s1…sN, citations rewritten to match.
  */
 function mergeClaims(
@@ -172,7 +172,7 @@ function mergeClaims(
         id,
         claim: text,
         verdict: hit.verdict,
-        explanation: '',
+        explanation: hit.explanation ?? '',
         citations: hit.citations.map((c) => ({
           sourceId: idFor({ url: c.url, domain: c.domain, title: c.title, pageAge: null }),
           quote: c.quote,

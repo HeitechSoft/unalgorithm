@@ -117,7 +117,7 @@ export async function clearCache(): Promise<void> {
   await done((await store('classifications', 'readwrite')).clear());
 }
 
-// ---------- claim cache (P3-60): a keyed hash of a claim, its verdict and citations; no post or claim text ----------
+// ---------- claim cache (P3-60): a keyed claim hash, its verdict, explanation and citations; no post or claim text ----
 
 export interface ClaimCheckRow {
   /** HMAC of the normalized claim under this device's own secret. */

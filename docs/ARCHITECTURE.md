@@ -202,7 +202,7 @@ always show or hide (`sync_items`).
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 | `ops_alerts` | Alerts open now: key, level, times, one number |
-| `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text, explanation or any user, device or post id; deleted hourly once past its 24 hours |
+| `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, its explanation (≤ 280 characters, null when it repeats 6 consecutive words of the post), 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text or any user, device or post id; deleted hourly once past its 24 hours |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).

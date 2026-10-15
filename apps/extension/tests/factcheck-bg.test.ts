@@ -774,7 +774,11 @@ describe('device claim cache', () => {
     const [entry] = await entries();
     expect(entry).toMatchObject({ key: KEY2, status: 'done', costMicros: claimsCost });
     expect(entry?.result?.claims).toHaveLength(1);
-    expect(entry?.result?.claims[0]).toMatchObject({ verdict: 'supported', cachedAt: expect.any(String) });
+    expect(entry?.result?.claims[0]).toMatchObject({
+      verdict: 'supported',
+      explanation: 'Two independent sources give the same year.',
+      cachedAt: expect.any(String),
+    });
     expect(entry?.result?.sources.map((s) => s.url)).toStrictEqual([NEWS, RECORDS]);
   });
 
@@ -788,6 +792,8 @@ describe('device claim cache', () => {
     expect(Object.keys(row ?? {}).sort()).toStrictEqual(['entry', 'expiresAt', 'key']);
     expect(row?.key).toMatch(/^[0-9a-f]{64}$/);
     expect(CachedClaimSchema.safeParse(row?.entry).success).toBe(true);
+    // The explanation repeats none of the post, so the device keeps it with the verdict.
+    expect(row?.entry).toMatchObject({ explanation: 'Two independent sources give the same year.' });
     expect(typeof row?.expiresAt).toBe('number');
     const json = JSON.stringify(row).toLowerCase();
     expect(json).not.toContain(POST.text.toLowerCase());
