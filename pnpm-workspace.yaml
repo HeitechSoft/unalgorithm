@@ -1,3 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+overrides:
+  # drizzle-kit's deprecated @esbuild-kit loader pins esbuild 0.18, whose dev server any site can read
+  # (GHSA-67mh-4wv8-2f99). Nothing here runs that server, but use the fixed release the rest of the tree has.
+  '@esbuild-kit/core-utils>esbuild': 0.25.12
