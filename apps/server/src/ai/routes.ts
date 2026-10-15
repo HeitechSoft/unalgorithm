@@ -28,7 +28,7 @@ export const ROUTE_TASKS = ['classify', 'research', 'synthesis'] as const;
 export type RouteTask = (typeof ROUTE_TASKS)[number];
 
 /** The variable that names each task's model, so a refusal sends the admin to the right setting. */
-const MODEL_VARIABLE: Record<RouteTask, string> = {
+export const MODEL_VARIABLE: Record<RouteTask, string> = {
   classify: 'AI_MODEL',
   research: 'AI_RESEARCH_MODEL',
   synthesis: 'AI_SYNTHESIS_MODEL',
