@@ -349,8 +349,11 @@ const F: CreditPriceScheduleEntry = {
   cards: { classify: L.cards.classify, factcheck: FACTCHECK, perspectives: PERSPECTIVES },
 };
 const FIXTURE: CreditPriceSchedule = [L, F];
-/** The schedule before P3-51 appended the 2026-12-01 fact-check entry. */
-const TWO_ENTRIES: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE.slice(0, 2);
+/** The schedule before P3-51 appended the 2026-12-01 fact-check entry, as published (not read back from the head). */
+const TWO_ENTRIES: CreditPriceSchedule = [
+  LAUNCH,
+  { effectiveFrom: '2026-11-01T00:00:00Z', cards: { classify: LAUNCH.cards.classify, perspectives: PERSPECTIVES } },
+];
 /** The fixture, then an entry from `e` copying F's cards with `cards` replaced. */
 const after = (e: string, cards: Partial<CreditPriceScheduleEntry['cards']>): CreditPriceSchedule => [
   ...FIXTURE,
@@ -368,10 +371,7 @@ describe('adding a task', () => {
   });
 
   it('test_perspectives_entry_passes_shape_and_change_rules', () => {
-    expect(TWO_ENTRIES).toEqual([
-      LAUNCH,
-      { effectiveFrom: '2026-11-01T00:00:00Z', cards: { classify: LAUNCH.cards.classify, perspectives: PERSPECTIVES } },
-    ]);
+    expect(CREDIT_PRICE_SCHEDULE.slice(0, 2)).toEqual(TWO_ENTRIES);
     // The classify card is the launch card, the same object.
     expect(CREDIT_PRICE_SCHEDULE[1]?.cards.classify).toBe(CREDIT_PRICE_SCHEDULE[0]?.cards.classify);
     expect(priceScheduleProblems(CREDIT_PRICE_SCHEDULE)).toEqual([]);

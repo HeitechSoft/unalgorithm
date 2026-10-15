@@ -418,7 +418,9 @@ describe('fact-check jobs: billing', { timeout: PGLITE_TIMEOUT }, () => {
   });
 
   it('test_factcheck_job_not_offered_on_billing_server', async () => {
-    const t = await anthropicApp(happy, { billed: true, priceSchedule: CREDIT_PRICE_SCHEDULE });
+    // No entry prices checks: the shipped schedule does from its fact-check entry's date, so it is not used here.
+    const unpriced = CREDIT_PRICE_SCHEDULE.filter((e) => !e.cards.factcheck);
+    const t = await anthropicApp(happy, { billed: true, priceSchedule: unpriced });
     const res = await startCheck(t, await publicPost());
     expect(res.status).toBe(503);
     expect(await errorOf(res)).toBe('not-available');
