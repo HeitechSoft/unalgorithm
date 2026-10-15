@@ -77,13 +77,16 @@ async function kitApp(opts: KitOptions = {}) {
   cleanup.push(t.close);
   const calls: string[] = [];
   let releases = 0;
-  /** At each `finish`: the releases so far and the job's rows (queued then, so it sees the database as it was). */
+  /** At each `finish`: the releases so far and the job's rows (run then, so it sees the database as it was). */
   const atFinish: { releases: number; rows: Promise<(typeof usageEvents.$inferSelect)[]> }[] = [];
   const store = createJobStore<Result>({ ttlMs: 60_000, maxRunning: 4, maxKeptPerUser: 5 });
   const jobs: JobStore<Result> = {
     ...store,
     finish: (id, end) => {
-      atFinish.push({ releases, rows: t.deps.db.db.select().from(usageEvents).where(eq(usageEvents.requestId, id)) });
+      // `execute()` now: a drizzle query is lazy until awaited, and awaited only after the job ended it would also see
+      // a row written after `finish`.
+      const rows = t.deps.db.db.select().from(usageEvents).where(eq(usageEvents.requestId, id)).execute();
+      atFinish.push({ releases, rows });
       store.finish(id, end);
     },
     get running() {
