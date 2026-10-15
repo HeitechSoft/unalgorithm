@@ -59,8 +59,10 @@ test.describe('a server that bills', () => {
     expect(server.logs()).not.toContain(POST_TEXT);
   });
 
-  test('test_module_page_form_post_passes_own_page', async ({ context }) => {
+  test('test_module_page_form_post_passes_own_page', async ({ context, extensionId }) => {
     const { server } = started();
+    // The fixture context aborts every request a test hasn't routed; signing in routes the server, this test doesn't.
+    await allowServer(context, extensionId);
     // A plain page with no script: under the server's `Referrer-Policy: no-referrer` its form POST would carry
     // `Origin: null` and `host.auth.ownPage` would answer 403, unless the module page's referrer meta overrides it.
     const page = await context.newPage();
