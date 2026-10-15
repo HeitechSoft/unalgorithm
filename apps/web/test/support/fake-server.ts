@@ -3,8 +3,8 @@
  * does (an accepted code or passkey starts it and signing out ends it), and every request recorded. Also the query the
  * extension opens the authorize page with, and what Google and a passkey sign-in answer. The account's devices and
  * passkeys are kept too: revoking or removing one takes it off its list and adding a passkey puts one on. The account
- * exports as `EXPORT`, and deleting it (with the address typed again) ends the session. Without a session those routes
- * answer 401, as the real ones do.
+ * exports as `EXPORT`, and deleting it (with the address typed again) ends the session. The setup link's `SETUP_TOKEN`
+ * can be claimed once, as CL4-04's can. Without a session those routes answer 401, as the real ones do.
  */
 import {
   ACCOUNT_DELETE_PATH,
@@ -13,6 +13,7 @@ import {
   ACCOUNT_EXPORT_PATH,
   type AccountDevice,
   type AccountExport,
+  ADMIN_SETUP_PATH,
   AUTHORIZE_API_PATH,
   chromiumRedirectUri,
   SERVER_INFO_PATH,
@@ -109,7 +110,15 @@ export function passkeyRow(id: string, name: string | null, createdAt: string | 
 export const ADDED_PASSKEY = passkeyRow('pk-added', 'Google Password Manager', '2026-10-14T12:00:00.000Z');
 
 /** What the account routes answer without a session. */
-const SESSION_GONE = { status: 401, body: { code: 'auth-required', message: 'Sign in again.' } };
+export const SESSION_GONE = { status: 401, body: { code: 'auth-required', message: 'Sign in again.' } };
+
+/** A setup link's token (CL4-04): 43 URL-safe base64 characters, from the fragment of `/setup#<token>`. */
+export const SETUP_TOKEN = 'c2V0dXAtbGluay10b2tlbi1mb3ItdGhlLWZpcnN0LWE';
+/** What `POST /v1/admin/setup` answers for a token that doesn't work: unknown, expired, used, or another address's. */
+export const SETUP_REFUSED = {
+  status: 403,
+  body: { code: 'permission', message: "This setup link doesn't work. Ask for a new one." },
+};
 
 export const INFO: ServerInfo = {
   v: 1,
@@ -179,6 +188,7 @@ export function fakeServer({
   let current = session;
   let deviceList = [...devices];
   let passkeyList = [...passkeys];
+  let setupClaimed = false;
   /** `answer` with a session, 401 without one. */
   const withSession =
     (answer: (call: Call) => Answer): Reply =>
@@ -237,6 +247,11 @@ export function fakeServer({
       if (!passkeyList.some((p) => p.id === id)) return { status: 404, body: { code: 'NOT_FOUND', message: 'Not found.' } };
       passkeyList = passkeyList.filter((p) => p.id !== id);
       return { status: 200, body: { status: true } };
+    }),
+    [`POST ${ADMIN_SETUP_PATH}`]: withSession((call) => {
+      if (setupClaimed || field(call, 'token') !== SETUP_TOKEN) return SETUP_REFUSED;
+      setupClaimed = true;
+      return { status: 200, body: { ok: true } };
     }),
     ...routes,
   };

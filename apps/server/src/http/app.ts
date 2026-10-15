@@ -18,6 +18,7 @@ import {
   MAX_POSTS_PER_REQUEST,
   PASSKEY_METHOD,
   SERVER_INFO_PATH,
+  SETUP_PAGE_PATH,
   type ServerInfo,
   TOKEN_PATH,
   type WireError,
@@ -210,7 +211,7 @@ export function createApp(deps: AppDeps): App {
 }
 
 /**
- * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize` and `/account` answer its
+ * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account` and `/setup` answer its
  * `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build those pages answer
  * 503 and the log says so once. The build is looked up per request, so one made after the server started is served.
  */
@@ -235,6 +236,7 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get('/', page);
   app.get(AUTHORIZE_PAGE_PATH, page);
   app.get(ACCOUNT_PAGE_PATH, page);
+  app.get(SETUP_PAGE_PATH, page);
 
   // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
   let assets: MiddlewareHandler | undefined;

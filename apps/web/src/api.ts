@@ -1,9 +1,10 @@
 /**
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
- * bills, and the account's devices and passkeys. All same-origin, so the browser sends the session cookie and the
- * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all),
- * except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`, and its other errors keep their name.
+ * bills, the account's devices and passkeys, and the setup link's claim that makes the first admin. All same-origin, so
+ * the browser sends the session cookie and the `Origin` header the server checks. Every failure is an `ApiError`
+ * carrying the HTTP status (0: no answer at all), except the browser's passkey prompt: a cancelled one is
+ * `PasskeyCancelled`, and its other errors keep their name.
  */
 import {
   type AuthenticationResponseJSON,
@@ -20,6 +21,8 @@ import {
   type AccountDevice,
   AccountDevicesResponseSchema,
   AccountExportSchema,
+  ADMIN_SETUP_PATH,
+  AdminOkSchema,
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
@@ -30,6 +33,7 @@ import {
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
+  type SetupRequest,
 } from '@unalgorithm/protocol';
 import { z } from 'zod';
 
@@ -240,4 +244,13 @@ export async function exportAccount(): Promise<Blob> {
  */
 export async function deleteAccount(confirm: string): Promise<void> {
   await request(ACCOUNT_DELETE_PATH, OkResponseSchema, { confirm });
+}
+
+/**
+ * Claims the setup link for the signed-in account, which makes it this server's first admin (CL4-04). The server answers
+ * 401 without a session and 403 for a token that doesn't work: unknown, expired, used, or made for another address.
+ */
+export async function claimSetup(token: string): Promise<void> {
+  const body: SetupRequest = { token };
+  await request(ADMIN_SETUP_PATH, AdminOkSchema, body);
 }
