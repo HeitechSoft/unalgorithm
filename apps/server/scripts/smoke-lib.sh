@@ -1,6 +1,6 @@
-# Shared by the container smoke tests (compose-smoke.sh, backup-smoke.sh); not run on its own. A script sets `project`
-# (its own throwaway Compose project name) and `port` (the host port the server is published on), then sources this
-# from the repository root:
+# Shared by the container smoke tests (compose-smoke.sh, backup-smoke.sh, restore-smoke.sh); not run on its own. A
+# script sets `project` (its own throwaway Compose project name) and `port` (the host port the server is published on),
+# then sources this from the repository root:
 #
 #   project="ua-smoke-$RANDOM"
 #   port=8788
@@ -40,6 +40,13 @@ tmp="$(mktemp -d)"
 image=''
 # The services whose logs a failed run prints.
 failure_logs=server
+# Docker makes the backups and backup-key folders, as root, for the backup and keygen bind mounts: the Postgres image
+# (already pulled) removes them, so a runner that is not root can. Used by the cleanup and by restore-smoke.sh's wipe.
+remove_backup_folders() {
+  if [ -e "$dir/backups" ] || [ -e "$dir/backup-key" ]; then
+    docker run --rm -v "$(native "$(pwd)/$dir"):/w" postgres:17.11 rm -rf /w/backups /w/backup-key >/dev/null 2>&1 || true
+  fi
+}
 cleanup() {
   local status=$?
   if [ "$status" -ne 0 ] && [ -n "$image" ]; then
@@ -49,11 +56,7 @@ cleanup() {
   fi
   compose down -v --remove-orphans >/dev/null 2>&1 || true
   if [ -n "$image" ]; then docker image rm -f "$image" >/dev/null 2>&1 || true; fi
-  # Docker made these folders, as root, for the backup and keygen bind mounts: the Postgres image (already pulled)
-  # removes them, so a runner that is not root can.
-  if [ -e "$dir/backups" ] || [ -e "$dir/backup-key" ]; then
-    docker run --rm -v "$(native "$(pwd)/$dir"):/w" postgres:17.11 rm -rf /w/backups /w/backup-key >/dev/null 2>&1 || true
-  fi
+  remove_backup_folders
   rm -f "$env_file"
   rm -rf "$tmp"
   exit "$status"
