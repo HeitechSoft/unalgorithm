@@ -35,7 +35,7 @@ import { startMockSearxng } from '@unalgorithm/research/testing';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { clientForRoute } from '../src/ai/provider.ts';
-import { usageEvents, user } from '../src/db/schema.ts';
+import { claimCache, usageEvents, user } from '../src/db/schema.ts';
 import type { AppDeps } from '../src/http/app.ts';
 import { inFlightRequests } from '../src/http/middleware.ts';
 import { listen, stopServing } from '../src/index.ts';
@@ -561,10 +561,100 @@ describe('fact-check jobs: pipeline wiring', { timeout: PGLITE_TIMEOUT }, () => 
       },
     ]);
     const done = t.events().filter((e) => e.event === 'factcheck.done');
-    expect(done).toMatchObject([{ rid: id, outcome: 'done', claims: 1, sources: 2, cost_micros: expected }]);
+    expect(done).toMatchObject([{ rid: id, outcome: 'done', claims: 1, sources: 2, cached: 0, cost_micros: expected }]);
     expect(Object.keys(done[0] ?? {}).sort()).toEqual(
-      ['claims', 'cost_micros', 'event', 'level', 'ms', 'outcome', 'rid', 'sources', 't'].sort(),
+      ['cached', 'claims', 'cost_micros', 'event', 'level', 'ms', 'outcome', 'rid', 'sources', 't'].sort(),
     );
+  });
+});
+
+/** The claims call's cost in Anthropic mode: the classify route's model on the mock's structured usage. */
+const CLAIMS_COST = costMicros('claude-haiku-5-5', STRUCTURED_USAGE) ?? -1;
+
+/** The same public post checked by Tom, then by Ana on the same server: the two jobs' results and the second's calls. */
+async function checkTwice(t: Awaited<ReturnType<typeof anthropicApp>>) {
+  const post = await publicPost();
+  const first = await ended(t, await started(t, post));
+  const before = t.kinds.length;
+  const bodiesBefore = t.bodies.length;
+  const ana = { ...t, token: (await signInDevice(t.app, t.outbox, ANA)).access_token };
+  const secondId = await started(ana, post);
+  const second = await ended(ana, secondId);
+  return { first, second, secondId, kinds: t.kinds.slice(before), bodies: t.bodies.slice(bodiesBefore) };
+}
+
+function hourFloor(iso: string | undefined): string {
+  const hour = 60 * 60_000;
+  return new Date(Math.floor(Date.parse(iso ?? '') / hour) * hour).toISOString();
+}
+
+describe('fact-check jobs: claim cache', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_factcheck_repeat_answered_from_cache', async () => {
+    const t = await anthropicApp();
+    const { first, second, secondId, kinds, bodies } = await checkTwice(t);
+    expect(first.status).toBe('done');
+    expect(first.result?.claims[0]?.cachedAt).toBeUndefined();
+    expect(second.status).toBe('done');
+    // One request, the claims prompt: no research, no verdict.
+    expect(kinds).toEqual(['claims']);
+    expect(bodies).toHaveLength(1);
+    expect(JSON.stringify(bodies[0])).toContain('"claims"');
+    expect(second.result?.claims).toHaveLength(1);
+    expect(second.result?.claims[0]).toMatchObject({ verdict: 'supported', cachedAt: hourFloor(first.result?.checkedAt) });
+    expect((await t.deps.db.db.select().from(claimCache)).length).toBe(1);
+
+    const done = t.events().filter((e) => e.event === 'factcheck.done' && e.rid === secondId);
+    expect(done).toMatchObject([{ outcome: 'done', claims: 1, cached: 1 }]);
+    const line = JSON.stringify(done[0]);
+    for (const text of ['bridge', '1932', POST_TEXT]) expect(line).not.toContain(text);
+    expect(t.lines.join('')).not.toContain('bridge opened');
+  });
+
+  it('test_factcheck_cache_hit_charged_cost_times_two', async () => {
+    const t = await anthropicApp(happy, { billed: true });
+    const settled: { requestId: string; costMicros: number | null; chargedMicros: number }[] = [];
+    const settle = t.provider.settle.bind(t.provider);
+    t.provider.settle = async (input) => {
+      const out = await settle(input);
+      settled.push({ requestId: input.requestId, costMicros: input.costMicros, chargedMicros: out?.chargedMicros ?? -1 });
+      return out;
+    };
+    const { second, secondId, kinds } = await checkTwice(t);
+    expect(kinds).toEqual(['claims']);
+    expect(second.status).toBe('done');
+    // Cost x 2 of the one call it made, as every task; no flat price.
+    const charge = settled.find((s) => s.requestId === secondId);
+    expect(charge).toEqual({ requestId: secondId, costMicros: CLAIMS_COST, chargedMicros: retailMicros(CLAIMS_COST, 2) });
+    const [row] = await t.deps.db.db.select().from(usageEvents).where(eq(usageEvents.requestId, secondId));
+    expect(row).toMatchObject({ outcome: 'ok', calls: 1, costMicros: CLAIMS_COST, chargeableCostMicros: CLAIMS_COST });
+    expect(second.billing?.chargedMicros).toBe(charge?.chargedMicros);
+  });
+
+  it('test_factcheck_cache_off_runs_full', async () => {
+    const t = await anthropicApp(happy, { env: { CLAIM_CACHE: 'off' } });
+    const { first, second, kinds } = await checkTwice(t);
+    expect(first.status).toBe('done');
+    expect(second.status).toBe('done');
+    expect(kinds).toEqual(['claims', 'research', 'verdict']);
+    expect(second.result?.claims[0]?.cachedAt).toBeUndefined();
+    expect(await t.deps.db.db.select().from(claimCache)).toEqual([]);
+  });
+
+  it('test_factcheck_cache_failure_runs_full', async () => {
+    const t = await anthropicApp(happy, {
+      claimCache: {
+        key: async () => 'f'.repeat(64),
+        get: async () => {
+          throw new Error('cache down');
+        },
+        put: async () => undefined,
+      },
+    });
+    const { first, second, kinds } = await checkTwice(t);
+    expect(first.status).toBe('done');
+    expect(second.status).toBe('done');
+    expect(kinds).toEqual(['claims', 'research', 'verdict']);
+    expect(second.result?.claims[0]?.cachedAt).toBeUndefined();
   });
 });
 

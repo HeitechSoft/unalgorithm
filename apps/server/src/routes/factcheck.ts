@@ -85,6 +85,8 @@ export function factcheckRoutes(
           search,
           ...(deps.linkCheck ? { linkCheck: deps.linkCheck } : {}),
           maxCostMicros,
+          // F27: a repeated public claim is answered from this server's cache, charged at the claims call's cost (D64).
+          ...(config.factcheck.claimCache && deps.claimCache ? { claimCache: deps.claimCache } : {}),
         });
         return {
           routeId: routes.synthesis.id,
@@ -93,7 +95,11 @@ export function factcheckRoutes(
           run: async (signal, onUsage) => (await runFactcheck({ ...post, ref: 'p1' }, factcheckDeps, { signal, onUsage })).result,
         };
       },
-      summary: (r) => ({ claims: r?.claims.length ?? 0, sources: r?.sources.length ?? 0 }),
+      summary: (r) => ({
+        claims: r?.claims.length ?? 0,
+        sources: r?.sources.length ?? 0,
+        cached: r?.claims.filter((c) => c.cachedAt).length ?? 0,
+      }),
     },
   );
 }

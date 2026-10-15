@@ -249,6 +249,16 @@ docker compose exec server node apps/server/src/cli/route-eval.ts factcheck
 Each person may run `USER_DAILY_CHECK_CAP` checks per UTC day, 10 unless you change it (0 allows none), and checks count
 toward the `DAILY_SPEND_LIMIT_USD` spend breaker like classification does (section 8).
 
+Your server keeps a claim cache, on unless you set `CLAIM_CACHE=off`. When a claim was settled by two independent sources
+in a check of a public post, a later check of the same claim on your server, by anyone, still asks the model for the
+post's claims, then shows the kept verdict instead of searching and judging again, marked with the hour it was first
+checked. It costs that one claims call, and on a server that charges, the price is that call's cost times the usual
+multiplier. A row in the `claim_cache` table holds a keyed hash of the normalized claim (under a key derived from
+`BETTER_AUTH_SECRET`), the verdict, up to four public source addresses with their titles and short quotes, and two times
+to the hour; never the claim, the post's text, the explanation, who checked, or a source on Facebook or LinkedIn. Rows
+expire after 24 hours and an hourly job deletes them. The cache belongs to your server alone and is never sent to another
+one. A check served from it still counts toward `USER_DAILY_CHECK_CAP`.
+
 What leaves your server: the claims, worded from public posts, go to your search provider, or to Anthropic with its web
 search. SearXNG sends them on to the search engines it asks, from this machine's IP address. The source links in a
 verdict are checked from your server, never from people's browsers, and only for their status.

@@ -3,7 +3,8 @@
  * interest profile is sent down every classify path in one run against one app and one database: a success, provider
  * failures that echo it, and requests the server refuses. The fact-check job endpoints get the same (P3-19): a done job,
  * a provider failure that echoes it, a friends-only post and an invalid body; so do the perspectives job endpoints
- * (P3-35), with the marker in the shared link's URL path and title. Afterwards it must be in none of the app's
+ * (P3-35), with the marker in the shared link's URL path and title. A public post checked twice (P3-59) really writes
+ * and then reads the server's claim cache, so its rows are scanned too. Afterwards it must be in none of the app's
  * log lines, nothing the process wrote to standard output, standard error or the console, no error answer and no row of
  * any table, graphile-worker's included. The model (and, for a check, the search provider) is the one place it may
  * reach, and never from a friends-only post.
@@ -30,9 +31,10 @@ import { startMockSearxng } from '@unalgorithm/research/testing';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { type DbHandle, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
+import { claimCache } from '../src/db/schema.ts';
 import { createJobRegistry, startJobs } from '../src/jobs/worker.ts';
 import { CANARY, canaryPosts, canaryProfile, FRIENDS_ONLY } from './support/canary.ts';
-import { classifyBody, postClassify } from './support/classify.ts';
+import { classifyBody, postClassify, serverPost } from './support/classify.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
@@ -61,11 +63,21 @@ const CANARY_SHARED = { url: `https://news.example.com/2026/${CANARY}/bridge`, t
 /** The friends-only post's link, with `FRIENDS_ONLY` in its path so a test can tell whether it went anywhere. */
 const FRIENDS_SHARED = { url: `https://news.example.com/${FRIENDS_ONLY}/${CANARY}`, title: `Family ${CANARY}` };
 
+/** Path 8c's post: its claim (the whole first sentence, as the mock picks it) carries the marker. */
+const CACHEABLE_TEXT = `Cacheable quarterly update ${CANARY} about AI agents.`;
+
 /**
  * The mock SearXNG's answers: on a bucket search (a `site:` clause), one hit an hour old on each fixture domain named, so
- * a comparison finds coverage; otherwise its default three hits.
+ * a comparison finds coverage; for path 8c's claim, two snippets that do not echo the query, so the mock verdict's
+ * quotes (the first 8 words of each) may be kept in the claim cache; otherwise three hits that echo the query.
  */
 function canaryHits(query: string) {
+  if (query.includes('Cacheable')) {
+    return [
+      { url: 'https://a.example/figures', title: 'Figures', snippet: 'Records show the quarterly figures were published.' },
+      { url: 'https://b.example/statement', title: 'Statement', snippet: 'Officials confirmed the quarterly figures.' },
+    ].map((hit) => ({ ...hit, published: null }));
+  }
   const sites = [...query.matchAll(/site:([a-z0-9.-]+)/g)].map((m) => m[1] ?? '');
   const domains = sites.length ? sites : ['a.example', 'b.example', 'c.example'];
   const published = sites.length ? new Date(Date.now() - 3_600_000).toISOString() : null;
@@ -100,6 +112,7 @@ const REQUIRED_TABLES = [
   'ai_routes',
   'usage_events',
   'user_limits',
+  'claim_cache',
 ];
 
 /** What a request got back, and what the mock provider received while it ran. */
@@ -132,6 +145,10 @@ interface Answers {
   checkDone: Answer;
   /** 9: a check whose provider fails with a body that echoes the marker, polled until failed. */
   checkProviderEcho: Answer;
+  /** 8c: a public post whose sources do not echo it, checked once (it writes the claim cache)... */
+  checkCacheFirst: Answer;
+  /** ...and again (answered from the claim cache). */
+  checkCacheSecond: Answer;
   /** 10: a check of the friends-only post, refused before a job. */
   checkFriendsOnly: Answer;
   /** 11: a check whose body fails the schema. */
@@ -162,6 +179,10 @@ interface CanaryRun {
   compareSearched: string[];
   /** Every query the mock SearXNG received. */
   allSearched: string[];
+  /** The queries of path 8c's second check. */
+  cacheSearched: string[];
+  /** Claim-cache rows before and after the friends-only check (path 10). */
+  cacheRowsAroundFriendsOnly: [number, number];
 }
 
 interface CanaryDatabase {
@@ -319,8 +340,16 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     const checkDone = await check(posts[0]);
     t.mock.failNext(500, `echo: ${CANARY}`);
     const checkProviderEcho = await check(posts[0]);
+    const cacheable = await serverPost('canary-cacheable', CACHEABLE_TEXT);
+    const checkCacheFirst = await check(cacheable);
+    const cacheSearchedBefore = searx.queries.length;
+    const checkCacheSecond = await check(cacheable);
+    const cacheSearched = searx.queries.slice(cacheSearchedBefore);
     const searchedPublic = searx.queries.length;
+    const cacheRows = async () => (await database.handle.db.select({ key: claimCache.key }).from(claimCache)).length;
+    const cacheRowsBefore = await cacheRows();
     const checkFriendsOnly = await check(friendsPost[0]);
+    const cacheRowsAroundFriendsOnly: [number, number] = [cacheRowsBefore, await cacheRows()];
     const checkInvalid = await startCheck({ v: 1, post: { text: `Quarterly update ${CANARY}` } });
     // Neither refused check reached the search provider.
     expect(searx.queries.length).toBe(searchedPublic);
@@ -352,6 +381,8 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       friendsOnly,
       checkDone,
       checkProviderEcho,
+      checkCacheFirst,
+      checkCacheSecond,
       checkFriendsOnly,
       checkInvalid,
       compareDone,
@@ -369,6 +400,8 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       searched: searx.queries.slice(searchedBefore),
       compareSearched,
       allSearched: [...searx.queries],
+      cacheSearched,
+      cacheRowsAroundFriendsOnly,
     };
   } finally {
     try {
@@ -429,8 +462,8 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     for (const table of REQUIRED_TABLES) expect(names).toContain(`public.${table}`);
     // Better Auth's table was read, not the current role, and the rows written during the run were there to scan.
     expect(run.tables.get('public.user')).toContain(TOM);
-    // Five classify rows, two fact-check job rows and two perspectives job rows.
-    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(9);
+    // Five classify rows, four fact-check job rows and two perspectives job rows.
+    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(11);
     expect([...run.tables].filter(([, rows]) => rows.includes(CANARY)).map(([name]) => name)).toEqual([]);
   });
 
@@ -479,19 +512,57 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
       expect(answer.body).not.toContain(CANARY);
       expect(answer.headers).not.toContain(CANARY);
     }
-    expect(run.log.filter((line) => line.includes('"event":"factcheck.done"'))).toHaveLength(2);
+    // Paths 8 and 9, and path 8c's two checks.
+    expect(run.log.filter((line) => line.includes('"event":"factcheck.done"'))).toHaveLength(4);
     expect(run.log.filter((line) => line.includes(CANARY))).toEqual([]);
     expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
 
-    // Two job rows (done, failed), and no table holds the marker: graphile-worker's too on Postgres.
+    // Four job rows (done, failed and path 8c's two), and no table holds the marker: graphile-worker's too on Postgres.
     const rows = JSON.parse(run.tables.get('public.usage_events') ?? '[]') as { task: string }[];
-    expect(rows.filter((r) => r.task === 'factcheck')).toHaveLength(2);
+    expect(rows.filter((r) => r.task === 'factcheck')).toHaveLength(4);
     if (name === 'postgres') expect([...run.tables.keys()].some((t) => t.startsWith('graphile_worker.'))).toBe(true);
     expect([...run.tables].filter(([, r]) => r.includes(CANARY)).map(([table]) => table)).toEqual([]);
 
     // Jobs live in memory only: the route module never touches graphile-worker.
     const source = readFileSync(new URL('../src/routes/factcheck.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/(?:from|import)\s*\(?\s*'[^']*(?:graphile-worker|jobs\/worker)/);
+  });
+
+  check('test_canary_cache_rows_hold_no_post_or_claim_text', () => {
+    const { checkCacheFirst, checkCacheSecond } = run.answers;
+    const first = FactcheckJobSchema.parse(JSON.parse(checkCacheFirst.body));
+    const second = FactcheckJobSchema.parse(JSON.parse(checkCacheSecond.body));
+    expect(first.status).toBe('done');
+    expect(second.status).toBe('done');
+    // The first check really wrote the cache and the second really read it: one model request, no search query.
+    const claim = first.result?.claims[0]?.claim ?? '';
+    expect(claim).toContain(CANARY);
+    expect(first.result?.claims[0]?.cachedAt).toBeUndefined();
+    expect(second.result?.claims[0]).toMatchObject({ claim, verdict: 'supported' });
+    expect(second.result?.claims[0]?.cachedAt).toBeDefined();
+    expect(checkCacheSecond.sent).toHaveLength(1);
+    expect(run.cacheSearched).toEqual([]);
+
+    const cached = run.tables.get('public.claim_cache') ?? '[]';
+    expect(JSON.parse(cached).length).toBeGreaterThanOrEqual(1);
+    // No claim the mock returned, no post's first sentence and no marker: only keyed hashes, verdicts and sources.
+    const claims = [first, second].flatMap((job) => job.result?.claims.map((c) => c.claim) ?? []);
+    for (const text of [...claims, CACHEABLE_TEXT, 'Cacheable', 'Quarterly update', CANARY]) {
+      expect(cached).not.toContain(text);
+    }
+    expect([...run.tables].filter(([, r]) => r.includes(CANARY)).map(([table]) => table)).toEqual([]);
+    expect(run.log.filter((line) => line.includes(CANARY) || line.includes('Cacheable'))).toEqual([]);
+    expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
+    for (const answer of [checkCacheFirst, checkCacheSecond]) expect(answer.headers).not.toContain(CANARY);
+  });
+
+  check('test_canary_friends_only_writes_no_cache_row', () => {
+    expect(run.answers.checkFriendsOnly.status).toBe(400);
+    expect(run.answers.checkFriendsOnly.sent).toEqual([]);
+    for (const query of run.allSearched) expect(query).not.toContain(FRIENDS_ONLY);
+    const [before, after] = run.cacheRowsAroundFriendsOnly;
+    expect(before).toBeGreaterThanOrEqual(1);
+    expect(after).toBe(before);
   });
 
   check('test_canary_perspectives_link_never_kept', () => {

@@ -68,7 +68,13 @@ memory only, for at most 10 minutes, and stores no post content; its usage recor
 cost, never the post. To check the claims it may search the web through the search service its operator configured,
 sending it the claims, not the post. On a server that charges for checks, a check costs at most the price shown before
 you confirm it; a check that stops early is not charged. Closing the tab cancels a check that is still running. The
-result is kept in this browser exactly as above.
+result is kept in this browser exactly as above. Unless its operator turned it off, the server keeps a claim cache: for
+each claim that two independent sources settled, a row with a keyed hash of the claim, the verdict, the public sources'
+addresses, titles and short quotes, and the hour it was checked, for 24 hours. Never the claim, the post's text, the
+explanation, who checked, or a source on Facebook or LinkedIn. A later check of the same claim on that server, by
+anyone, still sends the post to find its claims, then gets the kept verdict, marked with when it was checked, and costs
+only that one step. So a result dated earlier tells the person who asked that someone on that server checked the same
+public claim within the last day, never who. The cache stays on that server and is never shared with another.
 
 **Other perspectives (Labs, off by default).** When you turn on Settings → Labs → Other perspectives, use your own
 Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and

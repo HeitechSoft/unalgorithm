@@ -54,6 +54,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'SEARCH_PROVIDER',
   'SEARCH_URL',
   'SEARCH_API_KEY',
+  'CLAIM_CACHE',
   'PERSPECTIVES',
   'ROUTE_EVAL_MIN_AGREEMENT',
   'USER_DAILY_POST_CAP',
@@ -132,6 +133,8 @@ export interface Config {
     search: { provider: SearchProviderId; url?: string; apiKey?: string } | null;
     /** Fact-checks per person per UTC day when `BILLING` is off; 0: none. */
     userDailyCheckCap: number;
+    /** Public posts' checks read and write the server's claim cache (F27, `CLAIM_CACHE`, default on); false while fact-check is off. */
+    claimCache: boolean;
   };
   /** Other perspectives (Labs, F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
   perspectives: { enabled: boolean };
@@ -384,6 +387,7 @@ export function loadConfig(env: Env = process.env): Config {
   // Fact-check (Labs). Every name is read on every load, so the parity test sees them with fact-check off too.
   const factcheck = oneOf('FACTCHECK', ['off', 'on'] as const, 'off');
   const factcheckOn = factcheck === 'on';
+  const claimCacheOn = oneOf('CLAIM_CACHE', ['off', 'on'] as const, 'on') === 'on';
   const researchModelValue = read('AI_RESEARCH_MODEL');
   const synthesisModelValue = read('AI_SYNTHESIS_MODEL');
   const searchValue = read('SEARCH_PROVIDER');
@@ -529,6 +533,7 @@ export function loadConfig(env: Env = process.env): Config {
       synthesisModel: factcheckModel(synthesisModelValue),
       search,
       userDailyCheckCap,
+      claimCache: claimCacheOn && factcheckOn,
     },
     perspectives: { enabled: perspectives === 'on' && factcheckOn },
     egressDeny,

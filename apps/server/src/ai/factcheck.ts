@@ -6,6 +6,7 @@
 import { type AIClient, AIError } from '@unalgorithm/ai';
 import {
   aiRetriever,
+  type ClaimCache,
   createSearchProvider,
   type FactcheckDeps,
   type LinkChecker,
@@ -66,6 +67,8 @@ export function factcheckDepsFor(
     search: SearchProvider | null;
     linkCheck?: LinkChecker;
     maxCostMicros?: number;
+    /** The server's claim cache (F27); unset: none (`CLAIM_CACHE=off`, `route-eval`). */
+    claimCache?: ClaimCache;
   },
 ): FactcheckDeps {
   const { research, synthesis } = routes;
@@ -86,5 +89,6 @@ export function factcheckDepsFor(
     models: { claims: routes.claims.model, research: researchModel, verdict: synthesis.model },
     ...(rt.linkCheck ? { linkCheck: rt.linkCheck } : {}),
     ...(rt.maxCostMicros !== undefined ? { maxCostMicros: rt.maxCostMicros } : {}),
+    ...(rt.claimCache ? { claimCache: rt.claimCache } : {}),
   };
 }

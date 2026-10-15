@@ -96,6 +96,8 @@ export interface TestAppOptions {
   perspectivesJobs?: AppDeps['perspectivesJobs'];
   /** The shared link's resolution (the egress fetcher's in production). Default: none. */
   resolveLink?: AppDeps['resolveLink'];
+  /** The server's claim cache, such as a failing stub. Default: the app's own (`pgClaimCache` over its database). */
+  claimCache?: AppDeps['claimCache'];
 }
 
 /**
@@ -155,6 +157,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       perspectivesJobs: overrides.perspectivesJobs,
       resolveLink: overrides.resolveLink,
       outlets: overrides.outlets,
+      ...(overrides.claimCache !== undefined ? { claimCache: overrides.claimCache } : {}),
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

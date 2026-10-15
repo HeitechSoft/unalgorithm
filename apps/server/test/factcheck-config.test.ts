@@ -78,6 +78,7 @@ describe('config', () => {
       synthesisModel: 'claude-sonnet-5-5',
       search: null,
       userDailyCheckCap: 10,
+      claimCache: true,
     });
     expect(testConfig({ FACTCHECK: 'on', SEARCH_PROVIDER: 'searxng', SEARCH_URL: SEARXNG_URL }).factcheck).toMatchObject({
       researchModel: 'mock-model',
@@ -93,6 +94,19 @@ describe('config', () => {
         AI_SYNTHESIS_MODEL: 'claude-haiku-5-5',
       }).factcheck,
     ).toMatchObject({ synthesisModel: 'claude-haiku-5-5', search: { provider: 'tavily', apiKey: SEARCH_KEY } });
+  });
+
+  it('test_claim_cache_setting', () => {
+    const on = { ...ANTHROPIC, FACTCHECK: 'on' };
+    expect(testConfig(on).factcheck.claimCache).toBe(true);
+    expect(testConfig({ ...on, CLAIM_CACHE: 'on' }).factcheck.claimCache).toBe(true);
+    expect(testConfig({ ...on, CLAIM_CACHE: 'off' }).factcheck.claimCache).toBe(false);
+    // It means nothing while fact-check is off.
+    expect(testConfig(ANTHROPIC).factcheck.claimCache).toBe(false);
+    expect(testConfig({ ...ANTHROPIC, CLAIM_CACHE: 'on' }).factcheck.claimCache).toBe(false);
+    const err = configError({ ...on, CLAIM_CACHE: 'maybe' });
+    expect(err.invalid.map((i) => i.name)).toEqual(['CLAIM_CACHE']);
+    expect(err.message).toContain('CLAIM_CACHE');
   });
 
   it('test_factcheck_config_rules', () => {
