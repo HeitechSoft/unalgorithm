@@ -52,8 +52,8 @@ export interface LocalServer {
 
 /**
  * Starts the server on a free port and a new database, waits for `/health`, then opens the eval gate with
- * `route-eval`. `ROUTE_EVAL_MIN_AGREEMENT=0` is an operator's explicit choice that the server and the CLI both read:
- * the mock's default verdicts agree at most 0.4 with the eval set, so with the default minimum every classify would
+ * `route-eval`, and with `FACTCHECK=on` then `route-eval factcheck`. `ROUTE_EVAL_MIN_AGREEMENT=0` is an operator's
+ * explicit choice that the server and the CLI both read: the mock's default verdicts agree at most 0.4 with the eval set, so with the default minimum every classify would
  * answer 503. The gate itself still runs (`recordEval`, then `resolveRoute` on every request).
  *
  * `env` is added after the harness's own variables, for the server and `route-eval` alike: a billing module
@@ -100,8 +100,13 @@ export async function startLocalServer(opts: {
     server.once('error', (err) => void (output += `\nspawn failed: ${err.message}\n`));
     await waitForHealth(url, server, () => output);
 
-    const evaluated = await runNode(ROUTE_EVAL, env, ROUTE_EVAL_TIMEOUT_MS);
+    const evaluated = await runNode(ROUTE_EVAL, [], env, ROUTE_EVAL_TIMEOUT_MS);
     if (evaluated.code !== 0) throw new Error(`route-eval exited with ${evaluated.code}:\n${evaluated.output}`);
+    if (env.FACTCHECK === 'on') {
+      // The fact-check routes' gate, on the classify route's eval just stored.
+      const checked = await runNode(ROUTE_EVAL, ['factcheck'], env, ROUTE_EVAL_TIMEOUT_MS);
+      if (checked.code !== 0) throw new Error(`route-eval factcheck exited with ${checked.code}:\n${checked.output}`);
+    }
 
     let stopping: Promise<void> | undefined;
     return {
@@ -182,11 +187,16 @@ async function waitForHealth(url: string, server: ChildProcess, output: () => st
 /** Runs a script with Node.js from the repository root; resolves with its exit code and output. */
 function runNode(
   script: string,
+  args: readonly string[],
   env: Record<string, string>,
   timeoutMs: number,
 ): Promise<{ code: number | null; output: string }> {
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, [script], { cwd: REPO_ROOT, env: childEnv(env), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [script, ...args], {
+      cwd: REPO_ROOT,
+      env: childEnv(env),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let output = '';
     child.stdout.setEncoding('utf8').on('data', (s: string) => void (output += s));
     child.stderr.setEncoding('utf8').on('data', (s: string) => void (output += s));

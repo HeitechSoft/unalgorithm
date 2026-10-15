@@ -6,8 +6,17 @@ import {
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { expect, test } from './fixtures.ts';
+import {
+  CHECK_FACTS,
+  expect,
+  FB_FRIENDS_FLAGGED,
+  FLAGGED,
+  facebookFeed,
+  linkedinPost,
+  seeResult,
+  test,
+  turnOnLabs,
+} from './fixtures.ts';
 
 /**
  * Fact-check end to end (P3-09): the real extension in Chromium goes from a flagged post to a stored, validated result
@@ -18,13 +27,6 @@ import { expect, test } from './fixtures.ts';
 /** An Anthropic-shaped key: only the mock ever sees it. */
 const API_KEY = `sk-ant-api03-E2E${'F'.repeat(40)}`;
 const PRICE = 'About $0.12 on your Anthropic account';
-const CHECK_FACTS = 'Check facts';
-
-/** Phrases of the posts the mock flags with `hasCheckableClaims`: the LinkedIn post and both Facebook posts. */
-const LINKEDIN_FLAGGED = 'Which HR task would you automate first';
-const FB_PUBLIC_FLAGGED = 'city transit funding';
-const FB_FRIENDS_FLAGGED = 'garden finally produced tomatoes';
-const FLAGGED = [LINKEDIN_FLAGGED, FB_PUBLIC_FLAGGED, FB_FRIENDS_FLAGGED];
 
 const SOURCES = [
   {
@@ -151,15 +153,6 @@ async function setUp(context: BrowserContext, extensionId: string, opts: { labs:
   return options;
 }
 
-async function turnOnLabs(options: Page): Promise<void> {
-  const toggle = options.getByRole('switch', { name: 'Fact-check' });
-  await expect(toggle).toBeEnabled();
-  await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
-}
-
-const linkedinPost = (page: Page) => page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
 const checkButtons = (page: Page) => page.locator('unalgo-post').getByRole('button', { name: CHECK_FACTS });
 
 /** The flagged post came back from the mock classified (its high relevance makes it a pick). */
@@ -193,19 +186,6 @@ interface StoredEntry {
     claims: { id: string; verdict: string; downgraded?: string; citations: { sourceId: string; quote: string }[] }[];
     sources: { id: string; url: string; domain: string }[];
   };
-}
-
-async function facebookFeed(context: BrowserContext): Promise<Page> {
-  await context.route('https://www.facebook.com/**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'text/html',
-      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Facebook</title></head><body>${fbFeed(FRIEND_POST, ORGANIC_LINK_SHARE)}</body></html>`,
-    }),
-  );
-  const page = await context.newPage();
-  await page.goto('https://www.facebook.com/');
-  return page;
 }
 
 test.describe('offer', () => {
@@ -312,14 +292,7 @@ test.describe('price and run', () => {
     for (const { quote } of SOURCES) await expect(panel.getByText(quote, { exact: true })).toBeVisible();
 
     // P3-06's gesture question: does `sidePanel.open` from the relayed click succeed? Recorded, not required.
-    const ui = linkedinPost(page).locator('unalgo-post');
-    await ui.getByRole('button', { name: 'See result' }).click();
-    const hint = ui.getByText('Open UnAlgorithm from the toolbar to see it.');
-    const refused = await hint.waitFor({ timeout: 2_000 }).then(
-      () => true,
-      () => false,
-    );
-    test.info().annotations.push({ type: 'sidePanel.open', description: refused ? 'refused' : 'opened' });
+    await seeResult(linkedinPost(page).locator('unalgo-post'));
   });
 });
 

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type BrowserContext, test as base, chromium, type Page } from '@playwright/test';
+import { type BrowserContext, test as base, chromium, type Locator, type Page } from '@playwright/test';
+import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
   COMPANY_NOT_FOLLOWED,
   FIRST_DEGREE_POST,
@@ -71,6 +72,16 @@ export async function extensionIdOf(context: BrowserContext): Promise<string> {
   return id;
 }
 
+/** The fixture LinkedIn feed (`linkedinShell`) in a new page of `context`; the `feed` fixture, for any context. */
+export async function linkedinFeed(context: BrowserContext, scheme: 'light' | 'dark' = 'light'): Promise<Page> {
+  await context.route('https://www.linkedin.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: linkedinShell(scheme) }),
+  );
+  const page = await context.newPage();
+  await page.goto('https://www.linkedin.com/feed/');
+  return page;
+}
+
 export const test = base.extend<{
   context: BrowserContext;
   extensionId: string;
@@ -86,15 +97,55 @@ export const test = base.extend<{
     await use(await extensionIdOf(context));
   },
   feed: async ({ context }, use) => {
-    await use(async (scheme = 'light') => {
-      await context.route('https://www.linkedin.com/**', (route) =>
-        route.fulfill({ status: 200, contentType: 'text/html', body: linkedinShell(scheme) }),
-      );
-      const page = await context.newPage();
-      await page.goto('https://www.linkedin.com/feed/');
-      return page;
-    });
+    await use((scheme = 'light') => linkedinFeed(context, scheme));
   },
 });
 
 export const expect = test.expect;
+
+/** Fact-check (P3-09, P3-24): the action's name, and phrases of the posts the specs' mocks flag with `hasCheckableClaims`. */
+export const CHECK_FACTS = 'Check facts';
+export const LINKEDIN_FLAGGED = 'Which HR task would you automate first';
+export const FB_PUBLIC_FLAGGED = 'city transit funding';
+export const FB_FRIENDS_FLAGGED = 'garden finally produced tomatoes';
+export const FLAGGED = [LINKEDIN_FLAGGED, FB_PUBLIC_FLAGGED, FB_FRIENDS_FLAGGED];
+
+/** The LinkedIn fixture feed's flagged first-degree post. */
+export const linkedinPost = (page: Page) => page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
+
+/** Turns Labs → Fact-check on through the options page's switch (on `#/labs`), which must be enabled and off. */
+export async function turnOnLabs(options: Page): Promise<void> {
+  const toggle = options.getByRole('switch', { name: 'Fact-check' });
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+}
+
+/** A Facebook-like feed: the friends-only post first, then the public link share. */
+export async function facebookFeed(context: BrowserContext): Promise<Page> {
+  await context.route('https://www.facebook.com/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Facebook</title></head><body>${fbFeed(FRIEND_POST, ORGANIC_LINK_SHARE)}</body></html>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto('https://www.facebook.com/');
+  return page;
+}
+
+/**
+ * Clicks "See result" on a checked post and records P3-06's gesture question as an annotation: does `sidePanel.open`
+ * from the relayed click succeed? A refusal shows the toolbar hint; either outcome passes.
+ */
+export async function seeResult(ui: Locator): Promise<void> {
+  await ui.getByRole('button', { name: 'See result' }).click();
+  const hint = ui.getByText('Open UnAlgorithm from the toolbar to see it.');
+  const refused = await hint.waitFor({ timeout: 2_000 }).then(
+    () => true,
+    () => false,
+  );
+  test.info().annotations.push({ type: 'sidePanel.open', description: refused ? 'refused' : 'opened' });
+}

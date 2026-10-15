@@ -1,4 +1,4 @@
-import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
+import { type MockOpenAI, type MockOpenAIOptions, startMockOpenAI } from '@unalgorithm/ai/testing';
 import { expect, test } from './fixtures.ts';
 import { databaseExists, type LocalServer, startLocalServer } from './server-harness.ts';
 
@@ -13,15 +13,20 @@ export interface StartedServer {
  * added to the server's (`startLocalServer`), and stopped in `afterAll`, also when a test failed. `afterAll` then checks
  * the cleanup (`test_harness_cleans_up`, `test_credits_harness_cleans_up`): the process exited and the run's own
  * `ua_e2e_*` database is gone. Returns the running pair for the group's tests; `route-eval` has already used the mock.
+ * `env` may be a function, read in `beforeAll`, for values an earlier `beforeAll` sets (a mock search provider's
+ * address); `ai` configures the mock provider (its verdicts).
  */
-export function useLocalServer(env?: Readonly<Record<string, string>>): () => StartedServer {
-  let ai: MockOpenAI | undefined;
+export function useLocalServer(
+  env?: Readonly<Record<string, string>> | (() => Readonly<Record<string, string>>),
+  ai?: MockOpenAIOptions,
+): () => StartedServer {
+  let mock: MockOpenAI | undefined;
   let server: LocalServer | undefined;
 
   test.beforeAll(async () => {
     test.setTimeout(120_000);
-    ai = await startMockOpenAI();
-    server = await startLocalServer({ aiBaseUrl: ai.baseUrl, env });
+    mock = await startMockOpenAI(ai);
+    server = await startLocalServer({ aiBaseUrl: mock.baseUrl, env: typeof env === 'function' ? env() : env });
   });
 
   test.afterAll(async () => {
@@ -29,7 +34,7 @@ export function useLocalServer(env?: Readonly<Record<string, string>>): () => St
     try {
       await server?.stop();
     } finally {
-      await ai?.close();
+      await mock?.close();
     }
     if (!server) return;
     expect(server.exited()).toBe(true);
@@ -39,7 +44,7 @@ export function useLocalServer(env?: Readonly<Record<string, string>>): () => St
   });
 
   return () => {
-    if (!ai || !server) throw new Error('beforeAll did not start the server');
-    return { ai, server };
+    if (!mock || !server) throw new Error('beforeAll did not start the server');
+    return { ai: mock, server };
   };
 }

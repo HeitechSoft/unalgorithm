@@ -49,8 +49,8 @@ export interface MockOpenAI {
 }
 
 /** Words of `buildClaimsUser` and `buildVerdictUser` (packages/research) that tell the fact-check prompts apart. */
-const CLAIMS_PHRASE = 'Pick out the checkable factual claims';
-const VERDICT_PHRASE = 'Judge these';
+export const CLAIMS_PHRASE = 'Pick out the checkable factual claims';
+export const VERDICT_PHRASE = 'Judge these';
 const FACTCHECK_POST_TAG = /<post_\w+[^>]*>\n([\s\S]*?)\n<\/post_/;
 const CLAIM_TAG = /<claim_\w+ id="(c\d+)">/g;
 const SOURCE_TAG = /<source_\w+ id="(s\d+)"[^>]*>\n([^\n]*)/g;
