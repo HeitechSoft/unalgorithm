@@ -56,32 +56,37 @@ function headroom(model: string, effort: 'low' | 'medium'): number {
   return effort === 'low' ? 2_000 : 6_000;
 }
 
-/** The URL without the `utm_source` parameter OpenAI appends to search results and citations. */
+/**
+ * The URL without the `utm_source` parameter OpenAI appends to search results and citations. The rest is kept exactly
+ * as written (no re-encoding), so a URL with and without the parameter always get the same key.
+ */
 function withoutUtmSource(url: string): string {
-  try {
-    const u = new URL(url);
-    if (!u.searchParams.has('utm_source')) return url;
-    u.searchParams.delete('utm_source');
-    return u.toString();
-  } catch {
-    return url;
-  }
+  const hash = url.indexOf('#');
+  const end = hash < 0 ? url.length : hash;
+  const q = url.indexOf('?');
+  if (q < 0 || q > end) return url;
+  const params = url.slice(q + 1, end).split('&');
+  const kept = params.filter((p) => p.split('=')[0] !== 'utm_source');
+  if (kept.length === params.length) return url;
+  return `${url.slice(0, q)}${kept.length ? `?${kept.join('&')}` : ''}${url.slice(end)}`;
 }
 
 /** A sentence end: `.`, `!` or `?` followed by whitespace (so "3.5" and "a.example" never end one), or a newline. */
 const SENTENCE_END = /[.!?]\s|\n/g;
+/** Link markers (`([a.example](https://…))`) right before a citation: other sources cited for the same sentence. */
+const TRAILING_MARKERS = /(?:\s*\(\[[^\]]*\]\([^)]*\)\))+\s*$/;
 
 /**
  * The text a `url_citation` stands for. A span that is a link marker (`([a.example](https://…))`) stands for the
- * sentence that ends where it starts, with markdown link syntax removed; any other span stands for itself. Trimmed and
- * clipped to MAX_SNIPPET_CHARS: an OpenAI source's quote base is what the research model wrote next to the citation
- * (decision D45), since the API returns no page text.
+ * sentence that ends where it starts (skipping other sources' markers right before it), with markdown link syntax
+ * removed; any other span stands for itself. Trimmed and clipped to MAX_SNIPPET_CHARS: an OpenAI source's quote base is
+ * what the research model wrote next to the citation (decision D45), since the API returns no page text.
  */
 export function citedText(text: string, start: number, end: number): string {
   const span = text.slice(start, end);
   let out = span;
   if (span.includes('http') || /^\s*\(?\[/.test(span)) {
-    const before = text.slice(0, Math.max(0, start)).replace(/\s+$/, '');
+    const before = text.slice(0, Math.max(0, start)).replace(TRAILING_MARKERS, '').replace(/\s+$/, '');
     let from = 0;
     for (const m of before.matchAll(SENTENCE_END)) if (m.index < before.length - 1) from = m.index + m[0].length;
     out = before

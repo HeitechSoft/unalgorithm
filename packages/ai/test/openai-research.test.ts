@@ -174,6 +174,33 @@ describe('openai research: parsing', () => {
     expect(out.sources.some((s) => s.domain === 'c.example')).toBe(false);
   });
 
+  it('a citation with utm_source finds its source whatever else the URL holds, and the rest of the URL is kept', async () => {
+    const text = 'Tags are listed. ([q.example](x)) The host says hi. ([h.example](y))';
+    const at = (s: string) => ({ start: text.indexOf(s), end: text.indexOf(s) + s.length });
+    const { research } = clientOver(() =>
+      researchResponse({
+        searches: [{ urls: ['https://q.example/s?tags=a,b&q=a%20b', 'https://h.example?utm_source=openai'] }],
+        text,
+        citations: [
+          { url: 'https://q.example/s?tags=a,b&q=a%20b&utm_source=openai', title: 'Tags', ...at('([q.example](x))') },
+          { url: 'https://h.example', title: 'Host', ...at('([h.example](y))') },
+        ],
+      }),
+    );
+    const out = await research(req());
+    expect(out.sources.map((s) => [s.url, s.title, s.snippets])).toEqual([
+      ['https://q.example/s?tags=a,b&q=a%20b', 'Tags', ['Tags are listed.']],
+      ['https://h.example', 'Host', ['The host says hi.']],
+    ]);
+  });
+
+  it('citedText gives each of two adjacent link markers the sentence before them', () => {
+    const text = 'Intro. Water boils at 100 C. ([a.example](https://a.example/x)) ([b.example](https://b.example/y))';
+    const b = text.indexOf('([b.example]');
+    expect(citedText(text, text.indexOf('([a.example]'), b - 1)).toBe('Water boils at 100 C.');
+    expect(citedText(text, b, text.length)).toBe('Water boils at 100 C.');
+  });
+
   it('citedText keeps dotted hosts and decimals inside one sentence and strips link syntax', () => {
     const text = 'One. Per [the report](https://r.example/p) from a.example, 2.5 rose! ([r](https://r.example/p))';
     const start = text.lastIndexOf('([r]');
