@@ -14,7 +14,7 @@
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
-    "zod": "^4.6.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {}
 }
