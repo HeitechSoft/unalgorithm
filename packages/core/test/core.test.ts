@@ -28,6 +28,7 @@ import {
   presetOf,
   recordUsage,
   ruleFilter,
+  safeExternalUrl,
   stampClocks,
   toPostForAI,
 } from '../src/index.ts';
@@ -266,6 +267,27 @@ describe('classification prompt', () => {
 
   it('escapes the nonce-free basics', () => {
     expect(neutralize('a & <b>')).toBe('a &amp; &lt;b&gt;');
+  });
+
+  it('masks contacts in linear time on hostile text', () => {
+    const started = performance.now();
+    const text = toPostForAI(post({ text: `${'+'.repeat(1900)} write to a.b+c@mail.example.org` }), {
+      ref: 'p1',
+      redactMentions: true,
+    }).text;
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(text).not.toContain('@mail.example.org');
+  });
+});
+
+describe('safeExternalUrl', () => {
+  it('trims trailing punctuation and stays linear', () => {
+    expect(safeExternalUrl('example.org/a).,;')).toBe('https://example.org/a');
+    expect(safeExternalUrl('  https://example.org/x)  ')).toBe('https://example.org/x');
+    expect(safeExternalUrl(null)).toBeNull();
+    const started = performance.now();
+    expect(safeExternalUrl(`${')'.repeat(100_000)}x`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });
 
