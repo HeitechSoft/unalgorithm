@@ -199,6 +199,21 @@ export const signupInvites = pgTable('signup_invites', {
   invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
 });
 
+/**
+ * One-time setup links (R38, `admin/setup.ts`). Only the token's hash is stored; a link is spent when claimed. A used
+ * row is kept until the account with its address is deleted (CL3-15's `deleteAccount`).
+ */
+export const setupTokens = pgTable('setup_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  /** Lowercased: the address the link was made for. */
+  email: text('email').notNull(),
+  /** Made with --recover: it works although the server already has an admin. */
+  recover: boolean('recover').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+});
+
 /*
  * Sync v2 (CL3). These tables hold a person's own settings, including the labels of people they chose to always show
  * or hide, and never post text. Deleting the account deletes them: every space cascades from `user`, and items and

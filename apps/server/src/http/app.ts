@@ -35,6 +35,7 @@ import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
 import { accountRoutes } from '../routes/account.ts';
+import { adminRoutes } from '../routes/admin.ts';
 import { authRoutes } from '../routes/auth.ts';
 import { classifyRoutes } from '../routes/classify.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
@@ -186,6 +187,7 @@ export function createApp(deps: AppDeps): App {
   authRoutes(app, deps);
   accountRoutes(app, deps);
   classifyRoutes(app, deps);
+  adminRoutes(app, deps);
   syncRoutes(app, deps);
 
   billing.mount?.(app);

@@ -8,6 +8,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { logSetupNeeded } from './admin/setup.ts';
 import { clientForRoute } from './ai/provider.ts';
 import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
@@ -66,6 +67,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   const inFlight = inFlightRequests();
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
+    await logSetupNeeded(db.db, log);
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
     await syncRouteFromConfig(db.db, config, log);
     // The rate limit stays at its default (on): only tests turn it off.

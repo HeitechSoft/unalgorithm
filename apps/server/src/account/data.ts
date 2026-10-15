@@ -21,6 +21,7 @@ import {
   devices,
   passkey,
   session,
+  setupTokens,
   signupInvites,
   syncItems,
   syncSpaces,
@@ -217,6 +218,8 @@ export async function deleteAccount({ db, billing }: Pick<AppDeps, 'db' | 'billi
     );
     // Keyed by address, so the cascade from `user` misses an invite a failed consume left behind.
     await tx.delete(signupInvites).where(eq(signupInvites.email, normalizeEmail(owner.email)));
+    // Setup links (CL4-04) are keyed by address too, and a used one is kept until now.
+    await tx.delete(setupTokens).where(eq(setupTokens.email, normalizeEmail(owner.email)));
     await tx.delete(user).where(eq(user.id, userId));
     return true;
   });
