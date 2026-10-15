@@ -175,7 +175,8 @@ jobs:
     # no password or private key in the backup logs. Then a stack holding a several-MB backup is wiped, rebuilt and
     # restored with restore.sh, and sync-new-epoch runs in the restored server. Last, the optional caddy profile: HTTPS
     # from Caddy's local CA, the 308 redirect, a read-only container with NET_BIND_SERVICE only, 502 while the server
-    # is stopped, and no client address in Caddy's log.
+    # is stopped, and no client address in Caddy's log; and the optional ollama profile: its documented values pass
+    # check-config, Ollama is healthy and unpublished, and the server reaches it by its service name (no model pulled).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

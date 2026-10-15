@@ -17,7 +17,7 @@ const COMPOSE = parse(readFileSync(new URL('../compose.yaml', import.meta.url), 
   services: Record<string, Service>;
   volumes: Record<string, unknown>;
 };
-const { server, postgres, backup, keygen, caddy } = COMPOSE.services;
+const { server, postgres, backup, keygen, caddy, ollama } = COMPOSE.services;
 const CADDYFILE = readFileSync(fileURLToPath(new URL('../caddy/Caddyfile', import.meta.url)), 'utf8');
 
 const HARDENING = { read_only: true, tmpfs: ['/tmp'], security_opt: ['no-new-privileges:true'] };
@@ -90,6 +90,32 @@ describe('compose.yaml', () => {
     // The certificates and the ACME account outlive `docker compose down` in named volumes.
     expect(COMPOSE.volumes).toHaveProperty('caddy-data');
     expect(COMPOSE.volumes).toHaveProperty('caddy-config');
+  });
+
+  it('test_compose_ollama_service', () => {
+    expect(ollama).toEqual({
+      image: 'ollama/ollama:0.40.4',
+      profiles: ['ollama'],
+      volumes: ['ollama:/root/.ollama'],
+      healthcheck: { test: ['CMD', 'ollama', 'list'], interval: '10s', timeout: '5s', retries: 12 },
+      restart: 'unless-stopped',
+      security_opt: ['no-new-privileges:true'],
+      logging: { driver: 'json-file', options: { 'max-size': '10m', 'max-file': '3' } },
+    });
+    // Only the server reaches it, on the project network; Ollama writes runner files at start, so no read-only root.
+    for (const setting of ['ports', 'read_only', 'depends_on']) expect(ollama, setting).not.toHaveProperty(setting);
+    // The models outlive `docker compose down` in a named volume.
+    expect(COMPOSE.volumes).toHaveProperty('ollama');
+    // A dependency on a profiled service would break `docker compose up` without the profile.
+    for (const [name, service] of Object.entries(COMPOSE.services)) {
+      const dependsOn = service.depends_on;
+      const names = Array.isArray(dependsOn) ? dependsOn : Object.keys((dependsOn as object | undefined) ?? {});
+      expect(names, `${name} depends_on`).not.toContain('ollama');
+    }
+    const always = Object.entries(COMPOSE.services)
+      .filter(([, service]) => !('profiles' in service))
+      .map(([name]) => name);
+    expect(always.sort()).toEqual(['backup', 'postgres', 'server']);
   });
 
   it('test_compose_default_services_unchanged', () => {

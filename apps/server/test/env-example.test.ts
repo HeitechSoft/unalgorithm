@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
+import { COMPAT_PREFERENCES } from '@unalgorithm/ai';
 import { describe, expect, it } from 'vitest';
 import { findHostMarkers } from '../../../scripts/scan-public-repo.mjs';
 import { CONFIG_VARIABLES, ConfigError, loadConfig } from '../src/config.ts';
+import { testConfig } from './support/test-app.ts';
 
 /**
  * `apps/server/.env.example` is the self-hoster's copy of the configuration (CL1-25): every variable `loadConfig` reads
@@ -22,6 +24,12 @@ const COMPOSE_ONLY = [
 ];
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
 const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL'];
+/**
+ * The ollama profile's values (CL4-13): the service's address on the project network, and the extension's first Ollama
+ * choice as the example model, so the two cannot drift.
+ */
+const OLLAMA_BASE_URL = 'http://ollama:11434/v1';
+const OLLAMA_MODEL = COMPAT_PREFERENCES.ollama?.[0] ?? '';
 /** Their values are secrets: the example leaves every one of them empty. */
 const SECRET_NAMES = ['BETTER_AUTH_SECRET', 'AI_API_KEY', 'SMTP_PASSWORD', 'GOOGLE_CLIENT_SECRET', 'POSTGRES_PASSWORD'];
 
@@ -72,7 +80,8 @@ const EMAIL_DOMAIN = /[\w.+-]+@([a-z\d-]+(?:\.[a-z\d-]+)+)/gi;
 const BARE_HOST = /\b(?:[a-z\d-]+\.)+(?:com|net|org|io|app|dev|cloud|co|ai|sh|me|eu|de|uk|info|xyz)\b/gi;
 /** A host name with any top-level domain: its last label starts with a letter, so 0.8 and IPv4 addresses are not. */
 const HOST_NAME = /^(?:[a-z\d-]+\.)+[a-z][a-z\d-]*$/i;
-const ALLOWED_HOST = /^(?:localhost|127\.0\.0\.1|(?:[a-z\d-]+\.)*example\.org)$/i;
+/** Placeholders, loopback, and the project's Compose service names as whole single-label hosts (http://ollama:11434). */
+const ALLOWED_HOST = /^(?:localhost|127\.0\.0\.1|ollama|postgres|server|(?:[a-z\d-]+\.)*example\.org)$/i;
 /** Key prefixes, and a long token of letters and digits mixed, as generated secrets are. */
 const SECRET_LIKE = [/^(?:sk-|sk_|pk_|rk_|ghp_|gho_|github_pat_|xox[abp]-|AKIA|SG\.)/, /^(?=.*\d)(?=.*[a-z])[\w+/=-]{20,}$/i];
 
@@ -217,6 +226,9 @@ describe('configuration parity', () => {
     const token = ['Q7xv', '2Lk9', 'Pz4m', 'Wn8r', 'T5yb'].join('');
     const planted = [
       '# Reach it at 192.0.2.10 or https://user:pw@cloud.vendor.net/path.',
+      // A Compose service name is a whole host; a longer name that starts with one, or another single label, is not.
+      `# AI_BASE_URL=${OLLAMA_BASE_URL}`,
+      '# Or a hosted one at http://ollama.vendor.net/v1, or http://nas:11434/v1.',
       'MAIL_FROM=signin@mail.vendor.net',
       'SMTP_HOST=smtp.vendor.com',
       `AI_API_KEY=${token}`,
@@ -230,6 +242,8 @@ describe('configuration parity', () => {
     expect(findHostsAndSecrets(planted)).toEqual([
       'ipv4 192.0.2.10',
       'host cloud.vendor.net',
+      'host ollama.vendor.net',
+      'host nas',
       'host mail.vendor.net',
       'host smtp.vendor.com',
       // Bare hosts with a top-level domain the prose check does not know.
@@ -238,5 +252,46 @@ describe('configuration parity', () => {
       'secret AI_API_KEY has a value',
       'secret-like SOURCE_URL',
     ]);
+  });
+
+  it('test_env_example_names_ollama_values', () => {
+    const comment = (name: string) => parseEnvExample(ENV_EXAMPLE).find((e) => e.name === name)?.comment ?? '';
+    expect(OLLAMA_MODEL).toBe('llama3.2:3b');
+    expect(comment('COMPOSE_PROFILES')).toMatch(
+      /: caddy \(.*\) and ollama \(a local model next to the server; see AI_BASE_URL\)/,
+    );
+    expect(comment('AI_BASE_URL')).toContain(`with the ollama profile, ${OLLAMA_BASE_URL}.`);
+    expect(comment('AI_MODEL')).toContain(`with the ollama profile, a model you pulled, such as ${OLLAMA_MODEL}.`);
+    expect(comment('AI_DATA_POLICY')).toMatch(/self-hosted for openai-compatible: .*\(the ollama profile\)/);
+    // The values stay commented: a self-hoster with Anthropic changes nothing.
+    for (const name of ['COMPOSE_PROFILES', 'AI_MODEL', 'AI_BASE_URL', 'AI_DATA_POLICY']) {
+      expect(parseEnvExample(ENV_EXAMPLE).find((e) => e.name === name)?.commented, name).toBe(true);
+    }
+  });
+
+  it('test_ollama_values_are_a_valid_config', () => {
+    const ollama = {
+      AI_PROVIDER: 'openai-compatible',
+      AI_BASE_URL: OLLAMA_BASE_URL,
+      AI_MODEL: OLLAMA_MODEL,
+      AI_DATA_POLICY: 'self-hosted',
+      AI_API_KEY: undefined,
+    };
+    expect(testConfig(ollama).ai).toEqual({
+      provider: 'openai-compatible',
+      model: 'llama3.2:3b',
+      baseUrl: OLLAMA_BASE_URL,
+      dataPolicy: 'self-hosted',
+    });
+
+    // openai-compatible names its data policy (CL1-03): no vendor-zdr default for a model the server cannot vouch for.
+    let error: unknown;
+    try {
+      testConfig({ ...ollama, AI_DATA_POLICY: undefined });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).missing).toContain('AI_DATA_POLICY');
   });
 });

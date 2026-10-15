@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# The optional profiles smoke test (CL4-12): builds the server image with apps/server/compose.yaml and checks the caddy
-# profile with the real Caddy, server and Postgres: the profile is off by default and on with COMPOSE_PROFILES in .env,
-# the Caddyfile validates, Caddy serves /health over HTTPS with a certificate from its own local CA (what it uses for
-# localhost instead of Let's Encrypt), redirects HTTP with 308, runs read-only with NET_BIND_SERVICE as its only
-# capability, answers 502 while the server is stopped, and logs no client address, header or request address. Run it
-# from the repository root, with Docker and nothing else on ports 80 and 443:
+# The optional profiles smoke test (CL4-12, CL4-13): builds the server image with apps/server/compose.yaml and checks
+# the caddy profile with the real Caddy, server and Postgres: the profile is off by default and on with COMPOSE_PROFILES
+# in .env, the Caddyfile validates, Caddy serves /health over HTTPS with a certificate from its own local CA (what it
+# uses for localhost instead of Let's Encrypt), redirects HTTP with 308, runs read-only with NET_BIND_SERVICE as its only
+# capability, answers 502 while the server is stopped, and logs no client address, header or request address. Then the
+# ollama profile with the real Ollama: .env.example's documented values are a valid configuration, Ollama reports
+# healthy, publishes no port, and the server reaches it by its service name. No model is pulled (gigabytes each). Run
+# it from the repository root, with Docker and nothing else on ports 80 and 443:
 #
 #   bash apps/server/scripts/profiles-smoke.sh
 #
@@ -86,5 +88,34 @@ for field in remote_ip client_ip remote_port '"headers"' '"uri"' '"remote"'; do
   if grep -qF -- "$field" <<<"$logs"; then fail "the caddy log has no $field"; fi
 done
 ok 'the caddy log holds no client address, header or request address'
+
+# 9. The ollama profile's documented values (.env.example) are a valid configuration.
+set_var COMPOSE_PROFILES caddy,ollama
+set_var AI_PROVIDER openai-compatible
+set_var AI_BASE_URL http://ollama:11434/v1
+set_var AI_MODEL llama3.2:3b
+set_var AI_DATA_POLICY self-hosted
+failure_logs='server caddy ollama'
+compose run --rm --no-deps server node apps/server/src/cli/check-config.ts ||
+  fail 'check-config accepts the ollama profile values'
+ok 'check-config accepts the ollama profile values'
+
+# 10. Ollama starts with the profile and reports healthy (`ollama list` answers).
+compose up -d --wait --wait-timeout 300
+ollama="$(compose ps -q ollama)"
+[ -n "$ollama" ] || fail 'COMPOSE_PROFILES=caddy,ollama starts ollama'
+health="$(docker inspect -f '{{.State.Health.Status}}' "$ollama")"
+[ "$health" = healthy ] || fail "ollama reports healthy ($health)"
+ok 'ollama starts with the profile and reports healthy'
+
+# 11. Nothing is published: only the server reaches Ollama.
+published="$(docker port "$ollama")"
+[ -z "$published" ] || fail "ollama publishes no port ($published)"
+ok 'ollama publishes no port'
+
+# 12. The server reaches Ollama by its service name on the project network.
+compose exec -T server node -e "fetch('http://ollama:11434/api/version').then(r=>r.json()).then(j=>process.exit(typeof j.version==='string'?0:1),()=>process.exit(1))" ||
+  fail 'the server reaches http://ollama:11434'
+ok 'the server reaches http://ollama:11434 on the project network'
 
 echo "profiles smoke test passed ($step checks)"
