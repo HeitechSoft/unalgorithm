@@ -29,10 +29,13 @@ import {
   serverAccountItem,
 } from '../src/background/server-auth.ts';
 import {
+  BALANCE_EMPTY_MAX_AGE_MS,
   BALANCE_MAX_AGE_MS,
   BALANCE_WAIT_MS,
+  balanceStatus,
   noteRefused,
   noteSettlement,
+  onBalanceRestored,
   refreshBalance,
   type StoredBalance,
   serverBalanceItem,
@@ -697,5 +700,96 @@ describe('status', () => {
     const next = await aiStatus();
     expect(next.balance?.balanceMicros).not.toBe(1_000);
     expect(next.balance).toMatchObject({ balanceMicros: 970_000, low: false, empty: false });
+  });
+});
+
+describe('restored signal', () => {
+  const unsubscribe: (() => void)[] = [];
+  const listen = (listener: () => void) => {
+    const fn = vi.fn(listener);
+    unsubscribe.push(onBalanceRestored(fn));
+    return fn;
+  };
+  afterEach(() => {
+    for (const u of unsubscribe.splice(0)) u();
+  });
+
+  it('test_restored_balance_notifies_once', async () => {
+    const acc = account();
+    const s = fakeServer({ balance: () => json(balanceBody(5_000_000)) });
+    const deps = { fetch: s.fetch, now: () => NOW };
+    const first = listen(() => undefined);
+    const second = listen(() => undefined);
+
+    // Refused at $0, then credit was added: every listener hears it once.
+    await serverBalanceItem.setValue(stored({ balanceMicros: 0, source: 'refused' }));
+    expect(await refreshBalance(acc, deps)).toMatchObject({ balanceMicros: 5_000_000, source: 'endpoint' });
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+
+    // Positive to more: nothing was paused.
+    first.mockClear();
+    second.mockClear();
+    await serverBalanceItem.setValue(stored({ balanceMicros: 200 }));
+    await refreshBalance(acc, deps);
+    expect(first).not.toHaveBeenCalled();
+
+    // A $0 of another sign-in (device, then origin) never resumes this account's tabs.
+    for (const other of [
+      stored({ balanceMicros: 0, deviceId: DEVICE_B }),
+      stored({ balanceMicros: 0, origin: 'https://ai.example.org' }),
+    ]) {
+      await serverBalanceItem.setValue(other);
+      expect(await refreshBalance(acc, deps)).toMatchObject({ balanceMicros: 5_000_000, deviceId: DEVICE_A });
+    }
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+    expect(s.balanceCalls()).toHaveLength(4);
+  });
+
+  it('test_throwing_listener_ignored', async () => {
+    const s = fakeServer({ balance: () => json(balanceBody(5_000_000)) });
+    const throwing = listen(() => {
+      throw new Error('tab gone');
+    });
+    const after = listen(() => undefined);
+    await serverBalanceItem.setValue(stored({ balanceMicros: 0, source: 'refused' }));
+
+    const value = await refreshBalance(account(), { fetch: s.fetch, now: () => NOW });
+    expect(value).toStrictEqual(stored({ balanceMicros: 5_000_000, source: 'endpoint' }));
+    expect(await serverBalanceItem.getValue()).toStrictEqual(value);
+    expect(throwing).toHaveBeenCalledOnce();
+    expect(after).toHaveBeenCalledOnce();
+  });
+
+  it('test_empty_balance_refreshes_after_30s', async () => {
+    const acc = account();
+    const s = fakeServer({ balance: () => json(balanceBody(5_000_000)) });
+    let now = NOW;
+    const deps = { fetch: s.fetch, now: () => now };
+    const empty = stored({ balanceMicros: 0, source: 'refused', updatedAt: NOW });
+    await serverBalanceItem.setValue(empty);
+    expect(BALANCE_EMPTY_MAX_AGE_MS).toBe(30_000);
+
+    // 29 s: the $0 stands, nothing is asked.
+    now = NOW + 29_000;
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 0, empty: true });
+    expect(s.calls).toHaveLength(0);
+
+    // 30 s: the stale $0 comes back at once while one refresh runs.
+    now = NOW + 30_000;
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 0, empty: true, updatedAt: NOW });
+    await vi.waitFor(async () => expect(await serverBalanceItem.getValue()).toMatchObject({ balanceMicros: 5_000_000 }));
+    expect(s.balanceCalls()).toHaveLength(1);
+
+    // A positive value keeps its 5 minutes.
+    await serverBalanceItem.setValue(stored({ updatedAt: NOW }));
+    now = NOW + BALANCE_MAX_AGE_MS - 1;
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 500_000 });
+    expect(s.balanceCalls()).toHaveLength(1);
+    now = NOW + BALANCE_MAX_AGE_MS;
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 500_000 });
+    await vi.waitFor(async () => expect(await serverBalanceItem.getValue()).toMatchObject({ balanceMicros: 5_000_000 }));
+    expect(s.balanceCalls()).toHaveLength(2);
   });
 });

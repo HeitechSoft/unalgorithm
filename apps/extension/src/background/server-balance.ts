@@ -37,6 +37,11 @@ export interface PublicBalance {
 }
 
 export const BALANCE_MAX_AGE_MS = 5 * 60_000;
+/**
+ * A stored, empty balance is refreshed after this long instead: the person may have just added credit (CL5), and a
+ * paused feed tab resumes only once the background sees it.
+ */
+export const BALANCE_EMPTY_MAX_AGE_MS = 30_000;
 /** Longest `balanceStatus` waits for a first refresh when nothing is stored for this origin and account. */
 export const BALANCE_WAIT_MS = 3_000;
 const TIMEOUT_MS = 10_000;
@@ -103,6 +108,29 @@ function sameValue(a: StoredBalance | null, b: StoredBalance | null): boolean {
   );
 }
 
+const restoredListeners = new Set<() => void>();
+
+/**
+ * Calls `listener` whenever a refresh moves the stored balance of the same account (origin and device) from 0 or less
+ * (a 402 included) to more than 0. Returns the function that removes it.
+ */
+export function onBalanceRestored(listener: () => void): () => void {
+  restoredListeners.add(listener);
+  return () => {
+    restoredListeners.delete(listener);
+  };
+}
+
+function notifyRestored(): void {
+  for (const listener of [...restoredListeners]) {
+    try {
+      listener();
+    } catch {
+      // One listener's failure never stops the others or the stored value.
+    }
+  }
+}
+
 /** One balance request per account at a time. */
 const refreshing = new Map<string, Promise<StoredBalance | undefined>>();
 
@@ -143,13 +171,17 @@ async function fetchBalance(account: ServerAccount, d: BalanceDeps): Promise<Sto
       source: 'endpoint',
       updatedAt: d.now(),
     };
-    return await writing(async () => {
+    const written = await writing(async () => {
       const current = await serverBalanceItem.getValue();
       // Stored while the request ran: newer than what the server read.
-      if (!sameValue(current, before)) return belongsTo(current, account);
+      if (!sameValue(current, before)) return { value: belongsTo(current, account), restored: false };
+      // Only this account's own value counts: a balance from another sign-in never resumes anything.
+      const previous = belongsTo(current, account);
       await serverBalanceItem.setValue(value);
-      return value;
+      return { value, restored: previous !== undefined && previous.balanceMicros <= 0 && value.balanceMicros > 0 };
     });
+    if (written.restored) notifyRestored();
+    return written.value;
   } catch {
     return storedFor(account);
   }
@@ -167,15 +199,47 @@ export async function balanceStatus(
   deps: Partial<BalanceDeps> = {},
 ): Promise<PublicBalance | undefined> {
   try {
-    if (cfg?.kind !== 'server' || !account || account.info.billing !== true || account.needsSignIn) return undefined;
-    if (!isServerAt(cfg, account.origin)) return undefined;
+    if (!showsBalance(cfg, account)) return undefined;
     const d = withDefaults(deps);
     let value = await storedFor(account);
     if (!value) value = await within(refreshBalance(account, d), BALANCE_WAIT_MS);
-    else if (d.now() - value.updatedAt >= BALANCE_MAX_AGE_MS) void refreshBalance(account, d);
+    else if (d.now() - value.updatedAt >= maxAge(value)) void refreshBalance(account, d);
     return value && toPublic(value, account.origin);
   } catch {
     return undefined;
+  }
+}
+
+/** The AI source is this account's server, which advertises billing, and the account needs no new sign-in. */
+function showsBalance(cfg: AISourceConfig | null, account: ServerAccount | null): account is ServerAccount {
+  if (cfg?.kind !== 'server' || !account || account.info.billing !== true || account.needsSignIn) return false;
+  return isServerAt(cfg, account.origin);
+}
+
+function maxAge(value: StoredBalance): number {
+  return value.balanceMicros <= 0 ? BALANCE_EMPTY_MAX_AGE_MS : BALANCE_MAX_AGE_MS;
+}
+
+/**
+ * A paused feed tab became visible again (CL5): refreshes the account's balance when its stored value is empty and at
+ * least `BALANCE_EMPTY_MAX_AGE_MS` old, so credit added meanwhile resumes AI through `onBalanceRestored`. Asks
+ * nothing when the balance is positive or unknown, or under the same conditions `balanceStatus` shows none. Never
+ * throws.
+ */
+export async function checkBalanceSoon(
+  cfg: AISourceConfig | null,
+  account: ServerAccount | null,
+  deps: Partial<BalanceDeps> = {},
+): Promise<void> {
+  try {
+    if (!showsBalance(cfg, account)) return;
+    const d = withDefaults(deps);
+    const value = await storedFor(account);
+    if (value && value.balanceMicros <= 0 && d.now() - value.updatedAt >= BALANCE_EMPTY_MAX_AGE_MS) {
+      await refreshBalance(account, d);
+    }
+  } catch {
+    // A convenience: the tab stays paused until the next check, a reload or the popup.
   }
 }
 

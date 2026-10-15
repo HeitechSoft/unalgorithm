@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
+import { type StoredBalance, serverBalanceItem } from '../src/background/server-balance.ts';
 import { handlers } from '../src/entrypoints/background.ts';
 import { PINNED_CLOUD_ORIGIN, serverLabel } from '../src/lib/server-label.ts';
 import { deviceItem, readDevice, usageItem } from '../src/lib/storage.ts';
@@ -342,5 +343,111 @@ describe('erase everything', () => {
     expect(await handlers.clearData({ type: 'clearData', what: 'cache' }, page())).toStrictEqual({ ok: true });
     expect(mocks.signOut).not.toHaveBeenCalled();
     expect(await serverAccountItem.getValue()).toStrictEqual(account());
+  });
+});
+
+describe('balanceCheck', () => {
+  const BILLING_INFO: ServerInfo = { ...INFO, billing: true };
+  const check = (sender: Sender) => handlers.balanceCheck({ type: 'balanceCheck' }, sender);
+  const empty = (over: Partial<StoredBalance> = {}): StoredBalance => ({
+    origin: ORIGIN,
+    deviceId: DEVICE_ID,
+    balanceMicros: 0,
+    source: 'refused',
+    updatedAt: Date.now() - 31_000,
+    ...over,
+  });
+  /** The balance endpoint answers `micros`. */
+  function server(micros: number) {
+    const body = { v: 1, balanceMicros: micros, promoMicros: 0, purchasedMicros: micros, promoExpiresAt: null, starter: 'spent' };
+    const fetch = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    mocks.getAccessToken.mockResolvedValue('access-1');
+    return fetch;
+  }
+  /** Two open feed tabs, each answering `aiResume`. */
+  function feedTabs() {
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [
+      tab(7, 'https://www.linkedin.com/feed/'),
+      tab(9, 'https://www.facebook.com/'),
+    ]) as never);
+    return vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockImplementation((async () => ({ ok: true })) as never);
+  }
+
+  it('test_balance_check_only_from_feed_tabs', async () => {
+    await setSource({ kind: 'server', baseUrl: ORIGIN });
+    await serverAccountItem.setValue(account({ info: BILLING_INFO }));
+    await serverBalanceItem.setValue(empty());
+    const fetch = server(4_000_000);
+
+    for (const sender of [
+      page(),
+      { url: fakeBrowser.runtime.getURL('/popup.html') },
+      { tab: tab(5, 'https://example.com/'), url: 'https://example.com/' },
+    ]) {
+      await expect(check(sender)).rejects.toThrow('balanceCheck is not accepted from this sender');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+
+    feedTabs();
+    expect(await check(feedTab())).toStrictEqual({ ok: true });
+    expect(await check(feedTab('https://www.facebook.com/'))).toStrictEqual({ ok: true });
+  });
+
+  it('test_balance_check_resumes_feed_tabs_when_restored', async () => {
+    await setSource({ kind: 'server', baseUrl: ORIGIN });
+    await serverAccountItem.setValue(account({ info: BILLING_INFO }));
+    await serverBalanceItem.setValue(empty());
+    const fetch = server(4_000_000);
+    const send = feedTabs();
+
+    expect(await check(feedTab())).toStrictEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(`${ORIGIN}${CREDIT_BALANCE_PATH}`, expect.anything());
+    await vi.waitFor(() =>
+      expect(send.mock.calls).toStrictEqual([
+        [7, { type: 'aiResume' }],
+        [9, { type: 'aiResume' }],
+      ]),
+    );
+    expect(await serverBalanceItem.getValue()).toMatchObject({ balanceMicros: 4_000_000, source: 'endpoint' });
+
+    // Now positive: the next check asks nothing and resumes nothing.
+    expect(await check(feedTab())).toStrictEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('test_balance_check_no_request_when_not_applicable', async () => {
+    const fetch = server(4_000_000);
+    const send = feedTabs();
+    const cases: [AISourceConfig | null, ServerAccount, StoredBalance][] = [
+      // The AI source is another one.
+      [{ kind: 'anthropic', model: 'claude-haiku-4-5' } as AISourceConfig, account({ info: BILLING_INFO }), empty()],
+      // The server doesn't advertise billing.
+      [{ kind: 'server', baseUrl: ORIGIN }, account(), empty()],
+      // The account must sign in again.
+      [{ kind: 'server', baseUrl: ORIGIN }, account({ info: BILLING_INFO, needsSignIn: true }), empty()],
+      // The stored balance is positive.
+      [{ kind: 'server', baseUrl: ORIGIN }, account({ info: BILLING_INFO }), empty({ balanceMicros: 200, source: 'classify' })],
+    ];
+    for (const [cfg, acc, value] of cases) {
+      await setSource(cfg);
+      await serverAccountItem.setValue(acc);
+      await serverBalanceItem.setValue(value);
+      expect(await check(feedTab())).toStrictEqual({ ok: true });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('test_balance_check_reply_is_ok_only', async () => {
+    await setSource({ kind: 'server', baseUrl: ORIGIN });
+    await serverAccountItem.setValue(account({ info: BILLING_INFO }));
+    await serverBalanceItem.setValue(empty());
+    server(4_000_000);
+    feedTabs();
+    const reply = await check(feedTab());
+    expect(keysDeep(reply)).toStrictEqual(['ok']);
+    expect(reply).toStrictEqual({ ok: true });
   });
 });
