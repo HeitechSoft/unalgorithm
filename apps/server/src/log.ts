@@ -22,6 +22,8 @@ export interface LoggerOptions {
   level: LogLevel;
   /** Receives each line, newline included. Default: standard output. */
   sink?: (line: string) => void;
+  /** Called once for every `error` line written, by this logger and its children (the server's error count, CL4-14). */
+  onError?: () => void;
 }
 
 /** Every string field is cut to this many characters, `err_stack` included. */
@@ -29,7 +31,7 @@ const MAX_STRING = 200;
 /** Keys every line has; fields never replace them. */
 const FIXED_KEYS = new Set(['t', 'level', 'event']);
 
-export function createLogger({ level, sink = (line) => process.stdout.write(line) }: LoggerOptions): Logger {
+export function createLogger({ level, sink = (line) => process.stdout.write(line), onError }: LoggerOptions): Logger {
   const min = LOG_LEVELS.indexOf(level);
 
   function make(base: LogFields): Logger {
@@ -43,6 +45,7 @@ export function createLogger({ level, sink = (line) => process.stdout.write(line
         // Anything else (undefined, or an object smuggled past the types) is dropped.
       }
       sink(`${JSON.stringify(line)}\n`);
+      if (lvl === 'error') onError?.();
     };
     return {
       debug: write('debug'),

@@ -14,6 +14,7 @@ import { spendTodayMicros, utcDayStart } from '../ai/metering.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import { devices, usageEvents, user, userLimits } from '../db/schema.ts';
+import { type OpsDeps, readOpsStatus } from '../ops/status.ts';
 import { ADMIN_ROLE } from './access.ts';
 import { listInvites } from './invites.ts';
 
@@ -100,7 +101,7 @@ export async function listAdminUsers(db: Db, config: QueryConfig, now: Date = ne
 
 /**
  * The server's usage for each of the last `USAGE_DAYS` UTC days (oldest first, ending with today, days without usage as
- * zeros), the account count and the spend breaker's state. `ops` stays null until the server reports its status (CL4-14).
+ * zeros), the account count and the spend breaker's state. `ops` is null here: `fullOverview` adds the server's status.
  */
 export async function adminOverview(db: Db, config: QueryConfig, now: Date = new Date()): Promise<AdminOverview> {
   const start = windowStart(now);
@@ -137,4 +138,16 @@ export async function adminOverview(db: Db, config: QueryConfig, now: Date = new
     defaultDailyPostCap: config.userDailyPostCap,
     ops: null,
   };
+}
+
+/**
+ * What `GET /v1/admin/overview` answers: `adminOverview` with the server's status (`readOpsStatus`, CL4-14) as `ops`,
+ * both read at once. CL4-17's metrics reuse it.
+ */
+export async function fullOverview(deps: OpsDeps & { config: Config }, now: Date = new Date()): Promise<AdminOverview> {
+  const [overview, ops] = await Promise.all([
+    adminOverview(deps.db, deps.config, now),
+    readOpsStatus({ ...deps, now: now.getTime() }),
+  ]);
+  return { ...overview, ops };
 }

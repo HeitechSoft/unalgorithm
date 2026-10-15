@@ -1,7 +1,7 @@
 /**
  * The admin routes (R38). `GET /v1/admin/users` and `GET /v1/admin/overview` are what the admin page reads
  * (`admin/queries.ts`): they need a web session with the admin role, and log only the app's `http` line, since every
- * answer names accounts. `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
+ * answer names accounts. The overview carries the server's content-free status (`ops`, `fullOverview`, CL4-14). `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
  * in on the setup page: it needs a web session and the page's own `Origin`, not the admin role, since it makes the
  * first admin. Every refusal gets one answer, so the page cannot tell an unknown link from a spent, expired or
  * other-address one; the log names the reason with a fixed code. No line logs a token, its hash or an address.
@@ -36,12 +36,16 @@ import {
 import { z } from 'zod';
 import { adminApiError, findAccount, removeAccess, requireAdmin, restoreAccess } from '../admin/access.ts';
 import { addInvite, hasAccount, removeInvite } from '../admin/invites.ts';
-import { adminOverview, listAdminUsers } from '../admin/queries.ts';
+import { fullOverview, listAdminUsers } from '../admin/queries.ts';
 import { claimSetup, SETUP_REFUSED } from '../admin/setup.ts';
 import { setDailyCap } from '../ai/limits.ts';
 import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
+import type { ErrorWindow } from '../ops/error-window.ts';
 import { errorResponse, json, NOT_FOUND } from './openapi.ts';
+
+/** The error count of an app built without a window (`AppDeps.errors`): it never records, so it counts 0. */
+const NO_ERRORS: ErrorWindow = { record: () => {}, count: () => 0 };
 
 const OWN_ACCESS: WireError = { code: 'bad-request', message: "You can't change your own access." };
 const OWN_ROLE: WireError = { code: 'bad-request', message: "You can't change your own role." };
@@ -87,7 +91,7 @@ export function adminRoutes(app: App, deps: AppDeps): void {
         ...refusals,
       },
     }),
-    async (c) => c.json(await adminOverview(db.db, config), 200),
+    async (c) => c.json(await fullOverview({ db: db.db, config, log, errors: deps.errors ?? NO_ERRORS }), 200),
   );
 
   app.openapi(

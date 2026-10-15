@@ -23,7 +23,7 @@ const COMPOSE_ONLY = [
   'COMPOSE_PROFILES',
 ];
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
-const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL'];
+const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL', 'BACKUP_STATUS_DIR'];
 /**
  * The ollama profile's values (CL4-13): the service's address on the project network, and the extension's first Ollama
  * choice as the example model, so the two cannot drift.
@@ -169,7 +169,7 @@ describe('configuration parity', () => {
       expect(entry.comment, `${entry.name}'s comment is one line`).not.toContain('\n');
     }
 
-    // Commented `# NAME=` lines count as documented; compose.yaml sets these three, so they stay commented and empty.
+    // Commented `# NAME=` lines count as documented; compose.yaml sets these, so they stay commented and empty.
     for (const name of SET_BY_COMPOSE) {
       const entry = entries.find((e) => e.name === name);
       expect(entry, name).toMatchObject({ commented: true, value: '' });

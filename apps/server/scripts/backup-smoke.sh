@@ -126,4 +126,10 @@ for output in "$tmp/once.log" <(printf '%s' "$logs"); do
 done
 ok 'no backup log holds the password or a private key'
 
+# 10. The server reads the status files through its read-only mount (CL4-14), and cannot write the folder.
+compose exec -T server node -e "require('node:fs').readFileSync('/backup-status/local.json')" ||
+  fail 'the server reads /backup-status/local.json'
+if compose exec -T server sh -c 'touch /backup-status/x' 2>/dev/null; then fail 'the server cannot write /backup-status'; fi
+ok 'the server reads the status file and cannot write its folder'
+
 echo "backup smoke test passed ($step checks)"

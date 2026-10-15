@@ -51,6 +51,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'USER_REQUESTS_PER_MINUTE',
   'DAILY_SPEND_LIMIT_USD',
   'WEB_DIST',
+  'BACKUP_STATUS_DIR',
   'LOG_LEVEL',
   'BETTER_AUTH_TELEMETRY',
   'ANTHROPIC_CUSTOM_HEADERS',
@@ -108,6 +109,11 @@ export interface Config {
   /** The daily spend breaker, in integer micro-dollars. */
   dailySpendLimitMicros: number;
   webDist: string;
+  /**
+   * The folder of the backup status files (`<kind>.json`, CL4-10), absolute; compose.yaml mounts it read-only. Unset:
+   * this server does not watch backups.
+   */
+  backupStatusDir?: string;
   logLevel: LogLevel;
   version: string;
 }
@@ -327,6 +333,8 @@ export function loadConfig(env: Env = process.env): Config {
   // Runtime
   const webDistValue = read('WEB_DIST');
   const webDist = webDistValue ? resolve(webDistValue) : DEFAULT_WEB_DIST;
+  const backupStatusDir = read('BACKUP_STATUS_DIR');
+  if (backupStatusDir !== undefined && !isAbsolute(backupStatusDir)) bad('BACKUP_STATUS_DIR', 'must be an absolute path');
   const logLevel = oneOf('LOG_LEVEL', LOG_LEVELS, 'info');
   // Better Auth reads this variable itself, untrimmed: any value but '', '0' or 'false' (any case) turns telemetry on.
   const telemetry = env.BETTER_AUTH_TELEMETRY;
@@ -380,6 +388,7 @@ export function loadConfig(env: Env = process.env): Config {
     userRequestsPerMinute,
     dailySpendLimitMicros: Math.round(dailySpendLimitUsd * 1_000_000),
     webDist,
+    backupStatusDir,
     logLevel,
     version: SERVER_VERSION,
   };

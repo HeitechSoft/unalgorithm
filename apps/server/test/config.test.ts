@@ -201,6 +201,16 @@ describe('validation', () => {
     expect(isValid({ ...minimalEnv(), ANTHROPIC_CUSTOM_HEADERS: undefined })).toBe(true);
   });
 
+  it('test_backup_status_dir_must_be_absolute', () => {
+    const err = configError({ ...minimalEnv(), BACKUP_STATUS_DIR: 'relative/dir' });
+    expect(err.invalid).toEqual([{ name: 'BACKUP_STATUS_DIR', reason: 'must be an absolute path' }]);
+    expect(err.message).toContain('BACKUP_STATUS_DIR');
+    expect(err.message).not.toContain('relative/dir');
+    expect(loadConfig({ ...minimalEnv(), BACKUP_STATUS_DIR: '/backup-status' }).backupStatusDir).toBe('/backup-status');
+    expect(loadConfig(minimalEnv()).backupStatusDir).toBeUndefined();
+    expect(CONFIG_VARIABLES).toContain('BACKUP_STATUS_DIR');
+  });
+
   it('test_config_billing_and_allowlist', () => {
     expect(invalidNames({ ...minimalEnv(), BILLING: 'on' })).toEqual(['BILLING']);
     // A module path beside an unknown BILLING is not also reported as "set while off".

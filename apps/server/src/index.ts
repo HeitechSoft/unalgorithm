@@ -23,6 +23,7 @@ import { type InFlightRequests, inFlightRequests } from './http/middleware.ts';
 import { createJobRegistry, type RunningJobs, startJobs } from './jobs/worker.ts';
 import { createLogger, errorFields, type Logger } from './log.ts';
 import { smtpMailer } from './mail/mailer.ts';
+import { createErrorWindow, type ErrorWindow } from './ops/error-window.ts';
 import { CLASSIFY_DEADLINE_MS } from './routes/classify.ts';
 import { registerSyncJobs } from './sync/gc.ts';
 
@@ -45,6 +46,11 @@ export interface StartOptions {
   port?: number;
   /** Default: standard output at `config.logLevel`. */
   log?: Logger;
+  /**
+   * Counts `log`'s error lines for the admin page's status (CL4-14); `main` feeds it from its logger. Default: a fresh
+   * window, which the default logger does not feed.
+   */
+  errors?: ErrorWindow;
 }
 
 export interface RunningServer {
@@ -81,7 +87,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
     const billing = await loadBilling(config, host, log);
-    const app = createApp({ config, db, log, billing, auth, ai, stopping: stopping.signal, inFlight });
+    const errors = opts.errors ?? createErrorWindow();
+    const app = createApp({ config, db, log, billing, auth, ai, stopping: stopping.signal, inFlight, errors });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
@@ -185,10 +192,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const log = createLogger({ level: config.logLevel });
+  const errors = createErrorWindow();
+  const log = createLogger({ level: config.logLevel, onError: () => errors.record() });
   let server: RunningServer;
   try {
-    server = await startServer(config, { log });
+    server = await startServer(config, { log, errors });
   } catch (err) {
     const message = startFailureMessage(err);
     if (message !== undefined) console.error(message);

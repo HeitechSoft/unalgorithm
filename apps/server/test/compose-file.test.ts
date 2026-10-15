@@ -64,9 +64,10 @@ describe('compose.yaml', () => {
     for (const setting of ['ports', 'environment', 'depends_on', 'command', 'restart']) {
       expect(keygen, setting).not.toHaveProperty(setting);
     }
-    // Only these two services run the backup scripts; the server never mounts them or the key.
+    // Only these two services run the backup scripts; the server never mounts them or the key (only the status folder of
+    // the backups, CL4-14).
     const mounting = Object.entries(COMPOSE.services)
-      .filter(([, service]) => JSON.stringify(service.volumes ?? []).includes('./backup'))
+      .filter(([, service]) => ((service.volumes as string[] | undefined) ?? []).some((v) => /^\.\/backup(-key)?:/.test(v)))
       .map(([name]) => name);
     expect(mounting.sort()).toEqual(['backup', 'keygen']);
   });
@@ -116,6 +117,15 @@ describe('compose.yaml', () => {
       .filter(([, service]) => !('profiles' in service))
       .map(([name]) => name);
     expect(always.sort()).toEqual(['backup', 'postgres', 'server']);
+  });
+
+  it('test_compose_server_reads_backup_status', () => {
+    // The backup service's status folder, read-only: the server stays read_only and cannot write it.
+    expect(server?.environment).toMatchObject({ BACKUP_STATUS_DIR: '/backup-status' });
+    expect(server?.volumes).toEqual([`$\{BACKUP_DIR:-./backups}/status:/backup-status:ro`]);
+    expect(server?.read_only).toBe(true);
+    // The same folder the backup service writes its status into.
+    expect(backup?.volumes).toContain(`$\{BACKUP_DIR:-./backups}:/backups`);
   });
 
   it('test_compose_default_services_unchanged', () => {

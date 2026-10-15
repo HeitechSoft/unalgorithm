@@ -35,6 +35,7 @@ import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
 import { errorFields, type Logger } from '../log.ts';
+import type { ErrorWindow } from '../ops/error-window.ts';
 import { accountRoutes } from '../routes/account.ts';
 import { adminRoutes } from '../routes/admin.ts';
 import { authRoutes } from '../routes/auth.ts';
@@ -77,6 +78,8 @@ export interface AppDeps {
   stopping?: AbortSignal;
   /** Counts the requests in flight, so a stopping server (`startServer`) waits for them to end. Default: not counted. */
   inFlight?: InFlightRequests;
+  /** The server's error-level log lines of the last 15 minutes, for the admin page's status (CL4-14). Default: none (0). */
+  errors?: ErrorWindow;
 }
 
 export type App = OpenAPIHono<AppEnv>;

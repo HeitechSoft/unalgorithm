@@ -14,7 +14,8 @@
 # create them yourself. Copy the backups folder somewhere else too: a backup on the same disk dies with it.
 #
 # The server always listens on 0.0.0.0:8787 inside its container: `environment:` below wins over .env, so HOST, PORT,
-# WEB_DIST and DATABASE_URL in .env cannot move it. PORT in .env is only the host port published on BIND_ADDRESS.
+# WEB_DIST, DATABASE_URL and BACKUP_STATUS_DIR in .env cannot move it. PORT in .env is only the host port published on
+# BIND_ADDRESS.
 
 services:
   server:
@@ -28,6 +29,7 @@ services:
       HOST: 0.0.0.0
       PORT: '8787'
       WEB_DIST: /app/apps/web/dist
+      BACKUP_STATUS_DIR: /backup-status
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-8787}:8787'
     depends_on:
@@ -41,6 +43,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # The backup service's status files, read-only, for the admin page's status; Docker makes the folder on the first
+    # `up` when the backup service has not yet.
+    volumes:
+      - ${BACKUP_DIR:-./backups}/status:/backup-status:ro
     logging:
       driver: json-file
       options:
