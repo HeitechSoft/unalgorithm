@@ -13,6 +13,7 @@ import {
   type CreditBalance,
   type CreditHistoryItem,
   type CreditPriceSchedule,
+  type CreditTask,
   estimatePosts,
   nextPriceChange,
   retailMicrosPer1000Posts,
@@ -28,8 +29,8 @@ const STARTER: Record<Exclude<CreditBalance['starter'], 'active'>, string> = {
   expired: 'Starter credit expired.',
   unavailable: "Starter credit isn't available for this account.",
 };
-/** History titles; usage lines say how many posts the day's AI classified. An expiring goodwill lot is `promo-expired`. */
-const HISTORY: Record<Exclude<CreditHistoryItem['reason'], 'classify'>, string> = {
+/** History titles other than usage lines (`usageTitle`). An expiring goodwill lot is `promo-expired`. */
+const HISTORY: Record<Exclude<CreditHistoryItem['reason'], CreditTask>, string> = {
   'starter-credit': 'Starter credit',
   'promo-expired': 'Promotional credit expired',
   correction: 'Correction',
@@ -160,8 +161,16 @@ function promotionalLine({ starter, promoMicros, promoExpiresAt }: CreditBalance
   return promoExpiresAt === null ? left : `${left}, first expiry ${DATE.format(new Date(promoExpiresAt))}`;
 }
 
+/** Usage lines say how many units the day used: posts classified, checks or comparisons. Draft copy (D21). */
+const USAGE: Record<CreditTask, (n: string, one: boolean) => string> = {
+  classify: (n, one) => `AI for ${n} ${one ? 'post' : 'posts'}`,
+  factcheck: (n, one) => `Fact-check, ${n} ${one ? 'check' : 'checks'}`,
+  perspectives: (n, one) => `Other perspectives, ${n} ${one ? 'comparison' : 'comparisons'}`,
+};
+
 function historyTitle(item: CreditHistoryItem): string {
-  if (item.reason !== 'classify') return HISTORY[item.reason];
-  const posts = item.posts ?? 0;
-  return `AI for ${COUNT.format(posts)} ${posts === 1 ? 'post' : 'posts'}`;
+  const { reason } = item;
+  if (reason !== 'classify' && reason !== 'factcheck' && reason !== 'perspectives') return HISTORY[reason];
+  const units = item.posts ?? 0;
+  return USAGE[reason](COUNT.format(units), units === 1);
 }

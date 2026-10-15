@@ -190,6 +190,24 @@ The `price-schedule` CI job enforces them on pull requests and pushes to `main`:
 
 `server-release.yml` checks the first rule again before it builds an image, against the previous `server-v*` release.
 
+### Adding a task
+
+`CREDIT_TASKS` (`packages/protocol/src/billing.ts`) lists the tasks a server may charge for. Tasks are only ever added,
+and adding one never edits an entry in effect. The shape check enforces:
+
+- Every card key is a `CREDIT_TASKS` member, and every entry prices `classify`.
+- An entry prices every task the entry before it priced: a task is never dropped.
+- A task first appears in a new dated entry, from the next 00:00 UTC or later, that copies every card of the entry
+  before it unchanged.
+- A card's `unit`, when set, is the task's unit (`TASK_UNITS`: post, check, comparison); its reference cost is per
+  1,000 of those. A `factcheck` or `perspectives` card has its `unit` and a `maxChargeMicros`, the most one job is
+  charged (the hold cap), at least its typical price per unit. A `classify` card has no `maxChargeMicros`.
+
+There is deliberately no rule that the last entry prices every task: a task can be in `CREDIT_TASKS` before the entry
+that first prices it. Until that entry is in effect the task is not offered (`taskPriceAt`), and a billing server
+refuses its jobs. A task's first card is not a raise; after it, the notice rule applies to it like any other card, and
+a higher `maxChargeMicros` is a raise. Adding a task follows [The procedure](#the-procedure) like any other entry.
+
 ### Merging a schedule change
 
 The check uses its run's clock, and GitHub does not run it again at merge. On the day you merge a pull request that

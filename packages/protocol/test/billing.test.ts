@@ -5,6 +5,7 @@ import {
   CREDIT_ACCOUNT_PATH,
   CREDIT_BALANCE_PATH,
   CREDIT_PRICE_SCHEDULE,
+  CREDIT_TASKS,
   CreditAccountSchema,
   CreditBalanceSchema,
   CreditHistoryItemSchema,
@@ -12,6 +13,7 @@ import {
   type CreditPriceScheduleEntry,
   checkPriceScheduleChange,
   estimatePosts,
+  jobPriceAt,
   LOW_BALANCE_MICROS,
   MAX_CREDIT_HISTORY,
   nextPriceChange,
@@ -23,6 +25,7 @@ import {
   retailMicros,
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
+  taskPriceAt,
 } from '../src/index.ts';
 
 /** The undated cards CL2-26 removed, spelled in parts so that `git grep` finds the name in no tracked file. */
@@ -141,9 +144,13 @@ describe('price schedule', () => {
       A,
       { ...B, effectiveFrom: '2026-09-01T00:00:00Z' },
     ]);
-    const cards = 'entry 1 (2026-11-15T00:00:00Z): cards must price exactly classify';
+    const cards = 'entry 1 (2026-11-15T00:00:00Z): cards must price classify';
     bad(cards, withCards({}));
-    bad(cards, withCards({ ...B.cards, factcheck: B.cards.classify }));
+    expect(priceScheduleProblems(withCards({ ...B.cards, factcheck: B.cards.classify }))).toEqual([
+      "entry 1 (2026-11-15T00:00:00Z): adds factcheck, so its other cards must equal entry 0's",
+      'entry 1 (2026-11-15T00:00:00Z): factcheck unit must be check',
+      'entry 1 (2026-11-15T00:00:00Z): factcheck maxChargeMicros must be a whole number of micro-dollars, at least its typical price of 183',
+    ]);
     // A task key without a card prices nothing: every reader would crash on it, and the CI rule would compare nothing.
     bad(cards, withCards({ classify: null }));
     bad(cards, withCards({ classify: undefined }));
@@ -271,7 +278,7 @@ describe('schedule changes (the CI rule)', () => {
   });
 
   it('test_schedule_change_compares_each_task', () => {
-    // CREDIT_TASKS holds only classify until Phase 3, so a two-task schedule is a stub cast past the type.
+    // `priceRaisesWithinNotice` reads no shape: these factcheck cards lack the unit and cap a schedule needs.
     const two = (effectiveFrom: string, classify: number, factcheck: number) => ({
       effectiveFrom,
       cards: {
@@ -314,6 +321,129 @@ describe('schedule changes (the CI rule)', () => {
     expect(inEffect([A], at('2026-11-15T00:00:00Z'))).toEqual([
       '2026-11-15T00:00:00Z: this price is in effect and cannot be removed',
     ]);
+  });
+});
+
+/** The 2026-11-01 fixture entry: the launch card copied, fact-check and perspectives added at 2× with their hold caps. */
+const FACTCHECK = {
+  multiplier: 2,
+  referenceModel: 'claude-sonnet-5-5',
+  referenceCostMicrosPer1000: 120_000_000,
+  unit: 'check',
+  maxChargeMicros: 400_000,
+} as const;
+const PERSPECTIVES = {
+  multiplier: 2,
+  referenceModel: 'claude-sonnet-5-5',
+  referenceCostMicrosPer1000: 135_000_000,
+  unit: 'comparison',
+  maxChargeMicros: 500_000,
+} as const;
+const L = CREDIT_PRICE_SCHEDULE[0] as CreditPriceScheduleEntry;
+const F: CreditPriceScheduleEntry = {
+  effectiveFrom: '2026-11-01T00:00:00Z',
+  cards: { classify: L.cards.classify, factcheck: FACTCHECK, perspectives: PERSPECTIVES },
+};
+const FIXTURE: CreditPriceSchedule = [L, F];
+/** The fixture, then an entry from `e` copying F's cards with `cards` replaced. */
+const after = (e: string, cards: Partial<CreditPriceScheduleEntry['cards']>): CreditPriceSchedule => [
+  ...FIXTURE,
+  { effectiveFrom: e, cards: { ...F.cards, ...cards } },
+];
+
+describe('adding a task', () => {
+  const OCT_15 = at('2026-10-15T12:00:00Z');
+
+  it('test_credit_tasks_added_without_touching_entry_in_effect', () => {
+    expect(CREDIT_TASKS).toEqual(['classify', 'factcheck', 'perspectives']);
+    expect(CREDIT_PRICE_SCHEDULE).toEqual([
+      {
+        effectiveFrom: '2026-10-01T00:00:00Z',
+        cards: { classify: { multiplier: 2, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73000 } },
+      },
+    ]);
+    expect(priceScheduleProblems(CREDIT_PRICE_SCHEDULE)).toEqual([]);
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, CREDIT_PRICE_SCHEDULE, OCT_15)).toEqual([]);
+  });
+
+  it('test_new_task_first_entry_is_not_a_raise', () => {
+    expect(priceScheduleProblems(FIXTURE)).toEqual([]);
+    expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, FIXTURE, OCT_15)).toEqual([]);
+  });
+
+  it('test_schedule_never_drops_a_task', () => {
+    const { factcheck: _dropped, ...rest } = F.cards;
+    expect(priceScheduleProblems([...FIXTURE, { effectiveFrom: '2026-12-01T00:00:00Z', cards: rest }])).toEqual([
+      'entry 2 (2026-12-01T00:00:00Z): drops factcheck, which entry 1 priced',
+    ]);
+  });
+
+  it('test_new_task_entry_copies_other_cards', () => {
+    const classify = { ...L.cards.classify, multiplier: 1.5 };
+    expect(priceScheduleProblems([L, { ...F, cards: { ...F.cards, classify } }])).toEqual([
+      "entry 1 (2026-11-01T00:00:00Z): adds factcheck, perspectives, so its other cards must equal entry 0's",
+    ]);
+    // Once the tasks are priced, a later entry may change any card (the no-raise rule still applies).
+    expect(priceScheduleProblems(after('2026-12-01T00:00:00Z', { classify }))).toEqual([]);
+  });
+
+  it('test_schedule_rejects_unknown_task_and_missing_classify', () => {
+    const summarize = { ...F, cards: { ...F.cards, summarize: L.cards.classify } } as unknown as CreditPriceScheduleEntry;
+    expect(priceScheduleProblems([L, summarize])).toEqual(['entry 1 (2026-11-01T00:00:00Z): summarize is not a credit task']);
+    const noClassify = { effectiveFrom: L.effectiveFrom, cards: { factcheck: FACTCHECK } } as unknown as CreditPriceScheduleEntry;
+    expect(priceScheduleProblems([noClassify])).toEqual(['entry 0 (2026-10-01T00:00:00Z): cards must price classify']);
+  });
+
+  it('test_job_card_needs_unit_and_max_charge', () => {
+    const e = '2026-12-01T00:00:00Z';
+    const cap = `entry 2 (${e}): factcheck maxChargeMicros must be a whole number of micro-dollars, at least its typical price of 240000`;
+    const unit = `entry 2 (${e}): factcheck unit must be check`;
+    const { maxChargeMicros: _cap, ...noCap } = FACTCHECK;
+    const { unit: _unit, ...noUnit } = FACTCHECK;
+    expect(priceScheduleProblems(after(e, { factcheck: noCap }))).toEqual([cap]);
+    expect(priceScheduleProblems(after(e, { factcheck: noUnit }))).toEqual([unit]);
+    expect(priceScheduleProblems(after(e, { factcheck: { ...FACTCHECK, unit: 'post' } }))).toEqual([unit]);
+    expect(priceScheduleProblems(after(e, { factcheck: { ...FACTCHECK, maxChargeMicros: 100_000 } }))).toEqual([cap]);
+    // Classify may name its unit, and has no hold cap.
+    expect(priceScheduleProblems(after(e, { classify: { ...L.cards.classify, unit: 'post' } }))).toEqual([]);
+    expect(priceScheduleProblems(after(e, { classify: { ...L.cards.classify, maxChargeMicros: 1_000 } }))).toEqual([
+      `entry 2 (${e}): classify has no maxChargeMicros`,
+    ]);
+  });
+
+  it('test_higher_max_charge_is_a_raise', () => {
+    const nov5 = at('2026-11-05T12:00:00Z');
+    const notice = "a price raise needs 30 days' notice: the earliest effectiveFrom allowed now for it is 2026-12-06T00:00:00Z";
+    const raised = after('2026-11-15T00:00:00Z', { factcheck: { ...FACTCHECK, maxChargeMicros: 450_000 } });
+    expect(checkPriceScheduleChange(FIXTURE, raised, nov5)).toEqual([
+      `2026-11-15T00:00:00Z: factcheck would raise its maximum charge from 400000 to 450000 micro-dollars; ${notice}`,
+    ]);
+    const cut = after('2026-11-06T00:00:00Z', { factcheck: { ...FACTCHECK, maxChargeMicros: 350_000 } });
+    expect(checkPriceScheduleChange(FIXTURE, cut, nov5)).toEqual([]);
+    // Ending that cut within the notice is a rise the base does not have.
+    const ended = [...cut, { effectiveFrom: '2026-11-10T00:00:00Z', cards: F.cards }];
+    expect(checkPriceScheduleChange(cut, ended, nov5)).toEqual([
+      `2026-11-10T00:00:00Z: factcheck would raise its maximum charge from 350000 to 400000 micro-dollars; ${notice}`,
+    ]);
+  });
+
+  it('test_task_price_at_not_offered_then_offered', () => {
+    expect(taskPriceAt(OCT_15, 'factcheck')).toEqual({ offered: false });
+    expect(taskPriceAt(OCT_15, 'classify')).toEqual({ offered: true, card: L.cards.classify, effectiveFrom: L.effectiveFrom });
+    expect(taskPriceAt(at('2026-10-31T23:59:59Z'), 'factcheck', FIXTURE)).toEqual({ offered: false });
+    expect(taskPriceAt(at('2026-11-01T00:00:00Z'), 'factcheck', FIXTURE)).toEqual({
+      offered: true,
+      card: FACTCHECK,
+      effectiveFrom: '2026-11-01T00:00:00Z',
+    });
+    expect(() => taskPriceAt(new Date(Number.NaN), 'factcheck')).toThrow(RangeError);
+  });
+
+  it('test_job_price_at_typical_and_max', () => {
+    const nov2 = at('2026-11-02T00:00:00Z');
+    expect(jobPriceAt(nov2, 'factcheck', FIXTURE)).toEqual({ typicalMicros: 240_000, maxMicros: 400_000 });
+    expect(jobPriceAt(nov2, 'perspectives', FIXTURE)).toEqual({ typicalMicros: 270_000, maxMicros: 500_000 });
+    expect(jobPriceAt(nov2, 'factcheck')).toBeNull();
   });
 });
 
@@ -364,6 +494,13 @@ describe('schemas', () => {
       CreditHistoryItemSchema.safeParse({ kind: 'adjustment', reason: 'starter-credit', amountMicros: -5, at: starterGrant.at })
         .success,
     ).toBe(false);
+  });
+
+  it('test_history_usage_line_for_factcheck', () => {
+    const line = { kind: 'usage', reason: 'factcheck', amountMicros: -480_000, at: '2026-11-02T00:00:00Z', posts: 2 };
+    expect(CreditHistoryItemSchema.parse(line)).toEqual(line);
+    expect(CreditHistoryItemSchema.safeParse({ ...starterGrant, reason: 'factcheck' }).success).toBe(false);
+    expect(CreditHistoryItemSchema.safeParse({ ...line, reason: 'perspectives' }).success).toBe(true);
   });
 
   it('test_credit_account_limits', () => {

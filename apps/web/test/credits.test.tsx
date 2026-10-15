@@ -171,6 +171,26 @@ describe('content', () => {
     expect(within(await loadedCredits()).getByText('No credit activity yet.')).toBeTruthy();
   });
 
+  it('test_credits_history_titles_checks', async () => {
+    const usage = (reason: 'factcheck' | 'perspectives', posts: number): CreditHistoryItem => ({
+      kind: 'usage',
+      reason,
+      amountMicros: -240_000 * posts,
+      at: '2026-11-02T00:00:00.000Z',
+      posts,
+    });
+    const history = [usage('factcheck', 2), usage('factcheck', 1), usage('perspectives', 3), usage('perspectives', 1)];
+    openCredits({ status: 200, body: account({}, { history }) });
+    const section = await loadedCredits();
+    const titles = [...section.querySelectorAll('.ua-row-title')].map((title) => title.textContent);
+    expect(titles).toEqual([
+      'Fact-check, 2 checks',
+      'Fact-check, 1 check',
+      'Other perspectives, 3 comparisons',
+      'Other perspectives, 1 comparison',
+    ]);
+  });
+
   it('test_credits_empty_balance', async () => {
     openCredits({ status: 200, body: account({ balanceMicros: 0, promoMicros: 0, promoExpiresAt: null, starter: 'spent' }) });
     const section = await loadedCredits();

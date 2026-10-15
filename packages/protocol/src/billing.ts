@@ -4,9 +4,20 @@ import { OriginPathSchema } from './server.ts';
 
 export { CREDIT_PRICE_SCHEDULE, PRICE_NOTICE_DAYS };
 
-/** Tasks the Cloud charges credit for. Phase 3 adds fact-check and perspectives (additive). */
-export const CREDIT_TASKS = ['classify'] as const;
+/**
+ * Tasks a server may charge credit for. Only ever added to (docs/release.md → Adding a task): a task is offered from the
+ * first schedule entry that prices it (`taskPriceAt`).
+ */
+export const CREDIT_TASKS = ['classify', 'factcheck', 'perspectives'] as const;
 export type CreditTask = (typeof CREDIT_TASKS)[number];
+export const CREDIT_UNITS = ['post', 'check', 'comparison'] as const;
+export type CreditUnit = (typeof CREDIT_UNITS)[number];
+/** What each task is priced per: `referenceCostMicrosPer1000` is per 1,000 of these. */
+export const TASK_UNITS: Readonly<Record<CreditTask, CreditUnit>> = Object.freeze({
+  classify: 'post',
+  factcheck: 'check',
+  perspectives: 'comparison',
+});
 
 export interface CreditPriceCard {
   /**
@@ -16,14 +27,19 @@ export interface CreditPriceCard {
   multiplier: number;
   /** The model the published "about N posts" estimates assume; a key of PRICE_CARDS. */
   referenceModel: string;
-  /** Our cost of classifying 1,000 posts on that model, warm cache, in micro-dollars. */
+  /** Our cost of 1,000 units of the task (posts classified, checks, comparisons) on that model, in micro-dollars. */
   referenceCostMicrosPer1000: number;
+  /** Optional; when set it must be TASK_UNITS[task]. */
+  unit?: CreditUnit;
+  /** The most one job of the task is charged: the hold cap. Required for factcheck and perspectives, absent for classify. */
+  maxChargeMicros?: number;
 }
 
 export interface CreditPriceScheduleEntry {
   /** 00:00:00 UTC of the first day the cards apply, written exactly `YYYY-MM-DDT00:00:00Z`. */
   effectiveFrom: string;
-  cards: Readonly<Record<CreditTask, Readonly<CreditPriceCard>>>;
+  /** Every entry prices classify; a task, once priced, is priced by every later entry. */
+  cards: Readonly<{ classify: Readonly<CreditPriceCard> } & Partial<Record<CreditTask, Readonly<CreditPriceCard>>>>;
 }
 
 /**
@@ -111,10 +127,43 @@ export function nextPriceChange(
   return schedule.find((entry) => Date.parse(entry.effectiveFrom) > t) ?? null;
 }
 
+export type TaskPrice = { offered: false } | { offered: true; card: Readonly<CreditPriceCard>; effectiveFrom: string };
+
+/** The card in effect for `task` at `at`, or "not offered" before the task's first entry. RangeError for an invalid Date. */
+export function taskPriceAt(at: Date, task: CreditTask, schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE): TaskPrice {
+  const entry = priceCardsAt(at, schedule);
+  const card = cardsOf(entry)[task];
+  return card ? { offered: true, card, effectiveFrom: entry.effectiveFrom } : { offered: false };
+}
+
+export interface JobPrice {
+  typicalMicros: number;
+  maxMicros: number;
+}
+
+/** The retail price of one unit (a check, a comparison) at the card's reference cost. */
+function typicalMicros(card: Readonly<CreditPriceCard>): number {
+  return retailMicros(Math.ceil(card.referenceCostMicrosPer1000 / 1000), card.multiplier);
+}
+
+/**
+ * typicalMicros = retailMicros(ceil(referenceCostMicrosPer1000 / 1000), multiplier); maxMicros = maxChargeMicros. Null
+ * when not offered (or, on a schedule that fails the shape check, when the card has no hold cap).
+ */
+export function jobPriceAt(
+  at: Date,
+  task: Exclude<CreditTask, 'classify'>,
+  schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
+): JobPrice | null {
+  const price = taskPriceAt(at, task, schedule);
+  if (!price.offered || price.card.maxChargeMicros === undefined) return null;
+  return { typicalMicros: typicalMicros(price.card), maxMicros: price.card.maxChargeMicros };
+}
+
 /** What 1,000 posts of the task cost a person on the reference model at `at` (146,000 micro-dollars at launch). */
 export function retailMicrosPer1000Posts(
   at: Date,
-  task: CreditTask = 'classify',
+  task: 'classify' = 'classify',
   schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
 ): number {
   const card = priceCardsAt(at, schedule).cards[task];
@@ -129,7 +178,7 @@ export function retailMicrosPer1000Posts(
 export function estimatePosts(
   balanceMicros: number,
   at: Date,
-  task: CreditTask = 'classify',
+  task: 'classify' = 'classify',
   schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
 ): number {
   if (!Number.isFinite(balanceMicros) || balanceMicros <= 0) return 0;
@@ -148,11 +197,18 @@ function isMidnightUtc(e: string): boolean {
   return !Number.isNaN(t) && new Date(t).toISOString() === e.replace('Z', '.000Z');
 }
 
-/** One string per problem with the schedule's shape, entries numbered from 0; `[]` when it is sound. */
+const isCreditTask = (task: string): task is CreditTask => (CREDIT_TASKS as readonly string[]).includes(task);
+
+/**
+ * One string per problem with the schedule's shape, entries numbered from 0; `[]` when it is sound. Tasks are only ever
+ * added: every entry prices classify and every task the entry before it priced, and an entry that adds a task copies
+ * the other cards unchanged. There is deliberately no rule that the last entry prices every task.
+ */
 export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
   if (schedule.length === 0) return ['the schedule is empty'];
   const problems: string[] = [];
   let previous: number | undefined; // the previous entry's start, when its date passed the format check
+  let before: Cards | undefined; // the previous entry's cards
   schedule.forEach((entry, i) => {
     const e = entry.effectiveFrom;
     const at = `entry ${i} (${e})`;
@@ -164,12 +220,24 @@ export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
     previous = valid ? Date.parse(e) : undefined;
 
     const cards = cardsOf(entry);
-    const tasks = Object.keys(cards);
-    // A task key whose card is missing (null, undefined) prices nothing: the readers would crash on it.
-    const priced = (task: string) => Object.hasOwn(cards, task) && typeof cards[task] === 'object' && cards[task] !== null;
-    if (tasks.length !== CREDIT_TASKS.length || !CREDIT_TASKS.every(priced)) {
-      problems.push(`${at}: cards must price exactly ${CREDIT_TASKS.join(', ')}`);
+    // A task key whose card is missing (null, undefined) prices nothing.
+    const priced = (c: Cards, task: string) => Object.hasOwn(c, task) && typeof c[task] === 'object' && c[task] !== null;
+    for (const task of Object.keys(cards)) if (!isCreditTask(task)) problems.push(`${at}: ${task} is not a credit task`);
+    if (!priced(cards, 'classify')) problems.push(`${at}: cards must price classify`);
+    if (before !== undefined) {
+      const was = before;
+      // A missing classify is reported once, above.
+      for (const task of Object.keys(was)) {
+        if (task !== 'classify' && priced(was, task) && !priced(cards, task))
+          problems.push(`${at}: drops ${task}, which entry ${i - 1} priced`);
+      }
+      const added = Object.keys(cards).filter((task) => priced(cards, task) && !priced(was, task));
+      const kept = Object.keys(was).filter((task) => priced(was, task) && priced(cards, task));
+      if (added.length > 0 && !kept.every((task) => sameCard(was[task], cards[task]))) {
+        problems.push(`${at}: adds ${added.join(', ')}, so its other cards must equal entry ${i - 1}'s`);
+      }
     }
+    before = cards;
     for (const [task, card] of Object.entries(cards)) {
       if (!card) continue;
       try {
@@ -183,30 +251,53 @@ export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
       if (typeof card.referenceModel !== 'string' || card.referenceModel.trim() === '') {
         problems.push(`${at}: ${task} referenceModel must be a non-empty model id`);
       }
+      if (!isCreditTask(task)) continue;
+      const unit = TASK_UNITS[task];
+      if (card.unit !== unit && (card.unit !== undefined || task !== 'classify')) {
+        problems.push(`${at}: ${task} unit must be ${unit}`);
+      }
+      if (task === 'classify') {
+        if (card.maxChargeMicros !== undefined) problems.push(`${at}: classify has no maxChargeMicros`);
+        continue;
+      }
+      let typical = 1;
+      try {
+        typical = typicalMicros(card);
+      } catch {
+        // The multiplier or the cost is already reported above.
+      }
+      const cap = card.maxChargeMicros;
+      if (cap === undefined || !Number.isSafeInteger(cap) || cap <= 0 || cap < typical) {
+        problems.push(
+          `${at}: ${task} maxChargeMicros must be a whole number of micro-dollars, at least its typical price of ${typical}`,
+        );
+      }
     }
   });
   return problems;
 }
 
-/** The same task keys, and per task the same multiplier, reference model and reference cost. */
+/** The same multiplier, reference model, reference cost, unit and hold cap. */
+function sameCard(p: Readonly<CreditPriceCard> | undefined, q: Readonly<CreditPriceCard> | undefined): boolean {
+  return (
+    p !== undefined &&
+    q !== undefined &&
+    p !== null &&
+    q !== null &&
+    p.multiplier === q.multiplier &&
+    p.referenceModel === q.referenceModel &&
+    p.referenceCostMicrosPer1000 === q.referenceCostMicrosPer1000 &&
+    p.unit === q.unit &&
+    p.maxChargeMicros === q.maxChargeMicros
+  );
+}
+
+/** The same task keys, and per task the same card (`sameCard`). */
 function sameCards(a: Readonly<CreditPriceScheduleEntry>, b: Readonly<CreditPriceScheduleEntry>): boolean {
   const x = cardsOf(a);
   const y = cardsOf(b);
   const tasks = Object.keys(x);
-  return (
-    tasks.length === Object.keys(y).length &&
-    tasks.every((task) => {
-      const p = x[task];
-      const q = y[task];
-      return (
-        p !== undefined &&
-        q !== undefined &&
-        p.multiplier === q.multiplier &&
-        p.referenceModel === q.referenceModel &&
-        p.referenceCostMicrosPer1000 === q.referenceCostMicrosPer1000
-      );
-    })
-  );
+  return tasks.length === Object.keys(y).length && tasks.every((task) => sameCard(x[task], y[task]));
 }
 
 function checkNotice(noticeDays: number): void {
@@ -265,7 +356,8 @@ export function checkPriceScheduleChange(
  *
  * The window is `[now, now + noticeDays)`. Prices only change at an effectiveFrom, so the two schedules are compared at
  * `now` and at every effectiveFrom of either inside the window. Tasks are compared one by one, each on its multiplier
- * (what is charged) and its price per 1,000 posts (what is published).
+ * (what is charged), its price per 1,000 units (what is published) and its hold cap (`maxChargeMicros`, the most one
+ * job is charged). A task's first card is not a raise.
  */
 export function priceRaisesWithinNotice(
   base: CreditPriceSchedule,
@@ -282,6 +374,11 @@ export function priceRaisesWithinNotice(
   const starts = [...base, ...head].map((entry) => Date.parse(entry.effectiveFrom)).filter((t) => t > t0 && t < end);
   const instants = [...new Set([t0, ...starts])].sort((a, b) => a - b);
   const retail = (card: Readonly<CreditPriceCard>) => retailMicros(card.referenceCostMicrosPer1000, card.multiplier);
+  const higherCap = (x: Readonly<CreditPriceCard>, y: Readonly<CreditPriceCard> | undefined) =>
+    y !== undefined &&
+    x.maxChargeMicros !== undefined &&
+    y.maxChargeMicros !== undefined &&
+    x.maxChargeMicros > y.maxChargeMicros;
 
   const problems: string[] = [];
   for (const t of instants) {
@@ -293,6 +390,13 @@ export function priceRaisesWithinNotice(
       const b = baseCards[task];
       const p = headBefore[task];
       if (!h || !b || !p) continue; // no earlier price to raise
+      const q = baseBefore[task];
+      const capRaisedFrom = higherCap(h, b) ? b : t !== t0 && higherCap(h, p) && !higherCap(b, q) ? p : undefined;
+      if (capRaisedFrom) {
+        problems.push(
+          `${at}: ${task} would raise its maximum charge from ${capRaisedFrom.maxChargeMicros} to ${h.maxChargeMicros} micro-dollars; ${notice}`,
+        );
+      }
       const [hRetail, bRetail, pRetail] = [retail(h), retail(b), retail(p)];
       if (h.multiplier > b.multiplier || hRetail > bRetail) {
         problems.push(
@@ -301,7 +405,6 @@ export function priceRaisesWithinNotice(
         continue;
       }
       if (t === t0) continue;
-      const q = baseBefore[task];
       const baseRisesMultiplier = q !== undefined && b.multiplier > q.multiplier;
       const baseRisesRetail = q !== undefined && bRetail > retail(q);
       if ((h.multiplier > p.multiplier && !baseRisesMultiplier) || (hRetail > pRetail && !baseRisesRetail)) {
@@ -337,7 +440,15 @@ export type CreditBalance = z.infer<typeof CreditBalanceSchema>;
 
 export const CREDIT_ENTRY_KINDS = ['grant', 'usage', 'adjustment'] as const;
 export type CreditEntryKind = (typeof CREDIT_ENTRY_KINDS)[number];
-export const CREDIT_ENTRY_REASONS = ['starter-credit', 'classify', 'promo-expired', 'correction', 'goodwill'] as const;
+export const CREDIT_ENTRY_REASONS = [
+  'starter-credit',
+  'classify',
+  'factcheck',
+  'perspectives',
+  'promo-expired',
+  'correction',
+  'goodwill',
+] as const;
 export type CreditEntryReason = (typeof CREDIT_ENTRY_REASONS)[number];
 
 const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReason[]>> = {
@@ -358,7 +469,7 @@ export const CreditHistoryItemSchema = z
     amountMicros: SignedMicros,
     /** The entry's time; for usage, 00:00 UTC of the day the line sums. */
     at: z.iso.datetime(),
-    /** Usage lines only: posts classified that day. */
+    /** Usage lines only: units used that day (posts classified, checks or comparisons). */
     posts: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .refine(reasonFitsKind, { path: ['reason'] })
