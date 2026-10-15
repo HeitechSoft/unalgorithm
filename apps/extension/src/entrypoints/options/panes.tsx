@@ -17,6 +17,7 @@ import {
   type Settings,
   STARTER_LESS_OF,
   STARTER_TOPICS,
+  sourceCapabilities,
   type Topic,
 } from '@unalgorithm/core';
 import { NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
@@ -710,6 +711,39 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
             />
           }
         />
+      </ListGroup>
+    </>
+  );
+}
+
+// ---------- Labs ----------
+
+export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
+  // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
+  const capable = sourceCapabilities(device.aiSource).factcheck;
+  return (
+    <>
+      <Title intro="Early features. They may change or go away.">Labs</Title>
+      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key, and shows the price first. AI can be wrong, so open the sources.">
+        <ListRow
+          title="Fact-check"
+          subtitle={capable ? undefined : 'Needs your own Anthropic key.'}
+          control={
+            <Switch
+              checked={capable && device.labs.factcheck}
+              disabled={!capable}
+              label="Fact-check"
+              onCheckedChange={(v) => void saveDevice((d) => void (d.labs.factcheck = v))}
+            />
+          }
+        />
+        {capable ? null : (
+          <div style={{ padding: '0 12px 12px' }}>
+            <Button variant="plain" size="sm" onClick={() => (location.hash = '#/ai')}>
+              Set up AI
+            </Button>
+          </div>
+        )}
       </ListGroup>
     </>
   );

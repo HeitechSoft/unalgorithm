@@ -10,6 +10,7 @@ export * from './hash.ts';
 export * from './health.ts';
 export * from './interests.ts';
 export * from './keywords.ts';
+export * from './labs.ts';
 export * from './learn.ts';
 export * from './post.ts';
 export * from './presets.ts';

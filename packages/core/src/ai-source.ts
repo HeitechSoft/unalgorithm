@@ -67,3 +67,21 @@ export function isLocalSource(cfg: AISourceConfig): boolean {
     return false;
   }
 }
+
+/** What a source can do, task by task. Capabilities decide which buttons appear. */
+export interface SourceCapabilities {
+  classify: boolean;
+  factcheck: boolean;
+  perspectives: boolean;
+  webSearch: boolean;
+}
+
+/**
+ * No source can do nothing; an own Anthropic key classifies and fact-checks with web search; every other kind only
+ * classifies for now (server: RM2; openai and openai-compatible: RM4).
+ */
+export function sourceCapabilities(cfg: AISourceConfig | null): SourceCapabilities {
+  if (!cfg) return { classify: false, factcheck: false, perspectives: false, webSearch: false };
+  if (cfg.kind === 'anthropic') return { classify: true, factcheck: true, perspectives: false, webSearch: true };
+  return { classify: true, factcheck: false, perspectives: false, webSearch: false };
+}

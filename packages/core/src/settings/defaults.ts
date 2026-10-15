@@ -43,5 +43,6 @@ export function defaultDevice(deviceId: string): Device {
     },
     pausedUntil: { linkedin: null, facebook: null },
     dev: { debugOverlay: false },
+    labs: { factcheck: false },
   };
 }

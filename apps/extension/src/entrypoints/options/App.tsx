@@ -2,7 +2,7 @@ import { Lockup, Search } from '@unalgorithm/ui';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useDevice, useSettings } from '../../lib/hooks.ts';
 import { NAV, type PaneId } from './nav.ts';
-import { AboutPane, AiPane, DisplayPane, InterestsPane, PlatformPane, PrivacyPane } from './panes.tsx';
+import { AboutPane, AiPane, DisplayPane, InterestsPane, LabsPane, PlatformPane, PrivacyPane } from './panes.tsx';
 
 function paneFromHash(): PaneId {
   const id = location.hash.replace(/^#\/?/, '').split('/')[0] as PaneId;
@@ -55,6 +55,9 @@ export function App() {
       break;
     case 'ai':
       content = <AiPane settings={settings} save={save} device={device} />;
+      break;
+    case 'labs':
+      content = <LabsPane device={device} saveDevice={saveDevice} />;
       break;
     case 'privacy':
       content = <PrivacyPane settings={settings} device={device} />;
