@@ -5,85 +5,16 @@
 #   bash apps/server/scripts/compose-smoke.sh
 #
 # It writes apps/server/.env for the run (test values only) and refuses to start when one is already there. On exit it
-# removes that file, the project's containers and volume, and the image it built. It is for CI and development
-# machines: never run it on a shared host, where removing volumes and images is not allowed.
+# removes that file, the project's containers and volume, and the image it built (smoke-lib.sh). It is for CI and
+# development machines: never run it on a shared host, where removing volumes and images is not allowed.
 set -euo pipefail
 
-# Git Bash on Windows rewrites arguments that look like paths; container paths must reach Docker unchanged, and
-# `native` turns a local temporary path into one Docker can open.
-export MSYS_NO_PATHCONV=1
-native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
-
-dir=apps/server
-env_file="$dir/.env"
 project="ua-smoke-$RANDOM"
 port=8788
-
-if [ ! -f "$dir/compose.yaml" ]; then
-  echo "run this from the repository root" >&2
-  exit 1
-fi
-if [ -e "$env_file" ]; then
-  echo "$env_file exists: move it away first (this script writes and removes its own)" >&2
-  exit 1
-fi
-
-compose() { docker compose -p "$project" -f "$dir/compose.yaml" "$@"; }
-
-tmp="$(mktemp -d)"
-image=''
-cleanup() {
-  local status=$?
-  if [ "$status" -ne 0 ] && [ -n "$image" ]; then
-    echo '--- server log ---' >&2
-    compose logs --no-color server >&2 || true
-  fi
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
-  if [ -n "$image" ]; then docker image rm -f "$image" >/dev/null 2>&1 || true; fi
-  rm -f "$env_file"
-  rm -rf "$tmp"
-  exit "$status"
-}
-trap cleanup EXIT
-
-# Sets NAME=value in the .env, replacing its active or commented line, or adding one.
-set_var() {
-  local name=$1 value=$2
-  if grep -Eq "^(# ?)?$name=" "$env_file"; then
-    awk -v n="$name" -v v="$value" '$0 ~ ("^(# ?)?" n "=") { print n "=" v; next } { print }' "$env_file" >"$tmp/env"
-    cat "$tmp/env" >"$env_file"
-  else
-    printf '%s=%s\n' "$name" "$value" >>"$env_file"
-  fi
-}
-
-step=0
-ok() {
-  step=$((step + 1))
-  echo "ok $step - $1"
-}
-fail() {
-  echo "not ok $((step + 1)) - $1" >&2
-  exit 1
-}
-
-# The .env: .env.example with test values. HOST and PORT are the ones compose.yaml must override inside the container.
-cp "$dir/.env.example" "$env_file"
-set_var UNALGORITHM_VERSION "$project"
-set_var PUBLIC_URL "http://127.0.0.1:$port"
-set_var HOST 127.0.0.1
-set_var PORT "$port"
-set_var SMTP_HOST localhost
-set_var SMTP_SECURE none
-set_var AI_PROVIDER openai-compatible
-# Nothing listens on port 9 (discard): route-eval reaches no provider.
-set_var AI_BASE_URL http://127.0.0.1:9/v1
-set_var AI_MODEL mock-model
-set_var AI_DATA_POLICY self-hosted
-set_var BETTER_AUTH_SECRET "$(openssl rand -hex 32)"
-set_var POSTGRES_PASSWORD "$(openssl rand -hex 32)"
-# Single-quoted as .env.example advises, so Compose keeps $PORT as written; unquoted, it would put 8788 in its place.
-set_var MAIL_FROM_NAME "'Smoke \$PORT test'"
+# The helpers, the .env with test values and the cleanup on exit.
+# shellcheck source=apps/server/scripts/smoke-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/smoke-lib.sh"
+write_env
 
 # The server's image, tagged with the project name above (the other image is Postgres).
 image="$(compose config --images | grep -F ":$project")"

@@ -12,3 +12,6 @@
 **/playwright-report
 **/test-results
 **/*.pem
+# A self-hoster's encrypted backups and backup public key, next to compose.yaml (the build copies all of apps/server).
+**/backups
+**/backup-key

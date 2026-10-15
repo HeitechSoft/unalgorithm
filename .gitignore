@@ -20,3 +20,6 @@ desktop.ini
 *.pem
 *.ppk
 *.crx
+# Written by compose.yaml's backup and keygen services.
+apps/server/backups/
+apps/server/backup-key/

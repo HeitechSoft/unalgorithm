@@ -265,7 +265,7 @@ only. A job's row is deleted once it succeeds; one that fails every attempt stay
 |---|---|---|
 | Unit | Vitest projects (jsdom where needed) | Rules, decide, presets, migration, clocks, prompt/fence, adapters on fixtures, the contract check, AI clients against a fake fetch, the feed controller |
 | End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it, and with the test billing module the balance pill, its drop after classifying and the pause at $0 |
-| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as self-hosters run them |
+| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh` and `backup-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as self-hosters run them, and their encrypted backups |
 
 ## Decisions
 

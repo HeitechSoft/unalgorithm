@@ -10,7 +10,7 @@ import { CONFIG_VARIABLES, ConfigError, loadConfig } from '../src/config.ts';
 const ENV_EXAMPLE = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 
 /** Read by compose.yaml only (interpolation), never by the server. */
-const COMPOSE_ONLY = ['POSTGRES_PASSWORD', 'BIND_ADDRESS', 'UNALGORITHM_VERSION'];
+const COMPOSE_ONLY = ['POSTGRES_PASSWORD', 'BIND_ADDRESS', 'UNALGORITHM_VERSION', 'BACKUP_TIME', 'BACKUP_KEEP', 'BACKUP_DIR'];
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
 const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL'];
 /** Their values are secrets: the example leaves every one of them empty. */
