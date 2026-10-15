@@ -240,14 +240,25 @@ describe('in-memory job store', () => {
   });
 });
 
+/** Every module a source file names (`from '…'`, `import '…'`, `import(…)`), multi-line imports included. */
+function moduleSpecifiers(source: string): string[] {
+  return [...source.matchAll(/(?:\bfrom|\bimport)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1] as string);
+}
+const FORBIDDEN_MODULE = /^graphile-worker(\/|$)|(^|\/)worker(\.ts)?$|(^|\/)db(\/|$)|(^|\/)log(\.ts)?$/;
+
 describe('privacy', () => {
   it('test_job_store_has_no_storage_or_log_imports', () => {
-    const source = readFileSync(new URL('../src/jobs/memory-jobs.ts', import.meta.url), 'utf8');
-    const imports = source.split('\n').filter((line) => /^\s*(import|export)\b.*\bfrom\b|^\s*import\s*['"(]/.test(line));
-    expect(imports.length).toBeGreaterThan(0);
-    for (const line of imports) {
-      expect(line).not.toMatch(/graphile-worker|['"]\.\/worker(\.ts)?['"]|jobs\/worker|\/db\/|['"]\.\.\/db['"]|log(\.ts)?['"]/);
+    // The scan sees a formatter-wrapped import, whose `from` sits on a line of its own.
+    const wrapped = "import {\n  db,\n  usage,\n} from '../db/schema.ts';\nimport { log } from '../log.ts';\n";
+    expect(moduleSpecifiers(wrapped).filter((m) => FORBIDDEN_MODULE.test(m))).toEqual(['../db/schema.ts', '../log.ts']);
+    for (const m of ['graphile-worker', './worker.ts', '../jobs/worker.ts', '../db', '../db/client.ts', './log.ts']) {
+      expect(m).toMatch(FORBIDDEN_MODULE);
     }
-    expect(source).not.toMatch(/console\.|\bimport\(/);
+
+    const source = readFileSync(new URL('../src/jobs/memory-jobs.ts', import.meta.url), 'utf8');
+    const modules = moduleSpecifiers(source);
+    expect(modules).toContain('@unalgorithm/protocol');
+    expect(modules.filter((m) => FORBIDDEN_MODULE.test(m))).toEqual([]);
+    expect(source).not.toMatch(/console\.|\bimport\s*\(|\brequire\s*\(/);
   });
 });
