@@ -164,18 +164,7 @@ from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the pub
 
 ### After restoring a database
 
-After a server's database is restored from a backup, start a new sync epoch once. Every device is then told to resync
-from the server's copy instead of trusting a cursor from after the backup, and pushes its newer local edits again, so
-nothing is lost. The command prints the number of sync spaces only.
-
-- In a Docker deployment (the server image has no pnpm; its command-line tools run with `node`):
-  ```bash
-  docker compose exec server node apps/server/src/cli/sync-new-epoch.ts
-  ```
-- From a source checkout, with the server's environment:
-  ```bash
-  pnpm --filter @unalgorithm/server sync:new-epoch
-  ```
+Restoring a database, and starting a new sync epoch after it, follows [Restore after losing the server](self-hosting.md#11-restore-after-losing-the-server) in the self-hosting guide.
 
 ## Changing a price card
 

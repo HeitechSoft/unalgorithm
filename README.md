@@ -89,7 +89,11 @@ The repo is a pnpm workspace:
 | `packages/core` | Rules, presets, settings, the classification prompt and everything else that is pure TypeScript |
 | `packages/ai` | AI clients (Anthropic, OpenAI, OpenAI-compatible, Chrome built-in) and the classify orchestrator |
 | `packages/ui` | The design system: tokens, components, in-feed UI |
-| `packages/protocol` | Wire contracts shared with the future UnAlgorithm server |
+| `packages/protocol` | Wire contracts shared with the UnAlgorithm server |
+| `apps/server` | The self-hostable server (Node, Hono, Postgres, Docker Compose): sign-in, AI labels, invites, caps, backups |
+
+The extension can sign in to an UnAlgorithm server that you run for yourself, your family or your organization. To run
+your own server, follow [docs/self-hosting.md](docs/self-hosting.md).
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first, then [CONTRIBUTING.md](CONTRIBUTING.md).
 When a site changes its layout, [docs/adding-a-platform.md](docs/adding-a-platform.md) and
