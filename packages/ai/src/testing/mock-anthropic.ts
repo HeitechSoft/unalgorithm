@@ -6,7 +6,7 @@ import { fencedPosts } from './fenced-posts.ts';
  * fixed so metering tests can assert exact amounts. Test code only: the extension never imports it.
  */
 
-export type AnthropicRequestKind = 'classify' | 'claims' | 'research' | 'verdict' | 'unknown';
+export type AnthropicRequestKind = 'classify' | 'claims' | 'research' | 'verdict' | 'story' | 'comparison' | 'unknown';
 
 const STRUCTURED_USAGE = { input_tokens: 1000, output_tokens: 100 };
 const RESEARCH_USAGE = { input_tokens: 20_000, output_tokens: 1500 };
@@ -17,7 +17,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** `tools` present → research; else by the top-level property of output_config.format.schema:
- *  `results` → classify, `claims` → claims, `verdicts` → verdict. */
+ *  `results` → classify, `claims` → claims, `verdicts` → verdict, `query` → story, `matched` → comparison. */
 export function requestKind(body: unknown): AnthropicRequestKind {
   if (!isRecord(body)) return 'unknown';
   if (Array.isArray(body.tools) && body.tools.length) return 'research';
@@ -28,6 +28,8 @@ export function requestKind(body: unknown): AnthropicRequestKind {
   if ('results' in props) return 'classify';
   if ('claims' in props) return 'claims';
   if ('verdicts' in props) return 'verdict';
+  if ('query' in props) return 'story';
+  if ('matched' in props) return 'comparison';
   return 'unknown';
 }
 

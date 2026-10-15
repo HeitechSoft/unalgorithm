@@ -10,7 +10,9 @@ import { fencedPosts } from './fenced-posts.ts';
  *
  * It answers the fact-check prompts too, told apart by their wording (so on every response format): the claims prompt
  * gets the first sentence of the fenced post as its one claim, and the verdict prompt one `supported` verdict per claim,
- * citing the first two sources with the first 8 words of each source's text.
+ * citing the first two sources with the first 8 words of each source's text. It answers the perspectives prompts the same
+ * way: the story prompt gets the fenced link title as its query, and the comparison prompt matches every source and
+ * returns one agreed point citing the first two sources.
  *
  * Run it on its own with `node packages/ai/src/testing/mock-openai-server.ts --port 8788`.
  */
@@ -51,6 +53,10 @@ export interface MockOpenAI {
 /** Words of `buildClaimsUser` and `buildVerdictUser` (packages/research) that tell the fact-check prompts apart. */
 export const CLAIMS_PHRASE = 'Pick out the checkable factual claims';
 export const VERDICT_PHRASE = 'Judge these';
+/** Words of `buildStoryUser` and `buildComparisonUser` (packages/research) that tell the perspectives prompts apart. */
+export const STORY_PHRASE = 'Write a neutral search query';
+export const COMPARISON_PHRASE = 'Compare how these sources';
+const LINK_TAG = /<link_\w+[^>]*>\n([\s\S]*?)\n<\/link_/;
 const FACTCHECK_POST_TAG = /<post_\w+[^>]*>\n([\s\S]*?)\n<\/post_/;
 const CLAIM_TAG = /<claim_\w+ id="(c\d+)">/g;
 const SOURCE_TAG = /<source_\w+ id="(s\d+)"[^>]*>\n([^\n]*)/g;
@@ -64,17 +70,31 @@ function claimsOf(user: string): { claim: string }[] {
 
 /** One `supported` verdict per claim tag, citing the first two source tags with the first 8 words of each one's text. */
 function verdictsOf(user: string) {
-  const sources = [...user.matchAll(SOURCE_TAG)].slice(0, 2);
-  const citations = sources.map(([, sourceId = '', text = '']) => ({
-    sourceId,
-    quote: text.trim().split(/\s+/).slice(0, 8).join(' '),
-  }));
+  const citations = firstTwoCitations(user);
   return [...user.matchAll(CLAIM_TAG)].map(([, claimId = '']) => ({
     claimId,
     verdict: 'supported',
     explanation: 'Test verdict.',
     citations,
   }));
+}
+
+/** The first two source tags, each cited with the first 8 words of its text. */
+function firstTwoCitations(user: string) {
+  return [...user.matchAll(SOURCE_TAG)].slice(0, 2).map(([, sourceId = '', text = '']) => ({
+    sourceId,
+    quote: text.trim().split(/\s+/).slice(0, 8).join(' '),
+  }));
+}
+
+/** Every source matched, one agreed point citing the first two sources. */
+function comparisonOf(user: string) {
+  return {
+    matched: [...user.matchAll(SOURCE_TAG)].map(([, id = '']) => id),
+    agreed: [{ text: 'Test agreement.', citations: firstTwoCitations(user) }],
+    differences: [],
+    unique: [],
+  };
 }
 
 function defaultVerdict(text: string): MockVerdict {
@@ -135,6 +155,14 @@ export async function startMockOpenAI(opts: MockOpenAIOptions = {}): Promise<Moc
     if (user.includes(VERDICT_PHRASE)) {
       const verdicts = verdictsOf(user);
       return answer(res, { verdicts }, verdicts.length);
+    }
+    if (user.includes(STORY_PHRASE)) {
+      const title = LINK_TAG.exec(user)?.[1]?.trim() ?? '';
+      return answer(res, { query: title === '(no title)' ? '' : title }, 1);
+    }
+    if (user.includes(COMPARISON_PHRASE)) {
+      const comparison = comparisonOf(user);
+      return answer(res, comparison, comparison.matched.length);
     }
     const results = fencedPosts(user).map(({ id, text }) => {
       const v = verdict(text);
