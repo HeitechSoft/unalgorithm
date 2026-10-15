@@ -84,6 +84,12 @@ export interface TestAppOptions {
    * database, which `close()` closes.
    */
   db?: DbHandle;
+  /** The search provider for fact-check research. Default: the config's (`searchProviderFor`). */
+  search?: AppDeps['search'];
+  /** The fact-check link check. Default: none. */
+  linkCheck?: AppDeps['linkCheck'];
+  /** The fact-check job store, such as one on a test clock. Default: the app's own. */
+  factcheckJobs?: AppDeps['factcheckJobs'];
 }
 
 /**
@@ -135,6 +141,11 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       stopping: overrides.stopping,
       inFlight: overrides.inFlight,
       errors: capture.errors,
+      search: overrides.search,
+      linkCheck: overrides.linkCheck,
+      // The billing host's schedule, so discovery and the job gates price checks as the module does.
+      priceSchedule: host.priceSchedule,
+      factcheckJobs: overrides.factcheckJobs,
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

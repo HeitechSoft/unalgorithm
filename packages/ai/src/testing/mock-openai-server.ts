@@ -8,6 +8,10 @@ import { fencedPosts } from './fenced-posts.ts';
  * A stand-in OpenAI-compatible provider for tests and local development. It reads the fenced posts out of the user
  * turn and answers each with a verdict, so nothing calls a real model. Test code only: the extension never imports it.
  *
+ * It answers the fact-check prompts too, told apart by their wording (so on every response format): the claims prompt
+ * gets the first sentence of the fenced post as its one claim, and the verdict prompt one `supported` verdict per claim,
+ * citing the first two sources with the first 8 words of each source's text.
+ *
  * Run it on its own with `node packages/ai/src/testing/mock-openai-server.ts --port 8788`.
  */
 
@@ -15,6 +19,10 @@ export interface MockVerdict {
   relevance: number;
   noise: NoiseLabel[];
   topics: string[];
+  /** Default false. */
+  isNews?: boolean;
+  /** Default false. */
+  hasCheckableClaims?: boolean;
 }
 
 export interface MockOpenAIOptions {
@@ -38,6 +46,35 @@ export interface MockOpenAI {
   /** The next chat/completions call answers with this status and raw body. Each call queues one failure. */
   failNext(status: number, body: string): void;
   close(): Promise<void>;
+}
+
+/** Words of `buildClaimsUser` and `buildVerdictUser` (packages/research) that tell the fact-check prompts apart. */
+const CLAIMS_PHRASE = 'Pick out the checkable factual claims';
+const VERDICT_PHRASE = 'Judge these';
+const FACTCHECK_POST_TAG = /<post_\w+[^>]*>\n([\s\S]*?)\n<\/post_/;
+const CLAIM_TAG = /<claim_\w+ id="(c\d+)">/g;
+const SOURCE_TAG = /<source_\w+ id="(s\d+)"[^>]*>\n([^\n]*)/g;
+
+/** One claim: the first sentence of the fenced post, at most 200 characters. */
+function claimsOf(user: string): { claim: string }[] {
+  const text = FACTCHECK_POST_TAG.exec(user)?.[1]?.trim() ?? '';
+  const first = (/^[\s\S]*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text).slice(0, 200).trim();
+  return first ? [{ claim: first }] : [];
+}
+
+/** One `supported` verdict per claim tag, citing the first two source tags with the first 8 words of each one's text. */
+function verdictsOf(user: string) {
+  const sources = [...user.matchAll(SOURCE_TAG)].slice(0, 2);
+  const citations = sources.map(([, sourceId = '', text = '']) => ({
+    sourceId,
+    quote: text.trim().split(/\s+/).slice(0, 8).join(' '),
+  }));
+  return [...user.matchAll(CLAIM_TAG)].map(([, claimId = '']) => ({
+    claimId,
+    verdict: 'supported',
+    explanation: 'Test verdict.',
+    citations,
+  }));
 }
 
 function defaultVerdict(text: string): MockVerdict {
@@ -91,6 +128,14 @@ export async function startMockOpenAI(opts: MockOpenAIOptions = {}): Promise<Moc
     if (failure) return send(res, failure.status, failure.body);
     const user = userTurn(body);
     if (user === undefined) return send(res, 400, JSON.stringify({ error: { message: 'The body is not JSON.' } }));
+    if (user.includes(CLAIMS_PHRASE)) {
+      const claims = claimsOf(user);
+      return answer(res, { claims }, claims.length);
+    }
+    if (user.includes(VERDICT_PHRASE)) {
+      const verdicts = verdictsOf(user);
+      return answer(res, { verdicts }, verdicts.length);
+    }
     const results = fencedPosts(user).map(({ id, text }) => {
       const v = verdict(text);
       return {
@@ -99,18 +144,22 @@ export async function startMockOpenAI(opts: MockOpenAIOptions = {}): Promise<Moc
         noise: v.noise,
         reason: 'Test verdict.',
         relevance: v.relevance,
-        isNews: false,
-        hasCheckableClaims: false,
+        isNews: v.isNews ?? false,
+        hasCheckableClaims: v.hasCheckableClaims ?? false,
       };
     });
+    answer(res, { results }, results.length);
+  }
+
+  /** A completion carrying `json`; fixed usage numbers so metering tests can assert exact amounts. */
+  function answer(res: ServerResponse, json: unknown, items: number): void {
     send(
       res,
       200,
       JSON.stringify({
         model,
-        choices: [{ message: { content: JSON.stringify({ results }) }, finish_reason: 'stop' }],
-        // Fixed numbers so metering tests can assert exact usage.
-        usage: { prompt_tokens: 1000, completion_tokens: 50 * results.length },
+        choices: [{ message: { content: JSON.stringify(json) }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1000, completion_tokens: 50 * items },
       }),
     );
   }

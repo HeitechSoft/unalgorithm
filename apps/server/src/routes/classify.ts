@@ -26,7 +26,7 @@ import {
   serverMayReceive,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
-import { checkLimits, createRateLimiter, type LimitDeps } from '../ai/limits.ts';
+import { checkLimits, type LimitDeps } from '../ai/limits.ts';
 import { recordUsageEvent, type UsageOutcome } from '../ai/metering.ts';
 import { type AiRoute, resolveRoute } from '../ai/routes.ts';
 import { requireDevice } from '../auth/bearer.ts';
@@ -107,17 +107,10 @@ function usageOutcomeOf(outcome: ClassifyOutcome | undefined, postsRequested: nu
   return postsOk > 0 ? 'partial' : 'failed';
 }
 
-/** Mounts `POST /v1/classify` on the app. */
-export function classifyRoutes(app: App, deps: AppDeps): void {
+/** Mounts `POST /v1/classify` on the app. `limits` is the app's one `LimitDeps`, shared with the fact-check jobs. */
+export function classifyRoutes(app: App, deps: AppDeps, limits: LimitDeps): void {
   const { config, db, log, billing, ai } = deps;
   const deadlineMs = deps.classifyDeadlineMs ?? CLASSIFY_DEADLINE_MS;
-  // One per app, so the rate buckets and the breaker's log state last as long as the server process.
-  const limits: LimitDeps = {
-    db: db.db,
-    config,
-    limiter: createRateLimiter({ perMinute: config.userRequestsPerMinute }),
-    log,
-  };
 
   app.openapi(
     createRoute({

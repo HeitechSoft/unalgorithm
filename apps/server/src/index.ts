@@ -8,7 +8,10 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { AIError } from '@unalgorithm/ai';
+import { FACTCHECK_JOB_TTL_MS, type FactcheckResult } from '@unalgorithm/protocol';
 import { logSetupNeeded } from './admin/setup.ts';
+import { searchProviderFor } from './ai/factcheck.ts';
 import { clientForRoute } from './ai/provider.ts';
 import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
 import { createAuth } from './auth/better-auth.ts';
@@ -20,9 +23,11 @@ import { type DbHandle, openPostgres } from './db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from './db/migrate.ts';
 import { type App, createApp } from './http/app.ts';
 import { type InFlightRequests, inFlightRequests } from './http/middleware.ts';
+import { createJobStore, type JobStore } from './jobs/memory-jobs.ts';
 import { createJobRegistry, type RunningJobs, startJobs } from './jobs/worker.ts';
 import { createLogger, errorFields, type Logger } from './log.ts';
 import { smtpMailer } from './mail/mailer.ts';
+import { createEgress } from './net/egress.ts';
 import { registerAlertJobs } from './ops/alerts.ts';
 import { createErrorWindow, type ErrorWindow } from './ops/error-window.ts';
 import { createAlertNotifier } from './ops/notify.ts';
@@ -59,9 +64,10 @@ export interface RunningServer {
   /** `http://<host>:<port>` as bound. */
   url: string;
   /**
-   * Stops accepting, answers sync long-polls at once, waits up to 30 s for requests in flight (each answer closes its
-   * connection) and up to 10 s more for handlers still running, stops the jobs (waiting for running ones), then closes
-   * the database. Safe to call twice.
+   * Stops accepting, aborts the fact-check jobs and answers sync long-polls at once, waits up to 30 s for requests in
+   * flight (each answer closes its connection) and up to 10 s more for handlers still running, and meanwhile up to 10 s
+   * for the jobs to release their holds and write their rows; then stops the background jobs (waiting for running ones)
+   * and closes the database. Safe to call twice.
    */
   close(): Promise<void>;
 }
@@ -73,6 +79,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let running: RunningJobs | undefined;
   const stopping = new AbortController();
   const inFlight = inFlightRequests();
+  // In memory only: a restart loses running checks (their holds are released on a stop, and expire after a crash).
+  const factcheckJobs = createJobStore<FactcheckResult>({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 });
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     await logSetupNeeded(db.db, log);
@@ -94,7 +102,23 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
     const billing = await loadBilling(config, host, log);
-    const app = createApp({ config, db, log, billing, auth, ai, stopping: stopping.signal, inFlight, errors });
+    const search = searchProviderFor(config);
+    const egress = createEgress({ publicUrl: config.publicUrl, deny: config.egressDeny, version: config.version });
+    const app = createApp({
+      config,
+      db,
+      log,
+      billing,
+      auth,
+      ai,
+      stopping: stopping.signal,
+      inFlight,
+      errors,
+      search,
+      linkCheck: egress.checkLinks,
+      priceSchedule: host.priceSchedule,
+      factcheckJobs,
+    });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
   } catch (err) {
@@ -107,7 +131,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let closing: Promise<void> | undefined;
   return {
     url: `http://${config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`,
-    close: () => (closing ??= stop(server, { stopping, inFlight, log }, running, db)),
+    close: () => (closing ??= stop(server, { stopping, inFlight, log, jobs: factcheckJobs }, running, db)),
   };
 }
 
@@ -134,15 +158,38 @@ export interface StopServingOptions {
   graceMs?: number;
   /** Default: `DRAIN_LIMIT_MS`. */
   drainMs?: number;
+  /**
+   * The fact-check jobs (`AppDeps.factcheckJobs`): aborted with `stopping`, and drained (up to `drainMs`) alongside the
+   * requests, so each releases its hold and writes its row before the database closes. Default: none.
+   */
+  jobs?: JobStore<FactcheckResult>;
 }
 
 /**
- * Stops serving: stops accepting, closes the connections still open after the grace period, then waits (bounded) for
- * handlers still running, so none of them finds the database closed. Exported for tests.
+ * Stops serving: aborts the jobs, stops accepting, closes the connections still open after the grace period, then waits
+ * (bounded) for handlers still running, so none of them finds the database closed. The jobs drain meanwhile, not after:
+ * draining them after the requests would take the stop past compose's 45 s `stop_grace_period`, and Docker would kill
+ * the process with holds still open. Exported for tests.
  */
 export async function stopServing(server: Server, opts: StopServingOptions): Promise<void> {
-  // First: a sync long-poll would otherwise wait up to 20 s.
+  const drainMs = opts.drainMs ?? DRAIN_LIMIT_MS;
+  // First: a sync long-poll would otherwise wait up to 20 s, and a check up to 4 minutes.
   opts.stopping.abort();
+  opts.jobs?.abortAll(new AIError('timeout', 'The server is stopping.'));
+  const jobsDrained = opts.jobs ? drainJobs(opts.jobs, drainMs, opts.log) : Promise.resolve();
+  try {
+    await stopRequests(server, opts, drainMs);
+  } finally {
+    await jobsDrained;
+  }
+}
+
+async function drainJobs(jobs: JobStore<FactcheckResult>, drainMs: number, log: Logger): Promise<void> {
+  await jobs.drain(drainMs);
+  if (jobs.running > 0) log.warn('server.stop_jobs_timeout', { running: jobs.running });
+}
+
+async function stopRequests(server: Server, opts: StopServingOptions, drainMs: number): Promise<void> {
   await new Promise<void>((resolve) => {
     // close() stops accepting and ends idle keep-alive connections; busy ones get the grace period.
     const grace = setTimeout(() => server.closeAllConnections(), opts.graceMs ?? STOP_GRACE_MS);
@@ -152,7 +199,7 @@ export async function stopServing(server: Server, opts: StopServingOptions): Pro
     });
   });
   // A closed connection aborts its request, but the handler still runs to its end.
-  if (!(await opts.inFlight.drained(opts.drainMs ?? DRAIN_LIMIT_MS))) {
+  if (!(await opts.inFlight.drained(drainMs))) {
     opts.log.warn('server.stop_drain_timeout', { in_flight: opts.inFlight.count });
   }
 }

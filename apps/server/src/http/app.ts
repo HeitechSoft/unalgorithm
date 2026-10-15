@@ -14,7 +14,11 @@ import {
   ADMIN_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
+  CREDIT_PRICE_SCHEDULE,
+  type CreditPriceSchedule,
   EMAIL_OTP_METHOD,
+  FACTCHECK_JOB_TTL_MS,
+  type FactcheckResult,
   GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
   PASSKEY_METHOD,
@@ -24,23 +28,28 @@ import {
   TOKEN_PATH,
   type WireError,
 } from '@unalgorithm/protocol';
+import type { LinkChecker, SearchProvider } from '@unalgorithm/research';
 import { sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { searchProviderFor } from '../ai/factcheck.ts';
+import { createRateLimiter, type LimitDeps } from '../ai/limits.ts';
 import type { AiRoute } from '../ai/routes.ts';
 import { type Auth, mountAuth } from '../auth/better-auth.ts';
 import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { DbHandle } from '../db/client.ts';
+import { createJobStore, type JobStore } from '../jobs/memory-jobs.ts';
 import { errorFields, type Logger } from '../log.ts';
 import type { ErrorWindow } from '../ops/error-window.ts';
 import { accountRoutes } from '../routes/account.ts';
 import { adminRoutes } from '../routes/admin.ts';
 import { authRoutes } from '../routes/auth.ts';
 import { classifyRoutes } from '../routes/classify.ts';
+import { factcheckOffer, factcheckRoutes } from '../routes/factcheck.ts';
 import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
 import { syncRoutes } from '../routes/sync.ts';
@@ -82,6 +91,14 @@ export interface AppDeps {
   inFlight?: InFlightRequests;
   /** The server's error-level log lines of the last 15 minutes, for the admin page's status (CL4-14). Default: none (0). */
   errors?: ErrorWindow;
+  /** The admin's search provider (`searchProviderFor(config)`, the default); null: research through the research route. */
+  search?: SearchProvider | null;
+  /** The egress link check (P3-13); default: none (every source counts as live). */
+  linkCheck?: LinkChecker;
+  /** Default CREDIT_PRICE_SCHEDULE; tests pass TEST_PRICE_SCHEDULE (the same object the billing host gets). */
+  priceSchedule?: CreditPriceSchedule;
+  /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }). */
+  factcheckJobs?: JobStore<FactcheckResult>;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -165,6 +182,7 @@ export function createApp(deps: AppDeps): App {
     }
   });
 
+  const priceSchedule = deps.priceSchedule ?? CREDIT_PRICE_SCHEDULE;
   const serverInfo: ServerInfo = {
     v: 1,
     name: config.instanceName,
@@ -184,7 +202,14 @@ export function createApp(deps: AppDeps): App {
     c.header('Cache-Control', 'public, max-age=300');
     // Public by design: any page or extension may read which server this is.
     c.header('Access-Control-Allow-Origin', '*');
-    return c.json(serverInfo);
+    // Per request: whether checks are offered, and their price, follow the schedule entry in effect now.
+    const offer = factcheckOffer(config, priceSchedule);
+    const info: ServerInfo = {
+      ...serverInfo,
+      capabilities: { ...serverInfo.capabilities, factcheck: offer.offered },
+      ...(offer.offered && offer.price && config.billing === 'module' ? { jobPrices: { factcheck: offer.price } } : {}),
+    };
+    return c.json(info);
   });
 
   // Better Auth reads a body of any size, and these routes take requests from anyone.
@@ -192,7 +217,25 @@ export function createApp(deps: AppDeps): App {
   mountAuth(app, auth, config);
   authRoutes(app, deps);
   accountRoutes(app, deps);
-  classifyRoutes(app, deps);
+  // One per app, shared by classify and fact-check: one rate bucket per user, and the breaker's log state and the
+  // requests in flight last as long as the server process.
+  const limits: LimitDeps = {
+    db: db.db,
+    config,
+    limiter: createRateLimiter({ perMinute: config.userRequestsPerMinute }),
+    log,
+  };
+  classifyRoutes(app, deps, limits);
+  factcheckRoutes(
+    app,
+    {
+      ...deps,
+      search: deps.search === undefined ? searchProviderFor(config) : deps.search,
+      priceSchedule,
+      factcheckJobs: deps.factcheckJobs ?? createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }),
+    },
+    limits,
+  );
   adminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);

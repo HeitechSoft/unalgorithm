@@ -3,15 +3,15 @@ import type { DbHandle } from '../../src/db/client.ts';
 import { queryRows } from './db.ts';
 
 /**
- * Every base table of the `public` and `drizzle` schemas, read whole: `schema.table` to all its rows as JSON. Every
- * table is read, so a new one is covered by itself. The canary (CL1-22) looks for its marker in it; the account
- * deletion test (CL3-15) for the deleted account's id and address.
+ * Every base table of the `public` and `drizzle` schemas, and of `graphile_worker` once a started worker has made it,
+ * read whole: `schema.table` to all its rows as JSON. Every table is read, so a new one is covered by itself. The canary
+ * (CL1-22) looks for its marker in it; the account deletion test (CL3-15) for the deleted account's id and address.
  */
 export async function scanAllTables(h: DbHandle): Promise<Map<string, string>> {
   const tables = await queryRows(
     h,
     sql`select table_schema, table_name from information_schema.tables
-        where table_schema in ('public', 'drizzle') and table_type = 'BASE TABLE'`,
+        where table_schema in ('public', 'drizzle', 'graphile_worker') and table_type = 'BASE TABLE'`,
   );
   const scanned = new Map<string, string>();
   for (const { table_schema, table_name } of tables) {

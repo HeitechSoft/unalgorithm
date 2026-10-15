@@ -1,34 +1,50 @@
 /**
  * The canary (R22): posts pass through the server and nothing is kept. A marker in post text, link titles and the
  * interest profile is sent down every classify path in one run against one app and one database: a success, provider
- * failures that echo it, and requests the server refuses. Afterwards it must be in none of the app's log lines, nothing
- * the process wrote to standard output, standard error or the console, no error answer and no row of any table. The
- * model is the one place it may reach, and never from a friends-only post.
+ * failures that echo it, and requests the server refuses. The fact-check job endpoints get the same (P3-19): a done job,
+ * a provider failure that echoes it, a friends-only post and an invalid body. Afterwards it must be in none of the app's
+ * log lines, nothing the process wrote to standard output, standard error or the console, no error answer and no row of
+ * any table, graphile-worker's included. The model (and, for a check, the search provider) is the one place it may
+ * reach, and never from a friends-only post.
  *
  * The run uses PGlite in every `pnpm test`, and Postgres too when `TEST_DATABASE_URL` is set (the CI `server` job). The
  * same check runs through the Cloud's nginx in CL1-35.
  */
+import { readFileSync } from 'node:fs';
 import { format } from 'node:util';
 import { describeError } from '@unalgorithm/ai';
-import { CLASSIFY_PATH, ClassifyResponseSchema } from '@unalgorithm/protocol';
+import {
+  CLASSIFY_PATH,
+  ClassifyResponseSchema,
+  FACTCHECK_JOBS_PATH,
+  FactcheckJobSchema,
+  factcheckJobPath,
+} from '@unalgorithm/protocol';
+import { FACTCHECK_PROMPT_VERSION } from '@unalgorithm/research';
+import { startMockSearxng } from '@unalgorithm/research/testing';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { type DbHandle, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
+import { createJobRegistry, startJobs } from '../src/jobs/worker.ts';
 import { CANARY, canaryPosts, canaryProfile, FRIENDS_ONLY } from './support/canary.ts';
 import { classifyBody, postClassify } from './support/classify.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
+import { seedPassingRoute } from './support/routes.ts';
 import { scanAllTables as scanTables } from './support/scan-tables.ts';
-import { DEV_EXTENSION_ORIGIN, signInDevice } from './support/sign-in.ts';
+import { DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
 import { createTestApp, testConfig } from './support/test-app.ts';
 
-/** Starting the database, signing in and eight requests: more than one test's worth on a busy CI runner. */
+/** Starting the database, signing in and a dozen requests: more than one test's worth on a busy CI runner. */
 const RUN_TIMEOUT = 90_000;
 
 const TOM = 'tom@example.com';
 
-const CONFIG = testConfig({ SIGNUP_ALLOWLIST: TOM });
+/** Fact-check on, researching through a mock SearXNG at `searchUrl`. */
+const configFor = (searchUrl: string) =>
+  testConfig({ SIGNUP_ALLOWLIST: TOM, FACTCHECK: 'on', SEARCH_PROVIDER: 'searxng', SEARCH_URL: searchUrl });
+const INSTANCE_NAME = testConfig().instanceName;
 
 /**
  * The response formats the OpenAI-compatible client tries in turn (strict JSON schema, loose JSON schema, JSON object,
@@ -62,7 +78,7 @@ interface Answer {
   sent: string[];
 }
 
-/** The eight paths, in the order they run. */
+/** The classify paths, then the fact-check paths, in the order they run. */
 interface Answers {
   /** 1: six posts classified, the friends-only one declined. */
   classified: Answer;
@@ -80,6 +96,14 @@ interface Answers {
   noToken: Answer;
   /** 7: only the friends-only post, which never reaches a model. */
   friendsOnly: Answer;
+  /** 8: a check of a public post, polled until done. */
+  checkDone: Answer;
+  /** 9: a check whose provider fails with a body that echoes the marker, polled until failed. */
+  checkProviderEcho: Answer;
+  /** 10: a check of the friends-only post, refused before a job. */
+  checkFriendsOnly: Answer;
+  /** 11: a check whose body fails the schema. */
+  checkInvalid: Answer;
 }
 
 interface CanaryRun {
@@ -92,6 +116,8 @@ interface CanaryRun {
   tables: Map<string, string>;
   /** Every body the mock provider received. */
   sent: string[];
+  /** Every query the mock SearXNG received. */
+  searched: string[];
 }
 
 interface CanaryDatabase {
@@ -165,8 +191,21 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
   try {
     const database = await open();
     cleanup.push(() => database.close());
-    const t = await createTestApp({ config: CONFIG, db: database.handle });
+    const searx = await startMockSearxng();
+    cleanup.push(() => searx.close());
+    const t = await createTestApp({ config: configFor(searx.url), db: database.handle });
     cleanup.push(t.close);
+    await seedPassingRoute(database.handle.db, {
+      task: 'synthesis',
+      effort: 'medium',
+      evalPromptVersion: FACTCHECK_PROMPT_VERSION,
+      baseUrl: t.mock.baseUrl,
+    });
+    // graphile-worker runs around the requests (on Postgres; PGlite has none), so its tables exist to be scanned.
+    const registry = createJobRegistry();
+    registry.task('canary.noop', async () => {});
+    const worker = await startJobs(database.handle, registry, t.deps.log);
+    cleanup.push(() => worker.stop());
     const token = (await signInDevice(t.app, t.outbox, TOM)).access_token;
 
     const profile = canaryProfile();
@@ -179,6 +218,23 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       const headers = JSON.stringify([...res.headers]);
       return { status: res.status, headers, body: await res.text(), sent: t.mock.bodies.slice(before) };
     };
+    const auth = { Origin: DEV_EXTENSION_ORIGIN, Authorization: `Bearer ${token}` };
+    const startCheck = (body: unknown) => request(() => postJson(t.app, FACTCHECK_JOBS_PATH, body, auth));
+    /** Starts a check and polls it until it ends: the answer is the last poll's, with every model call of the job. */
+    const check = async (post: unknown): Promise<Answer> => {
+      const before = t.mock.bodies.length;
+      const start = await startCheck({ v: 1, post });
+      if (start.status !== 202) return start;
+      const { id } = FactcheckJobSchema.parse(JSON.parse(start.body));
+      for (;;) {
+        const res = await t.app.request(`${factcheckJobPath(id)}?wait=1`, { headers: auth });
+        const body = await res.text();
+        if (FactcheckJobSchema.parse(JSON.parse(body)).status === 'running') continue;
+        const headers = JSON.stringify([...res.headers]);
+        return { status: res.status, headers, body, sent: t.mock.bodies.slice(before) };
+      }
+    };
+
     const classify = (body: unknown, auth: string | null = token) => request(() => postClassify(t.app, body, auth));
 
     const classified = await classify(classifyBody(posts, profile));
@@ -199,6 +255,16 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     const noToken = await classify(classifyBody(posts, profile), null);
     const friendsOnly = await classify(classifyBody(friendsPost, profile));
 
+    const searchedBefore = searx.queries.length;
+    const checkDone = await check(posts[0]);
+    t.mock.failNext(500, `echo: ${CANARY}`);
+    const checkProviderEcho = await check(posts[0]);
+    const searchedPublic = searx.queries.length;
+    const checkFriendsOnly = await check(friendsPost[0]);
+    const checkInvalid = await startCheck({ v: 1, post: { text: `Quarterly update ${CANARY}` } });
+    // Neither refused check reached the search provider.
+    expect(searx.queries.length).toBe(searchedPublic);
+
     const answers: Answers = {
       classified,
       providerEcho,
@@ -208,9 +274,20 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       notJson,
       noToken,
       friendsOnly,
+      checkDone,
+      checkProviderEcho,
+      checkFriendsOnly,
+      checkInvalid,
     };
     // `output` is filled when the capture stops, after the app and the database have closed.
-    return { answers, log: t.lines, output: capture.output, tables: await scanTables(database.handle), sent: t.mock.bodies };
+    return {
+      answers,
+      log: t.lines,
+      output: capture.output,
+      tables: await scanTables(database.handle),
+      sent: t.mock.bodies,
+      searched: searx.queries.slice(searchedBefore),
+    };
   } finally {
     try {
       for (const step of cleanup.reverse()) await step();
@@ -220,7 +297,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
   }
 }
 
-describe.each(DATABASES)('canary (%s)', (_name, open) => {
+describe.each(DATABASES)('canary (%s)', (name, open) => {
   let run: CanaryRun;
   beforeAll(async () => {
     if (open) run = await runCanary(open);
@@ -257,7 +334,7 @@ describe.each(DATABASES)('canary (%s)', (_name, open) => {
     const badInput = answers.providerBadInput;
     expect(badInput.sent).toHaveLength(RESPONSE_FORMATS);
     for (const body of badInput.sent) expect(body).toContain(CANARY);
-    const message = describeError('bad-request', CONFIG.instanceName);
+    const message = describeError('bad-request', INSTANCE_NAME);
     const { results } = ClassifyResponseSchema.parse(JSON.parse(badInput.body));
     expect(results.map((r) => (r.status === 'error' ? `error: ${r.message}` : r.status))).toEqual([
       ...Array.from({ length: 6 }, () => `error: ${message}`),
@@ -270,7 +347,8 @@ describe.each(DATABASES)('canary (%s)', (_name, open) => {
     for (const table of REQUIRED_TABLES) expect(names).toContain(`public.${table}`);
     // Better Auth's table was read, not the current role, and the rows written during the run were there to scan.
     expect(run.tables.get('public.user')).toContain(TOM);
-    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(5);
+    // Five classify rows and two fact-check job rows.
+    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(7);
     expect([...run.tables].filter(([, rows]) => rows.includes(CANARY)).map(([name]) => name)).toEqual([]);
   });
 
@@ -290,5 +368,47 @@ describe.each(DATABASES)('canary (%s)', (_name, open) => {
     // The friends-only post never reached the model, in any path.
     expect(run.sent.length).toBeGreaterThan(0);
     for (const body of run.sent) expect(body).not.toContain(FRIENDS_ONLY);
+  });
+
+  check('test_canary_factcheck_absent_everywhere', () => {
+    const { checkDone, checkProviderEcho, checkFriendsOnly, checkInvalid } = run.answers;
+
+    // A done job: the marker travelled to the model and the search provider, as the post is public.
+    expect(checkDone.status).toBe(200);
+    expect(FactcheckJobSchema.parse(JSON.parse(checkDone.body)).status).toBe('done');
+    expect(checkDone.sent.length).toBeGreaterThanOrEqual(2);
+    for (const body of checkDone.sent) expect(body).toContain(CANARY);
+    expect(run.searched.length).toBeGreaterThan(0);
+    expect(run.searched.some((q) => q.includes(CANARY))).toBe(true);
+
+    // The provider echoed the marker: the job failed with `describeError` text only.
+    const failed = FactcheckJobSchema.parse(JSON.parse(checkProviderEcho.body));
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toEqual({ code: 'overloaded', message: describeError('overloaded', INSTANCE_NAME) });
+    expect(checkProviderEcho.sent).toHaveLength(1);
+
+    // Refused before a job: nothing reached the model or the search provider.
+    expect(checkFriendsOnly.status).toBe(400);
+    expect(checkInvalid.status).toBe(400);
+    for (const answer of [checkFriendsOnly, checkInvalid]) expect(answer.sent).toEqual([]);
+    for (const query of run.searched) expect(query).not.toContain(FRIENDS_ONLY);
+
+    for (const answer of [checkProviderEcho, checkFriendsOnly, checkInvalid]) {
+      expect(answer.body).not.toContain(CANARY);
+      expect(answer.headers).not.toContain(CANARY);
+    }
+    expect(run.log.filter((line) => line.includes('"event":"factcheck.done"'))).toHaveLength(2);
+    expect(run.log.filter((line) => line.includes(CANARY))).toEqual([]);
+    expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
+
+    // Two job rows (done, failed), and no table holds the marker: graphile-worker's too on Postgres.
+    const rows = JSON.parse(run.tables.get('public.usage_events') ?? '[]') as { task: string }[];
+    expect(rows.filter((r) => r.task === 'factcheck')).toHaveLength(2);
+    if (name === 'postgres') expect([...run.tables.keys()].some((t) => t.startsWith('graphile_worker.'))).toBe(true);
+    expect([...run.tables].filter(([, r]) => r.includes(CANARY)).map(([table]) => table)).toEqual([]);
+
+    // Jobs live in memory only: the route module never touches graphile-worker.
+    const source = readFileSync(new URL('../src/routes/factcheck.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/(?:from|import)\s*\(?\s*'[^']*(?:graphile-worker|jobs\/worker)/);
   });
 });
