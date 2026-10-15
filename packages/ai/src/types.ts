@@ -1,4 +1,4 @@
-import type { NormalizedUsage } from '@unalgorithm/protocol';
+import type { NormalizedUsage, RetrievedSource } from '@unalgorithm/protocol';
 
 export type StructuredMode = 'json-schema' | 'json-schema-loose' | 'json-object' | 'prompt-only' | 'on-device';
 
@@ -30,6 +30,30 @@ export interface StructuredResult {
   mode: StructuredMode;
 }
 
+export interface ResearchRequest {
+  model: string;
+  system: string;
+  user: string;
+  /** Tool `max_uses` across the whole call, continuations included. 1..MAX_FACTCHECK_SEARCHES. */
+  maxSearches: number;
+  blockedDomains: readonly string[];
+  effort: 'low' | 'medium';
+  maxOutputTokens: number;
+  /** Budget for the whole call, continuations included (each continuation gets what is left). Default 120_000. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface ResearchResult {
+  /** The model's research notes (text blocks joined), clipped to 8,000 characters. Untrusted. */
+  notes: string;
+  sources: RetrievedSource[];
+  usage: NormalizedUsage;
+  model: string;
+  /** `error_code`s of failed searches, e.g. 'unavailable'. */
+  searchErrors: string[];
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -41,6 +65,8 @@ export interface AIClient {
   readonly kind: string;
   structured(req: StructuredRequest): Promise<StructuredResult>;
   listModels(signal?: AbortSignal): Promise<ModelInfo[]>;
+  /** Research with server-side web search. Only adapters that can search implement it (Anthropic in RM1). */
+  research?(req: ResearchRequest): Promise<ResearchResult>;
 }
 
 /** What a model or endpoint turned out to accept, remembered across service-worker restarts. */

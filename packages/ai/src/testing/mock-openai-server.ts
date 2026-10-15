@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import type { NoiseLabel } from '@unalgorithm/protocol';
+import { fencedPosts } from './fenced-posts.ts';
 
 /**
  * A stand-in OpenAI-compatible provider for tests and local development. It reads the fenced posts out of the user
@@ -38,9 +39,6 @@ export interface MockOpenAI {
   failNext(status: number, body: string): void;
   close(): Promise<void>;
 }
-
-/** Matches `buildUserPrompt`'s fenced posts: the id and the text of each. */
-const POST_TAG = /<post_\w+ id="([^"]+)"[^>]*>\n([\s\S]*?)\n<\/post_/g;
 
 function defaultVerdict(text: string): MockVerdict {
   const onTopic = /automat|AI/i.test(text);
@@ -93,7 +91,7 @@ export async function startMockOpenAI(opts: MockOpenAIOptions = {}): Promise<Moc
     if (failure) return send(res, failure.status, failure.body);
     const user = userTurn(body);
     if (user === undefined) return send(res, 400, JSON.stringify({ error: { message: 'The body is not JSON.' } }));
-    const results = [...user.matchAll(POST_TAG)].map(([, id, text = '']) => {
+    const results = fencedPosts(user).map(({ id, text }) => {
       const v = verdict(text);
       return {
         id,
