@@ -3,6 +3,7 @@
  * chose is probed for its status only. Every hop is checked and pinned before a connection: http(s) on 80/443 only, no
  * credentials, every DNS answer outside the denied ranges and the host's own addresses, the first answer pinned so the
  * hop never resolves again, redirects re-checked. Nothing is logged (URLs can carry claim words) and no body is read.
+ * The same loop resolves a shared link to where its redirects end (P3-32): status and `Location` only, never a page.
  *
  * Admin-configured fetches (alert webhook, search provider, AI endpoint) stay exempt and never come through here.
  */
@@ -14,6 +15,10 @@ import type { LinkStatus } from '@unalgorithm/protocol';
 
 export type EgressRefusal = 'scheme' | 'credentials' | 'port' | 'address' | 'unresolved' | 'redirects';
 export type ProbeOutcome = { kind: 'status'; status: number } | { kind: 'refused'; reason: EgressRefusal } | { kind: 'failed' };
+export type ResolveOutcome =
+  | { kind: 'resolved'; url: string; status: number; hops: number }
+  | { kind: 'refused'; reason: EgressRefusal }
+  | { kind: 'failed' };
 export interface SendRequest {
   url: URL;
   address: string;
@@ -45,6 +50,10 @@ export interface Egress {
   probe(url: string, signal?: AbortSignal): Promise<ProbeOutcome>;
   /** P3-11's LinkChecker. */
   checkLinks(urls: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, LinkStatus>>;
+  /** Follows redirects (every hop checked and pinned, at most maxRedirects) and reports the last hop's URL and status. */
+  resolve(url: string, signal?: AbortSignal): Promise<ResolveOutcome>;
+  /** P3-31's `resolveLink`: the resolved URL (any final status), or null when refused or failed. Never throws. */
+  resolveLink(url: string, signal: AbortSignal): Promise<string | null>;
 }
 
 /** At most this many distinct URLs are probed per check; the rest stay `unknown`. */
@@ -207,6 +216,11 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 type HopCheck = { ok: true; address: string; family: 4 | 6 } | { ok: false; reason: EgressRefusal };
+/** One probe's result: the last hop's URL and status, or why it stopped. */
+type Walk =
+  | { kind: 'status'; url: URL; status: number; hops: number }
+  | { kind: 'refused'; reason: EgressRefusal }
+  | { kind: 'failed' };
 
 export function createEgress(opts: EgressOptions): Egress {
   const resolve = opts.resolve ?? defaultResolve;
@@ -277,7 +291,7 @@ export function createEgress(opts: EgressOptions): Egress {
     return { ok: true, address: pinned.address, family: pinned.family };
   }
 
-  async function runProbe(raw: string, signal: AbortSignal): Promise<ProbeOutcome> {
+  async function runProbe(raw: string, signal: AbortSignal): Promise<Walk> {
     let url: URL;
     try {
       url = new URL(raw);
@@ -291,7 +305,8 @@ export function createEgress(opts: EgressOptions): Egress {
         raceAbort(send({ url, address: hop.address, family: hop.family, method, signal, userAgent }), signal);
       let result = await request('HEAD');
       if (result.status === 405 || result.status === 501) result = await request('GET');
-      if (!REDIRECTS.has(result.status) || !result.location) return { kind: 'status', status: result.status };
+      if (!REDIRECTS.has(result.status) || !result.location)
+        return { kind: 'status', url, status: result.status, hops: redirects };
       redirects++;
       if (redirects > maxRedirects) return { kind: 'refused', reason: 'redirects' };
       try {
@@ -302,13 +317,35 @@ export function createEgress(opts: EgressOptions): Egress {
     }
   }
 
-  async function probe(url: string, signal?: AbortSignal): Promise<ProbeOutcome> {
+  /** runProbe under the per-call timeout (all hops); a network error, a timeout or an abort is `failed`. */
+  async function walk(url: string, signal?: AbortSignal): Promise<Walk> {
     const timeout = AbortSignal.timeout(timeoutMs);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
       return await runProbe(url, combined);
     } catch {
       return { kind: 'failed' };
+    }
+  }
+
+  async function probe(url: string, signal?: AbortSignal): Promise<ProbeOutcome> {
+    const outcome = await walk(url, signal);
+    return outcome.kind === 'status' ? { kind: 'status', status: outcome.status } : outcome;
+  }
+
+  async function resolveUrl(url: string, signal?: AbortSignal): Promise<ResolveOutcome> {
+    const outcome = await walk(url, signal);
+    return outcome.kind === 'status'
+      ? { kind: 'resolved', url: outcome.url.href, status: outcome.status, hops: outcome.hops }
+      : outcome;
+  }
+
+  async function resolveLink(url: string, signal: AbortSignal): Promise<string | null> {
+    try {
+      const outcome = await resolveUrl(url, signal);
+      return outcome.kind === 'resolved' ? outcome.url : null;
+    } catch {
+      return null;
     }
   }
 
@@ -326,7 +363,7 @@ export function createEgress(opts: EgressOptions): Egress {
     return statuses;
   }
 
-  return { probe, checkLinks };
+  return { probe, checkLinks, resolve: resolveUrl, resolveLink };
 }
 
 function linkStatus(outcome: ProbeOutcome): LinkStatus {

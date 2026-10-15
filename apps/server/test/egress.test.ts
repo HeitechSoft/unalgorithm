@@ -259,6 +259,126 @@ describe('link check', () => {
   });
 });
 
+describe('resolve', () => {
+  const ARTICLE = 'https://news.example.com/a?utm_source=y';
+
+  it('test_resolve_no_redirect', async () => {
+    const { egress, sends } = harness({ 'news.example.com': [PUBLIC_A] });
+    expect(await egress.resolve(ARTICLE)).toEqual({ kind: 'resolved', url: ARTICLE, status: 200, hops: 0 });
+    expect(sends).toHaveLength(1);
+  });
+
+  it('test_resolve_follows_pinned_redirects', async () => {
+    const { egress, sends } = harness({ 'short.example': [PUBLIC_B], 'news.example.com': [PUBLIC_A] }, (req) =>
+      req.url.hostname === 'short.example' ? { status: 301, location: ARTICLE } : { status: 200, location: null },
+    );
+    expect(await egress.resolve('https://short.example/x')).toEqual({ kind: 'resolved', url: ARTICLE, status: 200, hops: 1 });
+    expect(sends.map((s) => [s.url.href, s.address, s.method])).toEqual([
+      ['https://short.example/x', PUBLIC_B, 'HEAD'],
+      [ARTICLE, PUBLIC_A, 'HEAD'],
+    ]);
+  });
+
+  it('test_resolve_final_status_any', async () => {
+    const { egress } = harness({ 'short.example': [PUBLIC_B], 'news.example.com': [PUBLIC_A] }, (req) =>
+      req.url.hostname === 'short.example' ? { status: 302, location: ARTICLE } : { status: 403, location: null },
+    );
+    expect(await egress.resolve('https://short.example/x')).toEqual({ kind: 'resolved', url: ARTICLE, status: 403, hops: 1 });
+    // A redirect status without a Location is the end of the chain, reported as it is.
+    const bare = harness({ 'news.example.com': [PUBLIC_A] }, () => ({ status: 302, location: null }));
+    expect(await bare.egress.resolve(ARTICLE)).toEqual({ kind: 'resolved', url: ARTICLE, status: 302, hops: 0 });
+  });
+
+  it('test_resolve_refuses_private_redirect_targets', async () => {
+    for (const address of ['127.0.0.1', '10.0.0.5', '169.254.169.254', '::ffff:127.0.0.1']) {
+      const { egress, sends } = harness({ 'short.example': [PUBLIC_B], 'inside.example': [address] }, () => ({
+        status: 302,
+        location: 'https://inside.example/secret',
+      }));
+      expect([address, await egress.resolve('https://short.example/x')]).toEqual([address, refused('address')]);
+      expect(sends.map((s) => s.url.hostname)).toEqual(['short.example']);
+      expect(await egress.resolveLink('https://short.example/x', new AbortController().signal)).toBeNull();
+    }
+  });
+
+  it('test_resolve_refuses_scheme_port_and_too_many_redirects', async () => {
+    const to = (location: string) =>
+      harness({ 'short.example': [PUBLIC_B], 'news.example.com': [PUBLIC_A] }, (req) =>
+        req.url.hostname === 'short.example' ? { status: 301, location } : { status: 200, location: null },
+      );
+    const ftp = to('ftp://news.example.com/a');
+    expect(await ftp.egress.resolve('https://short.example/x')).toEqual(refused('scheme'));
+    const port = to('https://news.example.com:8080/a');
+    expect(await port.egress.resolve('https://short.example/x')).toEqual(refused('port'));
+    for (const h of [ftp, port]) expect(h.sends).toHaveLength(1);
+
+    const loop = harness({ 'short.example': [PUBLIC_B] }, (req) => ({ status: 307, location: `/r${req.url.pathname.length}` }));
+    expect(await loop.egress.resolve('https://short.example/x')).toEqual(refused('redirects'));
+    expect(loop.sends).toHaveLength(4);
+  });
+
+  it('test_resolve_failures_and_abort', async () => {
+    const dns = { 'short.example': [PUBLIC_B], 'news.example.com': [PUBLIC_A] };
+    const rejecting = harness(dns, () => Promise.reject(new Error('ECONNRESET')));
+    expect(await rejecting.egress.resolve(ARTICLE)).toEqual({ kind: 'failed' });
+
+    const slow = harness(dns, () => new Promise<SendResult>(() => {}), { timeoutMs: 30 });
+    expect(await slow.egress.resolve(ARTICLE)).toEqual({ kind: 'failed' });
+
+    // The timeout covers every hop: a redirect then a hang still fails.
+    const slowSecond = harness(
+      dns,
+      (req) => (req.url.hostname === 'short.example' ? { status: 301, location: ARTICLE } : new Promise<SendResult>(() => {})),
+      { timeoutMs: 30 },
+    );
+    expect(await slowSecond.egress.resolve('https://short.example/x')).toEqual({ kind: 'failed' });
+
+    const badLocation = harness(dns, () => ({ status: 302, location: 'http://[bad' }));
+    expect(await badLocation.egress.resolve(ARTICLE)).toEqual({ kind: 'failed' });
+
+    const controller = new AbortController();
+    controller.abort();
+    const aborted = harness(dns);
+    expect(await aborted.egress.resolve(ARTICLE, controller.signal)).toEqual({ kind: 'failed' });
+    expect(aborted.sends).toEqual([]);
+
+    // Aborted while the first hop is in flight: no request to the redirect target follows.
+    const midway = new AbortController();
+    const hanging = harness(dns, () => new Promise<SendResult>(() => {}));
+    const pending = hanging.egress.resolve('https://short.example/x', midway.signal);
+    await vi.waitFor(() => expect(hanging.sends).toHaveLength(1));
+    midway.abort();
+    expect(await pending).toEqual({ kind: 'failed' });
+    expect(hanging.sends).toHaveLength(1);
+  });
+
+  it('test_resolve_link_never_throws', async () => {
+    const signal = () => new AbortController().signal;
+    const ok = harness({ 'short.example': [PUBLIC_B], 'news.example.com': [PUBLIC_A] }, (req) =>
+      req.url.hostname === 'short.example' ? { status: 301, location: ARTICLE } : { status: 200, location: null },
+    );
+    expect(await ok.egress.resolveLink('https://short.example/x', signal())).toBe(ARTICLE);
+    expect(await ok.egress.resolveLink('ftp://short.example/x', signal())).toBeNull();
+    expect(await ok.egress.resolveLink('not a url', signal())).toBeNull();
+
+    const failing = harness({ 'news.example.com': [PUBLIC_A] }, () => Promise.reject(new Error('boom')));
+    expect(await failing.egress.resolveLink(ARTICLE, signal())).toBeNull();
+
+    // Even a resolver that throws synchronously never rejects.
+    const throwing = createEgress({
+      publicUrl: 'https://srv.test',
+      version: '0.1.0',
+      resolve: () => {
+        throw new Error('sync');
+      },
+      send: () => {
+        throw new Error('sync');
+      },
+    });
+    await expect(throwing.resolveLink(ARTICLE, signal())).resolves.toBeNull();
+  });
+});
+
 describe('transport', () => {
   const servers: ReturnType<typeof createServer>[] = [];
   afterEach(async () => {
