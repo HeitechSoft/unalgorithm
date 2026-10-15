@@ -6,6 +6,7 @@ settings:
 
 overrides:
   '@esbuild-kit/core-utils>esbuild': 0.25.12
+  fx-runner>shell-quote: 1.12.0
 
 pnpmfileChecksum: sha256-qtTTJqE+sFV4CnZdgdtY1bgbo59NQwbzwUyoFFVQmX0=
 
@@ -3425,10 +3426,6 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
-    engines: {node: '>= 0.4'}
-
   shell-quote@1.12.0:
     resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
     engines: {node: '>= 0.4'}
@@ -5974,7 +5971,7 @@ snapshots:
   fx-runner@1.6.0:
     dependencies:
       commander: 12.1.0
-      shell-quote: 1.10.0
+      shell-quote: 1.12.0
       which: 4.0.0
       winreg: 0.0.12
 
@@ -6815,8 +6812,6 @@ snapshots:
       shebang-regex: 3.0.0
 
   shebang-regex@3.0.0: {}
-
-  shell-quote@1.10.0: {}
 
   shell-quote@1.12.0: {}
 
