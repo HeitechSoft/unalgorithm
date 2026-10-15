@@ -55,8 +55,12 @@ export const RM4_RETRIEVAL: RetrievalPlan = Object.freeze({
   verdictSources: 'all',
 });
 
-/** The plan every check uses unless `deps.retrieval` says otherwise. RM4's until P3-56. */
-export const FACTCHECK_RETRIEVAL: RetrievalPlan = RM4_RETRIEVAL;
+/** RM5 (F28): one search per claim plus one (at most 5), low research effort, only sources a quote can match. */
+export const FACTCHECK_RETRIEVAL: RetrievalPlan = Object.freeze({
+  searches: (claims: number) => Math.min(MAX_FACTCHECK_SEARCHES, claims + 1),
+  effort: 'low',
+  verdictSources: 'quotable',
+});
 
 /** A plan's search budget: truncated to an integer in 1..MAX_FACTCHECK_SEARCHES; non-finite gives the maximum. */
 function clampSearches(n: number): number {
@@ -129,8 +133,8 @@ function pickClaims(raw: readonly { claim: string }[]): { id: string; text: stri
 }
 
 /**
- * Fact-check one post: Haiku picks up to 3 claims, the retriever researches them (at most 5 searches, per the plan), Sonnet gives a
- * verdict per claim with no tools, and the validator keeps only citations that trace to retrieved sources.
+ * Fact-check one post: Haiku picks up to 3 claims, the retriever researches them on the plan's budget (by default one
+ * search per claim plus one, at most 5, at low effort), Sonnet gives a verdict per claim with no tools, and the validator keeps only citations that trace to retrieved sources.
  */
 export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: FactcheckOptions = {}): Promise<FactcheckRun> {
   const models = { ...FACTCHECK_MODELS, ...deps.models };

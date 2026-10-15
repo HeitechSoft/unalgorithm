@@ -305,8 +305,11 @@ describe('scoring', () => {
   });
 });
 
-/** Live deps backed by the mock, counting the checks run (one claims call per item). */
-function countingLive(opts: Parameters<typeof mockDepsFor>[1] = {}) {
+/**
+ * Live deps backed by the mock, counting the checks run (one claims call per item). The mock's cost model is calibrated
+ * to RM4's plan, so the deps pin it unless `retrieval` is undefined, which leaves the default plan (P3-56).
+ */
+function countingLive(opts: Parameters<typeof mockDepsFor>[1] = {}, retrieval: RetrievalPlan | null = RM4_RETRIEVAL) {
   const keys: string[] = [];
   let checks = 0;
   const lines: string[] = [];
@@ -318,6 +321,7 @@ function countingLive(opts: Parameters<typeof mockDepsFor>[1] = {}) {
       const structured = d.client.structured.bind(d.client);
       return {
         ...d,
+        ...(retrieval ? { retrieval } : {}),
         client: {
           ...d.client,
           structured(req) {
@@ -383,6 +387,9 @@ describe('cli', () => {
     // A third: about 41,000 micros, outside below.
     const cheap = countingLive({ researchUsage: { uncachedInput: 10_000, output: 500, webSearches: 1 } });
     expect(await main(['--live'], env, cheap.deps)).toBe(1);
+    // The default plan (RM5): about 77,000 micros, below the band, the signal to update the shown estimates (D68).
+    const rm5 = countingLive({}, null);
+    expect(await main(['--live'], env, rm5.deps)).toBe(1);
   });
 
   it('test_cli_compare_offline_only', async () => {
@@ -393,8 +400,8 @@ describe('cli', () => {
     });
     const lines: string[] = [];
     const io = { out: (l: string) => lines.push(l), err: (l: string) => lines.push(l) };
-    expect(await main(['--compare'], env, io)).toBe(1);
-    expect(JSON.parse(lines.join('\n'))).toMatchObject({ ratio: 1, equalTrust: true, passed: false });
+    expect(await main(['--compare'], env, io)).toBe(0);
+    expect(JSON.parse(lines.join('\n'))).toMatchObject({ equalTrust: true, passed: true });
 
     const usage: string[] = [];
     const bad = { out: (l: string) => usage.push(l), err: (l: string) => usage.push(l) };
@@ -415,7 +422,7 @@ describe('cost model', () => {
     if (!item) throw new Error('empty set');
     const research = mockDepsFor(SET).client.research;
     if (!research) throw new Error('no research');
-    const user = buildResearchUser([{ id: 'c1', text: `[eval ${item.id}] The claim.` }], 'abc12345');
+    const user = buildResearchUser([{ id: 'c1', text: `[eval ${item.id}] The claim.` }], 'abc12345', 2);
     const base = { model: 'claude-sonnet-5-5', system: 'Research.', user, blockedDomains: [], maxOutputTokens: 2_000 };
 
     const rm4 = await research({ ...base, maxSearches: 5, effort: RM4_RETRIEVAL.effort });
@@ -440,6 +447,16 @@ describe('comparison', () => {
     expect(c.baselineMeanCostMicros).toBe(c.currentMeanCostMicros);
     expect(c.equalTrust).toBe(true);
     expect(c.passed).toBe(false);
+  });
+
+  it('test_retrieval_cost_cut_30_percent', async () => {
+    const c = await compareRetrievalCost();
+    expect(c.ratio).toBeLessThanOrEqual(0.7);
+    expect(c.equalTrust).toBe(true);
+    expect(c.passed).toBe(true);
+    const lines: string[] = [];
+    expect(await main(['--compare'], {}, { out: (l) => lines.push(l), err: (l) => lines.push(l) })).toBe(0);
+    expect(JSON.parse(lines.join(''))).toMatchObject({ ratio: c.ratio, passed: true });
   });
 
   it('test_compare_cheaper_plan_passes_with_equal_trust', async () => {

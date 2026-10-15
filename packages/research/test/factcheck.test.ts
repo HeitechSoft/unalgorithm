@@ -11,14 +11,16 @@ import { describe, expect, it } from 'vitest';
 import { blockedDomains } from '../src/blocklist.ts';
 import {
   FACTCHECK_MODELS,
+  FACTCHECK_RETRIEVAL,
   type FactcheckDeps,
   type FactcheckOptions,
   type RetrievalPlan,
   RM4_RETRIEVAL,
   runFactcheck,
 } from '../src/factcheck.ts';
-import { FACTCHECK_PROMPT_VERSION } from '../src/prompts.ts';
+import { FACTCHECK_PROMPT_VERSION, RESEARCH_SYSTEM } from '../src/prompts.ts';
 import { aiRetriever, type RetrieveRequest, type RetrieveResult, type Retriever } from '../src/retriever.ts';
+import { type SearchProvider, searchRetriever } from '../src/search.ts';
 
 const NONCE = 'abc12345';
 const NOW = new Date('2026-10-15T12:00:00.000Z');
@@ -179,9 +181,9 @@ describe('claims', () => {
 });
 
 describe('research', () => {
-  it('test_factcheck_asks_for_five_searches_with_blocklist', async () => {
+  it('test_factcheck_asks_for_budget_with_blocklist', async () => {
     const plain = await run();
-    expect(plain.retrieves[0]?.maxSearches).toBe(5);
+    expect(plain.retrieves[0]?.maxSearches).toBe(2);
     expect(plain.retrieves[0]?.blockedDomains).toEqual(blockedDomains());
     expect(plain.retrieves[0]?.nonce).toBe(NONCE);
 
@@ -235,15 +237,42 @@ describe('research', () => {
 describe('retrieval plan', () => {
   const verdictUser = (requests: StructuredRequest[]) => requests.find((r) => r.schemaName === 'factcheck_verdicts')?.user ?? '';
 
-  it('test_factcheck_default_plan_is_rm4', async () => {
+  it('test_factcheck_retrieval_rm5_plan', () => {
+    expect([1, 2, 3].map((n) => FACTCHECK_RETRIEVAL.searches(n))).toEqual([2, 3, 4]);
+    expect(FACTCHECK_RETRIEVAL.effort).toBe('low');
+    expect(FACTCHECK_RETRIEVAL.verdictSources).toBe('quotable');
+  });
+
+  it('test_factcheck_default_budget_per_claim', async () => {
     const sources = [...SOURCES, source('s3', 'third.example.net', [])];
-    for (const claims of [['The bridge opened in 1932.'], ['One.', 'Two.', 'Three.']]) {
-      const out = await run({ claims }, sources);
+    for (const [claims, maxSearches] of [
+      [['The bridge opened in 1932.'], 2],
+      [['One.', 'Two.', 'Three.'], 4],
+    ] as const) {
+      const out = await run({ claims: [...claims] }, sources);
       expect(out.retrieves[0]?.claims).toHaveLength(claims.length);
-      expect(out.retrieves[0]).toMatchObject({ maxSearches: 5, effort: 'medium' });
+      expect(out.retrieves[0]).toMatchObject({ maxSearches, effort: 'low' });
       const user = verdictUser(out.requests);
-      for (const id of ['s1', 's2', 's3']) expect(user, id).toContain(`<source_${NONCE} id="${id}"`);
+      for (const id of ['s1', 's2']) expect(user, id).toContain(`<source_${NONCE} id="${id}"`);
+      expect(user).not.toContain('id="s3"');
     }
+  });
+
+  it('test_research_prompt_states_budget_in_request', async () => {
+    const seen: ResearchRequest[] = [];
+    const { client } = fakeClient();
+    client.research = async (req) => {
+      seen.push(req);
+      return { notes: '', sources: SOURCES, usage: RESEARCH_USAGE, model: req.model, searchErrors: [] };
+    };
+    const c = fakeClient();
+    await runFactcheck(POST, deps(c.client, aiRetriever(client, 'claude-sonnet-5-5')));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.maxSearches).toBe(2);
+    expect(seen[0]?.system).toBe(RESEARCH_SYSTEM);
+    expect(seen[0]?.user).toContain('Research these 1 claims. You have at most 2 searches in total.');
+    expect(RESEARCH_SYSTEM).not.toMatch(/at most \d/);
+    expect(RESEARCH_SYSTEM).not.toMatch(/\b5 searches\b/);
   });
 
   it('test_factcheck_plan_budget_effort_and_quotable_sources', async () => {
@@ -296,6 +325,23 @@ describe('retrieval plan', () => {
     await retriever.retrieve({ ...req, effort: 'low' });
     await retriever.retrieve(req);
     expect(seen.map((r) => r.effort)).toEqual(['low', 'medium']);
+  });
+});
+
+describe('search providers', () => {
+  it('test_search_retriever_one_search_per_claim', async () => {
+    const queries: string[] = [];
+    const provider: SearchProvider = {
+      id: 'brave',
+      async search(query) {
+        queries.push(query);
+        return [];
+      },
+    };
+    const claims = ['One.', 'Two.', 'Three.'];
+    const out = await run({ claims }, SOURCES, { retriever: searchRetriever(provider) });
+    expect(out.result.claims).toHaveLength(3);
+    expect(queries).toEqual(claims);
   });
 });
 
@@ -404,12 +450,17 @@ describe('result, usage and errors', () => {
   it('test_factcheck_result_matches_schema', async () => {
     const { result } = await run({ answeredModel: { factcheck_verdicts: 'claude-sonnet-5-5-20261001' } });
     expect(FactcheckResultSchema.parse(result)).toEqual(result);
-    expect(result.promptVersion).toBe(1);
-    expect(FACTCHECK_PROMPT_VERSION).toBe(1);
+    expect(result.promptVersion).toBe(FACTCHECK_PROMPT_VERSION);
     expect(result.checkedAt).toBe(NOW.toISOString());
     expect(result.model).toBe('claude-sonnet-5-5-20261001');
     expect(result.claims[0]?.verdict).toBe('supported');
     expect(result.sources.map((s) => s.id)).toEqual(['s1', 's2']);
+  });
+
+  it('test_factcheck_prompt_version_2', async () => {
+    expect(FACTCHECK_PROMPT_VERSION).toBe(2);
+    const { result } = await run();
+    expect(result.promptVersion).toBe(2);
   });
 
   it('test_factcheck_reports_usage_per_call_including_failure', async () => {

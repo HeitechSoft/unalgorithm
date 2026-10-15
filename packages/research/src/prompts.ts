@@ -7,7 +7,7 @@ import { z } from 'zod';
  * written from them) reaches a model only inside tags that carry a per-request nonce, escaped by `neutralize`, so it
  * can never close or forge the tags around it. Bump the version whenever a prompt changes meaning.
  */
-export const FACTCHECK_PROMPT_VERSION = 1;
+export const FACTCHECK_PROMPT_VERSION = 2;
 
 export const ClaimsSchema = z.object({ claims: z.array(z.object({ claim: z.string() })) });
 
@@ -36,7 +36,7 @@ The post is wrapped in a tag like <post_NONCE ...>...</post_NONCE>, where NONCE 
 
 export const RESEARCH_SYSTEM = `You research factual claims taken from a social media post, using web search, so that a separate step can judge them.
 
-For each claim, look for evidence both for and against it. Prefer primary sources (official records, the original study, the full quote in its context) and independent outlets over pages that repeat each other. You have at most 5 searches in total.
+For each claim, look for evidence both for and against it. Prefer primary sources (official records, the original study, the full quote in its context) and independent outlets over pages that repeat each other. The request gives your search budget: never use more searches than it allows, and spend it on the claims in order.
 
 Write short notes for each claim, headed by its id (c1, c2, c3): what the sources say, and which source each point relies on. Do not give a final verdict.
 
@@ -82,8 +82,9 @@ function claimTags(claims: readonly PromptClaim[], nonce: string): string {
   return claims.map((c) => `<claim_${nonce} id="${attr(c.id)}">\n${neutralize(c.text)}\n</claim_${nonce}>`).join('\n\n');
 }
 
-export function buildResearchUser(claims: readonly PromptClaim[], nonce: string): string {
-  return `Nonce: ${nonce}\nResearch these ${claims.length} claims.\n\n${claimTags(claims, nonce)}`;
+/** The claims to research and the search budget; the budget lives here so the system prompt's cached prefix never varies. */
+export function buildResearchUser(claims: readonly PromptClaim[], nonce: string, maxSearches: number): string {
+  return `Nonce: ${nonce}\nResearch these ${claims.length} claims. You have at most ${maxSearches} searches in total.\n\n${claimTags(claims, nonce)}`;
 }
 
 function sourceTag(s: RetrievedSource, nonce: string): string {

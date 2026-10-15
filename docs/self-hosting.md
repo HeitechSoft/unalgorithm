@@ -498,6 +498,10 @@ docker compose up -d --wait
 
 Read the release notes for extra steps, such as running `route-eval` again (section 6).
 
+**Upgrading to the release with fact-check prompt version 2:** fact-check now researches with one search per claim plus
+one (at most 5) at low effort, so its prompt version is 2. Fact-check and Other perspectives stay off until you run
+`route-eval factcheck` again (section 6), about $3 with Anthropic.
+
 ## Using your own HTTPS proxy
 
 If you already run an HTTPS proxy on this machine, leave `caddy` out of `COMPOSE_PROFILES`. Your proxy must:

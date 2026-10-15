@@ -40,7 +40,7 @@ export function aiRetriever(client: AIClient, model: string): Retriever {
       const res = await research({
         model,
         system: RESEARCH_SYSTEM,
-        user: buildResearchUser(req.claims, req.nonce),
+        user: buildResearchUser(req.claims, req.nonce, req.maxSearches),
         maxSearches: req.maxSearches,
         blockedDomains: req.blockedDomains,
         effort: req.effort ?? 'medium',
