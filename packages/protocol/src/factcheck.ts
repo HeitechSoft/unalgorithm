@@ -65,16 +65,23 @@ export const FACTCHECK_JOB_TTL_MS = 10 * 60_000;
 export const FactcheckJobRequestSchema = z.object({ v: z.literal(1), post: PostForAISchema });
 export type FactcheckJobRequest = z.infer<typeof FactcheckJobRequestSchema>;
 export const FACTCHECK_JOB_STATUSES = ['running', 'done', 'failed', 'cancelled'] as const;
-export const FactcheckJobSchema = z
-  .object({
-    v: z.literal(1),
-    id: z.uuid(),
-    status: z.enum(FACTCHECK_JOB_STATUSES),
-    result: FactcheckResultSchema.optional(),
-    error: ServerErrorSchema.optional(),
-    /** Only from a billing server that charged it: the same shape as classify's. */
-    billing: ClassifyResponseSchema.shape.billing,
-  })
-  .refine((j) => (j.status === 'done') === (j.result !== undefined), { path: ['result'] })
-  .refine((j) => j.status !== 'failed' || j.error !== undefined, { path: ['error'] });
+/**
+ * The view of an on-demand job (a check, a comparison): `done` carries a result, `failed` an error, `running` and
+ * `cancelled` neither. Every job task shares it, and FACTCHECK_POLL_WAIT_MS and FACTCHECK_JOB_TTL_MS.
+ */
+export function jobSchemaFor<R extends z.ZodType>(result: R) {
+  return z
+    .object({
+      v: z.literal(1),
+      id: z.uuid(),
+      status: z.enum(FACTCHECK_JOB_STATUSES),
+      result: result.optional(),
+      error: ServerErrorSchema.optional(),
+      /** Only from a billing server that charged it: the same shape as classify's. */
+      billing: ClassifyResponseSchema.shape.billing,
+    })
+    .refine((j) => (j.status === 'done') === (j.result !== undefined), { path: ['result'] })
+    .refine((j) => j.status !== 'failed' || j.error !== undefined, { path: ['error'] });
+}
+export const FactcheckJobSchema = jobSchemaFor(FactcheckResultSchema);
 export type FactcheckJob = z.infer<typeof FactcheckJobSchema>;

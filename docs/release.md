@@ -208,6 +208,9 @@ that first prices it. Until that entry is in effect the task is not offered (`ta
 refuses its jobs. A task's first card is not a raise; after it, the notice rule applies to it like any other card, and
 a higher `maxChargeMicros` is a raise. Adding a task follows [The procedure](#the-procedure) like any other entry.
 
+`perspectives` was added this way: its first card is the 2026-11-01 entry (2×, hold cap $0.50), which copies the
+2026-10-01 classify card unchanged.
+
 ### Merging a schedule change
 
 The check uses its run's clock, and GitHub does not run it again at merge. On the day you merge a pull request that

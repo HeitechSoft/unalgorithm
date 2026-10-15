@@ -7,11 +7,13 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import {
   ACCOUNT_DEVICES_PATH,
   CREDIT_ACCOUNT_PATH,
+  CREDIT_PRICE_SCHEDULE,
   type CreditAccount,
   type CreditBalance,
   type CreditHistoryItem,
   type CreditPriceSchedule,
-  nextPriceChange,
+  type CreditPriceScheduleEntry,
+  retailMicrosPer1000Posts,
   SERVER_INFO_PATH,
 } from '@unalgorithm/protocol';
 import { setupUser } from '@unalgorithm/ui/testing';
@@ -255,8 +257,12 @@ describe('price', () => {
     openCredits({ status: 200, body: account() });
     const section = await loadedCredits();
     expect(within(section).getByText(PRICE_NOW)).toBeTruthy();
-    // A scheduled change shows, from the real schedule, exactly when there is one (none while only the launch entry is).
-    expect(within(section).queryByText(/^From /) !== null).toBe(nextPriceChange(NOW) !== null);
+    // From the real schedule, a From line exactly when a later entry changes the classify price per 1,000 posts.
+    const nowPrice = retailMicrosPer1000Posts(NOW);
+    const changes = CREDIT_PRICE_SCHEDULE.some(
+      (e) => Date.parse(e.effectiveFrom) > NOW.getTime() && retailMicrosPer1000Posts(new Date(e.effectiveFrom)) !== nowPrice,
+    );
+    expect(within(section).queryByText(/^From /) !== null).toBe(changes);
     cleanup();
 
     // While loading, and after an error: no price.
@@ -292,6 +298,35 @@ describe('price', () => {
     expect(within(section).getByText('AI costs about $0.18 per 1,000 posts.')).toBeTruthy();
     expect(within(section).getByText('about 5,300 posts')).toBeTruthy();
     expect(within(section).queryByText(/^From /)).toBeNull();
+  });
+
+  it('test_credits_no_next_line_when_classify_price_unchanged', async () => {
+    const shows = async (schedule: CreditPriceSchedule | undefined, at: Date) => {
+      cleanup();
+      clockAt(at);
+      fakeServer({ session: TOM, info: { ...INFO, billing: true }, routes });
+      render(<Credits schedule={schedule} onSignedOut={signedOut} />);
+      return within(await loadedCredits()).queryByText(/^From /)?.textContent ?? null;
+    };
+    const OCT_20 = new Date('2026-10-20T12:00:00Z');
+    // The real schedule: the 2026-11-01 entry only adds perspectives, so the account page names no change.
+    expect(await shows(undefined, OCT_20)).toBeNull();
+    // A next entry that changes the classify multiplier still shows.
+    expect(await shows(S, OCT_20)).toBe('From Nov 15, 2026 (UTC): about $0.18 per 1,000 posts.');
+    // A perspectives-only entry never hides a later classify change behind it.
+    const perspectives: CreditPriceScheduleEntry['cards']['perspectives'] = {
+      multiplier: 2,
+      referenceModel: 'claude-sonnet-5-5',
+      referenceCostMicrosPer1000: 135_000_000,
+      unit: 'comparison',
+      maxChargeMicros: 500_000,
+    };
+    const added: CreditPriceSchedule = [
+      { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
+      { effectiveFrom: '2026-11-01T00:00:00Z', cards: { classify: card(2), perspectives } },
+      { effectiveFrom: '2026-12-01T00:00:00Z', cards: { classify: card(2.5), perspectives } },
+    ];
+    expect(await shows(added, OCT_20)).toBe('From Dec 1, 2026 (UTC): about $0.18 per 1,000 posts.');
   });
 });
 

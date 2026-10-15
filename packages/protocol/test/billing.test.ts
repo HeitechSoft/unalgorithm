@@ -40,6 +40,12 @@ function entry(effectiveFrom: string, multiplier: number, cost = 73_000, model =
   return { effectiveFrom, cards: { classify: { multiplier, referenceModel: model, referenceCostMicrosPer1000: cost } } };
 }
 
+/** The 2026-10-01 entry exactly as published: rule 1 keeps it deep-equal for good. */
+const LAUNCH: CreditPriceScheduleEntry = {
+  effectiveFrom: '2026-10-01T00:00:00Z',
+  cards: { classify: { multiplier: 2, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73000 } },
+};
+
 /** The stub schedule S: the launch card A, then B (a raise to 2.5) from 15 November. */
 const A = entry('2026-10-01T00:00:00Z', 2);
 const B = entry('2026-11-15T00:00:00Z', 2.5);
@@ -52,17 +58,13 @@ const pastText = (e: string, earliest: string) =>
 
 describe('price schedule', () => {
   it('test_price_schedule_launch_entry', () => {
-    expect(CREDIT_PRICE_SCHEDULE).toEqual([
-      {
-        effectiveFrom: '2026-10-01T00:00:00Z',
-        cards: { classify: { multiplier: 2, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73000 } },
-      },
-    ]);
-    const [launch] = CREDIT_PRICE_SCHEDULE;
+    expect(CREDIT_PRICE_SCHEDULE[0]).toEqual(LAUNCH);
     expect(Object.isFrozen(CREDIT_PRICE_SCHEDULE)).toBe(true);
-    expect(Object.isFrozen(launch)).toBe(true);
-    expect(Object.isFrozen(launch?.cards)).toBe(true);
-    expect(Object.isFrozen(launch?.cards.classify)).toBe(true);
+    for (const e of CREDIT_PRICE_SCHEDULE) {
+      expect(Object.isFrozen(e)).toBe(true);
+      expect(Object.isFrozen(e.cards)).toBe(true);
+      for (const c of Object.values(e.cards)) expect(Object.isFrozen(c)).toBe(true);
+    }
     // The entry in effect and every later one name a model with a price card (never checked for past entries).
     const current = CREDIT_PRICE_SCHEDULE.filter((e) => e === priceCardsAt(NOW) || Date.parse(e.effectiveFrom) > NOW.getTime());
     expect(current.length).toBeGreaterThan(0);
@@ -356,14 +358,44 @@ describe('adding a task', () => {
 
   it('test_credit_tasks_added_without_touching_entry_in_effect', () => {
     expect(CREDIT_TASKS).toEqual(['classify', 'factcheck', 'perspectives']);
-    expect(CREDIT_PRICE_SCHEDULE).toEqual([
-      {
-        effectiveFrom: '2026-10-01T00:00:00Z',
-        cards: { classify: { multiplier: 2, referenceModel: 'claude-haiku-5-5', referenceCostMicrosPer1000: 73000 } },
-      },
-    ]);
+    expect(CREDIT_PRICE_SCHEDULE[0]).toEqual(LAUNCH);
     expect(priceScheduleProblems(CREDIT_PRICE_SCHEDULE)).toEqual([]);
     expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, CREDIT_PRICE_SCHEDULE, OCT_15)).toEqual([]);
+  });
+
+  it('test_perspectives_entry_passes_shape_and_change_rules', () => {
+    expect(CREDIT_PRICE_SCHEDULE).toEqual([
+      LAUNCH,
+      { effectiveFrom: '2026-11-01T00:00:00Z', cards: { classify: LAUNCH.cards.classify, perspectives: PERSPECTIVES } },
+    ]);
+    // The classify card is the launch card, the same object.
+    expect(CREDIT_PRICE_SCHEDULE[1]?.cards.classify).toBe(CREDIT_PRICE_SCHEDULE[0]?.cards.classify);
+    expect(priceScheduleProblems(CREDIT_PRICE_SCHEDULE)).toEqual([]);
+    // A new task's first card is not a raise, and the entry in effect is unchanged.
+    expect(checkPriceScheduleChange([LAUNCH], CREDIT_PRICE_SCHEDULE, OCT_15)).toEqual([]);
+    expect(taskPriceAt(OCT_15, 'perspectives')).toEqual({ offered: false });
+  });
+
+  it('test_job_price_at_perspectives_from_its_date', () => {
+    expect(jobPriceAt(at('2026-11-02T00:00:00Z'), 'perspectives')).toEqual({ typicalMicros: 270_000, maxMicros: 500_000 });
+    expect(jobPriceAt(at('2026-10-31T23:59:59Z'), 'perspectives')).toBeNull();
+    // Fact-check is still not priced (RM4).
+    expect(jobPriceAt(at('2026-11-02T00:00:00Z'), 'factcheck')).toBeNull();
+  });
+
+  it('test_perspectives_cap_raise_needs_notice', () => {
+    const real = CREDIT_PRICE_SCHEDULE[1] as CreditPriceScheduleEntry;
+    const raised: CreditPriceSchedule = [
+      ...CREDIT_PRICE_SCHEDULE,
+      {
+        effectiveFrom: '2026-11-11T00:00:00Z',
+        cards: { ...real.cards, perspectives: { ...PERSPECTIVES, maxChargeMicros: 600_000 } },
+      },
+    ];
+    const problems = checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, raised, at('2026-11-05T12:00:00Z'));
+    expect(problems).toEqual([
+      "2026-11-11T00:00:00Z: perspectives would raise its maximum charge from 500000 to 600000 micro-dollars; a price raise needs 30 days' notice: the earliest effectiveFrom allowed now for it is 2026-12-06T00:00:00Z",
+    ]);
   });
 
   it('test_new_task_first_entry_is_not_a_raise', () => {

@@ -80,6 +80,19 @@ export function Credits({ onSignedOut, schedule = CREDIT_PRICE_SCHEDULE }: Credi
   );
 }
 
+/**
+ * The first later entry whose classify price per 1,000 posts differs from the one in effect at `at`, or null. Scans past
+ * entries that change only other tasks (a new perspectives card), so they never hide a classify raise's notice.
+ */
+function nextClassifyPriceChange(at: Date, schedule: CreditPriceSchedule) {
+  const now = retailMicrosPer1000Posts(at, 'classify', schedule);
+  let next = nextPriceChange(at, schedule);
+  while (next && retailMicrosPer1000Posts(new Date(next.effectiveFrom), 'classify', schedule) === now) {
+    next = nextPriceChange(new Date(next.effectiveFrom), schedule);
+  }
+  return next;
+}
+
 function CreditDetails({
   account: { balance, history, addCreditPath, pricingUrl },
   at,
@@ -90,7 +103,7 @@ function CreditDetails({
   schedule: CreditPriceSchedule;
 }) {
   const promotional = promotionalLine(balance);
-  const next = nextPriceChange(at, schedule);
+  const next = nextClassifyPriceChange(at, schedule);
   return (
     <>
       <div className="web-balance">

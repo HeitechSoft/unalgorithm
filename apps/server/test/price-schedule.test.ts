@@ -78,7 +78,7 @@ describe('cli', () => {
   it('test_cli_exit_codes', async () => {
     expect(await run(['--base', 'main'], atBase(REAL_SOURCE))).toEqual({
       code: 0,
-      lines: ['No price in effect changed (1 of 1 entries in effect).'],
+      lines: ['No price in effect changed (1 of 2 entries in effect).'],
     });
 
     const changed = REAL_SOURCE.replace('multiplier: 2,', 'multiplier: 2.5,');
@@ -134,8 +134,8 @@ describe('cli', () => {
   it('test_cli_in_effect_only', async () => {
     // A raise 14 days out: the release check does not measure notice; the merge check does.
     const raise = { head: { schedule: [A, entry(B.effectiveFrom, 2.5)], noticeDays: 30 }, now: new Date('2026-11-01T00:00:00Z') };
-    expect((await run(['--base', 'main', '--in-effect-only'], atBase(REAL_SOURCE), raise)).code).toBe(0);
-    expect((await run(['--base', 'main'], atBase(REAL_SOURCE), raise)).code).toBe(1);
+    expect((await run(['--base', 'main', '--in-effect-only'], atBase(scheduleSource([A])), raise)).code).toBe(0);
+    expect((await run(['--base', 'main'], atBase(scheduleSource([A])), raise)).code).toBe(1);
 
     // B, in effect since 15 November, is gone from the head.
     const removed = { head: { schedule: [A], noticeDays: 30 }, now: new Date('2026-11-20T00:00:00Z') };

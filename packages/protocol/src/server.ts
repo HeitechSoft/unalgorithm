@@ -57,10 +57,15 @@ export const ServerInfoSchema = z.object({
   source: z.url({ protocol: /^https?$/ }),
   /** True only when a billing provider is active; the extension shows credits only then. */
   billing: z.boolean(),
-  /** `factcheck` is optional: an older server's document still parses, and an older extension ignores it. */
-  capabilities: z.object({ classify: z.boolean(), sync: z.boolean(), factcheck: z.boolean().optional() }),
+  /** `factcheck` and `perspectives` are optional: an older server's document still parses, and an older extension ignores them. */
+  capabilities: z.object({
+    classify: z.boolean(),
+    sync: z.boolean(),
+    factcheck: z.boolean().optional(),
+    perspectives: z.boolean().optional(),
+  }),
   /** A billing server's price for an on-demand task now (CL2-26 schedule). Absent when it charges nothing for it. */
-  jobPrices: z.object({ factcheck: JobPriceSchema.optional() }).optional(),
+  jobPrices: z.object({ factcheck: JobPriceSchema.optional(), perspectives: JobPriceSchema.optional() }).optional(),
   auth: z.object({
     /**
      * Sign-in methods the server offers, such as `email-otp`. Open-ended, so a server that adds a method later still
