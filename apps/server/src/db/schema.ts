@@ -285,3 +285,20 @@ export const syncPushes = pgTable(
   },
   (table) => [primaryKey({ columns: [table.spaceId, table.pushId] }), index('sync_pushes_created').on(table.createdAt)],
 );
+
+/**
+ * Alerts that are open now (R43, CL4-15). A row is deleted when its alert closes; the log keeps the history. Content-free:
+ * a fixed key, a level, times and a number.
+ */
+export const opsAlerts = pgTable('ops_alerts', {
+  /** A fixed key: disk-free-low, database-size-high, errors-high, spend-breaker, backup-<kind>. */
+  key: text('key').primaryKey(),
+  /** 'warning' or 'critical' (`ALERT_LEVELS`). */
+  level: text('level').$type<'warning' | 'critical'>().notNull(),
+  openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
+  /** The measured value when last seen (bytes, a count or hours); null when the rule has none. */
+  lastValue: doublePrecision('last_value'),
+  /** When a notification about this alert last went out (CL4-16); null: none yet. */
+  notifiedAt: timestamp('notified_at', { withTimezone: true }),
+});

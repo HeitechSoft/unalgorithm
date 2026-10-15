@@ -10,7 +10,8 @@
  */
 import { type AdminOverview, type AdminUsers, MAX_ADMIN_USERS, USAGE_DAYS, type UsageDay } from '@unalgorithm/protocol';
 import { asc, count, eq, gte, type SQL, sql } from 'drizzle-orm';
-import { spendTodayMicros, utcDayStart } from '../ai/metering.ts';
+import { spendBreakerTripped } from '../ai/limits.ts';
+import { utcDayStart } from '../ai/metering.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import { devices, usageEvents, user, userLimits } from '../db/schema.ts';
@@ -123,8 +124,7 @@ export async function adminOverview(db: Db, config: QueryConfig, now: Date = new
     return { day: key, posts: r?.posts ?? 0, requests: r?.requests ?? 0, costMicros: r?.costMicros ?? 0 };
   });
   const [accounts] = await db.select({ n: count() }).from(user);
-  // The comparison checkLimits makes, on the same sum.
-  const breakerTripped = (await spendTodayMicros(db, now)) >= config.dailySpendLimitMicros;
+  const breakerTripped = await spendBreakerTripped(db, config, now);
   const today = last30Days.at(-1);
   if (!today) throw new Error('USAGE_DAYS is 0.');
 

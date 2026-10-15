@@ -170,6 +170,19 @@ export async function checkLimits(
   return release;
 }
 
+/**
+ * Whether the spend breaker is tripped: everyone's AI cost today (UTC) has reached `DAILY_SPEND_LIMIT_USD`. The
+ * comparison `checkLimits` makes, for the admin page and the `spend-breaker` alert (CL4-15); `checkLimits` keeps its own
+ * read, since it logs the amount.
+ */
+export async function spendBreakerTripped(
+  db: Db,
+  config: Pick<Config, 'dailySpendLimitMicros'>,
+  now: Date = new Date(),
+): Promise<boolean> {
+  return (await spendTodayMicros(db, now)) >= config.dailySpendLimitMicros;
+}
+
 /** The user's daily post cap: their own, set with `user-cap`, else the server's `USER_DAILY_POST_CAP`. */
 export async function effectiveDailyCap(db: Db, userId: string, config: Pick<Config, 'userDailyPostCap'>): Promise<number> {
   const [row] = await db.select({ cap: userLimits.dailyPostCap }).from(userLimits).where(eq(userLimits.userId, userId)).limit(1);

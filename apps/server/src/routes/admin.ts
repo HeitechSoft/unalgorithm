@@ -41,6 +41,7 @@ import { claimSetup, SETUP_REFUSED } from '../admin/setup.ts';
 import { setDailyCap } from '../ai/limits.ts';
 import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
+import { listOpenAlerts } from '../ops/alerts.ts';
 import type { ErrorWindow } from '../ops/error-window.ts';
 import { errorResponse, json, NOT_FOUND } from './openapi.ts';
 
@@ -91,7 +92,11 @@ export function adminRoutes(app: App, deps: AppDeps): void {
         ...refusals,
       },
     }),
-    async (c) => c.json(await fullOverview({ db: db.db, config, log, errors: deps.errors ?? NO_ERRORS }), 200),
+    async (c) =>
+      c.json(
+        await fullOverview({ db: db.db, config, log, errors: deps.errors ?? NO_ERRORS, alerts: () => listOpenAlerts(db.db) }),
+        200,
+      ),
   );
 
   app.openapi(

@@ -50,6 +50,10 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'USER_DAILY_POST_CAP',
   'USER_REQUESTS_PER_MINUTE',
   'DAILY_SPEND_LIMIT_USD',
+  'ALERT_DISK_FREE_MIN_GB',
+  'ALERT_DATABASE_MAX_GB',
+  'ALERT_ERRORS_PER_15M',
+  'ALERT_BACKUP_MAX_AGE_HOURS',
   'WEB_DIST',
   'BACKUP_STATUS_DIR',
   'LOG_LEVEL',
@@ -108,6 +112,17 @@ export interface Config {
   userRequestsPerMinute: number;
   /** The daily spend breaker, in integer micro-dollars. */
   dailySpendLimitMicros: number;
+  /** The alert rules' thresholds (CL4-15, `ops/alerts.ts`); 0 turns a rule off. */
+  alerts: {
+    /** `disk-free-low` opens below this many free bytes. */
+    diskFreeMinBytes: number;
+    /** `database-size-high` opens above this many bytes. */
+    databaseMaxBytes: number;
+    /** `errors-high` opens at this many error lines in 15 minutes. */
+    errorsPer15m: number;
+    /** `backup-<kind>` opens when the last success is older than this (ms); 0: only a failed run opens it. */
+    backupMaxAgeMs: number;
+  };
   webDist: string;
   /**
    * The folder of the backup status files (`<kind>.json`, CL4-10), absolute; compose.yaml mounts it read-only. Unset:
@@ -144,6 +159,9 @@ const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 /** INSTANCE_NAME and MAIL_FROM_NAME; the discovery document's `name` has the same limit. */
 const MAX_DISPLAY_NAME = 80;
+/** Decimal gigabytes, as disks are sold and `df -H` shows them. */
+const GB = 1_000_000_000;
+const HOUR_MS = 3_600_000;
 const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 const Email = z.email();
@@ -330,6 +348,14 @@ export function loadConfig(env: Env = process.env): Config {
     'must be a number of dollars above 0 and at most 1000000',
   );
 
+  // Alerts (CL4-15): 0 turns a rule off.
+  const gigabytes = (name: string, fallback: number, alert: string) =>
+    decimal(name, fallback, (n) => n >= 0, `must be a number of GB, 0 or more (0 turns ${alert} off)`);
+  const diskFreeMinGb = gigabytes('ALERT_DISK_FREE_MIN_GB', 5, 'disk-free-low');
+  const databaseMaxGb = gigabytes('ALERT_DATABASE_MAX_GB', 10, 'database-size-high');
+  const errorsPer15m = integer('ALERT_ERRORS_PER_15M', 20, 0);
+  const backupMaxAgeHours = integer('ALERT_BACKUP_MAX_AGE_HOURS', 26, 0);
+
   // Runtime
   const webDistValue = read('WEB_DIST');
   const webDist = webDistValue ? resolve(webDistValue) : DEFAULT_WEB_DIST;
@@ -387,6 +413,12 @@ export function loadConfig(env: Env = process.env): Config {
     userDailyPostCap,
     userRequestsPerMinute,
     dailySpendLimitMicros: Math.round(dailySpendLimitUsd * 1_000_000),
+    alerts: {
+      diskFreeMinBytes: Math.round(diskFreeMinGb * GB),
+      databaseMaxBytes: Math.round(databaseMaxGb * GB),
+      errorsPer15m,
+      backupMaxAgeMs: backupMaxAgeHours * HOUR_MS,
+    },
     webDist,
     backupStatusDir,
     logLevel,
