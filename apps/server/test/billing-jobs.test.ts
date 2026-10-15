@@ -78,7 +78,10 @@ describe('billing host price schedule', () => {
       cleanup.push(() => plain.close());
       expect(plain.host.priceSchedule).toBe(CREDIT_PRICE_SCHEDULE);
 
-      const priced = await createTestHost({ priceSchedule: TEST_PRICE_SCHEDULE });
+      // A mutable copy: TEST_PRICE_SCHEDULE is frozen already, so it cannot show that the host freezes what it is given.
+      type Mutable = { effectiveFrom: string; cards: Record<string, { maxChargeMicros?: number }> }[];
+      const given = structuredClone(TEST_PRICE_SCHEDULE) as unknown as Mutable;
+      const priced = await createTestHost({ priceSchedule: given as unknown as CreditPriceSchedule });
       cleanup.push(() => priced.close());
       expect(priced.host.priceSchedule).toEqual(TEST_PRICE_SCHEDULE);
       expect(Object.isFrozen(priced.host.priceSchedule)).toBe(true);
@@ -86,6 +89,11 @@ describe('billing host price schedule', () => {
       expect(Object.isFrozen(entry)).toBe(true);
       expect(Object.isFrozen(entry?.cards)).toBe(true);
       expect(Object.isFrozen(entry?.cards.factcheck)).toBe(true);
+      // Changing the caller's schedule afterwards never changes what the host prices with.
+      const card = given[1]?.cards.factcheck;
+      if (card) card.maxChargeMicros = 1;
+      given.push({ effectiveFrom: '2026-10-03T00:00:00Z', cards: {} });
+      expect(priced.host.priceSchedule).toEqual(TEST_PRICE_SCHEDULE);
     },
     PGLITE_TIMEOUT,
   );
