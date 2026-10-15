@@ -30,13 +30,14 @@ import {
   TOKEN_PATH,
   type WireError,
 } from '@unalgorithm/protocol';
-import type { LinkChecker, SearchProvider } from '@unalgorithm/research';
+import type { ClaimCache, LinkChecker, SearchProvider } from '@unalgorithm/research';
 import { sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { claimCacheSecret, pgClaimCache } from '../ai/claim-cache.ts';
 import { searchProviderFor } from '../ai/factcheck.ts';
 import { createRateLimiter, type LimitDeps } from '../ai/limits.ts';
 import { perspectivesOffer } from '../ai/perspectives.ts';
@@ -112,6 +113,11 @@ export interface AppDeps {
   perspectivesJobs?: JobStore<PerspectivesResult>;
   /** The egress fetcher's resolution of a shared link to its canonical URL (P3-32); default: none (the link as shared). */
   resolveLink?: (url: string, signal: AbortSignal) => Promise<string | null>;
+  /**
+   * The server's shared claim cache (P3-58); null: none. Default: `pgClaimCache` over the app's database, keyed from
+   * BETTER_AUTH_SECRET; `createApp` writes it here, so `deps.claimCache` is the app's own.
+   */
+  claimCache?: ClaimCache | null;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -167,6 +173,7 @@ export function httpStatusFor(code: AIErrorCode): ContentfulStatusCode {
 
 export function createApp(deps: AppDeps): App {
   const { config, db, log, billing, auth } = deps;
+  if (deps.claimCache === undefined) deps.claimCache = pgClaimCache(db.db, { secret: claimCacheSecret(config.authSecret) });
   const app = new OpenAPIHono<AppEnv>({
     // A request that fails its schema gets one fixed answer: zod's issues quote the input.
     defaultHook: (result, c) => {

@@ -12,6 +12,7 @@ import { AIError } from '@unalgorithm/ai';
 import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
 import { FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
 import { logSetupNeeded } from './admin/setup.ts';
+import { registerClaimCacheJobs } from './ai/claim-cache.ts';
 import { searchProviderFor } from './ai/factcheck.ts';
 import { clientForRoute } from './ai/provider.ts';
 import { type AiRoute, RouteConfigError, syncRouteFromConfig } from './ai/routes.ts';
@@ -107,6 +108,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // The server's own tasks and a billing module's are registered here, before the jobs start.
     const jobs = createJobRegistry();
     registerAuthJobs(jobs, { db: db.db });
+    registerClaimCacheJobs(jobs, { db: db.db });
     registerSyncJobs(jobs, { db: db.db });
     const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
     registerAlertJobs(jobs, { db: db.db, config, log, errors, notify: notifier.notify });

@@ -202,6 +202,7 @@ always show or hide (`sync_items`).
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 | `ops_alerts` | Alerts open now: key, level, times, one number |
+| `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text, explanation or any user, device or post id; deleted hourly once past its 24 hours |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
@@ -256,8 +257,9 @@ the job registry while the server starts. The server's own: `auth.purge-expired`
 tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
 deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
 `ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`); `ops.check-alerts`, every five
-minutes, checks the server's status and opens or closes alerts ([Self-hosting and operations](#self-hosting-and-operations)).
-The server registers all three on every server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
+minutes, checks the server's status and opens or closes alerts ([Self-hosting and operations](#self-hosting-and-operations));
+`factcheck.purge-claim-cache`, hourly, deletes `claim_cache` rows past their expiry (`apps/server/src/ai/claim-cache.ts`).
+The server registers all four on every server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
 gives every space a new epoch, so every device resyncs. graphile-worker creates the
 `graphile_worker` schema when it first starts and keeps its queue there: each job's task name, payload, run
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers

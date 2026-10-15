@@ -151,7 +151,18 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   (its keys and the server's answers, no values, never a refused key) is kept for 24 hours (`sync_pushes`). Never
   synced: API keys, endpoint tokens, refresh tokens, AI source settings, learned topics, votes, statistics or cached
   results ([Sync](ARCHITECTURE.md#sync)).
-- **Background jobs:** the hourly purge of expired sign-in rows above, the sync cleanup every 6 hours (`sync.gc`, which
+- **Shared claim cache:** for each claim checked in a public post on this server, one row: a keyed hash of the
+  normalized claim (HMAC-SHA-256 under a key derived from the server's `BETTER_AUTH_SECRET`, never stored), the
+  verdict, up to 4 public source URLs with each one's title and a quote of 25 words at most, and when it was checked
+  and when it expires, both to the hour (`claim_cache`). Never the claim, the post text, the explanation, who checked
+  it (no account, device or post id, and no exact time that would match a usage row), or a source on Facebook or
+  LinkedIn. A row is served for 24 hours from its check and deleted by an hourly job after that. The cache is this
+  server's own: it is filled only from checks of public posts made here, is never sent to another server, and a
+  different server's key finds nothing in it; a new `BETTER_AUTH_SECRET` makes every row unreachable. A hit tells the
+  next person on this server who checks the same claim that someone here checked that same public claim that day,
+  never who.
+- **Background jobs:** the hourly purge of expired sign-in rows above, the hourly purge of expired claim cache rows
+  (`factcheck.purge-claim-cache`), the sync cleanup every 6 hours (`sync.gc`, which
   removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers
   ([ARCHITECTURE.md → Jobs](ARCHITECTURE.md#jobs)). graphile-worker's queue (schema `graphile_worker`) holds each job's
   task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
