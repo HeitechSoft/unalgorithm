@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { MAX_MODEL_CHARS } from './classify.ts';
+import { ClassifyResponseSchema, MAX_MODEL_CHARS, PostForAISchema } from './classify.ts';
+import { ServerErrorSchema } from './server.ts';
 
 /** The five verdicts a fact-checked claim can carry. */
 export const FACTCHECK_VERDICTS = ['supported', 'disputed', 'misleading', 'unverifiable', 'needs-context'] as const;
@@ -52,3 +53,28 @@ export interface RetrievedSource extends FactcheckSource {
   /** The only readable text of the page: the passages the research model cited. */
   snippets: string[];
 }
+
+export const FACTCHECK_JOBS_PATH = '/v1/jobs/factcheck';
+export const factcheckJobPath = (id: string) => `${FACTCHECK_JOBS_PATH}/${id}`;
+/** POST: CORS on /v1 allows GET and POST only, so cancel is a POST. */
+export const factcheckJobCancelPath = (id: string) => `${factcheckJobPath(id)}/cancel`;
+/** A poll with `?wait=1` waits at most this long for a running job to end. */
+export const FACTCHECK_POLL_WAIT_MS = 20_000;
+/** A finished job's view is kept this long, then forgotten. */
+export const FACTCHECK_JOB_TTL_MS = 10 * 60_000;
+export const FactcheckJobRequestSchema = z.object({ v: z.literal(1), post: PostForAISchema });
+export type FactcheckJobRequest = z.infer<typeof FactcheckJobRequestSchema>;
+export const FACTCHECK_JOB_STATUSES = ['running', 'done', 'failed', 'cancelled'] as const;
+export const FactcheckJobSchema = z
+  .object({
+    v: z.literal(1),
+    id: z.uuid(),
+    status: z.enum(FACTCHECK_JOB_STATUSES),
+    result: FactcheckResultSchema.optional(),
+    error: ServerErrorSchema.optional(),
+    /** Only from a billing server that charged it: the same shape as classify's. */
+    billing: ClassifyResponseSchema.shape.billing,
+  })
+  .refine((j) => (j.status === 'done') === (j.result !== undefined), { path: ['result'] })
+  .refine((j) => j.status !== 'failed' || j.error !== undefined, { path: ['error'] });
+export type FactcheckJob = z.infer<typeof FactcheckJobSchema>;

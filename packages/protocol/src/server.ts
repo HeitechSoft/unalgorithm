@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DeviceNameSchema } from './account.ts';
+import type { JobPrice } from './billing.ts';
 import { MAX_POSTS_PER_REQUEST } from './classify.ts';
 import { AI_ERROR_CODES, type WireError } from './errors.ts';
 
@@ -41,6 +42,11 @@ const OriginPath = z
   .regex(/^\/(?!\/)[\w\-.~!$&'()*+,;=:@%/]*$/);
 export const OriginPathSchema = OriginPath;
 
+/** billing.ts's is not exported (and importing its values here would be a cycle); same bounds. */
+const Micros = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** What an on-demand task (a check, a comparison) costs on a billing server now: typical and at most. */
+export const JobPriceSchema = z.object({ typicalMicros: Micros, maxMicros: Micros }) satisfies z.ZodType<JobPrice>;
+
 export const ServerInfoSchema = z.object({
   v: z.literal(1),
   /** The server's INSTANCE_NAME. A display hint only: never trusted to decide what is "UnAlgorithm Cloud". */
@@ -51,7 +57,10 @@ export const ServerInfoSchema = z.object({
   source: z.url({ protocol: /^https?$/ }),
   /** True only when a billing provider is active; the extension shows credits only then. */
   billing: z.boolean(),
-  capabilities: z.object({ classify: z.boolean(), sync: z.boolean() }),
+  /** `factcheck` is optional: an older server's document still parses, and an older extension ignores it. */
+  capabilities: z.object({ classify: z.boolean(), sync: z.boolean(), factcheck: z.boolean().optional() }),
+  /** A billing server's price for an on-demand task now (CL2-26 schedule). Absent when it charges nothing for it. */
+  jobPrices: z.object({ factcheck: JobPriceSchema.optional() }).optional(),
   auth: z.object({
     /**
      * Sign-in methods the server offers, such as `email-otp`. Open-ended, so a server that adds a method later still
