@@ -9,7 +9,7 @@
  *   a missing or failing signature or a missing public key. A draft with every `lean: null` passes: it ships, and the
  *   runtime rule (`usableRegistry`) keeps perspectives hidden.
  *
- * Paths default to `data/registry.json`, `data/registry.sig` and `keys/panel-ed25519.pub.pem` in this package and are
+ * Paths default to `data/registry.json`, `data/registry.sig` and `keys/panel-ed25519.pub` in this package and are
  * overridden with `--file`, `--sig` and `--pub`. Output names outlet ids and rules only. Exit 2 for a usage error.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -51,7 +51,7 @@ function parseArgs(argv: readonly string[]): Args | string {
     cmd,
     file: resolve(flags.file ?? file ?? join(PKG, 'data', 'registry.json')),
     sig: resolve(flags.sig ?? join(PKG, 'data', 'registry.sig')),
-    pub: resolve(flags.pub ?? join(PKG, 'keys', 'panel-ed25519.pub.pem')),
+    pub: resolve(flags.pub ?? join(PKG, 'keys', 'panel-ed25519.pub')),
     key: flags.key,
   };
 }

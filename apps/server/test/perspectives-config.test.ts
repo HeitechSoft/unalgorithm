@@ -213,6 +213,7 @@ describe('image', () => {
     const ignore = lines(read('../../../.dockerignore'));
     const pem = ignore.indexOf('**/*.pem');
     expect(pem).toBeGreaterThan(-1);
-    expect(ignore.indexOf('!packages/outlets/keys/panel-ed25519.pub.pem')).toBeGreaterThan(pem);
+    // The panel's public key is `keys/panel-ed25519.pub`: no ignore rule may need to know about it.
+    expect(ignore.filter((l) => l.includes('panel-ed25519'))).toStrictEqual([]);
   });
 });

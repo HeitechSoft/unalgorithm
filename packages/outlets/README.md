@@ -56,12 +56,12 @@ pnpm outlets:check                                   # the build gate (also run 
 ```
 
 `--file`, `--sig` and `--pub` override the defaults `data/registry.json`, `data/registry.sig` and
-`keys/panel-ed25519.pub.pem`.
+`keys/panel-ed25519.pub`.
 
 ## Signing
 
 The panel signs the canonical form of the registry (object keys sorted at every level, no whitespace) with Ed25519.
-The public key lives at `keys/panel-ed25519.pub.pem`; until the panel creates its key pair, no registry can pass the
+The public key lives at `keys/panel-ed25519.pub` (PEM text, named `.pub` so the repo's `*.pem` ignore and secret-scan rules never catch it); until the panel creates its key pair, no registry can pass the
 gate as reviewed. **The private key is never committed**: keep it offline with the panel, pass its path to `sign`, and
 commit only `data/registry.json`, `data/registry.sig` and the public key.
 
