@@ -38,6 +38,7 @@ const SECRET_NAMES = [
   'GOOGLE_CLIENT_SECRET',
   'POSTGRES_PASSWORD',
   'METRICS_TOKEN',
+  'ALERT_WEBHOOK_URL',
 ];
 
 interface EnvExampleEntry {

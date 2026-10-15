@@ -5,7 +5,7 @@
  * (`GET /v1/admin/overview`, CL4-05) and none of it holds content: counts, sizes, times and fixed codes. The section
  * loads the overview itself, as the account page's Credits does.
  */
-import { formatApproxCost, formatPrice } from '@unalgorithm/core';
+import { formatApproxCost, formatBytes, formatPrice } from '@unalgorithm/core';
 import type { AdminOverview, BackupStatus, OpsStatus } from '@unalgorithm/protocol';
 import { Banner, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useId, useState } from 'react';
@@ -26,21 +26,10 @@ const BACKUP_FAILURE: Record<NonNullable<BackupStatus['error']>, string> = {
   unreadable: "its status file can't be read",
 };
 const COUNT = new Intl.NumberFormat('en-US');
-const GIGABYTES = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 /** A usage day ("2026-10-15", a UTC day): "Oct 15". */
 const DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 /** An instant in UTC, followed by " UTC" where it is shown: "Oct 15, 2026, 03:00". */
 const TIME = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23', timeZone: 'UTC' });
-
-/**
- * A size in decimal units: GB with one decimal from 1 GB, else whole MB, so 48,000,000 bytes reads "48 MB" rather than
- * "0.0 GB"; "unknown" when the server could not read it.
- */
-export function formatBytes(bytes: number | null): string {
-  if (bytes === null) return 'unknown';
-  const megabytes = Math.round(bytes / 1e6);
-  return megabytes < 1000 ? `${megabytes} MB` : `${GIGABYTES.format(bytes / 1e9)} GB`;
-}
 
 /** "local backup: last Oct 15, 2026, 03:00 UTC, 1.2 GB", or "offsite backup failed: the copy failed". */
 export function backupLine(status: BackupStatus): string {

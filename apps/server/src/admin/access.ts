@@ -8,7 +8,7 @@
  * Log lines name accounts and devices by id and count only, never by address.
  */
 import type { WireError } from '@unalgorithm/protocol';
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Auth } from '../auth/better-auth.ts';
@@ -45,13 +45,19 @@ export function requireAdmin(deps: Pick<AppDeps, 'db'>): MiddlewareHandler<WebSe
   });
 }
 
+/** An active admin: an account with role admin that is not banned. The one definition of it. */
+const ACTIVE_ADMIN = and(eq(user.role, ADMIN_ROLE), sql`${user.banned} is not true`);
+
 /** Accounts with role admin that are not banned. */
 export async function activeAdminCount(db: Db): Promise<number> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(user)
-    .where(and(eq(user.role, ADMIN_ROLE), sql`${user.banned} is not true`));
+  const [row] = await db.select({ n: count() }).from(user).where(ACTIVE_ADMIN);
   return row?.n ?? 0;
+}
+
+/** The active admins' addresses, in order (CL4-16's alert emails). Never logged. */
+export async function activeAdminEmails(db: Db): Promise<string[]> {
+  const rows = await db.select({ email: user.email }).from(user).where(ACTIVE_ADMIN).orderBy(asc(user.email));
+  return rows.map((r) => r.email);
 }
 
 export interface AccessDeps {

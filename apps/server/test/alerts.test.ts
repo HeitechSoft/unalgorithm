@@ -339,6 +339,7 @@ describe('schema, config and privacy', { timeout: PGLITE_TIMEOUT }, () => {
       databaseMaxBytes: 10 * GB,
       errorsPer15m: 20,
       backupMaxAgeMs: 26 * HOUR,
+      email: { kind: 'admins' },
     });
     expect(
       testConfig({
@@ -347,7 +348,13 @@ describe('schema, config and privacy', { timeout: PGLITE_TIMEOUT }, () => {
         ALERT_ERRORS_PER_15M: '7',
         ALERT_BACKUP_MAX_AGE_HOURS: '48',
       }).alerts,
-    ).toEqual({ diskFreeMinBytes: 2.5 * GB, databaseMaxBytes: 0, errorsPer15m: 7, backupMaxAgeMs: 48 * HOUR });
+    ).toEqual({
+      diskFreeMinBytes: 2.5 * GB,
+      databaseMaxBytes: 0,
+      errorsPer15m: 7,
+      backupMaxAgeMs: 48 * HOUR,
+      email: { kind: 'admins' },
+    });
 
     for (const [name, value] of [
       ['ALERT_DISK_FREE_MIN_GB', '-1'],

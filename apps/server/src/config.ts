@@ -54,6 +54,8 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'ALERT_DATABASE_MAX_GB',
   'ALERT_ERRORS_PER_15M',
   'ALERT_BACKUP_MAX_AGE_HOURS',
+  'ALERT_EMAIL',
+  'ALERT_WEBHOOK_URL',
   'METRICS_TOKEN',
   'WEB_DIST',
   'BACKUP_STATUS_DIR',
@@ -123,6 +125,13 @@ export interface Config {
     errorsPer15m: number;
     /** `backup-<kind>` opens when the last success is older than this (ms); 0: only a failed run opens it. */
     backupMaxAgeMs: number;
+    /** Who gets alert emails (CL4-16, `ops/notify.ts`): the active admins (the default), nobody, or these addresses. */
+    email: AlertEmail;
+    /**
+     * Where alert notifications are also POSTed as JSON, exactly as given: it often holds a token, so it is never logged
+     * or printed. An admin-configured URL, so the SSRF fetcher does not apply to it (R51).
+     */
+    webhookUrl?: string;
   };
   /** The bearer token of `GET /metrics` (CL4-17), at least 32 characters, exactly as given. Unset: no metrics endpoint. */
   metricsToken?: string;
@@ -135,6 +144,11 @@ export interface Config {
   logLevel: LogLevel;
   version: string;
 }
+
+/** `ALERT_EMAIL`: unset, `none`, or 1 to 20 lowercase addresses. */
+export type AlertEmail = { kind: 'admins' } | { kind: 'none' } | { kind: 'list'; addresses: string[] };
+/** The most addresses `ALERT_EMAIL` may list. */
+export const MAX_ALERT_EMAILS = 20;
 
 export interface ConfigIssue {
   name: string;
@@ -358,6 +372,9 @@ export function loadConfig(env: Env = process.env): Config {
   const databaseMaxGb = gigabytes('ALERT_DATABASE_MAX_GB', 10, 'database-size-high');
   const errorsPer15m = integer('ALERT_ERRORS_PER_15M', 20, 0);
   const backupMaxAgeHours = integer('ALERT_BACKUP_MAX_AGE_HOURS', 26, 0);
+  const alertEmail = parseAlertEmail(read('ALERT_EMAIL'));
+  const webhookValue = readSecret('ALERT_WEBHOOK_URL');
+  const webhookUrl = webhookValue === undefined ? undefined : httpUrl('ALERT_WEBHOOK_URL', webhookValue);
   const metricsToken = readSecret('METRICS_TOKEN');
   if (metricsToken !== undefined && metricsToken.length < 32) bad('METRICS_TOKEN', 'must be at least 32 characters');
 
@@ -423,6 +440,8 @@ export function loadConfig(env: Env = process.env): Config {
       databaseMaxBytes: Math.round(databaseMaxGb * GB),
       errorsPer15m,
       backupMaxAgeMs: backupMaxAgeHours * HOUR_MS,
+      email: alertEmail,
+      webhookUrl,
     },
     metricsToken,
     webDist,
@@ -430,6 +449,18 @@ export function loadConfig(env: Env = process.env): Config {
     logLevel,
     version: SERVER_VERSION,
   };
+
+  /** Unset: the active admins; `none`: no email; otherwise 1 to 20 addresses, comma-separated, kept in lowercase. */
+  function parseAlertEmail(value: string | undefined): AlertEmail {
+    if (value === undefined) return { kind: 'admins' };
+    if (value.toLowerCase() === 'none') return { kind: 'none' };
+    const addresses = list(value.toLowerCase());
+    if (addresses.length >= 1 && addresses.length <= MAX_ALERT_EMAILS && addresses.every((a) => Email.safeParse(a).success)) {
+      return { kind: 'list', addresses };
+    }
+    bad('ALERT_EMAIL', 'must be email addresses, comma-separated, or none');
+    return { kind: 'none' };
+  }
 
   /**
    * The module's variables, values exactly as given (secrets). Blank counts as unset, as for the server's own: Compose

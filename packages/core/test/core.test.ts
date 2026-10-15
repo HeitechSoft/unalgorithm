@@ -16,6 +16,7 @@ import {
   evaluateHealth,
   findKeyword,
   formatBalance,
+  formatBytes,
   formatCreditAmount,
   formatPostsEstimate,
   formatPrice,
@@ -381,6 +382,16 @@ describe('clipText', () => {
     const settings = defaultSettings();
     settings.interests.about = `${'a'.repeat(499)}\u{1F600} and more`;
     expect(buildInterestProfile(settings).about).toBe('a'.repeat(499));
+  });
+});
+
+describe('formatBytes', () => {
+  it('test_format_bytes', () => {
+    expect(formatBytes(5_250_000_000)).toBe('5.3 GB');
+    expect(formatBytes(48_000_000)).toBe('48 MB');
+    expect(formatBytes(null)).toBe('unknown');
+    expect(formatBytes(1_000_000_000)).toBe('1.0 GB');
+    expect(formatBytes(0)).toBe('0 MB');
   });
 });
 

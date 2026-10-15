@@ -157,8 +157,8 @@ export interface AlertDeps {
   config: Config;
   log: Logger;
   errors: ErrorWindow;
-  /** CL4-16's notifier. Default: none (alerts are logged and shown on the admin page only). */
-  notify?: (t: AlertTransitions) => Promise<void>;
+  /** CL4-16's notifier, given the check's time. Default: none (alerts are logged and shown on the admin page only). */
+  notify?: (t: AlertTransitions, now: number) => Promise<void>;
   /** Tests only, passed through to `readOpsStatus` (`OpsDeps.statfs`). Default: `fs.promises.statfs`. */
   statfs?: (path: string) => Promise<StatsFs>;
 }
@@ -171,7 +171,7 @@ export async function checkAlerts(deps: AlertDeps, now: number = Date.now()): Pr
     spendBreakerTripped(db, config, new Date(now)),
   ]);
   const transitions = await applyAlerts(db, evaluateAlerts({ status, breakerTripped, now }, config.alerts), now, log);
-  await deps.notify?.(transitions);
+  await deps.notify?.(transitions, now);
   return transitions;
 }
 

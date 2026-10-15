@@ -19,7 +19,7 @@ import {
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Admin } from '../src/Admin.tsx';
-import { backupLine, formatBytes } from '../src/AdminUsage.tsx';
+import { backupLine } from '../src/AdminUsage.tsx';
 import { fakeServer, OVERVIEW, type Reply, SESSION_GONE, TOM } from './support/fake-server.ts';
 
 const HAS_ACCOUNT = 'This address already has an account.';
@@ -306,13 +306,7 @@ describe('usage', () => {
     expect(screen.queryByText('Disk free')).toBeNull();
   });
 
-  it('test_format_bytes', () => {
-    expect(formatBytes(5_250_000_000)).toBe('5.3 GB');
-    expect(formatBytes(48_000_000)).toBe('48 MB');
-    expect(formatBytes(null)).toBe('unknown');
-    expect(formatBytes(1_000_000_000)).toBe('1.0 GB');
-    expect(formatBytes(0)).toBe('0 MB');
-
+  it('test_backup_line', () => {
     const failed = (error: BackupStatus['error']) => backupLine({ ...OFFSITE_FAILED, error });
     expect(failed('no-key')).toBe('offsite backup failed: no backup key');
     expect(failed('dump')).toBe('offsite backup failed: the database dump failed');

@@ -25,6 +25,7 @@ import { createLogger, errorFields, type Logger } from './log.ts';
 import { smtpMailer } from './mail/mailer.ts';
 import { registerAlertJobs } from './ops/alerts.ts';
 import { createErrorWindow, type ErrorWindow } from './ops/error-window.ts';
+import { createAlertNotifier } from './ops/notify.ts';
 import { CLASSIFY_DEADLINE_MS } from './routes/classify.ts';
 import { registerSyncJobs } from './sync/gc.ts';
 
@@ -78,14 +79,17 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
     await syncRouteFromConfig(db.db, config, log);
     // The rate limit stays at its default (on): only tests turn it off.
-    const auth = createAuth({ config, db, mailer: smtpMailer(config.smtp, log), log });
+    // One mailer for sign-in codes and alert emails.
+    const mailer = smtpMailer(config.smtp, log);
+    const auth = createAuth({ config, db, mailer, log });
     const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
     const errors = opts.errors ?? createErrorWindow();
     // The server's own tasks and a billing module's are registered here, before the jobs start.
     const jobs = createJobRegistry();
     registerAuthJobs(jobs, { db: db.db });
     registerSyncJobs(jobs, { db: db.db });
-    registerAlertJobs(jobs, { db: db.db, config, log, errors });
+    const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
+    registerAlertJobs(jobs, { db: db.db, config, log, errors, notify: notifier.notify });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });

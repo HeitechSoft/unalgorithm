@@ -85,6 +85,18 @@ export function safeExternalUrl(raw: string | null | undefined): string | null {
   }
 }
 
+const GIGABYTES = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/**
+ * A size in decimal units: GB with one decimal from 1 GB, else whole MB, so 48,000,000 bytes reads "48 MB" rather than
+ * "0.0 GB"; "unknown" when it could not be read. The admin page's status and the server's alert messages use it.
+ */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null) return 'unknown';
+  const megabytes = Math.round(bytes / 1e6);
+  return megabytes < 1000 ? `${megabytes} MB` : `${GIGABYTES.format(bytes / 1e9)} GB`;
+}
+
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
