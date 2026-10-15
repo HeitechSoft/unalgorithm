@@ -71,6 +71,15 @@ nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md]
 those a billing module adds of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
 - **Accounts:** the email address, and no name or picture (`user`).
+- **Admin role and removed access:** whether an account is an admin (`user.role`), and whether an admin removed its
+  access (`user.banned`, with the reason `removed-by-admin`).
+- **Invites:** the addresses an admin invited, and which admin (none for a setup link's invite), until the account is
+  created, the invite removed, or the account with that address deleted (`signup_invites`). This is the address of
+  someone who may never sign in; it is not used for anything else and no email is sent to it.
+- **Setup links:** the hash of each one-time setup link and the address it was made for, when it was made, when it
+  expires and when it was used (`setup_tokens`). A used link's row is kept until the account with that address is
+  deleted; an unused one until a new link replaces it. The link itself travels in the URL fragment, which browsers never
+  send to a server.
 - **Devices:** one row per signed-in copy of the extension: its extension id, the short name the extension gave itself
   at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
   when and why it was signed out or revoked: signed out from the extension, a refresh token used twice, or revoked
@@ -117,7 +126,14 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
   and after a failure the error's name and code, never its message. A job's row is deleted once it succeeds; one that
   fails every attempt stays.
+- **Open alerts:** for each alert open now, a fixed key, a level, when it opened, when it was last seen and last
+  notified, and one measured number (`ops_alerts`); the row goes when the alert closes. No user data. The check runs
+  every five minutes (`ops.check-alerts`).
 - **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
+- **Backups:** every night a copy of the whole database, encrypted to the operator's key (the server cannot read it),
+  kept for `BACKUP_KEEP` nights (14 by default) in the backups folder, plus any copies the operator makes. A deleted
+  account stays in backups until they age out. Status files beside them hold only the backup kind, whether it worked,
+  times, the backup's file name and size, and an error code.
 - **Export and deletion:** the account page downloads everything above about the account as JSON: the address, its
   devices, passkeys (label, kind and when added; never the public key or credential id), linked sign-in methods, page
   sessions, daily usage counts and synced settings, with no token, hash or code. Deleting the account removes all of it
@@ -145,11 +161,26 @@ method, path, status and timing (`requestLog`). Other lines name an event and a 
   the account page.
 - `limits.spend_breaker`: the day's AI spend and the limit, once per UTC day, when the daily spend limit
   (`DAILY_SPEND_LIMIT_USD`) stops classification for everyone.
+- `admin.*`: the request id, the admin's and the account's ids, and a cap or a role, when an admin sets a cap, removes
+  or restores access, sets a role, or adds or removes an invite, and when a setup link is claimed. Never an address.
+- `setup.*`: fixed reason codes, when a setup link is refused (`setup.refused`) and, at start, that the server has no
+  admin yet (`setup.needed`).
+- `alert.*`: an alert's key, level and measured number when it opens, how long it was open when it closes, and a
+  delivery that failed (the webhook's status code, or an error's name and code).
+- `backup.*` and `restore.*`, from the backup service's scripts: file names, sizes, times and, after a restore, the row
+  count of each table.
+- `ops.database_size_failed`: an error's name and code when the database's size cannot be read.
 - Failures: an error's name, code and top stack frames, with the request id when there is one, never its message.
 
 No line carries a request body, a query string, an IP address or an email address. A web server or proxy in front of a
 server keeps logs of its own, under its operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses
 or query strings, and its error log can record the IP address and requested address of a request that fails.
+
+**Alerts and metrics** carry server-wide numbers, fixed alert keys and levels, and the server's name and address, never
+an account, an address or a post. Alert emails go to the server's admins, or to the addresses in `ALERT_EMAIL`, and to
+`ALERT_WEBHOOK_URL` when it is set; `/metrics` answers only with `METRICS_TOKEN`, and does not exist without it.
+**Optional profiles:** the Caddy profile keeps no access log, and its own lines carry no client address, request
+address or header; with the Ollama profile, posts are classified on the same machine and go nowhere else.
 
 The canary test (`apps/server/test/canary.test.ts`) proves the rule for the server's own code. It puts a marker in
 post text, link titles and the interest profile, and sends it down every classify path: a success, provider errors

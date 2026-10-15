@@ -115,8 +115,8 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
 2. The background opens `/authorize` in `chrome.identity.launchWebAuthFlow` with a PKCE challenge. On that page the
    person enters their email address and the six-digit code the server emails, or, where the discovery document lists
    them, uses a passkey they added on the account page or continues with Google, which sends the browser back to the
-   page signed in (it then waits for "Continue as"). Accounts are created only for addresses in `SIGNUP_ALLOWLIST`,
-   and signing in starts a one-day session for the page.
+   page signed in (it then waits for "Continue as"). Accounts are created only for verified addresses in
+   `SIGNUP_ALLOWLIST` or that an admin invited, and signing in starts a one-day session for the page.
 3. The page asks `POST /v1/auth/authorize` for a single-use code, valid for a minute and bound to the extension id
    (one of `EXTENSION_IDS`), its redirect address and the challenge, and sends the browser back to the extension with
    it.
@@ -184,7 +184,7 @@ always show or hide (`sync_items`).
 
 | Table | What it holds |
 |---|---|
-| `user` | Accounts (Better Auth): the email address only |
+| `user` | Accounts (Better Auth): the email address, whether the account is an admin (`role`), and whether an admin removed its access (`banned`, `ban_reason`) |
 | `session` | One-day sessions of the sign-in page, with the browser's IP address and user agent |
 | `account` | Better Auth's linked sign-in methods: for Google, Google's account id and never a Google token; empty while sign-in is by email code only |
 | `verification` | Emailed sign-in codes, by hash, under the address they were asked for; each Google sign-in's state (its PKCE verifier and return pages), valid for ten minutes; each passkey ceremony's challenge, with the account's id and address when adding one, valid for five minutes |
@@ -196,9 +196,12 @@ always show or hide (`sync_items`).
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |
 | `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
+| `signup_invites` | Addresses an admin invited, until the account is created or the invite removed |
+| `setup_tokens` | One-time setup links by hash, with the address each was made for |
 | `sync_spaces` | One personal sync space per account: its epoch, the last seq handed out, item and byte counts, and the tombstone cleanup floor |
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
+| `ops_alerts` | Alerts open now: key, level, times, one number |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
@@ -252,12 +255,37 @@ Background jobs run on graphile-worker inside the server process, on the server'
 the job registry while the server starts. The server's own: `auth.purge-expired`, hourly, deletes expired refresh
 tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
 deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
-`ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`). The server registers both on every
-server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
+`ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`); `ops.check-alerts`, every five
+minutes, checks the server's status and opens or closes alerts ([Self-hosting and operations](#self-hosting-and-operations)).
+The server registers all three on every server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
 gives every space a new epoch, so every device resyncs. graphile-worker creates the
 `graphile_worker` schema when it first starts and keeps its queue there: each job's task name, payload, run
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
+
+### Self-hosting and operations
+
+How to run a server is in [self-hosting.md](self-hosting.md); this is how its parts fit. `apps/server/compose.yaml`
+starts three services, `server`, `postgres` and `backup`, and has three profiles: `caddy` (HTTPS in front of the
+server, no access log), `ollama` (a local model on the same machine) and `tools` (the one-off `keygen`).
+
+- **Backups.** The `backup` service runs on the `postgres` image, so its `pg_dump` matches the database. Each night it
+  encrypts a dump to the operator's public key (made by `keygen`; the private key belongs off the server) and keeps the
+  newest `BACKUP_KEEP`. It writes a status file per backup kind, which the server reads through a read-only mount;
+  `restore.sh` restores a backup with the private key piped in.
+- **Status.** `readOpsStatus` (`apps/server/src/ops/status.ts`) measures free disk, the database's size, the error lines
+  of the last 15 minutes and the backups' last runs: numbers, times and fixed codes only. The admin page shows them as
+  the `ops` block of `GET /v1/admin/overview`.
+- **Alerts.** The `ops.check-alerts` job ([Jobs](#jobs)) reads that status every five minutes, keeps the alerts open now
+  in `ops_alerts`, and notifies the admins (or `ALERT_EMAIL`) by email, and `ALERT_WEBHOOK_URL`, when an alert opens, is
+  still open a day later, and closes.
+- **Metrics.** `GET /metrics` answers the same server-wide numbers in the Prometheus text format, only with the bearer
+  token `METRICS_TOKEN`; without one set, the path does not exist.
+- **Admins.** The `setup-link` command prints a one-time link to `/setup`, its secret in the URL fragment and only its
+  hash stored (`setup_tokens`); signing in there with the address it was made for makes that account an admin (Better
+  Auth's admin plugin's `role` column; none of the plugin's own routes is mounted). Admins use `/admin` and the
+  `/v1/admin/*` routes to invite people (`signup_invites`), set caps and roles, and remove access. `--recover` makes a
+  link that works although the server already has an admin.
 
 ## Testing
 

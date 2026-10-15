@@ -17,6 +17,11 @@ keep you updated, and credit you in the release notes unless you prefer otherwis
 - The UnAlgorithm Feed extension (`apps/extension` and the packages it is built from).
 - The self-hostable UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in the
   `ghcr.io/heitechsoft/unalgorithm-server` image.
+  This includes:
+  - the admin page (`/admin`) and its routes (`/v1/admin/*`);
+  - setup links (`setup-link`, `/setup`);
+  - the backup and restore scripts (`apps/server/backup`) and the compose file that runs them;
+  - `/metrics`.
 - UnAlgorithm Cloud, HeitechSoft's hosted server at `cloud.unalgorithm.app`, once it is live.
 
 A problem in someone else's running copy of the server is for its operator, unless it comes from our code.
@@ -74,3 +79,12 @@ once if the issue is already public. The GitHub security advisory names the serv
 - The server builds every prompt itself: `/v1/classify` takes posts and the interest profile, never a prompt, and logs
   no request body. The canary test (`apps/server/test/canary.test.ts`) checks that a marker sent in posts reaches no
   log line and no database row.
+- A setup link's secret lives in the URL fragment, which browsers never send to a server; the server stores only its
+  hash (`setup_tokens`), and a link works once, for one address.
+- The server uses Better Auth's admin plugin for its `role` and `banned` columns only: none of the plugin's own HTTP
+  endpoints is mounted, and the server's admin routes check the admin role themselves.
+- Backups are encrypted to a public key; the private key that opens them belongs off the server, and the server never
+  holds it.
+- `/metrics` is off unless `METRICS_TOKEN` is set, and compares the token it is sent in constant time.
+- Anyone who can run commands in the server's container can make an admin with `setup-link --recover`: container access
+  is admin access.
