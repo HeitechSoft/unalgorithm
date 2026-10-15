@@ -1,6 +1,7 @@
 import { type AIClient, AIError } from '@unalgorithm/ai';
 import type { NormalizedUsage, RetrievedSource } from '@unalgorithm/protocol';
 import { buildResearchUser, RESEARCH_SYSTEM } from './prompts.ts';
+import { isBlocked } from './validate.ts';
 
 export interface RetrieveRequest {
   claims: readonly { id: string; text: string }[];
@@ -24,7 +25,11 @@ export interface Retriever {
   retrieve(req: RetrieveRequest): Promise<RetrieveResult>;
 }
 
-/** Research through `client.research` (Anthropic web search). Throws AIError('unsupported') when the client has none. */
+/**
+ * Research through `client.research` (Anthropic or OpenAI web search). Throws AIError('unsupported') when the client has
+ * none. Sources on a blocked domain are dropped here (ids unchanged): OpenAI's web search has no blocked-domains filter,
+ * and Anthropic's results are already filtered at the API, so this changes nothing there.
+ */
 export function aiRetriever(client: AIClient, model: string): Retriever {
   const research = client.research?.bind(client);
   if (!research) throw new AIError('unsupported', 'This AI source cannot search the web, so it cannot fact-check.');
@@ -41,7 +46,8 @@ export function aiRetriever(client: AIClient, model: string): Retriever {
         timeoutMs: 120_000,
         ...(req.signal ? { signal: req.signal } : {}),
       });
-      return { notes: res.notes, sources: res.sources, usage: res.usage, model: res.model };
+      const sources = res.sources.filter((source) => !isBlocked(source.domain, req.blockedDomains));
+      return { notes: res.notes, sources, usage: res.usage, model: res.model };
     },
   };
 }

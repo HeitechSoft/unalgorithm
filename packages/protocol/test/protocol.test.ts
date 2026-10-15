@@ -13,7 +13,9 @@ import {
   formatHlc,
   MAX_MODEL_CHARS,
   MAX_POSTS_PER_REQUEST,
+  OPENAI_FACTCHECK_TYPICAL_COST_MICROS,
   PostForAISchema,
+  PRICE_CARDS,
   parseHlc,
   platformOfKey,
   RevokeRequestSchema,
@@ -144,6 +146,46 @@ describe('cost', () => {
           expect({ model, u, got: costMicros(model, u) }).toBe(Math.ceil(exact / 1000));
       }
     }
+  });
+});
+
+describe('price cards', () => {
+  const usage = (u: Partial<NormalizedUsage>): NormalizedUsage => ({
+    uncachedInput: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    output: 0,
+    webSearches: 0,
+    estimated: false,
+    ...u,
+  });
+
+  it('test_openai_cards_and_typical_cost', () => {
+    expect(costMicros('gpt-5', usage({ uncachedInput: 30_000, output: 1_500, webSearches: 3 }))).toBe(82_500);
+    // The reference fact-check usage at OPENAI_FACTCHECK_MODELS (claims gpt-5-mini, research and verdict gpt-5).
+    const reference = [
+      costMicros('gpt-5-mini', usage({ uncachedInput: 1_000, output: 100 })),
+      costMicros('gpt-5', usage({ uncachedInput: 30_000, output: 1_500, webSearches: 3 })),
+      costMicros('gpt-5', usage({ uncachedInput: 2_000, output: 400 })),
+    ];
+    expect(reference).toEqual([450, 82_500, 6_500]);
+    const total = reference.reduce<number>((a, b) => a + (b ?? Number.NaN), 0);
+    expect(total).toBe(89_450);
+    expect(OPENAI_FACTCHECK_TYPICAL_COST_MICROS).toBe(Math.ceil(total / 10_000) * 10_000);
+    expect(costMicros('gpt-5-mini', usage({ cacheRead: 1_000 }))).toBe(25);
+    expect(costMicros('gpt-5', usage({ cacheRead: 1_000, cacheWrite: 1_000 }))).toBe(125);
+  });
+
+  it('test_existing_price_cards_unchanged', () => {
+    expect(PRICE_CARDS['claude-haiku-5-5']).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cacheRead: 0.01,
+      cacheWrite: 0.125,
+      webSearch: 0.01,
+    });
+    expect(PRICE_CARDS['claude-sonnet-5-5']).toEqual({ input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, webSearch: 0.01 });
+    expect(PRICE_CARDS['claude-opus-5-5']).toEqual({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5, webSearch: 0.01 });
   });
 });
 
