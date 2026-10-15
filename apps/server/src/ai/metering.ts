@@ -9,7 +9,7 @@
  * queries and the rows they count always agree on where a day starts.
  */
 import { type CreditTask, costMicros, type NormalizedUsage } from '@unalgorithm/protocol';
-import { and, count, eq, gt, gte, type SQL, sql } from 'drizzle-orm';
+import { and, count, eq, gt, gte, inArray, type SQL, sql } from 'drizzle-orm';
 import { type Db, queryErrorFields } from '../db/client.ts';
 import { usageEvents } from '../db/schema.ts';
 import type { Logger } from '../log.ts';
@@ -97,7 +97,10 @@ export async function postsToday(db: Db, userId: string, now: Date = new Date())
   return sumSince(db, usageEvents.postsOk, now, eq(usageEvents.userId, userId));
 }
 
-/** Checks that reached a model for `userId` since 00:00 UTC: rows with task 'factcheck' and calls > 0. */
+/**
+ * Checks and comparisons that reached a model for `userId` since 00:00 UTC, for the cap they share: rows with task
+ * 'factcheck' or 'perspectives' and calls > 0.
+ */
 export async function checksToday(db: Db, userId: string, now: Date = new Date()): Promise<number> {
   const [row] = await db
     .select({ n: count().mapWith(Number) })
@@ -106,7 +109,7 @@ export async function checksToday(db: Db, userId: string, now: Date = new Date()
       and(
         gte(usageEvents.createdAt, utcDayStart(now)),
         eq(usageEvents.userId, userId),
-        eq(usageEvents.task, 'factcheck'),
+        inArray(usageEvents.task, ['factcheck', 'perspectives']),
         gt(usageEvents.calls, 0),
       ),
     );

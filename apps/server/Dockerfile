@@ -20,6 +20,7 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
+COPY packages/outlets/package.json packages/outlets/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/research/package.json packages/research/
@@ -28,6 +29,8 @@ COPY packages/ui/package.json packages/ui/
 RUN pnpm install --frozen-lockfile --filter @unalgorithm/server... --filter @unalgorithm/web...
 COPY tsconfig.base.json ./
 COPY packages/ packages/
+# The outlet registry's build gate (P3-27): the image is never built with an unreviewed label or a bad signature.
+RUN node packages/outlets/src/cli.ts check
 COPY apps/server/ apps/server/
 COPY apps/web/ apps/web/
 RUN pnpm --filter @unalgorithm/web build
@@ -43,6 +46,7 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
+COPY packages/outlets/package.json packages/outlets/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/research/package.json packages/research/
@@ -56,6 +60,9 @@ COPY packages/ai/src packages/ai/src
 # route-eval imports @unalgorithm/ai/eval: the Cloud opens its eval gate inside the container.
 COPY packages/ai/eval packages/ai/eval
 COPY packages/research/src packages/research/src
+# Perspectives reads the bundled registry: bundledRegistry() imports data/registry.json, so the server needs both.
+COPY packages/outlets/src packages/outlets/src
+COPY packages/outlets/data packages/outlets/data
 # route-eval scores the research and synthesis routes with @unalgorithm/research/eval (P3-17).
 COPY packages/research/eval packages/research/eval
 COPY apps/server/src apps/server/src

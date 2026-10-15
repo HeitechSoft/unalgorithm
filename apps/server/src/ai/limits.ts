@@ -2,8 +2,8 @@
  * The guards in front of every classify call (R24). Whoever runs a server pays its AI bill, so before a request reaches
  * a model it passes three checks, the cheap one first: a per-user rate limit, the daily spend breaker over everyone's
  * cost, and the per-user daily post cap. A refusal is an `AIError` that the app answers with 429 and `describeError`
- * text; the gateway meters it as `refused-before-call`. A fact-check passes the same rate limit (one bucket) and
- * breaker, then a per-user daily check cap instead of the post cap (`checkFactcheckLimits`).
+ * text; the gateway meters it as `refused-before-call`. A fact-check or a comparison passes the same rate limit (one
+ * bucket) and breaker, then one per-user daily cap shared by both instead of the post cap (`checkJobLimits`).
  *
  * Days are UTC, as in metering (CL1-13). The rate buckets and the posts in flight live in memory: a deployment runs one
  * server process in CL1, so memory is enough. A shared store is needed only once the server runs as several processes.
@@ -104,7 +104,7 @@ export interface LimitDeps {
   breakerLoggedDay?: number;
   /** Kept by `checkLimits`: each user's posts in flight, let through but not yet in a usage row. */
   inFlight?: Map<string, number>;
-  /** Kept by `checkFactcheckLimits`: each user's checks in flight, let through but not yet in a usage row. */
+  /** Kept by `checkJobLimits`: each user's checks and comparisons in flight, let through but not yet in a usage row. */
   checksInFlight?: Map<string, number>;
 }
 
@@ -152,11 +152,12 @@ export async function checkLimits(
 }
 
 /**
- * The guards in front of a check, cheap first: the user's rate limit (the same bucket classify uses), the spend
- * breaker, then the daily check cap: `cap-reached` once checks today plus the user's checks in flight reach
- * `USER_DAILY_CHECK_CAP` (0 refuses every check). Resolves to `release`, called once the job's usage row is written.
+ * The guards in front of a fact-check or a comparison, cheap first: the user's rate limit (the same bucket classify
+ * uses), the spend breaker, then the daily cap both share (decision D33): `cap-reached` once checks and comparisons
+ * today plus the user's jobs in flight reach `USER_DAILY_CHECK_CAP` (0 refuses every job). Resolves to `release`,
+ * called once the job's usage row is written.
  */
-export async function checkFactcheckLimits(
+export async function checkJobLimits(
   deps: LimitDeps,
   account: Pick<DeviceAccount, 'userId'>,
   now: Date = new Date(),
@@ -169,7 +170,10 @@ export async function checkFactcheckLimits(
   const { ahead, release } = join((deps.checksInFlight ??= new Map()), userId, 1);
   try {
     if ((await checksToday(deps.db, userId, now)) + ahead >= deps.config.factcheck.userDailyCheckCap) {
-      throw new AIError('cap-reached', "This account has reached today's fact-check limit. Checks resume tomorrow.");
+      throw new AIError(
+        'cap-reached',
+        "This account has reached today's limit for checks and comparisons. They resume tomorrow.",
+      );
     }
   } catch (err) {
     release();
@@ -177,6 +181,9 @@ export async function checkFactcheckLimits(
   }
   return release;
 }
+
+/** The fact-check job's name for `checkJobLimits` (P3-33): one cap for both tasks. */
+export const checkFactcheckLimits = checkJobLimits;
 
 /** Takes one request from the user's rate bucket, or throws `rate-limit` with `retryAfterMs`. */
 function takeRate(deps: LimitDeps, userId: string, now: Date): void {

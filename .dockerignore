@@ -12,6 +12,8 @@
 **/playwright-report
 **/test-results
 **/*.pem
+# The outlet panel's public key: the build gate verifies a reviewed registry's signature with it.
+!packages/outlets/keys/panel-ed25519.pub.pem
 # A self-hoster's encrypted backups and backup public key, next to compose.yaml (the build copies all of apps/server).
 **/backups
 **/backup-key

@@ -28,6 +28,7 @@
     "@hono/zod-openapi": "^1.6.3",
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/research": "workspace:*",
     "@unalgorithm/sync": "workspace:*",

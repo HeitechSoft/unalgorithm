@@ -258,6 +258,24 @@ other address it must never reach to `EGRESS_DENY`, as IPs or ip/prefix ranges, 
 machine's own public addresses whenever `PUBLIC_URL` does not resolve to them: a CDN or another proxy in front, a second
 IPv4 address, or the rest of its IPv6 /64.
 
+### Other perspectives (Labs)
+
+Other perspectives is a Labs feature, off by default. Once on, people can ask your server how other outlets covered the
+story behind a link shared in a public post. It runs on the fact-check routes and search, so it needs fact-check on and
+past its eval gate:
+
+```ini
+FACTCHECK=on
+PERSPECTIVES=on
+```
+
+It stays unavailable until a reviewed outlet registry ships with a release, whatever this setting says. Checks and
+comparisons share `USER_DAILY_CHECK_CAP`: each person may run that many of the two together per UTC day.
+
+What leaves your server: only the shared link and its title leave people's browsers, never the post's text. Your server
+follows the link's redirects through the same guarded fetcher as the link check, and its search queries go to your
+search provider, or to Anthropic with its web search.
+
 ## 7. Become the admin
 
 Make a setup link for your own address:

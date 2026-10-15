@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AIError } from '@unalgorithm/ai';
 import { type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkFactcheckLimits, checkLimits, createRateLimiter, type LimitDeps } from '../src/ai/limits.ts';
+import { checkFactcheckLimits, checkJobLimits, checkLimits, createRateLimiter, type LimitDeps } from '../src/ai/limits.ts';
 import { checksToday, postsToday, recordUsageEvent, type UsageEventInput } from '../src/ai/metering.ts';
 import type { Db } from '../src/db/client.ts';
 import { usageEvents, user } from '../src/db/schema.ts';
@@ -91,11 +91,11 @@ describe('limits', { timeout: PGLITE_TIMEOUT }, () => {
     const deps = depsFor(db, {}, 1);
     (await checkLimits(deps, { userId: TOM }, 1, NOW))();
 
-    const err = await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW));
+    const err = await refusal(checkJobLimits(deps, { userId: TOM }, NOW));
     expect(err.code).toBe('rate-limit');
     expect(err.retryAfterMs).toBeGreaterThan(0);
     // Ana's bucket is her own.
-    (await checkFactcheckLimits(deps, { userId: ANA }, NOW))();
+    (await checkJobLimits(deps, { userId: ANA }, NOW))();
   });
 
   it('test_spend_breaker_counts_job_rows', async () => {
@@ -104,7 +104,7 @@ describe('limits', { timeout: PGLITE_TIMEOUT }, () => {
     const deps = depsFor(db, { DAILY_SPEND_LIMIT_USD: '5' });
 
     expect((await refusal(checkLimits(deps, { userId: TOM }, 1, NOW))).code).toBe('cap-reached');
-    expect((await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
+    expect((await refusal(checkJobLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
     // Logged once for the day, whichever check tripped it.
     expect(deps.events().filter((e) => e.event === 'limits.spend_breaker')).toHaveLength(1);
   });
@@ -121,24 +121,40 @@ describe('limits', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await checksToday(db, ANA, NOW)).toBe(1);
 
     const deps = depsFor(db, { USER_DAILY_CHECK_CAP: '2' });
-    const err = await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW));
+    const err = await refusal(checkJobLimits(deps, { userId: TOM }, NOW));
     expect(err.code).toBe('cap-reached');
-    expect(err.message).toBe("This account has reached today's fact-check limit. Checks resume tomorrow.");
-    (await checkFactcheckLimits(deps, { userId: ANA }, NOW))();
+    expect(err.message).toBe("This account has reached today's limit for checks and comparisons. They resume tomorrow.");
+    (await checkJobLimits(deps, { userId: ANA }, NOW))();
+  });
+
+  it('test_daily_cap_shared_by_checks_and_comparisons', async () => {
+    const db = await testDb();
+    await recordAt(db, NOW, jobRow({ task: 'perspectives', calls: 0, outcome: 'refused-before-call', costMicros: 0 }));
+    await recordAt(db, NOW, jobRow());
+    const deps = depsFor(db, { USER_DAILY_CHECK_CAP: '2' });
+    // The perspectives row that reached no model does not count: one place is left.
+    expect(await checksToday(db, TOM, NOW)).toBe(1);
+    (await checkJobLimits(deps, { userId: TOM }, NOW))();
+
+    await recordAt(db, NOW, jobRow({ task: 'perspectives', calls: 4 }));
+    expect(await checksToday(db, TOM, NOW)).toBe(2);
+    expect((await refusal(checkJobLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
+    // The fact-check name is the same guard (P3-33's spec).
+    expect(checkFactcheckLimits).toBe(checkJobLimits);
   });
 
   it('test_check_cap_counts_checks_in_flight', async () => {
     const db = await testDb();
     const deps = depsFor(db, { USER_DAILY_CHECK_CAP: '2' });
-    const first = await checkFactcheckLimits(deps, { userId: TOM }, NOW);
-    const second = await checkFactcheckLimits(deps, { userId: TOM }, NOW);
-    expect((await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
+    const first = await checkJobLimits(deps, { userId: TOM }, NOW);
+    const second = await checkJobLimits(deps, { userId: TOM }, NOW);
+    expect((await refusal(checkJobLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
 
     first();
     first();
-    const third = await checkFactcheckLimits(deps, { userId: TOM }, NOW);
+    const third = await checkJobLimits(deps, { userId: TOM }, NOW);
     // `first` twice freed one place only: `second` and `third` still hold both.
-    expect((await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
+    expect((await refusal(checkJobLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
     second();
     third();
     expect(deps.checksInFlight?.size).toBe(0);
@@ -149,7 +165,7 @@ describe('limits', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_check_cap_zero_refuses', async () => {
     const db = await testDb();
     const deps = depsFor(db, { USER_DAILY_CHECK_CAP: '0' });
-    expect((await refusal(checkFactcheckLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
+    expect((await refusal(checkJobLimits(deps, { userId: TOM }, NOW))).code).toBe('cap-reached');
     expect(deps.checksInFlight?.size ?? 0).toBe(0);
   });
 });

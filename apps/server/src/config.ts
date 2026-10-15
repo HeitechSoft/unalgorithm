@@ -54,6 +54,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'SEARCH_PROVIDER',
   'SEARCH_URL',
   'SEARCH_API_KEY',
+  'PERSPECTIVES',
   'ROUTE_EVAL_MIN_AGREEMENT',
   'USER_DAILY_POST_CAP',
   'USER_REQUESTS_PER_MINUTE',
@@ -132,6 +133,8 @@ export interface Config {
     /** Fact-checks per person per UTC day when `BILLING` is off; 0: none. */
     userDailyCheckCap: number;
   };
+  /** Other perspectives (Labs, F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
+  perspectives: { enabled: boolean };
   /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
   egressDeny: string[];
   routeEvalMinAgreement: number;
@@ -426,6 +429,11 @@ export function loadConfig(env: Env = process.env): Config {
       if (searchValue !== undefined) bad('SEARCH_PROVIDER', `must be unset when BILLING is module: ${why}`);
     }
   }
+  // Other perspectives (Labs, decision D33): read on every load, like the fact-check names.
+  const perspectives = oneOf('PERSPECTIVES', ['off', 'on'] as const, 'off');
+  if (perspectives === 'on' && !factcheckOn) {
+    bad('PERSPECTIVES', 'must be off when FACTCHECK is off: perspectives uses the fact-check routes and search provider');
+  }
   /** Unset: Sonnet on Anthropic; the classify model on an OpenAI-compatible server (one model serves every task). */
   const factcheckModel = (value: string | undefined) => value ?? (anthropic ? FACTCHECK_MODELS.research : (model ?? ''));
 
@@ -522,6 +530,7 @@ export function loadConfig(env: Env = process.env): Config {
       search,
       userDailyCheckCap,
     },
+    perspectives: { enabled: perspectives === 'on' && factcheckOn },
     egressDeny,
     routeEvalMinAgreement,
     userDailyPostCap,
