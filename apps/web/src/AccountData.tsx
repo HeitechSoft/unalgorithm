@@ -3,12 +3,15 @@
  * and delete the account after an alert dialog that asks for the address typed again. The server deletes only for a
  * web session signed in within the last 10 minutes (CL3-15): an older one is sent back to the sign-in, saying why.
  * Deleting is immediate, with no grace period, and signs out every device; the session goes with the account. Data the
- * server does not hold stays in the extension's own "Export settings".
+ * server does not hold stays in the extension's own "Export settings". On a server that advertises billing, each opening
+ * of the dialog asks for the credit balance once and, when the account holds purchased credit, says how much and that
+ * deleting gives it up (R50). The warning only informs: it never blocks the deletion.
  */
-import type { ServerInfo } from '@unalgorithm/protocol';
+import { formatBalance } from '@unalgorithm/core';
+import type { CreditAccount, ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, Dialog, Download, ListGroup, ListRow, TextField, Trash2 } from '@unalgorithm/ui';
 import { useRef, useState } from 'react';
-import { ApiError, deleteAccount, exportAccount } from './api.ts';
+import { ApiError, creditAccount, deleteAccount, exportAccount } from './api.ts';
 import { failureMessage } from './SignIn.tsx';
 
 /** The downloaded file's name. */
@@ -30,6 +33,8 @@ export interface AccountDataProps {
 
 /** The dialog's failure: a mismatched address belongs to the field, anything else to the dialog. */
 type Failure = { field: boolean; message: string };
+/** The credit balance the dialog checked: none asked (or still loading), the answer, or a failure. */
+type CreditCheck = CreditAccount | 'failed' | null;
 
 export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut }: AccountDataProps) {
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +43,9 @@ export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut
   const [typed, setTyped] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [credit, setCredit] = useState<CreditCheck>(null);
+  /** Counts openings, so an answer that arrives after the dialog was opened again is dropped. */
+  const opening = useRef(0);
   const matches = typed.trim().toLowerCase() === email.trim().toLowerCase();
 
   /** The export as a download, as the extension's "Export settings" saves its file. A second click waits for the first. */
@@ -63,7 +71,21 @@ export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut
   function onAsk() {
     setTyped('');
     setFailure(null);
+    setCredit(null);
     setConfirmOpen(true);
+    const current = ++opening.current;
+    if (info.billing) void checkCredit(current);
+  }
+
+  /** The balance for this opening's warning; any failure (401 included) is only a footnote. */
+  async function checkCredit(current: number) {
+    let answer: CreditCheck;
+    try {
+      answer = await creditAccount();
+    } catch {
+      answer = 'failed';
+    }
+    if (current === opening.current) setCredit(answer);
   }
 
   async function onDelete() {
@@ -114,6 +136,21 @@ export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut
         }
       >
         {failure && !failure.field ? <Banner tone="danger" title={failure.message} /> : null}
+        {credit === 'failed' ? (
+          <p className="ua-footnote">We couldn't check your credit balance.</p>
+        ) : credit && credit.balance.purchasedMicros > 0 ? (
+          <Banner tone="warning" title={`You have ${formatBalance(credit.balance.purchasedMicros)} of purchased credit.`}>
+            Deleting your account gives it up. To get it back, ask for a refund before you delete your account.
+            {credit.refundPolicyUrl ? (
+              <>
+                {' '}
+                <a href={credit.refundPolicyUrl} target="_blank" rel="noreferrer">
+                  Refund policy
+                </a>
+              </>
+            ) : null}
+          </Banner>
+        ) : null}
         <TextField
           // A fixed id rather than a generated one: the page has one such field, and its markup stays the same each time.
           id="delete-account-confirm"

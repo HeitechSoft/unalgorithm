@@ -4,11 +4,18 @@
  * export and delete routes answer as the server's do; `URL.createObjectURL` and `revokeObjectURL` are stubs (jsdom has
  * neither) and the anchor's `click` a spy, so no download really starts. Dialogs run on the jsdom stand-in for
  * `showModal` (loaded by the setup file): Escape is a `cancel` event. The browser's own focus trap and Escape key are
- * checked by `test_account_dialogs_trap_focus` in the extension's `cloud.spec.ts`.
+ * checked by `test_account_dialogs_trap_focus` in the extension's `cloud.spec.ts`. On a server that advertises billing,
+ * the dialog warns about purchased credit from the answer to `GET /v1/billing/account`, asked once per opening.
  */
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ACCOUNT_DELETE_PATH, ACCOUNT_EXPORT_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import {
+  ACCOUNT_DELETE_PATH,
+  ACCOUNT_EXPORT_PATH,
+  CREDIT_ACCOUNT_PATH,
+  type CreditAccount,
+  type ServerInfo,
+} from '@unalgorithm/protocol';
 import { ToastProvider } from '@unalgorithm/ui';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
@@ -27,6 +34,10 @@ const DELETED = 'Your account was deleted.';
 const SIGN_IN_TO_DELETE = 'For your safety, sign in again, then delete your account within 10 minutes.';
 const MISMATCH = 'The address you typed does not match this account.';
 const FAILED = 'Something went wrong. Try again.';
+const PURCHASED_TEXT = 'Deleting your account gives it up. To get it back, ask for a refund before you delete your account.';
+const CREDIT_UNCHECKED = "We couldn't check your credit balance.";
+const REFUNDS = 'https://unalgorithm.app/refunds';
+const BILLING: ServerInfo = { ...INFO, billing: true };
 const OBJECT_URL = 'blob:http://localhost/4f5d8a2e-6b1c-4c3d-9e8f-0a1b2c3d4e5f';
 
 const createObjectURL = vi.fn((_blob: Blob) => OBJECT_URL);
@@ -63,6 +74,29 @@ async function openDeleteDialog(options: Parameters<typeof openAccount>[0] = {})
   await page.user.click(await screen.findByRole('button', { name: DELETE_ROW }));
   expect(dialog().open).toBe(true);
   return page;
+}
+
+/** A credit account holding `purchasedMicros` of purchased credit and $0.50 of promotional credit. */
+function credit(purchasedMicros: number, rest: Partial<Omit<CreditAccount, 'balance'>> = {}): CreditAccount {
+  const promoMicros = 500_000;
+  return {
+    v: 1,
+    balance: {
+      v: 1,
+      balanceMicros: promoMicros + purchasedMicros,
+      promoMicros,
+      purchasedMicros,
+      promoExpiresAt: '2027-01-11T15:00:00.000Z',
+      starter: 'active',
+    },
+    history: [],
+    ...rest,
+  };
+}
+
+/** Opens the delete dialog on a billing server whose credits route answers `reply`. */
+function openBillingDialog(reply: Reply) {
+  return openDeleteDialog({ info: BILLING, routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply } });
 }
 
 /** Lets pending effects and answers settle, for a test that checks something did not happen. */
@@ -258,5 +292,88 @@ describe('copy and accessibility', () => {
     await user.keyboard('{Enter}');
     expect(await screen.findByText(DELETED)).toBeTruthy();
     expect(server.posts()).toEqual([{ method: 'POST', path: ACCOUNT_DELETE_PATH, body: { confirm: TOM } }]);
+  });
+});
+
+describe('purchased credit warning', () => {
+  it('test_delete_dialog_warns_about_purchased_credit', async () => {
+    await openBillingDialog({ status: 200, body: credit(4_200_000, { refundPolicyUrl: REFUNDS }) });
+    const banner = (await within(dialog()).findByText('You have $4.20 of purchased credit.')).closest('.ua-banner');
+    if (!(banner instanceof HTMLElement)) throw new Error('No purchased-credit banner');
+    expect(banner.classList.contains('ua-banner--warning')).toBe(true);
+    expect(within(banner).getByText(PURCHASED_TEXT, { exact: false })).toBeTruthy();
+    const link = within(banner).getByRole('link', { name: 'Refund policy' });
+    expect(link.getAttribute('href')).toBe(REFUNDS);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+    // Above the typed-address field.
+    const field = within(dialog()).getByLabelText(FIELD);
+    expect(banner.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dialog().textContent).not.toContain('!');
+  });
+
+  it('test_delete_dialog_no_warning_without_purchased_credit', async () => {
+    const { server } = await openBillingDialog({ status: 200, body: credit(0, { refundPolicyUrl: REFUNDS }) });
+    await waitFor(() => expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(2));
+    await settle();
+    expect(within(dialog()).queryByText(/purchased credit/)).toBeNull();
+    expect(within(dialog()).queryByText(CREDIT_UNCHECKED)).toBeNull();
+    expect(dialog().querySelector('.ua-banner')).toBeNull();
+  });
+
+  it('test_delete_dialog_warning_without_refund_link', async () => {
+    await openBillingDialog({ status: 200, body: credit(10_000_000) });
+    const banner = (await within(dialog()).findByText('You have $10.00 of purchased credit.')).closest('.ua-banner');
+    if (!(banner instanceof HTMLElement)) throw new Error('No purchased-credit banner');
+    expect(within(banner).getByText(PURCHASED_TEXT)).toBeTruthy();
+    expect(within(banner).queryByRole('link')).toBeNull();
+  });
+
+  it('test_delete_dialog_no_credit_request_without_billing', async () => {
+    const { server } = await openDeleteDialog({
+      routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: { status: 200, body: credit(4_200_000) } },
+    });
+    await settle();
+    expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(0);
+    expect(within(dialog()).queryByText(/purchased credit/)).toBeNull();
+  });
+
+  for (const status of [500, 401]) {
+    it(`test_delete_dialog_credit_failure_does_not_block (${status})`, async () => {
+      // The Credits section asks first; only the dialog's own request fails.
+      let asked = 0;
+      const reply: Reply = () =>
+        ++asked === 1
+          ? { status: 200, body: credit(0) }
+          : { status, body: { code: status === 401 ? 'auth-required' : 'internal', message: 'No.' } };
+      const { server, user } = await openBillingDialog(reply);
+      expect(await within(dialog()).findByText(CREDIT_UNCHECKED)).toBeTruthy();
+      expect(dialog().open).toBe(true);
+      await user.type(within(dialog()).getByLabelText(FIELD), TOM);
+      expect(deleteButton().disabled).toBe(false);
+      await user.click(deleteButton());
+      expect(await screen.findByText(DELETED)).toBeTruthy();
+      expect(server.posts()).toEqual([{ method: 'POST', path: ACCOUNT_DELETE_PATH, body: { confirm: TOM } }]);
+    });
+  }
+
+  it('test_delete_dialog_one_credit_request_per_opening', async () => {
+    const { server, user } = openAccount({
+      info: BILLING,
+      routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: { status: 200, body: credit(4_200_000) } },
+    });
+    const row = await screen.findByRole('button', { name: DELETE_ROW });
+    // The Credits section's own request, before any opening.
+    await waitFor(() => expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1));
+    for (const opening of [1, 2]) {
+      await user.click(row);
+      expect(await within(dialog()).findByText('You have $4.20 of purchased credit.')).toBeTruthy();
+      await settle();
+      expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1 + opening);
+      await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+      expect(dialog().open).toBe(false);
+    }
+    await settle();
+    expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(3);
   });
 });
