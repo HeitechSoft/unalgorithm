@@ -3,7 +3,15 @@ import { FactcheckSourceSchema, MAX_RETRIEVED_SOURCES, ZERO_USAGE } from '@unalg
 import { describe, expect, it } from 'vitest';
 import { providerBucketSearcher } from '../src/coverage.ts';
 import type { RetrieveRequest } from '../src/retriever.ts';
-import { createSearchProvider, type SearchHit, type SearchProvider, searchRetriever, siteClause } from '../src/search.ts';
+import {
+  cleanSnippet,
+  createSearchProvider,
+  type SearchHit,
+  type SearchProvider,
+  searchRetriever,
+  siteClause,
+  stripTags,
+} from '../src/search.ts';
 import { startMockSearxng } from '../src/testing/mock-searxng.ts';
 
 interface Recorded {
@@ -372,6 +380,23 @@ describe('searchRetriever', () => {
     expect(a!.pageAge).toBe('p'.repeat(64));
     expect(b!.snippets[0]!.startsWith(`"a" <b> 'c' &lt; w w`)).toBe(true);
     expect(b!.snippets[0]!.length).toBe(1000);
+  });
+
+  it('test_clean_snippet_strips_markup', () => {
+    // Tags go, the text between them stays: a snippet is shown as plain text.
+    expect(cleanSnippet('<script>alert(1)</script>x')).toBe('alert(1)x');
+    expect(stripTags('<<script>script>')).toBe('script');
+    expect(cleanSnippet('<<script>script>')).not.toContain('<');
+    expect(cleanSnippet('a > b <i>c</i> d <unterminated tail')).toBe('a b c d');
+    // Escaped markup is text, decoded once.
+    expect(cleanSnippet('&lt;b&gt; &amp;lt;')).toBe('<b> &lt;');
+
+    for (const hostile of ['<'.repeat(100_000), `${'<a'.repeat(50_000)}>`, '<>'.repeat(50_000)]) {
+      const started = performance.now();
+      const out = cleanSnippet(hostile);
+      expect(performance.now() - started).toBeLessThan(100);
+      expect(out).not.toMatch(/[<>]/);
+    }
   });
 
   it('test_search_retriever_result_shape', async () => {

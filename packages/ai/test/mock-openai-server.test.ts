@@ -2,6 +2,7 @@ import { buildInterestProfile, defaultSettings } from '@unalgorithm/core';
 import type { PostForAI } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyPosts, memoryCapabilities, openaiCompatibleClient } from '../src/index.ts';
+import { fencedBlocks, fencedPosts, fencedSourceLines } from '../src/testing/fenced-posts.ts';
 import { type MockOpenAI, type MockOpenAIOptions, startMockOpenAI } from '../src/testing/mock-openai-server.ts';
 
 const profile = buildInterestProfile(defaultSettings());
@@ -139,4 +140,47 @@ describe('failure and lifecycle', () => {
     await expect(m.close()).resolves.toBeUndefined();
     await expect(fetch(`${m.baseUrl}/models`)).rejects.toThrow();
   }, 15_000);
+});
+
+describe('fenced block scanners', () => {
+  it('test_fenced_scanners_read_prompt_tags', () => {
+    const user = [
+      'Nonce: N1',
+      '<post_N1 id="p1" kind="x">\nfirst post\nsecond line\n</post_N1>',
+      '<post_N1 id="">\nempty id\n</post_N1>',
+      '<post_N1 id="p2">same line</post_N1>',
+      '<post_N1 id="p3">\n\n</post_N1>',
+      '<source_N1 id="s1" url="https://a.example/">\nAlpha text\nmore</source_N1>',
+      '<source_N1 id="x2">\nnot a source id\n</source_N1>',
+      '<source_N1 id="s22">\nBeta',
+    ].join('\n');
+    expect(fencedPosts(user)).toEqual([
+      { id: 'p1', text: 'first post\nsecond line' },
+      { id: 'p3', text: '' },
+    ]);
+    expect(fencedBlocks(user, 'post').map((b) => b.body)).toEqual(['first post\nsecond line', 'empty id', '']);
+    expect(fencedBlocks(user, 'post')[0]?.attrs).toBe(' id="p1" kind="x"');
+    expect(fencedSourceLines(user)).toEqual([
+      { id: 's1', line: 'Alpha text' },
+      { id: 's22', line: 'Beta' },
+    ]);
+  });
+
+  it('test_fenced_scanners_linear_on_hostile_input', () => {
+    const hostile = [
+      '<post_a id="p'.repeat(20_000),
+      '<post_a\n'.repeat(20_000),
+      `${'<post_a>\n'.repeat(20_000)}x`,
+      '<source_a id="s1"'.repeat(20_000),
+      '<link_a'.repeat(20_000),
+    ];
+    for (const text of hostile) {
+      const started = performance.now();
+      fencedPosts(text);
+      fencedBlocks(text, 'post');
+      fencedBlocks(text, 'link');
+      fencedSourceLines(text);
+      expect(performance.now() - started).toBeLessThan(100);
+    }
+  });
 });
