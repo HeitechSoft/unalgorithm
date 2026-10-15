@@ -407,13 +407,20 @@ describe('manifest', () => {
     expect(cloud.permissions).not.toContain('identity');
     expect(cloud).not.toHaveProperty('key');
     expect(cloud.host_permissions?.join(' ')).not.toContain('chromiumapp.org');
-    // Everything else is the store manifest.
-    expect({ ...cloud, optional_permissions: undefined }).toEqual({ ...store, optional_permissions: undefined });
+    // Everything else is the store manifest, apart from sync's `alarms` (CL3-20).
+    expect(store.permissions).not.toContain('alarms');
+    expect(cloud.permissions).toContain('alarms');
+    const withoutAlarms = cloud.permissions?.filter((p) => p !== 'alarms');
+    expect({ ...cloud, optional_permissions: undefined, permissions: withoutAlarms }).toEqual({
+      ...store,
+      optional_permissions: undefined,
+    });
     vi.unstubAllEnvs();
 
     for (const env of [undefined, '1']) {
       vi.stubEnv('UA_CLOUD', env);
       const dev = manifestFor('development');
+      expect(dev.permissions).toContain('alarms');
       expect(dev.optional_permissions).toContain('identity');
       expect(dev.permissions).not.toContain('identity');
       expect(dev).toHaveProperty('key', devKey.key);
@@ -422,6 +429,7 @@ describe('manifest', () => {
       // Playwright can't answer a permission prompt, and the e2e sign-in tab reports its redirect only to a host
       // permission for it (CL1-16).
       const e2e = manifestFor('e2e');
+      expect(e2e.permissions).toContain('alarms');
       expect(e2e.permissions).toContain('identity');
       expect(e2e.optional_permissions ?? []).not.toContain('identity');
       expect(e2e).toHaveProperty('key', devKey.key);

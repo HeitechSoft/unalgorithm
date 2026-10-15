@@ -3,6 +3,7 @@ import type { AIErrorCode, Classification, NoiseLabel, PlatformId, PostForAI, Po
 import { browser } from 'wxt/browser';
 import type { PublicBalance } from '../background/server-balance.ts';
 import type { ServerLabel } from './server-label.ts';
+import type { SyncProblem } from './storage.ts';
 
 /** A post to classify: its local key and exactly what the AI may see (no names, no URLs). */
 export interface ClassifyItem {
@@ -62,6 +63,18 @@ export interface PublicServerAccount {
   billing?: boolean;
 }
 
+/** Settings sync as the server card shows it (CL3-20). */
+export interface SyncStatus {
+  /** Signed in to a server (whether it offers sync is learned when turning sync on). */
+  available: boolean;
+  enabled: boolean;
+  state: 'off' | 'syncing' | 'ok' | 'problem';
+  lastSyncAt: number | null;
+  problem?: SyncProblem;
+  /** Plain text for `problem`, naming the server by `serverLabel(origin).title`. */
+  message?: string;
+}
+
 export type BgRequest =
   /** `cacheOnly`: AI is paused, so only the cache answers (nothing is sent, nothing is metered). */
   | { type: 'classify'; platform: PlatformId; items: ClassifyItem[]; cacheOnly?: boolean }
@@ -89,7 +102,10 @@ export type BgRequest =
   | { type: 'serverDiscover'; baseUrl: string }
   | { type: 'serverSignIn'; baseUrl: string }
   | { type: 'serverSignOut' }
-  | { type: 'serverAccount' };
+  | { type: 'serverAccount' }
+  | { type: 'syncStatus' }
+  | { type: 'syncSetEnabled'; enabled: boolean }
+  | { type: 'syncNow' };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -110,6 +126,9 @@ export interface BgResponses {
   serverSignIn: { ok: true; account: PublicServerAccount } | { ok: false; error: BgError };
   serverSignOut: { ok: true };
   serverAccount: { account: PublicServerAccount | null };
+  syncStatus: SyncStatus;
+  syncSetEnabled: SyncStatus;
+  syncNow: SyncStatus;
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */

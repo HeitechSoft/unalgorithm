@@ -16,14 +16,22 @@ import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut } from '../background/server-auth.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
+import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
+import { FEED_HOSTS, FEED_TAB_URLS } from '../lib/feed-hosts.ts';
 import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
-import { learnedItem, readDevice, statsItem, usageItem, votesItem } from '../lib/storage.ts';
-
-const FEED_HOSTS = ['www.linkedin.com', 'www.facebook.com'];
-const FEED_TAB_URLS = ['https://www.linkedin.com/*', 'https://www.facebook.com/*'];
+import {
+  learnedItem,
+  readDevice,
+  settingsClocksItem,
+  settingsItem,
+  statsItem,
+  syncStateItem,
+  usageItem,
+  votesItem,
+} from '../lib/storage.ts';
 
 type Sender = Browser.runtime.MessageSender;
 type Handler<K extends BgRequest['type']> = (msg: Extract<BgRequest, { type: K }>, sender: Sender) => Promise<BgResponses[K]>;
@@ -138,6 +146,8 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     if (!fromExtensionPage(sender)) deny('clearData');
     const all = msg.what === 'all';
     if (all) {
+      // Sync stops before anything goes, so no run writes its state back or pushes during the erase.
+      await resetSync().catch((err: unknown) => console.debug('[UnAlgorithm] sync reset failed', err));
       // Ending the device on the server needs its refresh token, which `clearSecrets` deletes, so this goes first. A
       // failed sign-out doesn't stop the erase: the account itself is removed below either way.
       try {
@@ -164,6 +174,11 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
         clearAiCapabilities,
         // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes.
         () => browser.storage.session.clear(),
+        // Settings and their clocks go too: the defaults written next then stay at clock 0, so they never travel to
+        // the person's other computers, and the server's values win on the next sync.
+        () => settingsItem.removeValue(),
+        () => settingsClocksItem.removeValue(),
+        () => syncStateItem.removeValue(),
       );
     // Run every step even if one fails (API keys are erased first), then report any failure.
     const failed = (await Promise.allSettled(steps.map((step) => step()))).filter((r) => r.status === 'rejected');
@@ -199,6 +214,8 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     // AI turns off rather than staying on a source that can only fail with "Sign in again"; rules keep working. Off
     // first, so feed tabs stop sending posts before the device's tokens go.
     if (isServerAt((await readDevice()).aiSource, account.origin)) await saveSource(null);
+    // Sync is off again after a sign-out; signing in again leaves it off until the person turns it on.
+    await resetSync();
     await signOut(account.origin);
     return { ok: true };
   },
@@ -206,6 +223,18 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     if (!fromExtensionPage(sender)) deny('serverAccount');
     const account = await serverAccountItem.getValue();
     return { account: account ? publicAccount(account) : null };
+  },
+  syncStatus: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('syncStatus');
+    return syncStatus();
+  },
+  syncSetEnabled: async (msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('syncSetEnabled');
+    return setSyncEnabled(msg.enabled === true);
+  },
+  syncNow: async (_msg, sender) => {
+    if (!fromExtensionPage(sender)) deny('syncNow');
+    return runSync();
   },
 };
 
@@ -230,6 +259,7 @@ async function injectIntoOpenTabs(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  initSync();
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
     const handler = handlers[msg?.type] as unknown as ((m: BgRequest, s: Sender) => Promise<unknown>) | undefined;
     if (!handler) return false;
