@@ -174,16 +174,24 @@ describe('Check facts: where it is offered', () => {
     c.stop();
   });
 
-  it('test_no_action_on_facebook_friends_post_or_openai_source', async () => {
+  it('test_no_action_on_facebook_friends_post_or_compat_source_without_search_key', async () => {
     const fb = await feed(fbFeed(FRIEND_POST, ORGANIC_LINK_SHARE), device(true), bridge(), { adapter: facebookAdapter });
     expect(fb.b.classify).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fb.b.classify).mock.calls[0]?.[0]).toHaveLength(2);
     expect(offered(fb.c).map((e) => e.post?.audience)).toStrictEqual(['public']);
     fb.c.stop();
 
-    const openai = await feed(feed2026(postCard(CLAIMS)), device(true, { kind: 'openai', model: null }));
-    expect(openai.c.mounted()).toHaveLength(0);
-    openai.c.stop();
+    // An OpenAI-compatible source can't fact-check until this device has a web search key (P3-44).
+    const compat: AISourceConfig = {
+      kind: 'openai-compatible',
+      preset: 'ollama',
+      baseUrl: 'http://localhost:11434/v1',
+      auth: 'none',
+      model: null,
+    };
+    const noKey = await feed(feed2026(postCard(CLAIMS)), device(true, compat));
+    expect(noKey.c.mounted()).toHaveLength(0);
+    noKey.c.stop();
   });
 
   it('test_no_action_on_collapsed_post_until_revealed', async () => {

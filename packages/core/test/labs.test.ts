@@ -13,6 +13,7 @@ import {
   type ServerOffer,
   serverOfferFrom,
   sourceCapabilities,
+  webSearchOrigin,
 } from '../src/index.ts';
 
 const ANTHROPIC: AISourceConfig = { kind: 'anthropic', model: null };
@@ -33,7 +34,7 @@ const SOURCES: Record<string, AISourceConfig> = {
 
 type Input = Parameters<typeof factcheckOffered>[0];
 const base = (): Input => ({
-  device: { aiSource: ANTHROPIC, labs: { factcheck: true, perspectives: false } },
+  device: { aiSource: ANTHROPIC, labs: { factcheck: true, perspectives: false }, webSearch: null },
   post: { platform: 'linkedin' },
   classification: { isNews: false, hasCheckableClaims: true },
 });
@@ -58,10 +59,11 @@ describe('sourceCapabilities', () => {
     expect(sourceCapabilities(null)).toEqual({ classify: false, factcheck: false, perspectives: false, webSearch: false });
     for (const [kind, cfg] of Object.entries(SOURCES)) {
       const caps = sourceCapabilities(cfg);
-      expect(caps.perspectives, kind).toBe(kind === 'anthropic');
+      const full = kind === 'anthropic' || kind === 'openai';
+      expect(caps.perspectives, kind).toBe(full);
       expect(caps.classify, kind).toBe(true);
-      expect(caps.factcheck, kind).toBe(kind === 'anthropic');
-      expect(caps.webSearch, kind).toBe(kind === 'anthropic');
+      expect(caps.factcheck, kind).toBe(full);
+      expect(caps.webSearch, kind).toBe(full);
     }
   });
 });
@@ -76,7 +78,7 @@ describe('factcheckOffered', () => {
     const b = base();
     const cases: [string, Input][] = [
       ['labs off', { ...b, device: { ...b.device, labs: { factcheck: false, perspectives: true } } }],
-      ['openai source', { ...b, device: { ...b.device, aiSource: OPENAI } }],
+      ['on-device source', { ...b, device: { ...b.device, aiSource: { kind: 'on-device' } } }],
       ['no source', { ...b, device: { ...b.device, aiSource: null } }],
       ['no classification', { ...b, classification: undefined }],
       ['neither flag', { ...b, classification: { isNews: false, hasCheckableClaims: false } }],
@@ -92,7 +94,8 @@ describe('factcheckOffered', () => {
 
   it('test_factcheck_price_label', () => {
     expect(factcheckPriceLabel(ANTHROPIC)).toBe('About $0.12 on your Anthropic account');
-    expect(factcheckPriceLabel(OPENAI)).toBeNull();
+    expect(factcheckPriceLabel(OPENAI)).toBe('About $0.09 on your OpenAI account');
+    expect(factcheckPriceLabel({ kind: 'on-device' })).toBeNull();
     expect(factcheckPriceLabel(null)).toBeNull();
   });
 });
@@ -178,7 +181,7 @@ describe('Server offer', () => {
     expect(sourceCapabilities(SERVER)).toEqual(notCapable);
     expect(sourceCapabilities({ kind: 'server', baseUrl: 'not a url' }, FREE_OFFER)).toEqual(notCapable);
     // Other kinds ignore the offer.
-    expect(sourceCapabilities(OPENAI, FREE_OFFER).factcheck).toBe(false);
+    expect(sourceCapabilities({ kind: 'on-device' }, FREE_OFFER).factcheck).toBe(false);
     expect(sourceCapabilities(ANTHROPIC, null).factcheck).toBe(true);
   });
 
@@ -190,7 +193,7 @@ describe('Server offer', () => {
   it('test_factcheck_offered_server_public_only', () => {
     const input: Input = {
       ...base(),
-      device: { aiSource: SERVER, labs: { factcheck: true, perspectives: false } },
+      device: { aiSource: SERVER, labs: { factcheck: true, perspectives: false }, webSearch: null },
       serverOffer: PAID_OFFER,
     };
     expect(factcheckOffered({ ...input, post: { platform: 'facebook', audience: 'public' } })).toBe(true);
@@ -220,7 +223,7 @@ describe('Other perspectives', () => {
 
   type PInput = Parameters<typeof perspectivesOffered>[0];
   const pbase = (): PInput => ({
-    device: { aiSource: ANTHROPIC, labs: { factcheck: false, perspectives: true } },
+    device: { aiSource: ANTHROPIC, labs: { factcheck: false, perspectives: true }, webSearch: null },
     post: { platform: 'linkedin', sharedLink: LINK },
     classification: { isNews: true },
     registryReady: true,
@@ -235,7 +238,7 @@ describe('Other perspectives', () => {
   it('test_source_capabilities_perspectives', () => {
     expect(sourceCapabilities(ANTHROPIC).perspectives).toBe(true);
     expect(sourceCapabilities(null).perspectives).toBe(false);
-    for (const kind of ['openai', 'openai-compatible', 'on-device']) {
+    for (const kind of ['openai-compatible', 'on-device']) {
       expect(sourceCapabilities(SOURCES[kind] ?? null, P_PAID).perspectives, kind).toBe(false);
     }
     expect(sourceCapabilities(SERVER, P_FREE)).toEqual({
@@ -277,13 +280,13 @@ describe('Other perspectives', () => {
     expect(perspectivesOffered(pbase())).toBe(true);
     const http = { url: 'http://x.example/b', domain: 'x.example' };
     expect(perspectivesOffered({ ...pbase(), post: { platform: 'linkedin', sharedLink: http } })).toBe(true);
-    const server = { aiSource: SERVER, labs: { factcheck: false, perspectives: true } };
+    const server = { aiSource: SERVER, labs: { factcheck: false, perspectives: true }, webSearch: null };
     expect(perspectivesOffered({ ...pbase(), device: server, serverOffer: P_PAID })).toBe(true);
   });
 
   it('test_perspectives_offered_each_gate', () => {
     const b = pbase();
-    const server = { aiSource: SERVER, labs: { factcheck: false, perspectives: true } };
+    const server = { aiSource: SERVER, labs: { factcheck: false, perspectives: true }, webSearch: null };
     const cases: [string, PInput][] = [
       ['flag off', { ...b, device: { ...b.device, labs: { factcheck: true, perspectives: false } } }],
       ['registry not ready', { ...b, registryReady: false }],
@@ -308,10 +311,128 @@ describe('Other perspectives', () => {
     expect(jobPriceLabel('perspectives', ANTHROPIC)).toBe('About $0.14 on your Anthropic account');
     expect(jobPriceLabel('perspectives', SERVER, P_FREE)).toBe('Free on this server');
     expect(jobPriceLabel('perspectives', SERVER, P_PAID)).toBe('About $0.27, at most $0.50');
-    expect(jobPriceLabel('perspectives', OPENAI)).toBeNull();
+    expect(jobPriceLabel('perspectives', { kind: 'on-device' })).toBeNull();
     expect(jobPriceLabel('perspectives', null)).toBeNull();
     expect(jobPriceLabel('perspectives', SERVER, PAID_OFFER)).toBeNull();
     expect(jobPriceLabel('factcheck', SERVER, P_PAID)).toBeNull();
     expect(jobPriceLabel('factcheck', ANTHROPIC)).toBe('About $0.12 on your Anthropic account');
+  });
+});
+
+describe('OpenAI and OpenAI-compatible sources (RM4)', () => {
+  const NONE = { classify: true, factcheck: false, perspectives: false, webSearch: false };
+  const ALL = { classify: true, factcheck: true, perspectives: true, webSearch: true };
+  const compat = (baseUrl: string): AISourceConfig => ({
+    kind: 'openai-compatible',
+    preset: 'custom',
+    baseUrl,
+    auth: 'none',
+    model: null,
+  });
+  const LOCAL = compat('http://localhost:11434/v1');
+  const REMOTE = compat('https://openrouter.ai/api/v1');
+  const BRAVE = { provider: 'brave' } as const;
+  const TAVILY = { provider: 'tavily' } as const;
+  const LINK = { url: 'https://news.example.com/a', domain: 'news.example.com' };
+  const P_OFFER: ServerOffer = { ...PAID_OFFER, perspectives: true, perspectivesPrice: PRICE };
+
+  it('test_capabilities_openai_key', () => {
+    expect(sourceCapabilities({ kind: 'openai', model: null })).toEqual(ALL);
+    expect(sourceCapabilities(OPENAI, null, BRAVE)).toEqual(ALL);
+  });
+
+  it('test_capabilities_compat_needs_search_key', () => {
+    expect(sourceCapabilities(LOCAL)).toEqual(NONE);
+    expect(sourceCapabilities(LOCAL, null, null)).toEqual(NONE);
+    expect(sourceCapabilities(LOCAL, null, BRAVE)).toEqual(ALL);
+    expect(sourceCapabilities(REMOTE, P_OFFER, TAVILY)).toEqual(ALL);
+  });
+
+  it('test_capabilities_other_kinds_unchanged', () => {
+    const cases: [AISourceConfig | null, ServerOffer | null][] = [
+      [null, null],
+      [ANTHROPIC, null],
+      [{ kind: 'on-device' }, null],
+      [{ kind: 'on-device' }, P_OFFER],
+      [SERVER, null],
+      [SERVER, FREE_OFFER],
+      [SERVER, P_OFFER],
+    ];
+    for (const [cfg, offer] of cases) {
+      const before = sourceCapabilities(cfg, offer);
+      for (const ws of [null, BRAVE, TAVILY]) expect(sourceCapabilities(cfg, offer, ws), cfg?.kind).toEqual(before);
+    }
+    expect(sourceCapabilities(ANTHROPIC, null, BRAVE)).toEqual(ALL);
+    expect(sourceCapabilities({ kind: 'on-device' }, null, BRAVE)).toEqual(NONE);
+    expect(sourceCapabilities(SERVER, null, BRAVE)).toEqual(NONE);
+    expect(sourceCapabilities(SERVER, P_OFFER, BRAVE)).toEqual(ALL);
+  });
+
+  it('test_web_search_origin', () => {
+    expect(webSearchOrigin('brave')).toBe('https://api.search.brave.com');
+    expect(webSearchOrigin('tavily')).toBe('https://api.tavily.com');
+  });
+
+  it('test_factcheck_offered_openai_public_only', () => {
+    const input: Input = {
+      ...base(),
+      device: { aiSource: OPENAI, labs: { factcheck: true, perspectives: false }, webSearch: null },
+    };
+    expect(factcheckOffered(input)).toBe(true);
+    expect(factcheckOffered({ ...input, post: { platform: 'facebook', audience: 'friends' } })).toBe(false);
+    const labsOff = { ...input.device, labs: { factcheck: false, perspectives: false } };
+    expect(factcheckOffered({ ...input, device: labsOff })).toBe(false);
+    const compatInput: Input = { ...input, device: { ...input.device, aiSource: REMOTE } };
+    expect(factcheckOffered(compatInput)).toBe(false);
+    expect(factcheckOffered({ ...compatInput, device: { ...compatInput.device, webSearch: BRAVE } })).toBe(true);
+  });
+
+  it('test_perspectives_offered_compat_with_key', () => {
+    type PInput = Parameters<typeof perspectivesOffered>[0];
+    const input: PInput = {
+      device: { aiSource: REMOTE, labs: { factcheck: false, perspectives: true }, webSearch: null },
+      post: { platform: 'facebook', audience: 'public', sharedLink: LINK },
+      classification: { isNews: true },
+      registryReady: true,
+    };
+    expect(perspectivesOffered(input)).toBe(false);
+    const withKey: PInput = { ...input, device: { ...input.device, webSearch: TAVILY } };
+    expect(perspectivesOffered(withKey)).toBe(true);
+    expect(perspectivesOffered({ ...withKey, registryReady: false })).toBe(false);
+    expect(perspectivesOffered({ ...withKey, post: { ...withKey.post, audience: 'friends' } })).toBe(false);
+  });
+
+  it('test_price_label_openai', () => {
+    expect(jobPriceLabel('factcheck', OPENAI)).toBe('About $0.09 on your OpenAI account');
+    expect(jobPriceLabel('perspectives', OPENAI)).toBe('About $0.10 on your OpenAI account');
+    expect(factcheckPriceLabel(OPENAI, null, BRAVE)).toBe('About $0.09 on your OpenAI account');
+  });
+
+  it('test_price_label_compat_local_and_remote', () => {
+    expect(jobPriceLabel('factcheck', LOCAL, null, BRAVE)).toBe('Free on this computer, plus up to 3 searches on your Brave key');
+    expect(jobPriceLabel('perspectives', LOCAL, null, TAVILY)).toBe(
+      'Free on this computer, plus up to 5 searches on your Tavily key',
+    );
+    expect(jobPriceLabel('perspectives', REMOTE, null, TAVILY)).toBe(
+      "Your AI provider's usual price, plus up to 5 searches on your Tavily key",
+    );
+    expect(factcheckPriceLabel(REMOTE, null, BRAVE)).toBe(
+      "Your AI provider's usual price, plus up to 3 searches on your Brave key",
+    );
+    expect(jobPriceLabel('factcheck', LOCAL)).toBeNull();
+    expect(jobPriceLabel('perspectives', REMOTE, null, null)).toBeNull();
+    expect(jobPriceLabel('factcheck', { kind: 'on-device' }, null, BRAVE)).toBeNull();
+    expect(jobPriceLabel('factcheck', ANTHROPIC, null, BRAVE)).toBe('About $0.12 on your Anthropic account');
+  });
+
+  it('test_device_web_search_default_and_repair', () => {
+    expect(defaultDevice('d').webSearch).toBeNull();
+    const stored: Partial<Device> = { ...defaultDevice('d'), aiSource: REMOTE };
+    delete stored.webSearch;
+    expect(migrateDevice(stored, () => 'new').webSearch).toBeNull();
+    expect(migrateDevice({ ...stored, webSearch: { provider: 'bing' } }, () => 'new').webSearch).toBeNull();
+    const kept = migrateDevice({ ...stored, webSearch: TAVILY }, () => 'new');
+    expect(kept.webSearch).toEqual(TAVILY);
+    expect(kept.aiSource).toEqual(REMOTE);
   });
 });

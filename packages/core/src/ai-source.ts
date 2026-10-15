@@ -119,14 +119,43 @@ function serverCan(task: ServerJobTask, baseUrl: string, offer: ServerOffer | nu
   }
 }
 
+/** In-extension web search for OpenAI-compatible sources (F24). SearXNG stays server-only. */
+export const WEB_SEARCH_PROVIDERS = ['brave', 'tavily'] as const;
+export type WebSearchProviderId = (typeof WEB_SEARCH_PROVIDERS)[number];
+/** Device-local, never synced or exported; the key itself is a secret in IndexedDB (`search:<provider>`, P3-45). */
+export const WebSearchKeySchema = z.object({ provider: z.enum(WEB_SEARCH_PROVIDERS) });
+export type WebSearchKey = z.infer<typeof WebSearchKeySchema>;
+
+const WEB_SEARCH: Record<WebSearchProviderId, { name: string; origin: string }> = {
+  brave: { name: 'Brave', origin: 'https://api.search.brave.com' },
+  tavily: { name: 'Tavily', origin: 'https://api.tavily.com' },
+};
+
+/** The API origin each provider is reached at; the optional host permission asked for from a click (P3-45). */
+export function webSearchOrigin(p: WebSearchProviderId): string {
+  return WEB_SEARCH[p].origin;
+}
+
+/** The provider's name as shown to people: "Brave", "Tavily". */
+export function webSearchName(p: WebSearchProviderId): string {
+  return WEB_SEARCH[p].name;
+}
+
 /**
- * No source can do nothing; an own Anthropic key classifies, fact-checks and compares perspectives with web search; a
- * server source does each job task its signed-in server offers (`offer`, ignored for every other kind); every other
- * kind only classifies for now (openai and openai-compatible: RM4).
+ * No source can do nothing; an own Anthropic or OpenAI key classifies, fact-checks and compares perspectives with its
+ * provider's web search; an OpenAI-compatible source does so only with this device's web search key (`webSearch`,
+ * ignored for every other kind); a server source does each job task its signed-in server offers (`offer`, ignored for
+ * every other kind); on-device only classifies.
  */
-export function sourceCapabilities(cfg: AISourceConfig | null, offer: ServerOffer | null = null): SourceCapabilities {
+export function sourceCapabilities(
+  cfg: AISourceConfig | null,
+  offer: ServerOffer | null = null,
+  webSearch: WebSearchKey | null = null,
+): SourceCapabilities {
+  const all = { classify: true, factcheck: true, perspectives: true, webSearch: true };
   if (!cfg) return { classify: false, factcheck: false, perspectives: false, webSearch: false };
-  if (cfg.kind === 'anthropic') return { classify: true, factcheck: true, perspectives: true, webSearch: true };
+  if (cfg.kind === 'anthropic' || cfg.kind === 'openai') return all;
+  if (cfg.kind === 'openai-compatible' && webSearch) return all;
   if (cfg.kind === 'server') {
     const factcheck = serverCan('factcheck', cfg.baseUrl, offer);
     const perspectives = serverCan('perspectives', cfg.baseUrl, offer);

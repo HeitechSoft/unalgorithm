@@ -1,6 +1,6 @@
 import { NOISE_LABELS, type PLATFORMS } from '@unalgorithm/protocol';
 import { z } from 'zod';
-import { AISourceConfigSchema } from '../ai-source.ts';
+import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
 
 /**
  * Synced settings (Phase 2 syncs them field by field). Objects are "loose" so a field written by a newer
@@ -140,6 +140,8 @@ export const DeviceSchema = z.looseObject({
   }),
   dev: z.looseObject({ debugOverlay: z.boolean() }),
   labs: LabsSchema,
+  /** The web search key this device uses with an OpenAI-compatible source (which provider; the key is a secret). */
+  webSearch: WebSearchKeySchema.nullable(),
 });
 export type Device = z.infer<typeof DeviceSchema>;
 

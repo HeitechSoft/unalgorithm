@@ -59,7 +59,7 @@ describe('Labs pane', () => {
   });
 
   it('test_labs_pane_disabled_with_setup_link_without_capability', async () => {
-    for (const source of [{ kind: 'openai', model: null } as const, null]) {
+    for (const source of [{ kind: 'on-device' } as const, null]) {
       const user = setupUser();
       const saveDevice = vi.fn(async () => {});
       // A flag stored earlier stays stored, but the switch shows off.
