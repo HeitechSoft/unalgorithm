@@ -18,6 +18,7 @@
   "dependencies": {
     "@unalgorithm/ai": "workspace:*",
     "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/platforms": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/research": "workspace:*",

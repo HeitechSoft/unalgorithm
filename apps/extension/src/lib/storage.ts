@@ -11,7 +11,7 @@ import {
   type TabState,
   type UsageLedger,
 } from '@unalgorithm/core';
-import { type FactcheckResult, type PostKey, uuid } from '@unalgorithm/protocol';
+import { type FactcheckResult, type PerspectivesResult, type PostKey, uuid } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from './messages.ts';
 
@@ -93,18 +93,26 @@ export function tabStateItem(tabId: number) {
 }
 
 /** One fact-check of a post on this tab. Session storage only: gone when the browser closes, never synced. */
+/** A fact-check or an "Other perspectives" comparison, kept for the side panel. */
 export interface FactcheckEntry {
   key: PostKey;
-  /** First 80 characters of the post text, for the sheet's header. Display only. */
+  /** Absent: a fact-check (entries stored before RM3 read as before). */
+  task?: 'perspectives';
+  /**
+   * For the sheet's header, display only. A fact-check: the post text's first 80 characters. A comparison: the link
+   * title clipped to 80, else the link's host (never post text).
+   */
   label: string;
   startedAt: number;
   status: 'running' | 'done' | 'failed';
   result?: FactcheckResult;
+  /** A comparison's result (`task: 'perspectives'`). */
+  perspectives?: PerspectivesResult;
   error?: BgError;
   costMicros?: number;
 }
 
-/** A tab's fact-checks, newest first (at most 5). Removed when the tab closes. */
+/** A tab's fact-checks and comparisons, newest first (at most 5). Removed when the tab closes. */
 export const factcheckItem = (tabId: number) =>
   storage.defineItem<{ entries: FactcheckEntry[] }>(`session:factcheck:${tabId}`, { fallback: { entries: [] } });
 

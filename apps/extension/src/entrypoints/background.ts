@@ -13,7 +13,7 @@ import {
   saveSource,
   testSource,
 } from '../background/ai.ts';
-import { openFactcheckPanel, runFactcheckForTab } from '../background/factcheck.ts';
+import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
 import {
@@ -282,6 +282,14 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     if (tabId === undefined || !fromFeedTab(sender)) deny('openFactcheck');
     // When Chrome refuses, the in-feed item points to the toolbar button, whose popup opens the side panel.
     return { ok: await openFactcheckPanel(tabId) };
+  },
+  perspectives: async (msg, sender) => {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined || !fromFeedTab(sender)) deny('perspectives');
+    // Before any `await`, as fact-check's.
+    void openFactcheckPanel(tabId);
+    // Field by field: anything else on the message (post text included) goes nowhere.
+    return runPerspectivesForTab(tabId, msg.key, { link: msg.link, platform: msg.platform, audience: msg.audience });
   },
 };
 

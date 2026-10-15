@@ -5,10 +5,13 @@ import type {
   Classification,
   FactcheckResult,
   NoiseLabel,
+  PerspectivesJobRequest,
+  PerspectivesResult,
   PlatformId,
   PostForAI,
   PostKey,
   ServerInfo,
+  SharedLink,
 } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { PublicBalance } from '../background/server-balance.ts';
@@ -123,7 +126,18 @@ export type BgRequest =
   /** Fact-check one public post on the person's own Anthropic key (Labs). Opens the side panel for the tab. */
   | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
   /** Opens the side panel for the sending feed tab, where the newest check shows. */
-  | { type: 'openFactcheck' };
+  | { type: 'openFactcheck' }
+  /**
+   * "Other perspectives" for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
+   * browser, never post text. Opens the side panel for the tab.
+   */
+  | {
+      type: 'perspectives';
+      key: PostKey;
+      link: SharedLink;
+      platform: PlatformId;
+      audience?: PerspectivesJobRequest['audience'];
+    };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -153,6 +167,7 @@ export interface BgResponses {
   factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
   /** False when Chrome refused to open the side panel (no user gesture reached it). */
   openFactcheck: { ok: boolean };
+  perspectives: { ok: true; result: PerspectivesResult; costMicros?: number } | { ok: false; error: BgError };
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */

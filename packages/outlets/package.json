@@ -4,6 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-only AND CC-BY-4.0",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/sign.ts",

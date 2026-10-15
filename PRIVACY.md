@@ -59,6 +59,21 @@ sending it the claims, not the post. On a server that charges for checks, a chec
 you confirm it; a check that stops early is not charged. Closing the tab cancels a check that is still running. The
 result is kept in this browser exactly as above.
 
+**Other perspectives (Labs, off by default).** When you turn on Settings → Labs → Other perspectives, use your own
+Anthropic key and ask to compare a public post's shared link, the shared link's address (with tracking and per-click
+parameters removed first) and its link-card title go from your browser to Anthropic, which searches news sites from our
+outlet list for coverage of the same story and compares it. The post's text is never sent, nor its author, your
+interests or anything else about you. Lean labels come only from UnAlgorithm's reviewed outlet list, never from the AI.
+The result stays in this browser's temporary session storage for that tab, as a fact-check's does, and nothing goes to
+HeitechSoft.
+
+**Other perspectives on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers Other
+perspectives, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
+with your device's sign-in, never the post's text. The server follows the link's redirects to find the story's address
+and searches through the search provider its operator configured; it keeps the comparison in its memory only, for at
+most 10 minutes. Closing the tab cancels a comparison that is still running. This browser shows a result only when
+every outlet's lean in it matches this version's own reviewed outlet list.
+
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.
 

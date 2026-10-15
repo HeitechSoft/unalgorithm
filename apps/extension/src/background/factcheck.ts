@@ -1,12 +1,30 @@
 import { AIError, describeError } from '@unalgorithm/ai';
 import { type AISourceConfig, createLock, SOURCE_LIMITS, serverOfferFrom, sourceCapabilities } from '@unalgorithm/core';
-import { type AIErrorCode, type PostForAI, type PostKey, serverMayReceive } from '@unalgorithm/protocol';
-import { aiRetriever, FACTCHECK_MODELS, runFactcheck } from '@unalgorithm/research';
+import type { Registry } from '@unalgorithm/outlets';
+import {
+  type AIErrorCode,
+  type PerspectivesJobRequest,
+  type PostForAI,
+  type PostKey,
+  type SharedLink,
+  SharedLinkSchema,
+  serverMayReceive,
+} from '@unalgorithm/protocol';
+import {
+  aiBucketSearcher,
+  aiRetriever,
+  canonicalLink,
+  FACTCHECK_MODELS,
+  PERSPECTIVES_MODELS,
+  runFactcheck,
+  runPerspectives,
+} from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
 import type { BgError, BgResponses } from '../lib/messages.ts';
+import { leansMatchRegistry, perspectivesRegistry } from '../lib/outlets.ts';
 import { type FactcheckEntry, factcheckItem, readDevice } from '../lib/storage.ts';
 import { clientFor, hasPermission, parsePostInput, recordSpend } from './ai.ts';
-import { runFactcheckViaServer } from './factcheck-server.ts';
+import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
 import { serverAccountItem } from './server-auth.ts';
 
 /** Checks kept per tab, newest first. */
@@ -23,8 +41,18 @@ const entriesLock = createLock();
 const running = new Map<number, AbortController>();
 
 type FactcheckResponse = BgResponses['factcheck'];
+type PerspectivesResponse = BgResponses['perspectives'];
+/** A tab's task: a fact-check, or an "Other perspectives" comparison. */
+type Task = 'factcheck' | 'perspectives';
+type Refusal = { ok: false; error: BgError };
+type TaskAnswer<R> = { ok: true; result: R; costMicros?: number } | Refusal;
 
-const refuse = (code: AIErrorCode, message: string): FactcheckResponse => ({ ok: false, error: { code, message } });
+const refuse = (code: AIErrorCode, message: string): Refusal => ({ ok: false, error: { code, message } });
+
+const BUSY: Record<Task, string> = {
+  factcheck: 'A check is already running on this page.',
+  perspectives: 'A check or comparison is already running on this page.',
+};
 
 /**
  * Opens the side panel for a tab. Called before any `await` in the handler, so Chrome still sees the click's user
@@ -84,7 +112,7 @@ export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omi
   if (!post) return refuse('bad-request', 'This post could not be read.');
   // Only public posts, own keys too (decision D2).
   if (!serverMayReceive(post)) return refuse('not-available', ONLY_PUBLIC);
-  return track(tabId, key, post, cfg, () => runOnAnthropic(post, cfg));
+  return track(tabId, key, post.text.slice(0, LABEL_CHARS), 'factcheck', cfg, () => runOnAnthropic(post, cfg));
 }
 
 const ONLY_PUBLIC = 'Fact-check works only on public posts.';
@@ -102,15 +130,20 @@ async function runOnServer(
   const post = parsePostInput(input, SOURCE_LIMITS.server.maxPostChars);
   if (!post) return refuse('bad-request', 'This post could not be read.');
   if (!serverMayReceive(post)) return refuse('not-available', ONLY_PUBLIC);
-  return track(tabId, key, post, cfg, async () => {
-    const controller = new AbortController();
-    running.set(tabId, controller);
-    try {
-      return await runFactcheckViaServer(account, { ...post, ref: 'p1' }, { signal: controller.signal });
-    } finally {
-      if (running.get(tabId) === controller) running.delete(tabId);
-    }
-  });
+  return track(tabId, key, post.text.slice(0, LABEL_CHARS), 'factcheck', cfg, () =>
+    cancelOnTabClose(tabId, (signal) => runFactcheckViaServer(account, { ...post, ref: 'p1' }, { signal })),
+  );
+}
+
+/** Runs a server job on a signal that closing the tab fires (`forgetFactchecks`), so the job is cancelled. */
+async function cancelOnTabClose<A>(tabId: number, run: (signal: AbortSignal) => Promise<A>): Promise<A> {
+  const controller = new AbortController();
+  running.set(tabId, controller);
+  try {
+    return await run(controller.signal);
+  } finally {
+    if (running.get(tabId) === controller) running.delete(tabId);
+  }
 }
 
 /** The three Anthropic calls; every call's spend is in the ledger with `posts: 0` (no daily post cap). */
@@ -133,17 +166,18 @@ async function runOnAnthropic(post: PostForAI, cfg: Extract<AISourceConfig, { ki
 }
 
 /**
- * One check per tab: the host permission, then a `running` entry, then `run`, whose answer settles the entry. Nothing
- * is settled when the tab closed meanwhile (its entries are gone): the item stays removed.
+ * One check or comparison per tab: the host permission, then a `running` entry, then `run`, whose answer settles the
+ * entry. Nothing is settled when the tab closed meanwhile (its entries are gone): the item stays removed.
  */
-async function track(
+async function track<A extends TaskAnswer<unknown>>(
   tabId: number,
   key: PostKey,
-  post: PostForAI,
+  label: string,
+  task: Task,
   cfg: AISourceConfig,
-  run: () => Promise<FactcheckResponse>,
-): Promise<FactcheckResponse> {
-  if (inFlight.has(tabId)) return refuse('rate-limit', 'A check is already running on this page.');
+  run: () => Promise<A>,
+): Promise<A | Refusal> {
+  if (inFlight.has(tabId)) return refuse('rate-limit', BUSY[task]);
   inFlight.add(tabId);
   try {
     if (!(await hasPermission(cfg))) return refuse('host-permission', describeError('host-permission', 'Anthropic'));
@@ -155,19 +189,104 @@ async function track(
     // Another `running` entry can only be left by a worker that died mid-check: this tab is in `inFlight` now.
     const stale: Partial<FactcheckEntry> = { status: 'failed', error: factcheckError(new AIError('timeout', 'Stopped.')) };
     await updateEntries(tabId, (entries) => [
-      { key, label: post.text.slice(0, LABEL_CHARS), startedAt, status: 'running' },
+      { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running' },
       ...entries.map((e) => (e.status === 'running' ? { ...e, ...stale } : e)),
     ]);
 
     const answer = await run();
     if (answer.ok) {
       const cost = answer.costMicros !== undefined ? { costMicros: answer.costMicros } : {};
-      await settle({ status: 'done', result: answer.result, ...cost });
+      const result = task === 'perspectives' ? { perspectives: answer.result } : { result: answer.result };
+      await settle({ status: 'done', ...(result as Partial<FactcheckEntry>), ...cost });
     } else {
       await settle({ status: 'failed', error: answer.error });
     }
     return answer;
   } finally {
     inFlight.delete(tabId);
+  }
+}
+
+/** Only the link, the platform and (Facebook) the audience: nothing else from the post reaches here. */
+export interface PerspectivesTabRequest {
+  link: SharedLink;
+  platform: PerspectivesJobRequest['platform'];
+  audience?: PerspectivesJobRequest['audience'] | undefined;
+}
+
+const NOT_COMPARABLE = "This link can't be compared.";
+const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
+
+/** The text a failed own-key comparison shows. */
+function perspectivesError(err: unknown): BgError {
+  const e = err instanceof AIError ? err : new AIError('unknown', String(err));
+  if (e.code === 'unsupported') return { code: e.code, message: "Web search isn't turned on for this Anthropic account." };
+  if (e.code === 'refusal') return { code: e.code, message: 'The AI declined to compare this link.' };
+  if (e.code === 'bad-request') return { code: e.code, message: NOT_COMPARABLE };
+  return { code: e.code, message: describeError(e.code, 'Anthropic') };
+}
+
+/**
+ * "Other perspectives" for one shared link in a feed tab, on the person's own Anthropic key or on their UnAlgorithm
+ * server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link leaves the
+ * browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when every
+ * lean in it is this build's own registry's (`leansMatchRegistry`).
+ */
+export async function runPerspectivesForTab(
+  tabId: number,
+  key: PostKey,
+  req: PerspectivesTabRequest,
+): Promise<PerspectivesResponse> {
+  const device = await readDevice();
+  if (!device.labs.perspectives) return refuse('not-available', 'Turn on Other perspectives in Settings → Labs.');
+  const registry = perspectivesRegistry();
+  if (!registry) return refuse('not-available', "Other perspectives isn't available yet.");
+  const parsed = SharedLinkSchema.safeParse(req.link);
+  const url = parsed.success ? canonicalLink(parsed.data.url) : null;
+  if (!parsed.success || !url) return refuse('bad-request', NOT_COMPARABLE);
+  const title = parsed.data.title;
+  const link: SharedLink = { url, ...(title !== undefined ? { title } : {}) };
+  const where = { platform: req.platform, ...(req.audience ? { audience: req.audience } : {}) };
+  // Only public posts, own keys too (decision D2).
+  if (!serverMayReceive(where)) return refuse('not-available', 'Other perspectives works only on public posts.');
+
+  const label = title?.trim() ? title.trim().slice(0, LABEL_CHARS) : new URL(url).hostname;
+  const checked = (answer: PerspectivesResponse): PerspectivesResponse =>
+    answer.ok && !leansMatchRegistry(answer.result, registry) ? refuse('not-available', LEANS_MISMATCH) : answer;
+
+  const cfg = device.aiSource;
+  if (cfg?.kind === 'server') {
+    const account = await serverAccountItem.getValue();
+    if (!account || !sourceCapabilities(cfg, serverOfferFrom(account)).perspectives)
+      return refuse('unsupported', "This server doesn't offer Other perspectives.");
+    return track(tabId, key, label, 'perspectives', cfg, async () =>
+      checked(await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where }, { signal }))),
+    );
+  }
+  if (cfg?.kind !== 'anthropic' || !sourceCapabilities(cfg).perspectives)
+    return refuse('unsupported', 'Other perspectives needs your own Anthropic key or a server that offers it.');
+  return track(tabId, key, label, 'perspectives', cfg, async () => checked(await compareOnAnthropic(link, registry, cfg)));
+}
+
+/** The pipeline on the person's key: no `resolveLink` (the extension never fetches a link), no ceiling (own key). */
+async function compareOnAnthropic(
+  link: SharedLink,
+  registry: Registry,
+  cfg: Extract<AISourceConfig, { kind: 'anthropic' }>,
+): Promise<PerspectivesResponse> {
+  // Every call's spend is in the ledger before the answer goes back, as fact-check's.
+  const spends: Promise<void>[] = [];
+  try {
+    const client = await clientFor(cfg);
+    const run = await runPerspectives(
+      link,
+      { client, searcher: aiBucketSearcher(client, PERSPECTIVES_MODELS.search), registry },
+      { onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })) },
+    );
+    await Promise.all(spends);
+    return { ok: true, result: run.result, ...(run.costMicros !== undefined ? { costMicros: run.costMicros } : {}) };
+  } catch (err) {
+    await Promise.allSettled(spends);
+    return { ok: false, error: perspectivesError(err) };
   }
 }

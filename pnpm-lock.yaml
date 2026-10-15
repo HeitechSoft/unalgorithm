@@ -40,6 +40,9 @@ importers:
       '@unalgorithm/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@unalgorithm/outlets':
+        specifier: workspace:*
+        version: link:../../packages/outlets
       '@unalgorithm/platforms':
         specifier: workspace:*
         version: link:../../packages/platforms
