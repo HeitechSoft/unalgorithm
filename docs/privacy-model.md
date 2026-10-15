@@ -61,6 +61,9 @@ For both kinds of UnAlgorithm server, Facebook posts that aren't public are neve
 by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
 
+Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
+keys.
+
 ## What a server stores
 
 An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
@@ -70,7 +73,14 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
 - **Accounts:** the email address, and no name or picture (`user`).
 - **Devices:** one row per signed-in copy of the extension: its extension id, the short name the extension gave itself
   at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
-  whether it was signed out or revoked (`devices`).
+  when and why it was signed out or revoked: signed out from the extension, a refresh token used twice, or revoked
+  from the account page (`devices`).
+- **Passkeys:** for each passkey the person added on the account page, its public key, its credential id, the
+  authenticator model's id (AAGUID), its sign count, a label and when it was added (`passkey`). Never a private key or
+  biometric data: they never leave the person's device.
+- **Google sign-in** (only when the server's operator set it up): Google's id for the person's Google account and the
+  verified address Google gave (`account`, `user`). No Google access, refresh or ID token is kept. A Google sign-in
+  under way keeps its state (its PKCE verifier and the pages to return to) for ten minutes (`verification`).
 - **Hashed refresh tokens and codes:** refresh tokens and the single-use codes the extension trades for them are kept
   by hash only (`refresh_tokens`, `auth_codes`). Each refresh adds a row with its time, so the rows show when each
   device refreshed, as often as every 15 minutes while it is in use. A spent token is kept until its own 60-day expiry,
@@ -81,9 +91,10 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   address; a wrong code puts the newest one back to count the attempt. The same hourly job deletes the rows of codes
   past their five minutes (and of Google sign-ins and passkey challenges past theirs), so none stays more than about an
   hour after it expires.
-- **Sign-in limits:** the server counts the codes sent to each email address and the wrong codes tried for it, with
-  a hash of the address as the counter's key. The counts live in the server's memory only, never in the database or a log line,
-  and go after an hour without a request for that address (or when the server restarts).
+- **Sign-in limits:** the server counts the codes sent to each email address and the wrong codes tried for it (at most
+  5 codes an address in 15 minutes and 10 wrong codes an hour), with a SHA-256 hash of the lowercased address as the
+  counter's key. The counts live in the server's memory only, never in the database or a log line, and go after an hour
+  without a request for that address (or when the server restarts).
 - **Sign-in page sessions:** signing in on the server's own page starts a session that records the browser's IP
   address and user agent (`session`). The session expires after one day, but expired rows are not purged
   automatically yet, so a row can stay until the account is deleted.
@@ -92,12 +103,29 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   number of posts, token counts, the model, the outcome and the cost (`usage_events`). Together the rows show when each
   device used AI; they stay until the account is deleted.
 - **Per-user limits:** a daily post cap the server's admin set for an account with `user-cap` (`user_limits`).
-- **Background jobs:** the hourly purge of expired sign-in rows above, and any job a billing module registers
+- **Synced settings** (only when the person turns sync on in the extension; sync is off by default): the extension's
+  settings, interests and exceptions, one item per field, each with its edit time (a hybrid logical clock), the seq the
+  server gave it and the device that wrote it (`sync_items`, in the account's one space, `sync_spaces`, which holds the
+  space's epoch, counts and cleanup floor). Exceptions hold the name and profile identifier the person chose to always
+  show or hide. A deleted entry is kept as a marker without a value for 90 days, then removed. A record of each push
+  (its keys and the server's answers, no values, never a refused key) is kept for 24 hours (`sync_pushes`). Never
+  synced: API keys, endpoint tokens, refresh tokens, AI source settings, learned topics, votes, statistics or cached
+  results ([Sync](ARCHITECTURE.md#sync)).
+- **Background jobs:** the hourly purge of expired sign-in rows above, the sync cleanup every 6 hours (`sync.gc`, which
+  removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers
   ([ARCHITECTURE.md → Jobs](ARCHITECTURE.md#jobs)). graphile-worker's queue (schema `graphile_worker`) holds each job's
   task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
   and after a failure the error's name and code, never its message. A job's row is deleted once it succeeds; one that
   fails every attempt stays.
 - **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
+- **Export and deletion:** the account page downloads everything above about the account as JSON: the address, its
+  devices, passkeys (label, kind and when added; never the public key or credential id), linked sign-in methods, page
+  sessions, daily usage counts and synced settings, with no token, hash or code. Deleting the account removes all of it
+  at once, in one transaction, and signs out every device. A billing module's own records (on UnAlgorithm Cloud, the
+  credit ledger and the keyed starter-credit hash) follow that module's deletion policy, not this cascade
+  ([What a billing module sees](#what-a-billing-module-sees)). On UnAlgorithm Cloud, the module puts the account's
+  credit ledger in the download and erases the account's promotional credit records with the account, keeping only the
+  keyed starter-credit hash, which no longer names the account.
 
 Never stored or logged: post text, link titles, interest profiles, classification results, prompts or model answers.
 A classify request is handled in memory and answered with `Cache-Control: no-store`.
@@ -110,6 +138,11 @@ method, path, status and timing (`requestLog`). Other lines name an event and a 
   show roughly when each device was in use. `auth.purged` holds only how many expired rows the hourly purge deleted.
 - `classify.done`: the request id, the number of posts asked for, answered and declined (Facebook posts that aren't
   public), the model, the outcome and the time taken.
+- `sync.*`: the request id and how many items a push applied, found stale, refused or replayed (`sync.push`), why a
+  device must resync (`sync.resync`) and a space over its quota (`sync.quota`); `sync.gc` holds only counts. Never a
+  key or a value.
+- `account.*`: the request id when an account is exported or deleted, and the device id when a device is revoked from
+  the account page.
 - `limits.spend_breaker`: the day's AI spend and the limit, once per UTC day, when the daily spend limit
   (`DAILY_SPEND_LIMIT_USD`) stops classification for everyone.
 - Failures: an error's name, code and top stack frames, with the request id when there is one, never its message.
@@ -137,6 +170,9 @@ What the seam passes to a module:
 - **Each AI request:** the account, device and request ids and the time the server checked it; after the call, the
   model, the token usage, the cost and the number of posts counted. The module keeps its own ledger of amounts from
   these, in tables of its own.
+- **Export and deletion:** the account's id when the person downloads their data, for the module's own records in the
+  download, and before the account is deleted, so the module applies its deletion policy (`exportAccount`,
+  `deleteAccount`). A module that implements neither keeps its records after the account is deleted.
 
 A module's own routes (`mount`), such as the balance route the extension reads, receive each request like any route of
 the server, the client's IP address and headers included. The module also runs inside the server process with the

@@ -44,6 +44,11 @@ once if the issue is already public. The GitHub security advisory names the serv
 - Anything that makes the extension act on a platform (click, post, follow) on the user's behalf.
 - Post text or interest profiles logged or stored by the server.
 - Reading another account's data on a server.
+- Reading or changing another account's sync space or devices.
+- A revoked device that keeps access.
+- Account deletion that leaves data behind (beyond the billing records the
+  [privacy model](docs/privacy-model.md#what-a-server-stores) says are kept).
+- A sync item that carries an API key or a token.
 - Token theft, a refresh token that can be used again without revoking its device (beyond the one replay of a refresh
   whose answer was lost, within a minute and while its successor is unused), or a way past sign-in.
 - Getting past the Facebook audience filter (a post that isn't public reaching a server's model) or the limit of 12

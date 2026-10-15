@@ -52,9 +52,10 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 ## Before a store build carries the Cloud card
 
 Store builds show the UnAlgorithm Cloud card only as "Coming soon". The working card, which signs in to UnAlgorithm
-Cloud or another UnAlgorithm server (Settings → AI and onboarding), and the `identity` permission it signs in with
-are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in `apps/extension/wxt.config.ts`; development and e2e
-builds always have them). A store build may carry them only when all six of these are done:
+Cloud or another UnAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
+`alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
+`apps/extension/wxt.config.ts`; development and e2e builds always have them). A store build may carry them only when
+all eight of these are done:
 
 1. The UnAlgorithm Cloud beta privacy notice and beta terms are live on unalgorithm.app.
 2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
@@ -64,6 +65,11 @@ builds always have them). A store build may carry them only when all six of thes
 5. Invitees are still limited to the sign-up allowlist (`SIGNUP_ALLOWLIST`) until the public launch.
 6. The privacy impact assessment for UnAlgorithm Cloud (Quebec Law 25) is started, in HeitechSoft's private
    repository.
+7. PRIVACY.md has the sections *When you sign in to an UnAlgorithm server* and *Sync between your computers*, and an
+   *Alarms* row in its permissions table (the text is drafted in HeitechSoft's private repository with the store
+   answers). CI's privacy-gate test (`apps/extension/tests/privacy-gate.test.ts`) refuses the release workflow
+   otherwise.
+8. The Chrome Web Store data-use answers cover sync.
 
 Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zip" step of
 `release.yml`. Until that PR, `release.yml` never sets it.
@@ -153,6 +159,21 @@ A running server reports its release as `version` in `/.well-known/unalgorithm.j
 
 UnAlgorithm Cloud, HeitechSoft's hosted server, pins a server release in its private repository and builds its image
 from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the public release it runs.
+
+### After restoring a database
+
+After a server's database is restored from a backup, start a new sync epoch once. Every device is then told to resync
+from the server's copy instead of trusting a cursor from after the backup, and pushes its newer local edits again, so
+nothing is lost. The command prints the number of sync spaces only.
+
+- In a Docker deployment (the server image has no pnpm; its command-line tools run with `node`):
+  ```bash
+  docker compose exec server node apps/server/src/cli/sync-new-epoch.ts
+  ```
+- From a source checkout, with the server's environment:
+  ```bash
+  pnpm --filter @unalgorithm/server sync:new-epoch
+  ```
 
 ## Changing a price card
 

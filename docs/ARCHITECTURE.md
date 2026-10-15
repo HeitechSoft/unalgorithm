@@ -7,10 +7,11 @@ does not need the browser is plain TypeScript, so the UnAlgorithm server (`apps/
 ```
 apps/extension ──► packages/platforms ──► packages/core ──► packages/protocol
        │                                        ▲
-       ├──────────► packages/ai ────────────────┘
+       ├──────────► packages/ai ────────────────┤
+       ├──────────► packages/sync ──────────────┘   (and packages/ai/presets)
        └──────────► packages/ui (React components, tokens, in-feed parts)
 
-apps/server ─────► packages/ai, packages/core, packages/protocol   (never ui, platforms or wxt)
+apps/server ─────► packages/ai, packages/core, packages/protocol, packages/sync   (never ui, platforms or wxt)
 apps/web ────────► packages/ui, packages/core, packages/protocol   (the server's sign-in and account pages)
 ```
 
@@ -20,9 +21,10 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `core` | Post model, rules and `decide()`, presets, settings schema/defaults/migration/clocks, the classification prompt and fence, cache policy, health evaluation | No `chrome.*`, no DOM |
 | `platforms` | `PlatformAdapter` contract and the LinkedIn and Facebook adapters, per-locale markers, anonymized fixtures, `checkAdapterContract` | DOM reads only; never mutate, click, scroll or focus |
 | `ai` | Vendor clients (Anthropic, OpenAI Responses, OpenAI-compatible, Chrome built-in), strict JSON schema helper, `classifyPosts` orchestrator, key detection, provider presets | No `chrome.*` except the `chrome-builtin` subpath |
+| `sync` | Collection registry, merge strategies, settings items and merge; imported by the server and the extension | Only `protocol`, `core`, zod and the SDK-free `@unalgorithm/ai/presets`; no `chrome.*`, DOM or Node |
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
-| `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core` and `ai`; never `ui`, `platforms` or `wxt`. Logs no request body |
+| `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
 | `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui` and `core`'s wording helpers; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
@@ -120,7 +122,16 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
    it.
 4. The background trades the code and its verifier at `POST /v1/auth/token` for a 15-minute EdDSA access token and a
    refresh token, and the server records a device. Each refresh token is traded once at the same route for the next;
-   one used twice revokes its device. Sign-out ends the device with `POST /v1/auth/revoke`.
+   one used twice revokes its device. The one exception is a refresh whose answer was lost: a token spent less than a
+   minute ago may be traded once more while the token it issued is unused, the device is signed in and the extension id
+   matches; that successor is then spent, new tokens answer, and the server logs `auth.refresh_replayed`. Sign-out ends
+   the device with `POST /v1/auth/revoke`.
+
+Emailed codes are limited per email address as well as per client address (Better Auth's own limits): 5 codes an
+address in 15 minutes (past that the server answers as before but makes and mails no code) and 10 wrong codes an
+address an hour (then 429 with `Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
+by a SHA-256 hash of the lowercased address, and a send Better Auth refuses is given back
+(`apps/server/src/auth/better-auth.ts`).
 
 ### Classify
 
@@ -134,6 +145,36 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
 5. Inside the billing seam, `classifyPosts` from `packages/ai` builds the prompts with the same `packages/core`
    builders the extension uses, and calls the model under a 25-second deadline.
 6. Results go back under the client's refs, and one `usage_events` row is written in `finally`, whatever happened.
+   The refs are batch-local (`p1`, `p2`…), as for every AI source, and mapped back to the posts on the device; a
+   server never sees a post's URL or anything derived from its id
+   ([privacy-model.md](privacy-model.md#what-leaves-the-device-when-ai-is-on)).
+
+### Sync
+
+Settings sync between a person's browsers through the server they signed in to. It is off until the person turns it
+on in the extension. `packages/sync` holds what both ends share; the server's side is `apps/server/src/routes/sync.ts`
+and `apps/server/src/sync`, the extension's `background/sync-client.ts` and `background/sync-scheduler.ts`. Discovery
+advertises it as `capabilities.sync`.
+
+- **Spaces.** Each account has one personal space (`sync_spaces`), created on first use. Who may read or write a space
+  is decided by one access check, where read-only organization spaces will plug in.
+- **What syncs.** `SYNC_COLLECTIONS` lists the collections: only `settings` (settings, interests and exceptions), an
+  `lww-map` with one item per field, where the edit with the later hybrid logical clock (HLC) wins. Learned topics,
+  votes, usage, caches, device state, keys and tokens are not collections. Both ends refuse an item that looks like an
+  API key (`packages/sync/src/credential.ts`).
+- **Push, seq, changes.** A device pushes its changed items to `POST /v1/sync/push` under a push id; the server gives
+  each item it applies the space's next seq. A push sent again with the same id gets the same answer, from a record
+  kept for 24 hours (`sync_pushes`). `GET /v1/sync/changes` answers the items after a cursor (the space's epoch and a
+  seq), 500 at a time, and long-polls up to 20 seconds when nothing is new. The extension pulls, applies, then pushes:
+  after a local edit, as soon as another device pushes while a feed tab or extension page is open, and on a 30-second
+  alarm otherwise.
+- **Quotas.** 200 items a push within the 128 KiB body limit, 8 KiB an item, 5,000 live items and 2 MiB a space (413
+  `quota-exceeded`); a clock more than 10 minutes ahead of the server's is refused.
+- **Tombstones and resync.** A deleted key stays as a tombstone for 90 days; `sync.gc` ([Jobs](#jobs)) then removes it
+  and raises the space's floor. A cursor older than the floor, from another epoch, or ahead of the server gets `410
+  resync-required`: the device reads the whole space again and pushes its newer local edits.
+- **Epochs.** After a database restore, `sync:new-epoch` gives every space a new epoch, so no device trusts a cursor
+  from after the backup ([release.md → After restoring a database](release.md#after-restoring-a-database)).
 
 ### Database
 
@@ -151,7 +192,7 @@ always show or hide (`sync_items`).
 | `jwks` | The key pair that signs access tokens, its private half encrypted with the server's secret |
 | `devices` | One row per signed-in extension: account, extension id, the name it gave itself at sign-in, last use, revocation |
 | `auth_codes` | Single-use codes for the PKCE exchange, by hash, with the extension, redirect address and challenge they are bound to |
-| `refresh_tokens` | Device refresh tokens, by hash, each usable once, with the token each refresh issued; deleted once expired |
+| `refresh_tokens` | Device refresh tokens, by hash, each usable once (bar the one replay of a refresh whose answer was lost), with the token each refresh issued; deleted once expired |
 | `ai_routes` | Which provider and model serve each task, and their eval results; never an API key |
 | `usage_events` | One row per AI request: account, device, time, post and token counts, model, outcome and cost |
 | `user_limits` | Per-user daily post caps, set with the `user-cap` command |
@@ -166,7 +207,7 @@ keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
 
 Billing sits behind one interface, `BillingProvider` (`apps/server/src/billing/provider.ts`); why the server is open
 and billing may be private is in [ADR 0007](adr/0007-open-server-private-billing.md). A provider has four calls and
-an optional fifth:
+three optional ones:
 
 - `check`, in each classify request once the limits pass and a route is chosen (step 5 above), with the account,
   device and request ids and `checkedAt`, the instant of the check, which prices the request (the card in effect then,
@@ -179,6 +220,13 @@ an optional fifth:
   returned.
 - `mount`, once at start: adds the provider's own routes and pages, behind the server's middleware and after its API
   routes.
+- `exportAccount?(userId)`: the module's records for the account export's `billing` field (`null` there when the module
+  does not implement it).
+- `deleteAccount?(userId)`: called before the account is deleted; a rejection stops the deletion. It may be called
+  again for the same account, so it is idempotent per userId.
+
+A module's rows are keyed by user id with no foreign key, so a module that implements neither keeps them after the
+account is deleted.
 
 `BILLING=off`, the default, is the no-op provider: usage is recorded and admins set caps, but nobody is charged, no
 ledger is kept and discovery advertises no billing. `BILLING=module` with `BILLING_MODULE=<absolute path>` imports that
@@ -204,8 +252,9 @@ Background jobs run on graphile-worker inside the server process, on the server'
 the job registry while the server starts. The server's own: `auth.purge-expired`, hourly, deletes expired refresh
 tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
 deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
-`ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`). After a database restore,
-`pnpm sync:new-epoch` gives every space a new epoch, so every device resyncs. graphile-worker creates the
+`ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`). The server registers both on every
+server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
+gives every space a new epoch, so every device resyncs. graphile-worker creates the
 `graphile_worker` schema when it first starts and keeps its queue there: each job's task name, payload, run
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
