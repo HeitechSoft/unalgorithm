@@ -5,8 +5,11 @@
 # uses for localhost instead of Let's Encrypt), redirects HTTP with 308, runs read-only with NET_BIND_SERVICE as its only
 # capability, answers 502 while the server is stopped, and logs no client address, header or request address. Then the
 # ollama profile with the real Ollama: .env.example's documented values are a valid configuration, Ollama reports
-# healthy, publishes no port, and the server reaches it by its service name. No model is pulled (gigabytes each). Run
-# it from the repository root, with Docker and nothing else on ports 80 and 443:
+# healthy, publishes no port, and the server reaches it by its service name. No model is pulled (gigabytes each). Then
+# the searxng profile with the real SearXNG (P3-23): .env.example's documented fact-check values are a valid
+# configuration, SearXNG reports healthy, publishes no port, and the server gets JSON results from its search API (which
+# results depends on the engines, so they are not checked). Run it from the repository root, with Docker and nothing
+# else on ports 80 and 443:
 #
 #   bash apps/server/scripts/profiles-smoke.sh
 #
@@ -117,5 +120,45 @@ ok 'ollama publishes no port'
 compose exec -T server node -e "fetch('http://ollama:11434/api/version').then(r=>r.json()).then(j=>process.exit(typeof j.version==='string'?0:1),()=>process.exit(1))" ||
   fail 'the server reaches http://ollama:11434'
 ok 'the server reaches http://ollama:11434 on the project network'
+
+# 13. Without COMPOSE_PROFILES the default services are still backup, postgres and server: searxng is not among them.
+set_var COMPOSE_PROFILES ''
+[ "$(services)" = 'backup postgres server' ] || fail "the default services are backup, postgres and server ($(services))"
+ok 'without COMPOSE_PROFILES searxng is not started'
+
+# 14. The searxng profile's documented values (.env.example) with Anthropic test values are a valid configuration.
+set_var COMPOSE_PROFILES caddy,searxng
+set_var SEARXNG_SECRET "$(openssl rand -hex 32)"
+set_var AI_PROVIDER anthropic
+set_var AI_API_KEY smoke-test-not-a-key
+set_var AI_BASE_URL ''
+set_var AI_MODEL ''
+set_var AI_DATA_POLICY ''
+set_var FACTCHECK on
+set_var SEARCH_PROVIDER searxng
+set_var SEARCH_URL http://searxng:8080
+failure_logs='server caddy searxng'
+[ "$(services)" = 'backup caddy postgres searxng server' ] || fail "COMPOSE_PROFILES=caddy,searxng adds searxng ($(services))"
+compose run --rm --no-deps server node apps/server/src/cli/check-config.ts ||
+  fail 'check-config accepts the searxng profile values'
+ok 'check-config accepts the searxng profile values'
+
+# 15. SearXNG starts with the profile and reports healthy (its /healthz answers).
+compose up -d --wait --wait-timeout 300
+searxng="$(compose ps -q searxng)"
+[ -n "$searxng" ] || fail 'COMPOSE_PROFILES=caddy,searxng starts searxng'
+health="$(docker inspect -f '{{.State.Health.Status}}' "$searxng")"
+[ "$health" = healthy ] || fail "searxng reports healthy ($health)"
+ok 'searxng starts with the profile and reports healthy'
+
+# 16. Nothing is published: only the server reaches SearXNG.
+published="$(docker port "$searxng")"
+[ -z "$published" ] || fail "searxng publishes no port ($published)"
+ok 'searxng publishes no port'
+
+# 17. The server gets JSON with a results array from the search API its adapter calls, by the service name.
+compose exec -T server node -e "fetch('http://searxng:8080/search?q=test&format=json').then(async r=>process.exit(r.status===200&&Array.isArray((await r.json()).results)?0:1),()=>process.exit(1))" ||
+  fail 'the server gets JSON results from http://searxng:8080/search'
+ok 'the server gets JSON results from http://searxng:8080/search on the project network'
 
 echo "profiles smoke test passed ($step checks)"

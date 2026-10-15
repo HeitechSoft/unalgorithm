@@ -17,8 +17,14 @@ const COMPOSE = parse(readFileSync(new URL('../compose.yaml', import.meta.url), 
   services: Record<string, Service>;
   volumes: Record<string, unknown>;
 };
-const { server, postgres, backup, keygen, caddy, ollama } = COMPOSE.services;
+const { server, postgres, backup, keygen, caddy, ollama, searxng } = COMPOSE.services;
 const CADDYFILE = readFileSync(fileURLToPath(new URL('../caddy/Caddyfile', import.meta.url)), 'utf8');
+const SEARXNG_SETTINGS = parse(readFileSync(new URL('../searxng/settings.yml', import.meta.url), 'utf8')) as {
+  use_default_settings?: unknown;
+  server?: Record<string, unknown>;
+  search?: { formats?: string[] };
+  [setting: string]: unknown;
+};
 
 const HARDENING = { read_only: true, tmpfs: ['/tmp'], security_opt: ['no-new-privileges:true'] };
 
@@ -117,6 +123,49 @@ describe('compose.yaml', () => {
       .filter(([, service]) => !('profiles' in service))
       .map(([name]) => name);
     expect(always.sort()).toEqual(['backup', 'postgres', 'server']);
+  });
+
+  it('test_compose_searxng_service', () => {
+    expect(searxng).toEqual({
+      image: expect.stringMatching(/^searxng\/searxng:\d{4}\.\d{1,2}\.\d{1,2}-[0-9a-f]{7,}$/),
+      profiles: ['searxng'],
+      // `:-`, not `:?`: a required value would break `docker compose config` for everyone without the profile.
+      environment: { SEARXNG_SECRET: `$\{SEARXNG_SECRET:-}` },
+      volumes: ['./searxng/settings.yml:/etc/searxng/settings.yml:ro'],
+      healthcheck: {
+        test: [
+          'CMD',
+          '/usr/local/searxng/.venv/bin/python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=4)",
+        ],
+        interval: '10s',
+        timeout: '5s',
+        retries: 12,
+      },
+      restart: 'unless-stopped',
+      security_opt: ['no-new-privileges:true'],
+      logging: { driver: 'json-file', options: { 'max-size': '10m', 'max-file': '3' } },
+    });
+    expect(searxng?.image).not.toMatch(/:latest$/);
+    // Only the server reaches it, on the project network, and nothing waits for it.
+    for (const setting of ['ports', 'depends_on']) expect(searxng, setting).not.toHaveProperty(setting);
+    for (const [name, service] of Object.entries(COMPOSE.services)) {
+      const dependsOn = service.depends_on;
+      const names = Array.isArray(dependsOn) ? dependsOn : Object.keys((dependsOn as object | undefined) ?? {});
+      expect(names, `${name} depends_on`).not.toContain('searxng');
+    }
+    const always = Object.entries(COMPOSE.services)
+      .filter(([, service]) => !('profiles' in service))
+      .map(([name]) => name);
+    expect(always.sort()).toEqual(['backup', 'postgres', 'server']);
+
+    // The instance: internal only, with the JSON API the server's adapter calls; the secret comes from the environment.
+    expect(SEARXNG_SETTINGS.use_default_settings).toBe(true);
+    expect(SEARXNG_SETTINGS.server).toEqual({ limiter: false, image_proxy: false, public_instance: false });
+    expect(SEARXNG_SETTINGS.search).toEqual({ formats: ['html', 'json'], safe_search: 0 });
+    expect(SEARXNG_SETTINGS.outgoing).toEqual({ request_timeout: 5.0 });
+    expect(JSON.stringify(SEARXNG_SETTINGS)).not.toContain('secret');
   });
 
   it('test_compose_server_reads_backup_status', () => {

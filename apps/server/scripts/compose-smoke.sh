@@ -93,4 +93,20 @@ ok 'route-eval runs in the image'
   fail 'a single-quoted value with $ reaches the server unchanged'
 ok 'a single-quoted value with $ reaches the server unchanged'
 
+# 13. The link check's egress (R51) refuses the project network's Docker bridge gateway, the host as the container sees
+# it: on :3000 for its port, on :80 for its address. Run inside the server container with the image's own Node flags.
+gateway="$(docker network inspect "${project}_default" -f '{{(index .IPAM.Config 0).Gateway}}')"
+[ -n "$gateway" ] || fail 'the project network has a gateway'
+host="$gateway"
+case "$host" in *:*) host="[$host]" ;; esac
+probes="$(compose exec -T -w /app/apps/server server node --import ./src/require-node.js --input-type=module -e "
+import { createEgress } from './src/net/egress.ts';
+const egress = createEgress({ publicUrl: process.env.PUBLIC_URL, version: 'smoke' });
+const outcomes = [await egress.probe('http://$host:3000/'), await egress.probe('http://$host/')];
+console.log(JSON.stringify(outcomes));
+")"
+[ "$probes" = '[{"kind":"refused","reason":"port"},{"kind":"refused","reason":"address"}]' ] ||
+  fail "the egress refuses the bridge gateway $gateway on :3000 (port) and :80 (address) ($probes)"
+ok "the egress refuses the bridge gateway $gateway on :3000 (port) and :80 (address)"
+
 echo "compose smoke test passed ($step checks)"

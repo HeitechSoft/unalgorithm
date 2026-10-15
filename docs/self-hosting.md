@@ -210,6 +210,54 @@ will be less accurate.
 
 Run `route-eval` again whenever a release's notes say the classification prompt changed.
 
+### Fact-check (Labs)
+
+Fact-check is a Labs feature, off by default. Once on, people can ask your server to check the claims in a public post:
+it searches the web for each claim, writes a verdict with its sources, and checks that the source links answer. It works
+on public posts only, on every site the extension supports.
+
+It needs a way to search the web. With Anthropic, your server uses Anthropic's web search on your API key:
+
+```ini
+FACTCHECK=on
+```
+
+Or, with any AI provider, a search engine. With the local model from above, SearXNG on the same machine keeps it free:
+add `searxng` to `COMPOSE_PROFILES` (for example `caddy,ollama,searxng`) and set
+
+```ini
+FACTCHECK=on
+SEARCH_PROVIDER=searxng
+SEARCH_URL=http://searxng:8080
+SEARXNG_SECRET=
+```
+
+with the output of `openssl rand -hex 32` after `SEARXNG_SECRET=`. Your own SearXNG elsewhere works too: put its address
+in `SEARCH_URL`. Or use `SEARCH_PROVIDER=brave` or `tavily` with that service's API key in `SEARCH_API_KEY`. An
+OpenAI-compatible model always needs `SEARCH_PROVIDER`; `.env.example` explains `AI_RESEARCH_MODEL` and
+`AI_SYNTHESIS_MODEL` if you want other models than the defaults. A server that charges for checks (`BILLING=module`)
+researches with Anthropic's web search only.
+
+Run `docker compose up -d --wait`, then open the gate the same way as for classification: the fact-check eval runs 24
+checks and the server offers fact-check only once it prints `PASSED`. It costs about $3 with Anthropic, nothing on your own
+hardware.
+
+```bash
+docker compose exec server node apps/server/src/cli/route-eval.ts factcheck
+```
+
+Each person may run `USER_DAILY_CHECK_CAP` checks per UTC day, 10 unless you change it (0 allows none), and checks count
+toward the `DAILY_SPEND_LIMIT_USD` spend breaker like classification does (section 8).
+
+What leaves your server: the claims, worded from public posts, go to your search provider, or to Anthropic with its web
+search. SearXNG sends them on to the search engines it asks, from this machine's IP address. The source links in a
+verdict are checked from your server, never from people's browsers, and only for their status.
+
+That link check never reaches private or local addresses, nor the addresses `PUBLIC_URL`'s host resolves to. Add any
+other address it must never reach to `EGRESS_DENY`, as IPs or ip/prefix ranges, comma-separated. In particular, list this
+machine's own public addresses whenever `PUBLIC_URL` does not resolve to them: a CDN or another proxy in front, a second
+IPv4 address, or the rest of its IPv6 /64.
+
 ## 7. Become the admin
 
 Make a setup link for your own address:

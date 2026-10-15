@@ -183,6 +183,38 @@ services:
         max-file: '3'
     # No ports: only the server reaches Ollama, at http://ollama:11434/v1 on this project's network.
 
+  # Web search for fact-check next to the server, for a self-hosted server only: with COMPOSE_PROFILES=searxng in .env
+  # (or caddy,searxng), set FACTCHECK=on, SEARCH_PROVIDER=searxng, SEARCH_URL=http://searxng:8080, and SEARXNG_SECRET to
+  # `openssl rand -hex 32`. Searches leave from this machine to the engines SearXNG asks (searxng/settings.yml). SearXNG
+  # has no version numbers, so the image is pinned to an exact dated tag (pushed 2026-10-13); Dependabot proposes newer
+  # ones. The server does not depend on it: until SearXNG answers, a fact-check fails as overloaded.
+  searxng:
+    image: searxng/searxng:2026.10.13-22c64b8d3
+    profiles: ['searxng']
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/searxng/.venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=4)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    # Not read-only and SearXNG's own capabilities, as its container docs run it: the image starts as root, takes
+    # ownership of its config and cache volumes, and updates its CA certificates before it serves.
+    security_opt: ['no-new-privileges:true']
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    # No ports: only the server reaches SearXNG, at http://searxng:8080 on this project's network.
+
 volumes:
   pgdata:
   caddy-data:

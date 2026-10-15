@@ -21,6 +21,8 @@ const COMPOSE_ONLY = [
   'BACKUP_DIR',
   // Read by Compose itself from the .env: the optional services `up`, `pull` and `down` include.
   'COMPOSE_PROFILES',
+  // The searxng profile's own secret, interpolated into that service's environment.
+  'SEARXNG_SECRET',
 ];
 /** Pinned in compose.yaml's `environment:`, which wins over `env_file`: a value in `.env` would do nothing. */
 const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL', 'BACKUP_STATUS_DIR'];
@@ -30,6 +32,8 @@ const SET_BY_COMPOSE = ['HOST', 'WEB_DIST', 'DATABASE_URL', 'BACKUP_STATUS_DIR']
  */
 const OLLAMA_BASE_URL = 'http://ollama:11434/v1';
 const OLLAMA_MODEL = COMPAT_PREFERENCES.ollama?.[0] ?? '';
+/** The searxng profile's address on the project network (P3-23). */
+const SEARXNG_URL = 'http://searxng:8080';
 /** Their values are secrets: the example leaves every one of them empty. */
 const SECRET_NAMES = [
   'BETTER_AUTH_SECRET',
@@ -40,6 +44,7 @@ const SECRET_NAMES = [
   'METRICS_TOKEN',
   'ALERT_WEBHOOK_URL',
   'SEARCH_API_KEY',
+  'SEARXNG_SECRET',
 ];
 
 interface EnvExampleEntry {
@@ -90,7 +95,7 @@ const BARE_HOST = /\b(?:[a-z\d-]+\.)+(?:com|net|org|io|app|dev|cloud|co|ai|sh|me
 /** A host name with any top-level domain: its last label starts with a letter, so 0.8 and IPv4 addresses are not. */
 const HOST_NAME = /^(?:[a-z\d-]+\.)+[a-z][a-z\d-]*$/i;
 /** Placeholders, loopback, and the project's Compose service names as whole single-label hosts (http://ollama:11434). */
-const ALLOWED_HOST = /^(?:localhost|127\.0\.0\.1|ollama|postgres|server|(?:[a-z\d-]+\.)*example\.org)$/i;
+const ALLOWED_HOST = /^(?:localhost|127\.0\.0\.1|ollama|searxng|postgres|server|(?:[a-z\d-]+\.)*example\.org)$/i;
 /** Key prefixes, and a long token of letters and digits mixed, as generated secrets are. */
 const SECRET_LIKE = [/^(?:sk-|sk_|pk_|rk_|ghp_|gho_|github_pat_|xox[abp]-|AKIA|SG\.)/, /^(?=.*\d)(?=.*[a-z])[\w+/=-]{20,}$/i];
 
@@ -266,15 +271,48 @@ describe('configuration parity', () => {
   it('test_env_example_names_ollama_values', () => {
     const comment = (name: string) => parseEnvExample(ENV_EXAMPLE).find((e) => e.name === name)?.comment ?? '';
     expect(OLLAMA_MODEL).toBe('llama3.2:3b');
-    expect(comment('COMPOSE_PROFILES')).toMatch(
-      /: caddy \(.*\) and ollama \(a local model next to the server; see AI_BASE_URL\)/,
-    );
+    expect(comment('COMPOSE_PROFILES')).toMatch(/: caddy \(.*\), ollama \(a local model next to the server; see AI_BASE_URL\)/);
     expect(comment('AI_BASE_URL')).toContain(`with the ollama profile, ${OLLAMA_BASE_URL}.`);
     expect(comment('AI_MODEL')).toContain(`with the ollama profile, a model you pulled, such as ${OLLAMA_MODEL}.`);
     expect(comment('AI_DATA_POLICY')).toMatch(/self-hosted for openai-compatible: .*\(the ollama profile\)/);
     // The values stay commented: a self-hoster with Anthropic changes nothing.
     for (const name of ['COMPOSE_PROFILES', 'AI_MODEL', 'AI_BASE_URL', 'AI_DATA_POLICY']) {
       expect(parseEnvExample(ENV_EXAMPLE).find((e) => e.name === name)?.commented, name).toBe(true);
+    }
+  });
+
+  it('test_env_example_names_searxng_values', () => {
+    const entries = parseEnvExample(ENV_EXAMPLE);
+    const entry = (name: string) => entries.find((e) => e.name === name);
+    expect(entry('COMPOSE_PROFILES')?.comment).toMatch(
+      / and searxng \(web search for fact-check next to the server; see SEARCH_URL and SEARXNG_SECRET\)\.$/,
+    );
+    expect(entry('SEARCH_URL')?.comment).toContain(`with the searxng profile, ${SEARXNG_URL}.`);
+    expect(entry('SEARCH_PROVIDER')?.comment).toMatch(/^searxng, brave or tavily/);
+    expect(entry('FACTCHECK')?.comment).toMatch(/^on lets people fact-check public posts/);
+    // The profile's secret: documented in the Compose group, empty, and set only with the profile.
+    expect(entry('SEARXNG_SECRET')).toMatchObject({ commented: true, value: '' });
+    expect(entry('SEARXNG_SECRET')?.comment).toMatch(/searxng profile.*openssl rand -hex 32/);
+    const names = entries.map((e) => e.name);
+    expect(names.indexOf('SEARXNG_SECRET')).toBe(names.indexOf('COMPOSE_PROFILES') + 1);
+    // The values stay commented: a server without fact-check changes nothing.
+    for (const name of ['FACTCHECK', 'SEARCH_PROVIDER', 'SEARCH_URL']) expect(entry(name)?.commented, name).toBe(true);
+
+    // The documented values load, with Anthropic and with the ollama profile's local model.
+    const searxng = { FACTCHECK: 'on', SEARCH_PROVIDER: 'searxng', SEARCH_URL: SEARXNG_URL };
+    const anthropic = {
+      AI_PROVIDER: 'anthropic',
+      AI_API_KEY: 'test-only-key',
+      AI_MODEL: undefined,
+      AI_BASE_URL: undefined,
+      AI_DATA_POLICY: undefined,
+    };
+    const local = { AI_BASE_URL: OLLAMA_BASE_URL, AI_MODEL: OLLAMA_MODEL };
+    for (const env of [anthropic, local]) {
+      expect(testConfig({ ...env, ...searxng }).factcheck).toMatchObject({
+        enabled: true,
+        search: { provider: 'searxng', url: SEARXNG_URL },
+      });
     }
   });
 
