@@ -32,6 +32,7 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'BILLING',
   'BILLING_MODULE',
   'EXTENSION_IDS',
+  'SIGNUP',
   'SIGNUP_ALLOWLIST',
   'TRUST_PROXY',
   'SMTP_HOST',
@@ -98,6 +99,11 @@ export interface Config {
    */
   billingEnv: Readonly<Record<string, string>>;
   extensionIds: string[];
+  /**
+   * `allowlist`: only `SIGNUP_ALLOWLIST` addresses and invites may create an account (the default). `open`: every
+   * address its provider verified may.
+   */
+  signup: 'allowlist' | 'open';
   /** Lowercase emails and `@domain` entries allowed to create an account. Empty: nobody can. */
   signupAllowlist: string[];
   trustProxy: 'none' | 'one-hop';
@@ -331,6 +337,7 @@ export function loadConfig(env: Env = process.env): Config {
   if (!extensionIds.length || !extensionIds.every((id) => ExtensionIdSchema.safeParse(id).success)) {
     bad('EXTENSION_IDS', 'must be a comma-separated list of extension ids (32 letters a to p)');
   }
+  const signup = oneOf('SIGNUP', ['allowlist', 'open'] as const, 'allowlist');
   const allowlistValue = read('SIGNUP_ALLOWLIST');
   const signupAllowlist = allowlistValue ? list(allowlistValue.toLowerCase()) : [];
   // An `@domain` entry is valid when an address at that domain would be.
@@ -508,6 +515,7 @@ export function loadConfig(env: Env = process.env): Config {
     billingModule: billing === 'module' ? billingModule : undefined,
     billingEnv: billing === 'module' ? moduleEnv(env) : Object.freeze({}),
     extensionIds,
+    signup,
     signupAllowlist,
     trustProxy,
     smtp: {

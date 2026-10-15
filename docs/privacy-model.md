@@ -145,7 +145,7 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   past their five minutes (and of Google sign-ins and passkey challenges past theirs), so none stays more than about an
   hour after it expires.
 - **Sign-in limits:** the server counts the codes sent to each email address and the wrong codes tried for it (at most
-  5 codes an address in 15 minutes and 10 wrong codes an hour), with a SHA-256 hash of the lowercased address as the
+  5 codes an address an hour and 10 wrong codes an hour), with a SHA-256 hash of the lowercased address as the
   counter's key. The counts live in the server's memory only, never in the database or a log line, and go after an hour
   without a request for that address (or when the server restarts).
 - **Sign-in page sessions:** signing in on the server's own page starts a session that records the browser's IP

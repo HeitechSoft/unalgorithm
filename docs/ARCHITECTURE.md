@@ -128,8 +128,9 @@ One image holds both apps (`apps/server/Dockerfile`), released on the server tra
    the device with `POST /v1/auth/revoke`.
 
 Emailed codes are limited per email address as well as per client address (Better Auth's own limits): 5 codes an
-address in 15 minutes (past that the server answers as before but makes and mails no code) and 10 wrong codes an
-address an hour (then 429 with `Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
+address an hour, refilled over the hour (past that the server answers as before without calling Better Auth, so it
+makes and mails no code and the last one emailed still works) and 10 wrong codes an address an hour (then 429 with
+`Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
 by a SHA-256 hash of the lowercased address, and a send Better Auth refuses is given back
 (`apps/server/src/auth/better-auth.ts`).
 

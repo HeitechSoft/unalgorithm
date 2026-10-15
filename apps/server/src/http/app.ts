@@ -241,7 +241,7 @@ export function createApp(deps: AppDeps): App {
 
   // Better Auth reads a body of any size, and these routes take requests from anyone.
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
-  mountAuth(app, auth, config);
+  mountAuth(app, auth, config, log);
   authRoutes(app, deps);
   accountRoutes(app, deps);
   // One per app, shared by classify, fact-check and perspectives: one rate bucket per user, and the breaker's log state and the
