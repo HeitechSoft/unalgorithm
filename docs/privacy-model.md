@@ -63,7 +63,7 @@ by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 
 ### Fact-check (Labs)
 
-Fact-check (RM1) runs only on the user's own Anthropic key, only when Settings → Labs → Fact-check is on, and only
+Fact-check (RM1) runs on the user's own Anthropic key (or on their UnAlgorithm server, below), only when Settings → Labs → Fact-check is on, and only
 after the user confirms a check of one post. The background (`apps/extension/src/background/factcheck.ts`) checks
 every gate again: Labs on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
 author name are dropped, the text is capped at 2,000 characters with the same masking as above), and
@@ -78,6 +78,19 @@ directly from the browser to Anthropic:
 The result is kept in session storage under `session:factcheck:<tabId>` (the 5 newest checks per tab), removed when
 the tab closes, when the browser restarts and by "Erase everything". Usage goes to the local usage ledger with no post
 counted. Nothing goes to HeitechSoft.
+
+With a `server` source (P3-21), the check runs on the person's UnAlgorithm server instead, and only when that server's
+discovery document offers fact-check (`serverOfferFrom`, `sourceCapabilities(cfg, offer)`) on the source's own origin.
+The same gates apply first (Labs on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
+`serverMayReceive`), then `apps/extension/src/background/factcheck-server.ts` sends one `POST /v1/jobs/factcheck` with
+`{ v: 1, post }` (the same fields classification sends, ref `p1`, no interests) and the device's bearer token, no
+cookies, and long-polls the job. The server keeps the job in memory only (at most 10 minutes after it ends; a restart
+loses it), never in Postgres or the job queue, and its usage row holds no post content. It may search the claims (not the
+post) through its configured search provider. On a billing server the check holds at most the advertised maximum and
+settles at most that; an early stop (`truncated`) is not charged. Closing the tab aborts the run and sends a
+best-effort `POST …/cancel`, which ends the job and releases its hold. The server's error text is never shown: the
+extension maps its codes to its own words. `local:serverOffer`, which content scripts may read, holds only the origin,
+whether it bills, whether it offers fact-check and its price: no email, device id or token.
 
 Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
 keys.

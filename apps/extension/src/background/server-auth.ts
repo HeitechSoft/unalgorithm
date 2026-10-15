@@ -1,5 +1,5 @@
 import { AIError, codeForStatus, describeError, isAIError } from '@unalgorithm/ai';
-import { createLock, safeExternalUrl } from '@unalgorithm/core';
+import { createLock, safeExternalUrl, serverOfferFrom } from '@unalgorithm/core';
 import {
   b64url,
   chromiumRedirectUri,
@@ -18,6 +18,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from '../lib/messages.ts';
 import { isTrustedServerOrigin, serverLabel } from '../lib/server-label.ts';
+import { serverOfferItem } from '../lib/storage.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { deviceName } from './device-name.ts';
 import { getSecret, setSecret } from './idb.ts';
@@ -219,6 +220,27 @@ async function rediscover(origin: string, d: AuthDeps): Promise<void> {
       await serverAccountItem.setValue({ ...account, info: found.info });
     }
   });
+}
+
+/**
+ * Keeps `serverOfferItem` (what the signed-in server offers, nothing personal) in step with the account: written once
+ * now, then on every change of the account, one write at a time from the account as it is then. The account sits in
+ * `storage.local`, which content scripts can write (ADR 0005), so a discovery document that doesn't parse offers
+ * nothing. Returns the unwatch.
+ */
+export function syncServerOffer(): () => void {
+  let writes = Promise.resolve();
+  const sync = () => {
+    writes = writes
+      .then(async () => {
+        const account = await serverAccountItem.getValue();
+        const valid = account && ServerInfoSchema.safeParse(account.info).success ? account : null;
+        await serverOfferItem.setValue(serverOfferFrom(valid));
+      })
+      .catch(() => undefined);
+  };
+  sync();
+  return serverAccountItem.watch(sync);
 }
 
 /** One refresh per origin at a time: a second refresh with the same token would look like theft and revoke the device. */

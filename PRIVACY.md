@@ -49,6 +49,16 @@ on the claims it found in the post. The result stays in this browser's temporary
 removed when the tab closes or the browser restarts. Facebook posts that aren't public are never checked, and nothing
 goes to HeitechSoft.
 
+**Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
+Cloud) and it offers fact-check, turning on Settings → Labs → Fact-check and confirming a check on a public post sends
+that one post to **that server only**, with your device's sign-in: the same post fields and masking as above (at most
+2,000 characters, a shared link's domain and title, no author names, no interests). The server keeps the check in its
+memory only, for at most 10 minutes, and stores no post content; its usage records hold the time, model, outcome and
+cost, never the post. To check the claims it may search the web through the search service its operator configured,
+sending it the claims, not the post. On a server that charges for checks, a check costs at most the price shown before
+you confirm it; a check that stops early is not charged. Closing the tab cancels a check that is still running. The
+result is kept in this browser exactly as above.
+
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.
 

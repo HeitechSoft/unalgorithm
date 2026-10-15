@@ -74,5 +74,10 @@ researches them with Anthropic's web search (at most 5 searches; web search must
 organization), and Sonnet gives a verdict per claim, keeping only citations that trace to the sources it found.
 A check ends within 4 minutes. Its cost is added to today's cost in Settings but does not count toward the daily post
 limit. Results stay in the tab's session storage (the 5 newest per tab) and go when the tab closes. Facebook posts
-that aren't public are never checked. Other sources can't fact-check yet. See the
-[privacy model](privacy-model.md#fact-check-labs).
+that aren't public are never checked.
+
+With an UnAlgorithm server as your source, fact-check runs on that server when it offers it: the extension sends the
+post (the same fields classification sends) to the server, which researches it with its own model and search provider
+and keeps nothing of the post once the check is gone from its memory (at most 10 minutes). On a server that charges,
+the price is shown before you confirm and a check that stops early costs nothing. Closing the tab cancels a running
+check. Other sources can't fact-check yet. See the [privacy model](privacy-model.md#fact-check-labs).

@@ -16,7 +16,14 @@ import {
 import { openFactcheckPanel, runFactcheckForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
-import { discoverServer, type ServerAccount, serverAccountItem, signIn, signOut } from '../background/server-auth.ts';
+import {
+  discoverServer,
+  type ServerAccount,
+  serverAccountItem,
+  signIn,
+  signOut,
+  syncServerOffer,
+} from '../background/server-auth.ts';
 import { listDevices, revokeDevice } from '../background/server-devices.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
@@ -300,6 +307,7 @@ async function injectIntoOpenTabs(): Promise<void> {
 
 export default defineBackground(() => {
   initSync();
+  syncServerOffer();
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
     const handler = handlers[msg?.type] as unknown as ((m: BgRequest, s: Sender) => Promise<unknown>) | undefined;
     if (!handler) return false;
