@@ -237,6 +237,21 @@ export interface GateResult {
   passed: boolean | null;
 }
 
+/** A gate on `value` against `min`; null unless the run `measured` enough to judge it. */
+export function gate(value: number | null, min: number, measured: boolean): GateResult {
+  return { value, min, passed: measured && value !== null ? value >= min : null };
+}
+
+/** live / (live + dead), measured only with at least `minAnswered` answered URLs and no more unknown than answered. */
+export function liveLinksGate(links: FactcheckEvalReport['links'], min: number, minAnswered: number): GateResult {
+  const answered = links ? links.live + links.dead : 0;
+  return gate(
+    links && answered > 0 ? links.live / answered : null,
+    min,
+    links !== null && answered >= minAnswered && links.unknown <= answered,
+  );
+}
+
 /** Pure: RM4's three trust gates on a report. No gate passes on what it did not measure; `passed` needs all three. */
 export function trustGates(r: FactcheckEvalReport): {
   slantFlip: GateResult;
@@ -244,19 +259,9 @@ export function trustGates(r: FactcheckEvalReport): {
   liveLinks: GateResult;
   passed: boolean;
 } {
-  const gate = (value: number | null, min: number, measured: boolean): GateResult => ({
-    value,
-    min,
-    passed: measured && value !== null ? value >= min : null,
-  });
-  const answered = r.links ? r.links.live + r.links.dead : 0;
   const slantFlip = gate(r.pairConsistency, TRUST_GATES.slantFlip, r.pairsScored >= TRUST_GATES.minPairs);
   const provenance = gate(r.provenance, TRUST_GATES.provenance, r.citationsShown >= TRUST_GATES.minCited);
-  const liveLinks = gate(
-    r.links && answered > 0 ? r.links.live / answered : null,
-    TRUST_GATES.liveLinks,
-    r.links !== null && answered >= TRUST_GATES.minCited && r.links.unknown <= answered,
-  );
+  const liveLinks = liveLinksGate(r.links, TRUST_GATES.liveLinks, TRUST_GATES.minCited);
   const passed = slantFlip.passed === true && provenance.passed === true && liveLinks.passed === true;
   return { slantFlip, provenance, liveLinks, passed };
 }

@@ -1,18 +1,10 @@
-import { AIError, anthropicClient, memoryCapabilities, openaiCompatibleClient } from '@unalgorithm/ai';
+import { AIError, memoryCapabilities, openaiCompatibleClient } from '@unalgorithm/ai';
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
-import { type AnthropicRequestKind, mockAnthropicFetch, structuredMessage } from '@unalgorithm/ai/testing/anthropic';
 import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
-import {
-  costMicros,
-  LEAN_BUCKETS,
-  type LeanBucket,
-  type NormalizedUsage,
-  PerspectivesResultSchema,
-  type SharedLink,
-  ZERO_USAGE,
-} from '@unalgorithm/protocol';
+import { costMicros, LEAN_BUCKETS, PerspectivesResultSchema, type SharedLink, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
-import type { BucketHit, BucketSearcher, BucketSearchRequest } from '../src/coverage.ts';
+import { fakeSearcher, MOCK_NONCE, MOCK_NOW, mockClient, userText } from '../eval/perspectives-score.ts';
+import type { BucketSearcher } from '../src/coverage.ts';
 import {
   canonicalLink,
   PERSPECTIVES_MODELS,
@@ -23,102 +15,15 @@ import {
 } from '../src/perspectives.ts';
 import { COMPARISON_SYSTEM, STORY_SYSTEM } from '../src/perspectives-prompts.ts';
 
-const NONCE = 'abc12345';
-const NOW = new Date('2026-10-15T12:00:00.000Z');
+const NONCE = MOCK_NONCE;
+const NOW = MOCK_NOW;
 const LINK: SharedLink = { url: 'https://news.example.com/2026/10/14/council-bridge', title: 'Council approves the bridge' };
-const SEARCH_MODEL = 'fake-search';
 const LEAN_WORDS = /\b(left|right|lean|leans|center|centre|liberal|conservative)\b/i;
 
 type Log = string[];
 
-/** The text of the first user turn of a messages body. */
-function userText(body: Record<string, unknown>): string {
-  const messages = Array.isArray(body.messages) ? (body.messages as { role: string; content: unknown }[]) : [];
-  const content = messages.find((m) => m.role === 'user')?.content;
-  if (typeof content === 'string') return content;
-  return Array.isArray(content) ? content.map((b: { text?: string }) => b.text ?? '').join('') : '';
-}
-
 function systemText(body: Record<string, unknown>): string {
   return Array.isArray(body.system) ? body.system.map((b: { text?: string }) => b.text ?? '').join('') : String(body.system);
-}
-
-const SOURCE_TAG = new RegExp(`<source_${NONCE} id="(s\\d+)"[^>]*>\\n([^\\n]*)`, 'g');
-
-/** Every source matched; one agreed point citing the first two sources' first 8 words. */
-function comparisonFor(user: string) {
-  const tags = [...user.matchAll(SOURCE_TAG)];
-  return {
-    matched: tags.map(([, id]) => id),
-    agreed: [
-      {
-        text: 'Several outlets report the council vote.',
-        citations: tags.slice(0, 2).map(([, sourceId = '', text = '']) => ({
-          sourceId,
-          quote: text.split(/\s+/).slice(0, 8).join(' '),
-        })),
-      },
-    ],
-    differences: [],
-    unique: [],
-  };
-}
-
-interface ClientOptions {
-  query?: string;
-  log?: Log;
-  /** Delay before every answer, in ms. */
-  delayMs?: number;
-}
-
-function mockClient(opts: ClientOptions = {}) {
-  const kinds: AnthropicRequestKind[] = [];
-  const fetch = mockAnthropicFetch((body, kind) => {
-    kinds.push(kind);
-    opts.log?.push(kind);
-    if (kind === 'story') return { status: 200, body: structuredMessage({ query: opts.query ?? 'council bridge vote' }) };
-    if (kind === 'comparison')
-      return { status: 200, body: structuredMessage(comparisonFor(userText(body)), { model: 'claude-sonnet-5-5' }) };
-    return { status: 500, body: { type: 'error', error: { message: 'unexpected' } } };
-  });
-  const delayed = (async (input: string | URL | Request, init?: RequestInit) => {
-    if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
-    return fetch(input, init);
-  }) as typeof globalThis.fetch;
-  return { client: anthropicClient({ apiKey: 'sk-ant-test', capabilities: memoryCapabilities(), fetch: delayed }), fetch, kinds };
-}
-
-/** The bucket a fixture search was for, read from its domains (`left-a.example` → `left`). */
-const bucketOf = (req: BucketSearchRequest): LeanBucket => (req.domains[0] ?? '').replace(/-a\.example$/, '') as LeanBucket;
-
-const hit = (bucket: LeanBucket, n: number): BucketHit => ({
-  url: `https://${bucket}-a.example/2026/10/14/story-${n}`,
-  title: `Headline ${n}`,
-  snippets: [`The city council approved the new bridge on Monday after a long debate ${n}.`],
-  published: '2026-10-14T09:00:00Z',
-});
-
-const SEARCH_USAGE: NormalizedUsage = { ...ZERO_USAGE, uncachedInput: 2_000, output: 100, webSearches: 1 };
-
-function fakeSearcher(
-  opts: { buckets?: readonly LeanBucket[]; log?: Log; hang?: boolean; usage?: NormalizedUsage } = {},
-): BucketSearcher & { calls: BucketSearchRequest[] } {
-  const calls: BucketSearchRequest[] = [];
-  const buckets = opts.buckets ?? [];
-  return {
-    model: SEARCH_MODEL,
-    calls,
-    async search(req) {
-      calls.push(req);
-      opts.log?.push('search');
-      if (opts.hang) {
-        await new Promise((_, reject) => req.signal?.addEventListener('abort', () => reject(req.signal?.reason)));
-      }
-      const bucket = bucketOf(req);
-      const hits = buckets.includes(bucket) ? [hit(bucket, 1)] : [];
-      return { hits, usage: opts.usage ?? SEARCH_USAGE, model: SEARCH_MODEL };
-    },
-  };
 }
 
 function deps(client: PerspectivesDeps['client'], searcher: BucketSearcher, over: Partial<PerspectivesDeps> = {}) {
