@@ -37,13 +37,21 @@ export function openFactcheckPanel(tabId: number): Promise<boolean> {
   }
 }
 
-/** Update the tab's entries under the lock. */
-async function updateEntries(tabId: number, change: (entries: FactcheckEntry[]) => FactcheckEntry[]): Promise<void> {
+/** Update the tab's entries under the lock. `change` returns null to write nothing. */
+async function updateEntries(tabId: number, change: (entries: FactcheckEntry[]) => FactcheckEntry[] | null): Promise<void> {
   await entriesLock(async () => {
     const item = factcheckItem(tabId);
-    const { entries } = await item.getValue();
-    await item.setValue({ entries: change(entries).slice(0, FACTCHECK_KEEP) });
+    const next = change((await item.getValue()).entries);
+    if (next) await item.setValue({ entries: next.slice(0, FACTCHECK_KEEP) });
   });
+}
+
+/**
+ * Remove a closed tab's checks. Under the same lock as every write, so a check that ends after the tab closed can't
+ * write its entry (and the post's first words) back.
+ */
+export function forgetFactchecks(tabId: number): Promise<void> {
+  return entriesLock(() => factcheckItem(tabId).removeValue());
 }
 
 /** The text a failed check shows: fact-check wording where the classify text `describeError` gives would be wrong. */
@@ -76,8 +84,9 @@ export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omi
 
     const startedAt = Date.now();
     const mine = (e: FactcheckEntry) => e.startedAt === startedAt && e.key === key && e.status === 'running';
+    // Nothing to settle when the tab closed meanwhile (its entries are gone): the item stays removed.
     const settle = (patch: Partial<FactcheckEntry>) =>
-      updateEntries(tabId, (entries) => entries.map((e) => (mine(e) ? { ...e, ...patch } : e)));
+      updateEntries(tabId, (entries) => (entries.some(mine) ? entries.map((e) => (mine(e) ? { ...e, ...patch } : e)) : null));
     // Another `running` entry can only be left by a worker that died mid-check: this tab is in `inFlight` now.
     const stale: Partial<FactcheckEntry> = { status: 'failed', error: factcheckError(new AIError('timeout', 'Stopped.')) };
     await updateEntries(tabId, (entries) => [

@@ -331,6 +331,50 @@ describe('errors and storage', () => {
     expect(await stored()).toBeUndefined();
   });
 
+  it('test_factcheck_tab_closed_mid_check_stays_removed', async () => {
+    await setup();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let researchStarted: () => void = () => undefined;
+    const started = new Promise<void>((r) => {
+      researchStarted = r;
+    });
+    const inner = mockAnthropicFetch(happy);
+    vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(init?.body ?? '').includes('"tools"')) {
+        researchStarted();
+        await gate;
+      }
+      return inner(url, init);
+    });
+    const stored = async () => (await fakeBrowser.storage.session.get(`factcheck:${TAB}`))[`factcheck:${TAB}`];
+
+    // The tab closes while the check runs; the check still ends (and pays), but writes nothing back for the tab.
+    const first = factcheck();
+    await started;
+    await forgetTab(TAB);
+    release();
+    expect((await first).ok).toBe(true);
+    expect(await stored()).toBeUndefined();
+
+    // The tab closes while the finished check is being written: the removal waits for the write, so nothing lingers.
+    const getItem = fakeBrowser.storage.session.get.bind(fakeBrowser.storage.session);
+    let closing: Promise<void> | undefined;
+    vi.spyOn(fakeBrowser.storage.session, 'get').mockImplementation(((...args: Parameters<typeof getItem>) => {
+      const read = getItem(...args);
+      if (kinds.includes('verdict') && !closing) closing = forgetTab(TAB);
+      return read;
+    }) as never);
+    useAnthropic(happy);
+    expect((await factcheck()).ok).toBe(true);
+    await closing;
+    expect(closing).toBeDefined();
+    vi.mocked(fakeBrowser.storage.session.get).mockRestore();
+    expect(await stored()).toBeUndefined();
+  });
+
   it('test_open_factcheck_opens_panel_for_feed_tab_only', async () => {
     const msg = { type: 'openFactcheck' } as const;
     expect(await handlers.openFactcheck(msg, feedTab(9))).toStrictEqual({ ok: true });
