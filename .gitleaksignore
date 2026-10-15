@@ -4,3 +4,12 @@
 
 # The extension manifest's public key, which pins the development build's extension id. It is not a secret.
 8e64954f667683985df7f2bb8687671814a9e068:apps/extension/dev-key.json:generic-api-key:2
+
+# Phase 2/3 test fixtures (reviewed 2026-10-15): fake values that only look like keys to the generic rule.
+# A setup-link token: base64 of "setup-link-token-for-the-first-a".
+13401854273df06eb30101802fcb6114c158305f:apps/web/test/support/fake-server.ts:generic-api-key:116
+# WebAuthn test assertions: authenticatorData is base64 of "authenticator-data".
+afc4140d8307ab30716177937a8f8eeaa078f020:apps/web/test/admin-users.test.tsx:generic-api-key:90
+f0857ed670965e58becaf9fe3fd1503ef2a437da:apps/web/test/sign-in-methods.test.tsx:generic-api-key:62
+# Google Password Manager's AAGUID: a public authenticator model id, not a secret.
+0a660295d6b45357938193ff97272d9627793d26:apps/server/test/auth-passkey.test.ts:generic-api-key:43

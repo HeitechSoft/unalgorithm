@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import type { NoiseLabel } from '@unalgorithm/protocol';
-import { fencedPosts } from './fenced-posts.ts';
+import { fencedBlocks, fencedPosts, fencedSourceLines } from './fenced-posts.ts';
 
 /**
  * A stand-in OpenAI-compatible provider for tests and local development. It reads the fenced posts out of the user
@@ -56,14 +56,11 @@ export const VERDICT_PHRASE = 'Judge these';
 /** Words of `buildStoryUser` and `buildComparisonUser` (packages/research) that tell the perspectives prompts apart. */
 export const STORY_PHRASE = 'Write a neutral search query';
 export const COMPARISON_PHRASE = 'Compare how these sources';
-const LINK_TAG = /<link_\w+[^>]*>\n([\s\S]*?)\n<\/link_/;
-const FACTCHECK_POST_TAG = /<post_\w+[^>]*>\n([\s\S]*?)\n<\/post_/;
 const CLAIM_TAG = /<claim_\w+ id="(c\d+)">/g;
-const SOURCE_TAG = /<source_\w+ id="(s\d+)"[^>]*>\n([^\n]*)/g;
 
 /** One claim: the first sentence of the fenced post, at most 200 characters. */
 function claimsOf(user: string): { claim: string }[] {
-  const text = FACTCHECK_POST_TAG.exec(user)?.[1]?.trim() ?? '';
+  const text = fencedBlocks(user, 'post')[0]?.body.trim() ?? '';
   const first = (/^[\s\S]*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text).slice(0, 200).trim();
   return first ? [{ claim: first }] : [];
 }
@@ -81,16 +78,15 @@ function verdictsOf(user: string) {
 
 /** The first two source tags, each cited with the first 8 words of its text. */
 function firstTwoCitations(user: string) {
-  return [...user.matchAll(SOURCE_TAG)].slice(0, 2).map(([, sourceId = '', text = '']) => ({
-    sourceId,
-    quote: text.trim().split(/\s+/).slice(0, 8).join(' '),
-  }));
+  return fencedSourceLines(user)
+    .slice(0, 2)
+    .map(({ id: sourceId, line }) => ({ sourceId, quote: line.trim().split(/\s+/).slice(0, 8).join(' ') }));
 }
 
 /** Every source matched, one agreed point citing the first two sources. */
 function comparisonOf(user: string) {
   return {
-    matched: [...user.matchAll(SOURCE_TAG)].map(([, id = '']) => id),
+    matched: fencedSourceLines(user).map(({ id }) => id),
     agreed: [{ text: 'Test agreement.', citations: firstTwoCitations(user) }],
     differences: [],
     unique: [],
@@ -119,7 +115,7 @@ export function mockStructuredAnswer(
     return { json: { verdicts }, items: verdicts.length };
   }
   if (user.includes(STORY_PHRASE)) {
-    const title = LINK_TAG.exec(user)?.[1]?.trim() ?? '';
+    const title = fencedBlocks(user, 'link')[0]?.body.trim() ?? '';
     return { json: { query: title === '(no title)' ? '' : title }, items: 1 };
   }
   if (user.includes(COMPARISON_PHRASE)) {

@@ -108,7 +108,7 @@ describe('item keys', () => {
 
     // Every entry map resolves to a z.record, for every platform.
     for (const map of SETTINGS_ENTRY_MAPS) {
-      const paths = map.includes('*') ? PLATFORMS.map((p) => map.replace('*', p)) : [map];
+      const paths = map.includes('*') ? PLATFORMS.map((p) => map.replaceAll('*', p)) : [map];
       for (const path of paths) expect(settingsItemSchema(path), path).toBeInstanceOf(z.ZodRecord);
     }
   });

@@ -158,7 +158,7 @@ describe('screens', () => {
       await deviceItem.setValue(device({ kind: 'server', baseUrl }));
       render(createElement(Onboarding));
       fireEvent.click(await screen.findByRole('button', { name: 'Skip setup and use recommended settings' }));
-      expect(await screen.findByText(new RegExp(`· ${shown.replaceAll('.', '\\.')} ·`))).toBeTruthy();
+      expect(await screen.findByText((text) => text.includes(`· ${shown} ·`))).toBeTruthy();
       expect(screen.queryByText(/AI with your key/)).toBeNull();
       cleanup();
     }

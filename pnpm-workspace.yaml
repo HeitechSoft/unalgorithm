@@ -1,3 +1,11 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+overrides:
+  # drizzle-kit's deprecated @esbuild-kit loader pins esbuild 0.18, whose dev server any site can read
+  # (GHSA-67mh-4wv8-2f99). Nothing here runs that server, but use the fixed release the rest of the tree has.
+  '@esbuild-kit/core-utils>esbuild': 0.25.12
+  # web-ext's Firefox runner (fx-runner) pins shell-quote 1.10, whose quote() allows command injection
+  # (critical, fixed in 1.11.0). Dev tooling only; use the fixed release the tree already has.
+  'fx-runner>shell-quote': 1.12.0

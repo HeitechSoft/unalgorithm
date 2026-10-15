@@ -312,10 +312,31 @@ export function createSearchProvider(cfg: SearchProviderConfig): SearchProvider 
 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 
-/** Tags out, the five common entities decoded (in one pass, so `&amp;lt;` stays `&lt;`), whitespace collapsed. */
+/**
+ * Markup out, in one linear scan: everything from a `<` to the next `>` goes (an unterminated `<` takes the rest of
+ * the text with it), then any stray `>` left between tags. The text between tags stays, so `<script>alert(1)</script>x`
+ * becomes `alert(1)x`: a snippet is plain text to show, never markup to run.
+ */
+export function stripTags(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf('<', i);
+    if (open < 0) {
+      out += text.slice(i);
+      break;
+    }
+    out += text.slice(i, open);
+    const close = text.indexOf('>', open + 1);
+    if (close < 0) break;
+    i = close + 1;
+  }
+  return out.replaceAll('<', '').replaceAll('>', '');
+}
+
+/** Tags out (`stripTags`), five common entities decoded (in one pass, so `&amp;lt;` stays `&lt;`), whitespace collapsed. */
 export function cleanSnippet(text: string): string {
-  const plain = text
-    .replace(/<[^>]*>/g, '')
+  const plain = stripTags(text)
     .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES[e] ?? e)
     .replace(/\s+/g, ' ')
     .trim();

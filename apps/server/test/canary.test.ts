@@ -62,6 +62,11 @@ const configFor = (searchUrl: string) =>
 const CANARY_SHARED = { url: `https://news.example.com/2026/${CANARY}/bridge`, title: `Bridge reopens ${CANARY}` };
 /** The friends-only post's link, with `FRIENDS_ONLY` in its path so a test can tell whether it went anywhere. */
 const FRIENDS_SHARED = { url: `https://news.example.com/${FRIENDS_ONLY}/${CANARY}`, title: `Family ${CANARY}` };
+/**
+ * The shared links' host, parsed from the URL. The canary looks for it anywhere in a log line or a table (a leak need
+ * not be a whole URL), so this is a substring search for a mention, not a check that sanitizes a URL.
+ */
+const LINK_HOST = new URL(CANARY_SHARED.url).hostname;
 
 /** Path 8c's post: its claim (the whole first sentence, as the mock picks it) carries the marker. */
 const CACHEABLE_TEXT = `Cacheable quarterly update ${CANARY} about AI agents.`;
@@ -604,13 +609,13 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     }
     for (const answer of [compareProviderEcho, compareFriendsOnly, compareInvalid]) expect(answer.body).not.toContain(CANARY);
     expect(run.log.filter((line) => line.includes('"event":"perspectives.done"'))).toHaveLength(2);
-    expect(run.log.filter((line) => line.includes(CANARY) || line.includes('news.example.com'))).toEqual([]);
+    expect(run.log.filter((line) => line.includes(CANARY) || line.includes(LINK_HOST))).toEqual([]);
     expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
 
     // Two job rows (done, failed), and no table holds the marker: graphile-worker's too on Postgres.
     const rows = JSON.parse(run.tables.get('public.usage_events') ?? '[]') as { task: string }[];
     expect(rows.filter((r) => r.task === 'perspectives')).toHaveLength(2);
-    expect([...run.tables].filter(([, r]) => r.includes(CANARY) || r.includes('news.example.com')).map(([t]) => t)).toEqual([]);
+    expect([...run.tables].filter(([, r]) => r.includes(CANARY) || r.includes(LINK_HOST)).map(([t]) => t)).toEqual([]);
 
     // Jobs live in memory only: the route module never touches graphile-worker.
     const source = readFileSync(new URL('../src/routes/perspectives.ts', import.meta.url), 'utf8');

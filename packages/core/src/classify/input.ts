@@ -3,7 +3,8 @@ import { cyrb53 } from '../hash.ts';
 import type { PostData } from '../post.ts';
 import { canonicalText } from './fence.ts';
 
-const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
+/** Bounded like real addresses (64-character local part, 63-character labels), so a long run of + can't make it slow. */
+const EMAIL = /[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8}/g;
 const PHONE = /(?<![\w+])(?:\+\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\w)|\+\d{2,3}(?:[\s-]?\d{2,4}){3,5}(?!\w)/g;
 // "@jane.doe" is one handle, but the full stop in "thanks @bob." ends the sentence.
 const HANDLE = /(?<![\w@])@[\p{L}\p{N}_]{2,}(?:\.[\p{L}\p{N}_]+)*/gu;

@@ -68,9 +68,16 @@ export function stableStringify(value: unknown): string {
   );
 }
 
+/** `s` without any of `chars` at its end; a loop, so a long run of them stays linear. */
+function trimTrailing(s: string, chars: string): string {
+  let end = s.length;
+  while (end > 0 && chars.includes(s[end - 1] as string)) end--;
+  return s.slice(0, end);
+}
+
 /** Accept only http(s) links (adds https:// to bare domains). Returns null when unusable. */
 export function safeExternalUrl(raw: string | null | undefined): string | null {
-  let s = raw?.trim().replace(/[).,;]+$/, '');
+  let s = raw == null ? raw : trimTrailing(raw.trim(), ').,;');
   if (!s || /\s/.test(s)) return null;
   if (s.startsWith('//')) s = `https:${s}`;
   else if (!/^[a-z][a-z\d+.-]*:/i.test(s)) {

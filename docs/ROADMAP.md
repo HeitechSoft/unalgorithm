@@ -9,7 +9,7 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
   AI: Chrome's on-device AI, your own key (Anthropic, OpenAI, Gemini, OpenRouter, Groq), local and self-hosted
   models; noise labels, relevance, More/Less like this.
 - **Next.** Facebook verified on live feeds, a right-click menu on posts, and French for Canada.
-- **Website and Chrome Web Store.** The product website at unalgorithm.app: what UnAlgorithm Feed does, how to
+- **Website and Chrome Web Store.** The product website at unalgorithmfeed.com: what UnAlgorithm Feed does, how to
   install it, the privacy policy, help and release notes. Then the Chrome Web Store release as UnAlgorithm Feed by
   HeitechSoft, with the listing and the extension's links pointing to the website.
 
@@ -18,7 +18,8 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
 - Free accounts and **sync across devices** (settings, interests, exceptions; never API keys).
 - **Hosted AI** with **pay-as-you-go credits**: no subscription, priced at the AI cost plus a published margin, a
   starter credit, purchased credit never expires. Rules, on-device, own key and self-hosted stay free.
-- A **self-hostable server** (Docker Compose) for people and organizations who want to run their own.
+- An **open-source, self-hostable server** (AGPL, Docker Compose) for people and organizations who want to run their
+  own. UnAlgorithm Cloud runs this same server; only its billing and HeitechSoft's operations are private.
 - **Organizations**: shared policies, private AI endpoints, invoicing (HeitechSoft Private AI).
 - **On the website**: how credits work, with live prices and the published margin; terms of service; a guide to
   running your own server.

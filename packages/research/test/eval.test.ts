@@ -118,7 +118,7 @@ describe('report v1', () => {
 
   it('test_eval_links_counted_after_run', async () => {
     const halfDead: LinkChecker = async (urls) =>
-      new Map(urls.map((u): [string, LinkStatus] => [u, u.includes('.example.com/') ? 'dead' : 'live']));
+      new Map(urls.map((u): [string, LinkStatus] => [u, new URL(u).hostname.endsWith('.example.com') ? 'dead' : 'live']));
     const report = await runFactcheckEval(mockDepsFor(SET), SET, { linkCheck: halfDead });
     expect(report.links).toEqual({ live: 56, dead: 56, unknown: 0 });
     expect(report.liveLinks).toBe(0.5);

@@ -242,7 +242,7 @@ jobs:
         if: ${{ !cancelled() && steps.install-gitleaks.outcome == 'success' }}
         # Reviewed false positives are listed in .gitleaksignore, which gitleaks reads from the repository root.
         run: |
-          "$RUNNER_TEMP/gitleaks" git --redact --exit-code 1 .
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose --exit-code 1 .
 
   price-schedule:
     # A price in effect never changes, a raise gives PRICE_NOTICE_DAYS of notice, and a cut may start at the next
