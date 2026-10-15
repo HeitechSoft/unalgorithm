@@ -29,7 +29,7 @@ import { requireDevice } from '../auth/bearer.ts';
 import { runWithBilling, type SettleRequest } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { App, AppDeps } from '../http/app.ts';
-import { JobCancelled, type JobEnd, type JobStore, type JobView } from '../jobs/memory-jobs.ts';
+import { JobAbandoned, JobCancelled, type JobEnd, type JobStore, type JobView } from '../jobs/memory-jobs.ts';
 import { errorFields } from '../log.ts';
 import { wireCodeFor } from './classify.ts';
 import { errorResponse, json, NOT_FOUND } from './openapi.ts';
@@ -293,6 +293,8 @@ export function mountJobRoutes<Req, R>(app: App, deps: AppDeps & { jobs: JobStor
             log.info(`${task}.done`, {
               rid: jobId,
               outcome: end.status,
+              // Nobody polled it for `abandonAfterMs`: cancelled by the store, never charged (P3-52).
+              ...(job.signal.reason instanceof JobAbandoned ? { abandoned: true } : {}),
               ...spec.summary(result),
               cost_micros: spend.cost,
               ms: Math.round(performance.now() - startedAt),

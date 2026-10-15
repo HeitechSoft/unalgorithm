@@ -7,7 +7,7 @@ import {
   ServerInfoSchema,
 } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createJobStore, JobCancelled, type JobStoreOptions } from '../src/jobs/memory-jobs.ts';
+import { createJobStore, JOB_ABANDON_MS, JobAbandoned, JobCancelled, type JobStoreOptions } from '../src/jobs/memory-jobs.ts';
 
 const ID = '7d1f3c2a-4b5e-4f60-8a71-9b2c3d4e5f60';
 const RESULT: FactcheckResult = {
@@ -237,6 +237,98 @@ describe('in-memory job store', () => {
     expect(jobs.size).toBe(0);
     expect(jobs.running).toBe(0);
     expect(jobs.start('alice').ok).toBe(true);
+  });
+});
+
+describe('abandonment', () => {
+  /** A store on fake timers whose clock is the fake `Date.now`, and a kit that finishes each job once it is aborted. */
+  function swept() {
+    vi.useFakeTimers();
+    const jobs = createJobStore<string>({ ttlMs: 60_000, maxRunning: 8, maxKeptPerUser: 5, now: () => Date.now() });
+    const run = (userId: string) => {
+      const job = started(jobs.start(userId));
+      job.signal.addEventListener('abort', () => jobs.finish(job.id, { status: 'cancelled' }), { once: true });
+      return job;
+    };
+    return { jobs, run };
+  }
+
+  it('test_job_polled_is_kept', () => {
+    expect(JOB_ABANDON_MS).toBe(60_000);
+    const { jobs, run } = swept();
+    const job = run('alice');
+    for (let t = 0; t < 300_000; t += 50_000) {
+      vi.advanceTimersByTime(50_000);
+      expect(jobs.view(job.id, 'alice')?.status).toBe('running');
+    }
+    vi.advanceTimersByTime(50_000);
+    expect(job.signal.aborted).toBe(false);
+    expect(jobs.running).toBe(1);
+  });
+
+  it('test_job_unpolled_is_abandoned', () => {
+    const { jobs, run } = swept();
+    const job = run('alice');
+    vi.advanceTimersByTime(59_999);
+    expect(job.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(10_001);
+    expect(job.signal.aborted).toBe(true);
+    expect(job.signal.reason).toBeInstanceOf(JobAbandoned);
+    expect(job.signal.reason).toBeInstanceOf(JobCancelled);
+    expect((job.signal.reason as Error).message).toBe(new JobCancelled().message);
+    expect(jobs.running).toBe(0);
+    expect(jobs.view(job.id, 'alice')?.status).toBe('cancelled');
+  });
+
+  it('test_job_with_waiter_is_kept', async () => {
+    const { jobs, run } = swept();
+    const job = run('alice');
+    const wait = jobs.waitFor(job.id, 'alice', 300_000);
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(job.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(wait).resolves.toEqual({ id: job.id, status: 'running' });
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(job.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(job.signal.reason).toBeInstanceOf(JobAbandoned);
+    expect(jobs.running).toBe(0);
+  });
+
+  it('test_job_other_user_poll_does_not_count', async () => {
+    const { jobs, run } = swept();
+    const job = run('alice');
+    for (let t = 0; t < 50_000; t += 10_000) {
+      vi.advanceTimersByTime(10_000);
+      expect(jobs.view(job.id, 'bob')).toBeUndefined();
+    }
+    expect(await jobs.waitFor(job.id, 'bob', 1_000)).toBeUndefined();
+    expect(job.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(10_000);
+    expect(job.signal.reason).toBeInstanceOf(JobAbandoned);
+  });
+
+  it('test_sweep_stops_when_idle', () => {
+    vi.useFakeTimers();
+    const set = vi.spyOn(globalThis, 'setInterval');
+    const clear = vi.spyOn(globalThis, 'clearInterval');
+    const jobs = createJobStore<string>({ ttlMs: 60_000, maxRunning: 8, maxKeptPerUser: 5, now: () => Date.now() });
+    const a = started(jobs.start('alice'));
+    const b = started(jobs.start('bob'));
+    expect(set).toHaveBeenCalledTimes(1);
+    jobs.finish(a.id, { status: 'done', result: 'r' });
+    expect(clear).not.toHaveBeenCalled();
+    jobs.discard(b.id);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledWith(set.mock.results[0]?.value);
+
+    // A new job starts a new sweep; a job cancelled by its owner stops it once the kit finishes it.
+    const c = started(jobs.start('carol'));
+    expect(set).toHaveBeenCalledTimes(2);
+    jobs.cancel(c.id, 'carol');
+    expect(c.signal.reason).not.toBeInstanceOf(JobAbandoned);
+    jobs.finish(c.id, { status: 'cancelled' });
+    expect(clear).toHaveBeenCalledTimes(2);
   });
 });
 

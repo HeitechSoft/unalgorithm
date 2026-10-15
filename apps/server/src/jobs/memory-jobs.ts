@@ -3,8 +3,15 @@
  * derived from a post, and post content is never stored (decision 3). Nothing here touches Postgres, graphile-worker or
  * the log; a restart loses every job. An ended job is forgotten after `ttlMs`, by an `unref()`ed timer even when no
  * further call comes, so the "at most 10 minutes" the privacy docs promise holds on a quiet server.
+ *
+ * A running job nobody has polled for `abandonAfterMs` (its client closed, its worker was killed, its network went) is
+ * aborted with a `JobAbandoned` reason, through the cancel path: the kit ends it `cancelled` and never settles it, so
+ * nobody pays for a result nobody can see, and the run stops spending the operator's key (P3-52).
  */
-import type { ClassifyResponse, FactcheckJob, WireError } from '@unalgorithm/protocol';
+import { type ClassifyResponse, FACTCHECK_POLL_WAIT_MS, type FactcheckJob, type WireError } from '@unalgorithm/protocol';
+
+/** Three poll waits: a client that polls with `wait=1` (P3-21, P3-37) is never this long without a request (D53). */
+export const JOB_ABANDON_MS = 3 * FACTCHECK_POLL_WAIT_MS;
 
 export type JobStatus = FactcheckJob['status'];
 export type Settlement = NonNullable<ClassifyResponse['billing']>;
@@ -24,6 +31,8 @@ export interface JobStoreOptions {
   maxRunning: number;
   maxKeptPerUser: number;
   now?: () => number;
+  /** A running job with no owner's request (`view`, `waitFor`) for this long is abandoned. Default `JOB_ABANDON_MS`. */
+  abandonAfterMs?: number;
 }
 export interface JobStore<R> {
   /** A new running job, or why not: one running job per user ('busy-user'), maxRunning server-wide ('busy-server'). */
@@ -58,10 +67,22 @@ export class JobCancelled extends Error {
   }
 }
 
+/** The reason an abandoned job's signal carries; a JobCancelled, so the kit ends it as `cancelled` and never settles it. */
+export class JobAbandoned extends JobCancelled {
+  constructor() {
+    super();
+    this.name = 'JobAbandoned';
+  }
+}
+
 interface Job<R> {
   id: string;
   userId: string;
   controller: AbortController;
+  /** When the owner last made a request for this job (`view`, or a `waitFor` starting or ending). */
+  seenAt: number;
+  /** The owner's `waitFor` calls in progress: a job someone is waiting on is never abandoned. */
+  waiters: number;
   /** Set once the job ends. */
   end?: JobEnd<R>;
   endedAt?: number;
@@ -70,7 +91,10 @@ interface Job<R> {
 
 export function createJobStore<R>(opts: JobStoreOptions): JobStore<R> {
   const now = opts.now ?? Date.now;
+  const abandonAfterMs = opts.abandonAfterMs ?? JOB_ABANDON_MS;
   const jobs = new Map<string, Job<R>>();
+  /** The abandonment sweep, active only while a job runs. */
+  let sweeper: ReturnType<typeof setInterval> | undefined;
   /** Called whenever a job ends or is forgotten: waiters re-check. */
   const listeners = new Set<() => void>();
 
@@ -89,6 +113,23 @@ export function createJobStore<R>(opts: JobStoreOptions): JobStore<R> {
     let n = 0;
     for (const job of jobs.values()) if (!job.end) n++;
     return n;
+  };
+  const sweep = () => {
+    const t = now();
+    for (const job of jobs.values()) {
+      if (job.end || job.controller.signal.aborted || job.waiters > 0) continue;
+      if (t - job.seenAt >= abandonAfterMs) job.controller.abort(new JobAbandoned());
+    }
+  };
+  const startSweep = () => {
+    if (sweeper) return;
+    sweeper = setInterval(sweep, Math.min(10_000, abandonAfterMs / 4));
+    sweeper.unref?.();
+  };
+  const stopSweepIfIdle = () => {
+    if (!sweeper || runningCount() > 0) return;
+    clearInterval(sweeper);
+    sweeper = undefined;
   };
   const owned = (id: string, userId: string) => {
     const job = jobs.get(id);
@@ -114,8 +155,15 @@ export function createJobStore<R>(opts: JobStoreOptions): JobStore<R> {
         running++;
       }
       if (running >= opts.maxRunning) return { ok: false, reason: 'busy-server' };
-      const job: Job<R> = { id: crypto.randomUUID(), userId, controller: new AbortController() };
+      const job: Job<R> = {
+        id: crypto.randomUUID(),
+        userId,
+        controller: new AbortController(),
+        seenAt: now(),
+        waiters: 0,
+      };
       jobs.set(job.id, job);
+      startSweep();
       return { ok: true, id: job.id, signal: job.controller.signal };
     },
 
@@ -129,6 +177,7 @@ export function createJobStore<R>(opts: JobStoreOptions): JobStore<R> {
       const ended = [...jobs.values()].filter((j) => j.userId === job.userId && j.endedAt !== undefined);
       ended.sort((a, b) => (a.endedAt as number) - (b.endedAt as number));
       for (const old of ended.slice(0, Math.max(0, ended.length - opts.maxKeptPerUser))) forget(old);
+      stopSweepIfIdle();
       notify();
     },
 
@@ -136,22 +185,32 @@ export function createJobStore<R>(opts: JobStoreOptions): JobStore<R> {
       const job = jobs.get(id);
       if (!job) return;
       forget(job);
+      stopSweepIfIdle();
       notify();
     },
 
     view(id, userId) {
       prune();
       const job = owned(id, userId);
-      return job ? toView(job) : undefined;
+      if (!job) return undefined;
+      job.seenAt = now();
+      return toView(job);
     },
 
     waitFor(id, userId, ms, signal) {
       prune();
       const job = owned(id, userId);
       if (!job) return Promise.resolve(undefined);
+      job.seenAt = now();
       if (job.end || signal?.aborted) return Promise.resolve(toView(job));
+      job.waiters++;
       return new Promise((resolve) => {
+        let waiting = true;
         const done = () => {
+          if (!waiting) return;
+          waiting = false;
+          job.waiters--;
+          job.seenAt = now();
           clearTimeout(timer);
           listeners.delete(check);
           signal?.removeEventListener('abort', done);

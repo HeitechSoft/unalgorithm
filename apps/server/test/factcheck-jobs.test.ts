@@ -476,6 +476,44 @@ describe('fact-check jobs: billing', { timeout: PGLITE_TIMEOUT }, () => {
     expect(fixtureModule.openHolds()).toBe(holds);
     research.open();
   });
+
+  it('test_factcheck_abandoned_job_released_not_charged', async () => {
+    const holds = fixtureModule.openHolds();
+    // Real timers (PGlite does not run under fake ones), so a short abandonment; research holds until the job's signal
+    // aborts, so the job is still running when nobody has polled it for 300 ms.
+    const jobs = createJobStore<FactcheckResult>({
+      ttlMs: FACTCHECK_JOB_TTL_MS,
+      maxRunning: 8,
+      maxKeptPerUser: 5,
+      abandonAfterMs: 300,
+    });
+    const research = gate();
+    const t = await anthropicApp(happy, { billed: true, factcheckJobs: jobs, gates: { research: research.opened } });
+    const calls: string[] = [];
+    for (const name of ['check', 'settle', 'release'] as const) {
+      const real = t.provider[name].bind(t.provider) as (input: never) => Promise<unknown>;
+      t.provider[name] = ((input: never) => {
+        calls.push(name);
+        return real(input);
+      }) as never;
+    }
+
+    const id = await started(t);
+    // Never polled: the log line, not a poll, says when it ended.
+    await expect.poll(() => jobs.running, { timeout: 5_000 }).toBe(0);
+    expect(t.kinds).toEqual(['claims']);
+    expect(calls).toEqual(['check', 'release']);
+    expect(fixtureModule.openHolds()).toBe(holds);
+    expect((await ended(t, id)).status).toBe('cancelled');
+
+    const [row] = await t.deps.db.db.select().from(usageEvents).where(eq(usageEvents.requestId, id));
+    expect(row).toMatchObject({ outcome: 'failed', chargeableCostMicros: 0 });
+    expect(await t.provider.balance(row?.userId ?? '')).toEqual({ balanceMicros: 1_000_000 });
+    const done = t.events().filter((e) => e.event === 'factcheck.done');
+    expect(done).toMatchObject([{ rid: id, outcome: 'cancelled', abandoned: true }]);
+    expect(t.lines.join('')).not.toContain('bridge opened');
+    research.open();
+  });
 });
 
 describe('fact-check jobs: pipeline wiring', { timeout: PGLITE_TIMEOUT }, () => {
