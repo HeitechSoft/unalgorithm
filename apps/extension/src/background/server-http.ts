@@ -1,5 +1,5 @@
 import { isAIError } from '@unalgorithm/ai';
-import { readBoundedJson } from './bounded-body.ts';
+import { MAX_SERVER_BODY_BYTES, readBoundedJson } from './bounded-body.ts';
 import { getAccessToken, markNeedsSignIn } from './server-auth.ts';
 
 /**
@@ -19,9 +19,9 @@ export interface ServerHttpDeps {
 }
 
 export type ServerResult =
-  /** 2xx; `body` is the parsed JSON, null when empty, not JSON or over `MAX_SERVER_BODY_BYTES`. */
+  /** 2xx; `body` is the parsed JSON, null when empty, not JSON or over the request's `maxBytes`. */
   | { ok: true; status: number; body: unknown }
-  /** Any other HTTP status; `body` is the parsed JSON, null when empty, not JSON or over `MAX_SERVER_BODY_BYTES`. */
+  /** Any other HTTP status; `body` is the parsed JSON, null when empty, not JSON or over the request's `maxBytes`. */
   | { ok: false; status: number; body: unknown }
   /**
    * No answer to use: 'auth' when the person has to sign in again, 'aborted' when the caller's `signal` fired, and
@@ -39,6 +39,8 @@ export interface ServerRequestInit {
   signal?: AbortSignal;
   /** Default true. The balance refresh passes false: there the classify path decides about signing in again (CL2-10). */
   markNeedsSignIn?: boolean;
+  /** Largest answer read, default `MAX_SERVER_BODY_BYTES`. A sync pull passes more: a full page can hold megabytes. */
+  maxBytes?: number;
 }
 
 const failed = (reason: 'auth' | 'network' | 'aborted'): ServerResult => ({ ok: false, status: 0, reason });
@@ -77,7 +79,7 @@ export async function serverRequest(
           signal: init.signal ? AbortSignal.any([timeout, init.signal]) : timeout,
         });
         if (res.status === 401) return { ok: false, status: 401, body: null };
-        const parsed = await readBoundedJson(res);
+        const parsed = await readBoundedJson(res, init.maxBytes ?? MAX_SERVER_BODY_BYTES);
         return res.ok ? { ok: true, status: res.status, body: parsed } : { ok: false, status: res.status, body: parsed };
       } catch {
         return failed(init.signal?.aborted ? 'aborted' : 'network');

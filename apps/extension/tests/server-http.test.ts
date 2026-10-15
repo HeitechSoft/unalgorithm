@@ -130,6 +130,16 @@ describe('requests', () => {
     }
   });
 
+  it('test_server_request_max_bytes', async () => {
+    // An answer over the default 64 KiB: dropped by default, read when the caller allows more.
+    const big = { v: 1, items: Array.from({ length: 200 }, (_, i) => ({ key: `k${i}`, value: 'x'.repeat(500) })) };
+    expect(JSON.stringify(big).length).toBeGreaterThan(64 * 1024);
+    const get = (maxBytes?: number) =>
+      serverRequest(ORIGIN, SYNC_CHANGES_PATH, { timeoutMs: TIMEOUT_MS, maxBytes }, deps(fakeServer(() => json(big)).fetch));
+    expect(await get()).toStrictEqual({ ok: true, status: 200, body: null });
+    expect(await get(1024 * 1024)).toStrictEqual({ ok: true, status: 200, body: big });
+  });
+
   it('test_server_request_never_leaves_origin', async () => {
     for (const path of ['//evil.example/x', 'https://evil.example/v1/sync/push', 'http://ai.example.org/v1/sync/push']) {
       const s = fakeServer();

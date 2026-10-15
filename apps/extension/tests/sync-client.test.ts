@@ -181,6 +181,14 @@ describe('pull and apply', () => {
     expect(await lastHlcItem.getValue()).toBe(lastBefore);
   });
 
+  it('test_large_pull_page_is_read', async () => {
+    // One page over serverRequest's 64 KiB default: the pull reads up to a full page (PULL_MAX_BYTES).
+    const keywords = Array.from({ length: 6 }, (_, k) => `${k}${'x'.repeat(38)}`);
+    for (let i = 0; i < 300; i++) server.put(live(`interests.more.t${i}`, { ...topic(`T${i}`), keywords }, hlc(NOW - 1000)));
+    expect(await run()).toStrictEqual({ ok: true, pulled: 300, pushed: 0 });
+    expect(Object.keys((await readSettings()).interests.more)).toHaveLength(300);
+  });
+
   it('test_remote_apply_does_not_echo', async () => {
     server.put(live('display.mode', 'hide', hlc(NOW - 2000)));
     server.put(live('interests.more.x', topic('X'), hlc(NOW - 1000)));

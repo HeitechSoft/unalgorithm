@@ -2,6 +2,7 @@ import {
   hlcMs,
   SYNC_CHANGES_PATH,
   SYNC_MAX_HLC_AHEAD_MS,
+  SYNC_MAX_ITEM_BYTES,
   SYNC_MAX_PUSH_BYTES,
   SYNC_MAX_PUSH_ITEMS,
   SYNC_PULL_LIMIT,
@@ -63,6 +64,8 @@ class Resync {}
 class Gone {}
 
 const BASE_TIMEOUT_MS = 30_000;
+/** A full page of changes: every item at its largest, plus room for keys, clocks and the envelope. */
+export const PULL_MAX_BYTES = SYNC_PULL_LIMIT * (SYNC_MAX_ITEM_BYTES + 1024) + 64 * 1024;
 const encoder = new TextEncoder();
 const bytes = (value: unknown) => encoder.encode(JSON.stringify(value)).length;
 
@@ -98,7 +101,7 @@ export async function syncOnce(
   /** One request; anything but a 2xx answer is thrown as the step it leads to. */
   const call = async (
     path: string,
-    init: { query?: Record<string, string>; body?: unknown; wait?: number },
+    init: { query?: Record<string, string>; body?: unknown; wait?: number; maxBytes?: number },
   ): Promise<unknown> => {
     const r = await serverRequest(
       origin,
@@ -109,6 +112,7 @@ export async function syncOnce(
         body: init.body,
         timeoutMs: BASE_TIMEOUT_MS + (init.wait ?? 0) * 1000,
         signal: opts.signal,
+        maxBytes: init.maxBytes,
       },
       http,
     );
@@ -150,7 +154,7 @@ export async function syncOnce(
         wait: String(wait),
         snapshot: fromZero && since > 0 ? '1' : '0',
       };
-      const body = await call(SYNC_CHANGES_PATH, { query, wait });
+      const body = await call(SYNC_CHANGES_PATH, { query, wait, maxBytes: PULL_MAX_BYTES });
       wait = 0;
       const page = SyncChangesResponseSchema.safeParse(body).data;
       // A page that does not move the cursor forward would page forever.
