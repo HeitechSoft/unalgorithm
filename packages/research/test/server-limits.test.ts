@@ -153,15 +153,18 @@ describe('link check', () => {
       calls.push(urls);
       return new Map();
     };
+    // Out of id order, so neither array order, citation order nor string order ("s10" < "s3") gives source-id order.
     const sources = [
-      ...SOURCES,
+      source('s11', 'late.example', ['The bridge opened in 1932.']),
       // Same page as s1 under another id.
       source('s10', 'www.example.com', ['The bridge opened in 1932.'], 'https://www.example.com/s1'),
+      ...[...SOURCES].reverse(),
     ];
     const verdicts: RawVerdict[] = [
       {
         ...SUPPORTED,
         citations: [
+          { sourceId: 's11', quote: 'The bridge opened in 1932' },
           { sourceId: 's10', quote: 'The bridge opened in 1932' },
           { sourceId: 's3', quote: 'ended in 1932' },
           { sourceId: 's1', quote: 'The bridge opened in 1932' },
@@ -171,7 +174,7 @@ describe('link check', () => {
       },
     ];
     await setup({ sources, verdicts }, { linkCheck }).run();
-    expect(calls).toEqual([['https://www.example.com/s1', 'https://third.net/s3']]);
+    expect(calls).toEqual([['https://www.example.com/s1', 'https://third.net/s3', 'https://late.example/s11']]);
   });
 
   it('test_dead_link_citation_dropped_and_counted', async () => {
