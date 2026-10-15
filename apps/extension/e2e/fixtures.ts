@@ -113,6 +113,33 @@ export const FLAGGED = [LINKEDIN_FLAGGED, FB_PUBLIC_FLAGGED, FB_FRIENDS_FLAGGED]
 /** The LinkedIn fixture feed's flagged first-degree post. */
 export const linkedinPost = (page: Page) => page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
 
+/**
+ * Opens Settings → Labs (`#/labs`) and saves the AI source `config` (with `apiKey`, if any) from it. With `test`, the
+ * source is tested first and saved with the model the test picked, as the AI pane does. Returns the options page.
+ */
+export async function saveSource(
+  context: BrowserContext,
+  extensionId: string,
+  config: Record<string, unknown>,
+  apiKey?: string,
+  opts: { test?: boolean } = {},
+): Promise<Page> {
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
+  const saved = await options.evaluate(
+    async ([config, apiKey, test]) => {
+      const key = apiKey ? { apiKey } : {};
+      const tested = test ? await chrome.runtime.sendMessage({ type: 'testSource', config, ...key }) : null;
+      if (tested && !tested.ok) return tested;
+      const model = tested?.model ? { model: tested.model } : {};
+      return chrome.runtime.sendMessage({ type: 'saveSource', config: { ...config, ...model }, ...key });
+    },
+    [config, apiKey, opts.test ?? false] as const,
+  );
+  expect(saved).toMatchObject({ ok: true });
+  return options;
+}
+
 /** Turns a Labs switch (default Fact-check) on through the options page (on `#/labs`); it must be enabled and off. */
 export async function turnOnLabs(options: Page, name: 'Fact-check' | 'Other perspectives' = 'Fact-check'): Promise<void> {
   const toggle = options.getByRole('switch', { name });
@@ -148,4 +175,64 @@ export async function seeResult(ui: Locator): Promise<void> {
     () => false,
   );
   test.info().annotations.push({ type: 'sidePanel.open', description: refused ? 'refused' : 'opened' });
+}
+
+/** CORS headers for mocked provider answers. */
+export const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': '*',
+  'access-control-allow-methods': 'POST, GET, OPTIONS',
+};
+
+/** The three web pages the fact-check mocks find: the passage each one's search result carries, and the quote cited. */
+export const FACTCHECK_SOURCES = [
+  {
+    url: 'https://a.example/hr-automation',
+    title: 'HR automation survey',
+    passage: 'Most HR teams surveyed said they would automate interview scheduling first.',
+    quote: 'would automate interview scheduling first',
+  },
+  {
+    url: 'https://b.example/hr-report',
+    title: 'HR technology report',
+    passage: 'Interview scheduling is the task HR leaders most often hand to software.',
+    quote: 'Interview scheduling is the task HR leaders most often hand to software',
+  },
+  {
+    url: 'https://c.example/clinics',
+    title: 'Clinic staffing notes',
+    passage: 'Northwind Clinics employs an HR director for its regional offices.',
+    quote: 'Northwind Clinics employs an HR director',
+  },
+] as const;
+
+/** Every "Check facts" button on a page. */
+export const checkButtons = (page: Page) => page.locator('unalgo-post').getByRole('button', { name: CHECK_FACTS });
+
+/** "Check facts", the price line `price`, `beforeConfirm`, then Check, then "See result". */
+export async function runCheck(post: Locator, price: string, beforeConfirm?: () => unknown): Promise<void> {
+  const ui = post.locator('unalgo-post');
+  await ui.getByRole('button', { name: CHECK_FACTS }).click();
+  await expect(ui.getByText(price)).toBeVisible();
+  await beforeConfirm?.();
+  await ui.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(ui.getByRole('button', { name: 'See result' })).toBeVisible({ timeout: 20_000 });
+}
+
+export interface StoredEntry {
+  status: string;
+  result?: {
+    claims: { id: string; verdict: string; downgraded?: string; citations: { sourceId: string; quote: string }[] }[];
+    sources: { id: string; url: string; domain: string }[];
+  };
+}
+
+/** Every fact-check entry in session storage, read through the service worker. */
+export async function storedChecks(context: BrowserContext): Promise<Record<string, { entries: StoredEntry[] }>> {
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  return sw.evaluate(async () => {
+    const all = await chrome.storage.session.get(null);
+    return Object.fromEntries(Object.entries(all).filter(([key]) => key.startsWith('factcheck:')));
+  }) as Promise<Record<string, { entries: StoredEntry[] }>>;
 }

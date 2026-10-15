@@ -54,13 +54,16 @@ export interface CoverageHit {
   outlet: string;
 }
 
-/** The one article a covered bucket's search returns, on the bucket's first domain. */
+/**
+ * The one article a covered bucket's search returns, on the bucket's first domain. Dated today in its path too, for a
+ * search that returns no date (OpenAI's).
+ */
 export function coverageHit(bucket: (typeof COVERED)[number]): CoverageHit {
   const domain = domainsOf(bucket)[0] ?? '';
   const outlet = FIXTURE_REGISTRY.outlets.find((o) => o.domains.includes(domain))?.name ?? '';
   return {
     bucket,
-    url: `https://${domain}/transit-budget`,
+    url: `https://${domain}/${today().replaceAll('-', '/')}/transit-budget`,
     title: `Transit budget approved: ${outlet}`,
     passage: PASSAGES[bucket],
     outlet,
@@ -111,3 +114,20 @@ export async function expectComparisonSheet(panel: Page): Promise<Locator> {
 /** A Facebook post's "Other perspectives" button. */
 export const perspectivesButton = (post: Locator): Locator =>
   post.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES, exact: true });
+
+/** The Facebook fixture feed's two posts: friends-only first, then the public link share. */
+export function facebookPosts(page: Page): { friends: Locator; share: Locator } {
+  const [friends, share] = [0, 1].map((i) => page.locator('[role="feed"] > div').nth(i)) as [Locator, Locator];
+  return { friends, share };
+}
+
+/** Other perspectives on the link share: the price line `price`, `beforeConfirm`, then Compare, then "See result". */
+export async function compare(share: Locator, price: string, beforeConfirm?: () => unknown): Promise<void> {
+  const ui = share.locator('unalgo-post');
+  await perspectivesButton(share).click();
+  await expect(ui.getByText(price, { exact: true })).toBeVisible();
+  await expect(ui.getByRole('button', { name: 'Compare', exact: true })).toBeFocused();
+  await beforeConfirm?.();
+  await ui.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(ui.getByRole('button', { name: 'See result' })).toBeVisible({ timeout: 20_000 });
+}

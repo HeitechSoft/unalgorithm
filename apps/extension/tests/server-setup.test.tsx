@@ -17,7 +17,7 @@ import { ServerSetup } from '../src/components/ServerSetup.tsx';
 import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
 import { type BgRequest, type BgResponses, type PublicServerAccount, sendToBackground } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN, recipientText, serverLabel } from '../src/lib/server-label.ts';
-import { ANTHROPIC_HOST, manifestFor } from '../wxt.config.ts';
+import { ANTHROPIC_HOST, BRAVE_SEARCH_HOST, manifestFor, OPENAI_HOST } from '../wxt.config.ts';
 
 const flag = vi.hoisted(() => ({ cloud: false }));
 vi.mock('../src/components/ServerSetup.tsx', async (importOriginal) => {
@@ -459,6 +459,22 @@ describe('manifest', () => {
         expect(m.optional_host_permissions).toContain('https://*/*');
       }
       expect(manifestFor('e2e').host_permissions).toContain(ANTHROPIC_HOST);
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it('test_store_manifest_has_no_new_required_hosts', () => {
+    for (const env of [undefined, '1']) {
+      vi.stubEnv('UA_CLOUD', env);
+      for (const mode of ['production', 'development']) {
+        const m = manifestFor(mode);
+        expect(m.host_permissions ?? []).not.toContain(OPENAI_HOST);
+        expect(m.host_permissions ?? []).not.toContain(BRAVE_SEARCH_HOST);
+        expect(m.host_permissions?.join(' ')).not.toMatch(/openai|brave/);
+        // Both are asked for from a click, through the optional https permission.
+        expect(m.optional_host_permissions).toContain('https://*/*');
+      }
+      expect(manifestFor('e2e').host_permissions).toEqual(expect.arrayContaining([OPENAI_HOST, BRAVE_SEARCH_HOST]));
     }
     vi.unstubAllEnvs();
   });

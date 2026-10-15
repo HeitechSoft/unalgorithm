@@ -12,22 +12,26 @@ import {
 import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
 import { LEAN_BUCKETS } from '@unalgorithm/protocol';
 import {
+  CORS,
   EXTENSION_PATH,
   expect,
   FB_PUBLIC_FLAGGED,
   facebookFeed,
   LINKEDIN_FLAGGED,
   linkedinPost,
+  saveSource,
   seeResult,
   test,
   turnOnLabs,
 } from './fixtures.ts';
 import {
   type COVERED,
+  compare as compareAt,
   coverageHit,
   coveredBucketFor,
   domainsOf,
   expectComparisonSheet,
+  facebookPosts,
   first8,
   LINK_POST_TEXT,
   LINK_TITLE,
@@ -160,40 +164,15 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   return mock;
 }
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': '*',
-  'access-control-allow-methods': 'POST, GET, OPTIONS',
-};
-
 /** Save the Anthropic source from an extension page; with `labs`, turn Labs → Other perspectives on. */
 async function setUp(context: BrowserContext, extensionId: string, opts: { labs: boolean }): Promise<Page> {
-  const options = await context.newPage();
-  await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
-  const saved = await options.evaluate(
-    (apiKey) => chrome.runtime.sendMessage({ type: 'saveSource', config: { kind: 'anthropic', model: null }, apiKey }),
-    API_KEY,
-  );
-  expect(saved).toMatchObject({ ok: true });
+  const options = await saveSource(context, extensionId, { kind: 'anthropic', model: null }, API_KEY);
   if (opts.labs) await turnOnLabs(options, PERSPECTIVES);
   return options;
 }
 
-/** The Facebook fixture feed's two posts: friends-only first, then the public link share. */
-function facebookPosts(page: Page): { friends: Locator; share: Locator } {
-  const [friends, share] = [0, 1].map((i) => page.locator('[role="feed"] > div').nth(i)) as [Locator, Locator];
-  return { friends, share };
-}
-
 /** Other perspectives on the link share: the price, then Compare, then "See result". */
-async function compare(share: Locator): Promise<void> {
-  const ui = share.locator('unalgo-post');
-  await perspectivesButton(share).click();
-  await expect(ui.getByText(PRICE, { exact: true })).toBeVisible();
-  await expect(ui.getByRole('button', { name: 'Compare', exact: true })).toBeFocused();
-  await ui.getByRole('button', { name: 'Compare', exact: true }).click();
-  await expect(ui.getByRole('button', { name: 'See result' })).toBeVisible({ timeout: 20_000 });
-}
+const compare = (share: Locator) => compareAt(share, PRICE);
 
 test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, extensionId, feed }) => {
   const mock = await mockAnthropic(context);

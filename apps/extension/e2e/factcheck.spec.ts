@@ -8,12 +8,18 @@ import {
 } from '@unalgorithm/ai/testing/anthropic';
 import {
   CHECK_FACTS,
+  CORS,
+  checkButtons,
   expect,
+  FACTCHECK_SOURCES,
   FB_FRIENDS_FLAGGED,
   FLAGGED,
   facebookFeed,
   linkedinPost,
+  runCheck as runCheckAt,
+  saveSource,
   seeResult,
+  storedChecks,
   test,
   turnOnLabs,
 } from './fixtures.ts';
@@ -28,26 +34,7 @@ import {
 const API_KEY = `sk-ant-api03-E2E${'F'.repeat(40)}`;
 const PRICE = 'About $0.12 on your Anthropic account';
 
-const SOURCES = [
-  {
-    url: 'https://a.example/hr-automation',
-    title: 'HR automation survey',
-    passage: 'Most HR teams surveyed said they would automate interview scheduling first.',
-    quote: 'would automate interview scheduling first',
-  },
-  {
-    url: 'https://b.example/hr-report',
-    title: 'HR technology report',
-    passage: 'Interview scheduling is the task HR leaders most often hand to software.',
-    quote: 'Interview scheduling is the task HR leaders most often hand to software',
-  },
-  {
-    url: 'https://c.example/clinics',
-    title: 'Clinic staffing notes',
-    passage: 'Northwind Clinics employs an HR director for its regional offices.',
-    quote: 'Northwind Clinics employs an HR director',
-  },
-] as const;
+const SOURCES = FACTCHECK_SOURCES;
 const [A, B, C] = SOURCES;
 
 /** Every Anthropic request the mock answered, with its kind. */
@@ -134,26 +121,12 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   return mock;
 }
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': '*',
-  'access-control-allow-methods': 'POST, GET, OPTIONS',
-};
-
 /** Save the Anthropic source from an extension page, and turn Labs → Fact-check on through the options page's switch. */
 async function setUp(context: BrowserContext, extensionId: string, opts: { labs: boolean }): Promise<Page> {
-  const options = await context.newPage();
-  await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
-  const saved = await options.evaluate(
-    (apiKey) => chrome.runtime.sendMessage({ type: 'saveSource', config: { kind: 'anthropic', model: null }, apiKey }),
-    API_KEY,
-  );
-  expect(saved).toMatchObject({ ok: true });
+  const options = await saveSource(context, extensionId, { kind: 'anthropic', model: null }, API_KEY);
   if (opts.labs) await turnOnLabs(options);
   return options;
 }
-
-const checkButtons = (page: Page) => page.locator('unalgo-post').getByRole('button', { name: CHECK_FACTS });
 
 /** The flagged post came back from the mock classified (its high relevance makes it a pick). */
 async function classified(page: Page, mock: MockAnthropic): Promise<void> {
@@ -162,31 +135,7 @@ async function classified(page: Page, mock: MockAnthropic): Promise<void> {
 }
 
 /** Price, then Check, then "See result". */
-async function runCheck(post: Locator): Promise<void> {
-  const ui = post.locator('unalgo-post');
-  await ui.getByRole('button', { name: CHECK_FACTS }).click();
-  await expect(ui.getByText(PRICE)).toBeVisible();
-  await ui.getByRole('button', { name: 'Check', exact: true }).click();
-  await expect(ui.getByRole('button', { name: 'See result' })).toBeVisible({ timeout: 20_000 });
-}
-
-/** Every fact-check entry in session storage, read through the service worker. */
-async function storedChecks(context: BrowserContext): Promise<Record<string, { entries: StoredEntry[] }>> {
-  let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker');
-  return sw.evaluate(async () => {
-    const all = await chrome.storage.session.get(null);
-    return Object.fromEntries(Object.entries(all).filter(([key]) => key.startsWith('factcheck:')));
-  }) as Promise<Record<string, { entries: StoredEntry[] }>>;
-}
-
-interface StoredEntry {
-  status: string;
-  result?: {
-    claims: { id: string; verdict: string; downgraded?: string; citations: { sourceId: string; quote: string }[] }[];
-    sources: { id: string; url: string; domain: string }[];
-  };
-}
+const runCheck = (post: Locator) => runCheckAt(post, PRICE);
 
 test.describe('offer', () => {
   test('test_e2e_labs_off_shows_no_check_button', async ({ context, extensionId, feed }) => {
