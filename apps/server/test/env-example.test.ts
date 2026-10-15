@@ -39,6 +39,7 @@ const SECRET_NAMES = [
   'POSTGRES_PASSWORD',
   'METRICS_TOKEN',
   'ALERT_WEBHOOK_URL',
+  'SEARCH_API_KEY',
 ];
 
 interface EnvExampleEntry {

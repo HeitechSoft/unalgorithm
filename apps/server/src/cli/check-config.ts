@@ -1,4 +1,4 @@
-import { configuredRoute, RouteConfigError } from '../ai/routes.ts';
+import { configuredRoutes, RouteConfigError } from '../ai/routes.ts';
 import { ConfigError, loadConfig } from '../config.ts';
 
 /**
@@ -8,7 +8,7 @@ import { ConfigError, loadConfig } from '../config.ts';
  */
 try {
   const config = loadConfig(process.env);
-  configuredRoute(config);
+  configuredRoutes(config);
   console.log(`config ok (server ${config.version})`);
 } catch (err) {
   // ConfigError and RouteConfigError messages name variables and rules only; anything else is a bug, reported by name

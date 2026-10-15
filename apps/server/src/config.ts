@@ -2,9 +2,11 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANTHROPIC_DEFAULT_MODEL } from '@unalgorithm/ai';
 import { ExtensionIdSchema } from '@unalgorithm/protocol';
+import { FACTCHECK_MODELS, SEARCH_PROVIDERS, type SearchProviderId } from '@unalgorithm/research';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { LOG_LEVELS, type LogLevel } from './log.ts';
+import { denyList } from './net/egress.ts';
 
 /**
  * The server's whole configuration, read once from the environment at startup. Every variable the server reads is
@@ -46,10 +48,18 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'AI_API_KEY',
   'AI_BASE_URL',
   'AI_DATA_POLICY',
+  'FACTCHECK',
+  'AI_RESEARCH_MODEL',
+  'AI_SYNTHESIS_MODEL',
+  'SEARCH_PROVIDER',
+  'SEARCH_URL',
+  'SEARCH_API_KEY',
   'ROUTE_EVAL_MIN_AGREEMENT',
   'USER_DAILY_POST_CAP',
   'USER_REQUESTS_PER_MINUTE',
   'DAILY_SPEND_LIMIT_USD',
+  'USER_DAILY_CHECK_CAP',
+  'EGRESS_DENY',
   'ALERT_DISK_FREE_MIN_GB',
   'ALERT_DATABASE_MAX_GB',
   'ALERT_ERRORS_PER_15M',
@@ -110,6 +120,20 @@ export interface Config {
     baseUrl?: string;
     dataPolicy: 'vendor-zdr' | 'self-hosted';
   };
+  /** Fact-check (Labs, F12): off unless `FACTCHECK=on`. */
+  factcheck: {
+    enabled: boolean;
+    /** The `research` route's model; unused when `search` is set (the model then reads search results instead). */
+    researchModel: string;
+    /** The `synthesis` route's model, which writes the verdicts. */
+    synthesisModel: string;
+    /** A search provider for research; null: Anthropic web search on the server's key. `apiKey` is a secret. */
+    search: { provider: SearchProviderId; url?: string; apiKey?: string } | null;
+    /** Fact-checks per person per UTC day when `BILLING` is off; 0: none. */
+    userDailyCheckCap: number;
+  };
+  /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
+  egressDeny: string[];
   routeEvalMinAgreement: number;
   userDailyPostCap: number;
   userRequestsPerMinute: number;
@@ -354,6 +378,57 @@ export function loadConfig(env: Env = process.env): Config {
     : oneOf('AI_DATA_POLICY', ['vendor-zdr', 'self-hosted'] as const, 'vendor-zdr');
   if (anthropic && dataPolicy === 'self-hosted') bad('AI_DATA_POLICY', 'must be vendor-zdr when AI_PROVIDER is anthropic');
 
+  // Fact-check (Labs). Every name is read on every load, so the parity test sees them with fact-check off too.
+  const factcheck = oneOf('FACTCHECK', ['off', 'on'] as const, 'off');
+  const factcheckOn = factcheck === 'on';
+  const researchModelValue = read('AI_RESEARCH_MODEL');
+  const synthesisModelValue = read('AI_SYNTHESIS_MODEL');
+  const searchValue = read('SEARCH_PROVIDER');
+  const searchUrlValue = read('SEARCH_URL');
+  const searchApiKey = readSecret('SEARCH_API_KEY');
+  let search: Config['factcheck']['search'] = null;
+  if (!factcheckOn) {
+    // A setting left behind with fact-check off would look as if it ran.
+    if (!invalid.some((i) => i.name === 'FACTCHECK')) {
+      const settings = {
+        AI_RESEARCH_MODEL: researchModelValue,
+        AI_SYNTHESIS_MODEL: synthesisModelValue,
+        SEARCH_PROVIDER: searchValue,
+        SEARCH_URL: searchUrlValue,
+        SEARCH_API_KEY: searchApiKey,
+      };
+      for (const [name, value] of Object.entries(settings)) {
+        if (value !== undefined) bad(name, 'must be unset when FACTCHECK is off');
+      }
+    }
+  } else {
+    const searchProvider = searchValue === undefined ? undefined : oneOf('SEARCH_PROVIDER', SEARCH_PROVIDERS);
+    if (searchProvider === 'searxng') {
+      const url = required('SEARCH_URL', searchUrlValue);
+      if (searchApiKey !== undefined) bad('SEARCH_API_KEY', 'must be unset when SEARCH_PROVIDER is searxng');
+      search = { provider: searchProvider, url: url === undefined ? undefined : httpUrl('SEARCH_URL', url) };
+    } else if (searchProvider !== undefined) {
+      required('SEARCH_API_KEY', searchApiKey);
+      if (searchUrlValue !== undefined) bad('SEARCH_URL', `must be unset when SEARCH_PROVIDER is ${searchProvider}`);
+      search = { provider: searchProvider, apiKey: searchApiKey };
+    } else if (searchValue === undefined) {
+      if (searchUrlValue !== undefined) bad('SEARCH_URL', 'must be unset when SEARCH_PROVIDER is unset');
+      if (searchApiKey !== undefined) bad('SEARCH_API_KEY', 'must be unset when SEARCH_PROVIDER is unset');
+      if (compatible) bad('SEARCH_PROVIDER', 'an OpenAI-compatible model cannot search the web: set SEARCH_PROVIDER');
+    }
+    if (researchModelValue !== undefined && searchValue !== undefined) {
+      bad('AI_RESEARCH_MODEL', 'unused when SEARCH_PROVIDER is set');
+    }
+    if (billing === 'module') {
+      // Decision D12: Anthropic web search is the one research path with a price card.
+      const why = 'a billing server researches with Anthropic web search only, so every check is priced';
+      if (compatible) bad('AI_PROVIDER', `must be anthropic when BILLING is module and FACTCHECK is on: ${why}`);
+      if (searchValue !== undefined) bad('SEARCH_PROVIDER', `must be unset when BILLING is module: ${why}`);
+    }
+  }
+  /** Unset: Sonnet on Anthropic; the classify model on an OpenAI-compatible server (one model serves every task). */
+  const factcheckModel = (value: string | undefined) => value ?? (anthropic ? FACTCHECK_MODELS.research : (model ?? ''));
+
   // Limits
   const routeEvalMinAgreement = decimal('ROUTE_EVAL_MIN_AGREEMENT', 0.8, (n) => n <= 1, 'must be a number from 0 to 1');
   const userDailyPostCap = integer('USER_DAILY_POST_CAP', 1000, 0);
@@ -364,6 +439,15 @@ export function loadConfig(env: Env = process.env): Config {
     (n) => n > 0 && n <= 1_000_000,
     'must be a number of dollars above 0 and at most 1000000',
   );
+  const userDailyCheckCap = integer('USER_DAILY_CHECK_CAP', 10, 0);
+  const egressDenyValue = read('EGRESS_DENY');
+  const egressDeny = egressDenyValue ? list(egressDenyValue) : [];
+  try {
+    // The egress fetcher's own parser, so an entry accepted here never fails there.
+    denyList(egressDeny);
+  } catch {
+    bad('EGRESS_DENY', 'must be IP addresses or ip/prefix ranges (prefix up to 32 for IPv4, 128 for IPv6), comma-separated');
+  }
 
   // Alerts (CL4-15): 0 turns a rule off.
   const gigabytes = (name: string, fallback: number, alert: string) =>
@@ -431,6 +515,14 @@ export function loadConfig(env: Env = process.env): Config {
       baseUrl,
       dataPolicy: dataPolicy ?? 'vendor-zdr',
     },
+    factcheck: {
+      enabled: factcheckOn,
+      researchModel: factcheckModel(researchModelValue),
+      synthesisModel: factcheckModel(synthesisModelValue),
+      search,
+      userDailyCheckCap,
+    },
+    egressDeny,
     routeEvalMinAgreement,
     userDailyPostCap,
     userRequestsPerMinute,

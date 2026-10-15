@@ -22,6 +22,7 @@ COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/research/package.json packages/research/
 COPY packages/sync/package.json packages/sync/
 COPY packages/ui/package.json packages/ui/
 RUN pnpm install --frozen-lockfile --filter @unalgorithm/server... --filter @unalgorithm/web...
@@ -44,6 +45,7 @@ COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/platforms/package.json packages/platforms/
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/research/package.json packages/research/
 COPY packages/sync/package.json packages/sync/
 COPY packages/ui/package.json packages/ui/
 RUN pnpm install --frozen-lockfile --prod --filter @unalgorithm/server...
@@ -53,6 +55,9 @@ COPY packages/sync/src packages/sync/src
 COPY packages/ai/src packages/ai/src
 # route-eval imports @unalgorithm/ai/eval: the Cloud opens its eval gate inside the container.
 COPY packages/ai/eval packages/ai/eval
+COPY packages/research/src packages/research/src
+# route-eval scores the research and synthesis routes with @unalgorithm/research/eval (P3-17).
+COPY packages/research/eval packages/research/eval
 COPY apps/server/src apps/server/src
 COPY apps/server/drizzle apps/server/drizzle
 COPY --from=build /repo/apps/web/dist apps/web/dist

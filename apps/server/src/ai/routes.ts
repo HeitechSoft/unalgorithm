@@ -2,12 +2,14 @@
  * AI routes (R20): which model serves each task, stored in the database. A route is allowed only when its data never
  * stays with a third party: an Anthropic model eligible for zero data retention, or an OpenAI-compatible server on
  * hardware the operator controls. It serves requests only after it has passed its eval for the prompt version this
- * server builds, so a prompt change (a bump of `PROMPT_VERSION`) forces a new eval. The one route a server has follows
- * its environment (R36): `syncRouteFromConfig` runs at every start.
+ * server builds, so a prompt change (a bump of `PROMPT_VERSION`, or `FACTCHECK_PROMPT_VERSION` for research and
+ * synthesis) forces a new eval. The routes a server has follow its environment (R36): `syncRouteFromConfig` runs at
+ * every start.
  */
 import { AIError } from '@unalgorithm/ai';
 import { PROMPT_VERSION } from '@unalgorithm/core';
-import { and, eq, sql } from 'drizzle-orm';
+import { FACTCHECK_PROMPT_VERSION } from '@unalgorithm/research';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import { aiRoutes } from '../db/schema.ts';
@@ -18,9 +20,24 @@ export type AiRoute = typeof aiRoutes.$inferSelect;
 /** What a route is, without its id, state or eval: the part the guard checks. */
 export type RouteSpec = Pick<AiRoute, 'task' | 'provider' | 'model' | 'baseUrl' | 'effort' | 'dataPolicy'>;
 
-/** The tasks a route can serve. Research and synthesis arrive in Phase 3. */
-export const ROUTE_TASKS = ['classify'] as const;
+/**
+ * The tasks a route can serve: `classify` (and fact-check's claims extraction), `research` (Anthropic web search) and
+ * `synthesis` (the verdicts), decision D11.
+ */
+export const ROUTE_TASKS = ['classify', 'research', 'synthesis'] as const;
 export type RouteTask = (typeof ROUTE_TASKS)[number];
+
+/** The variable that names each task's model, so a refusal sends the admin to the right setting. */
+const MODEL_VARIABLE: Record<RouteTask, string> = {
+  classify: 'AI_MODEL',
+  research: 'AI_RESEARCH_MODEL',
+  synthesis: 'AI_SYNTHESIS_MODEL',
+};
+
+/** The prompt version a task's eval must have run on: fact-check's own for research and synthesis. */
+export function routePromptVersion(task: RouteTask): number {
+  return task === 'classify' ? PROMPT_VERSION : FACTCHECK_PROMPT_VERSION;
+}
 
 /**
  * Anthropic models eligible for zero data retention. Provisional until Anthropic's zero-data-retention agreement
@@ -42,18 +59,24 @@ export class RouteConfigError extends Error {
 }
 
 /**
- * The guard every route passes before it is stored and again before it is served. A route's provider, model, base URL
- * and data policy come from `AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL` and `AI_DATA_POLICY`, so the reasons name those.
+ * The guard every route passes before it is stored and again before it is served. A route's provider, base URL and
+ * data policy come from `AI_PROVIDER`, `AI_BASE_URL` and `AI_DATA_POLICY`, its model from the task's own variable
+ * (`AI_MODEL`, `AI_RESEARCH_MODEL` or `AI_SYNTHESIS_MODEL`), so the reasons name those.
  */
 export function validateRoute(r: RouteSpec): RouteCheck {
   const no = (reason: string): RouteCheck => ({ ok: false, reason });
   if (!(ROUTE_TASKS as readonly string[]).includes(r.task)) return no(`no AI route can serve the task ${r.task}`);
-  if (r.task === 'classify' && r.effort !== 'low') return no('effort must be low for classify');
+  const task = r.task as RouteTask;
+  if (task === 'classify' && r.effort !== 'low') return no('effort must be low for classify');
+  if (task !== 'classify' && r.effort !== 'medium') return no(`effort must be medium for ${task}`);
+  if (task === 'research' && r.provider !== 'anthropic') return no('the research route needs Anthropic web search');
   if (r.provider === 'anthropic') {
     if (r.dataPolicy !== 'vendor-zdr') return no('AI_DATA_POLICY must be vendor-zdr when AI_PROVIDER is anthropic');
     if (r.baseUrl !== null) return no('AI_BASE_URL must be unset when AI_PROVIDER is anthropic');
     if (!ANTHROPIC_ZDR_ELIGIBLE.includes(r.model)) {
-      return no(`AI_MODEL ${r.model} is not eligible for zero data retention; use one of ${ANTHROPIC_ZDR_ELIGIBLE.join(', ')}`);
+      return no(
+        `${MODEL_VARIABLE[task]} ${r.model} is not eligible for zero data retention; use one of ${ANTHROPIC_ZDR_ELIGIBLE.join(', ')}`,
+      );
     }
     return { ok: true };
   }
@@ -71,45 +94,88 @@ export function validateRoute(r: RouteSpec): RouteCheck {
 /** The advisory lock key for `syncRouteFromConfig`: "UNAR" read as a 32-bit integer (migrations hold "UNAL"). */
 const ROUTE_SYNC_LOCK_KEY = 1431191890;
 
-/**
- * The `classify` route the configuration describes, past the guard: a `RouteConfigError` when it breaks a routing
- * rule. The server stores it at startup (`syncRouteFromConfig`); `check-config` runs the same check without a database.
- */
-export function configuredRoute(config: Config): RouteSpec {
-  const { provider, model, baseUrl, dataPolicy } = config.ai;
-  const route: RouteSpec = { task: 'classify', provider, model, baseUrl: baseUrl ?? null, effort: 'low', dataPolicy };
+/** A route the configuration describes for `task`, past the guard: a `RouteConfigError` when it breaks a rule. */
+function checkedRoute(config: Config, task: RouteTask, model: string, effort: 'low' | 'medium'): RouteSpec {
+  const { provider, baseUrl, dataPolicy } = config.ai;
+  const route: RouteSpec = { task, provider, model, baseUrl: baseUrl ?? null, effort, dataPolicy };
   const check = validateRoute(route);
   if (!check.ok) throw new RouteConfigError(check.reason);
   return route;
 }
 
 /**
- * Makes the enabled `classify` route the one the configuration describes, at startup. The route is checked first and
- * a `RouteConfigError` thrown before anything is written. A route that already matches is kept with its eval result;
- * otherwise it is disabled and the new route inserted with no eval, in one transaction. Two servers starting together
- * take turns on an advisory lock, so the second finds the first one's route and keeps it.
+ * The `classify` route the configuration describes, past the guard: a `RouteConfigError` when it breaks a routing
+ * rule. The server stores it at startup (`syncRouteFromConfig`); `check-config` runs the same check without a database.
+ */
+export function configuredRoute(config: Config): RouteSpec {
+  return checkedRoute(config, 'classify', config.ai.model, 'low');
+}
+
+/**
+ * Every route the configuration describes, each past the guard: `classify`, and with fact-check on `synthesis`, plus
+ * `research` when no search provider is set (Anthropic web search researches then). Same provider, base URL and data
+ * policy as `classify`.
+ */
+export function configuredRoutes(config: Config): RouteSpec[] {
+  const routes = [configuredRoute(config)];
+  const { factcheck } = config;
+  if (factcheck.enabled) {
+    routes.push(checkedRoute(config, 'synthesis', factcheck.synthesisModel, 'medium'));
+    if (factcheck.search === null) routes.push(checkedRoute(config, 'research', factcheck.researchModel, 'medium'));
+  }
+  return routes;
+}
+
+/** The fact-check tasks, whose routes are disabled when the configuration no longer has them. */
+const OPTIONAL_TASKS: readonly RouteTask[] = ['research', 'synthesis'];
+
+/**
+ * Makes the enabled routes the ones the configuration describes, at startup, and returns the `classify` route. Every
+ * route is checked first and a `RouteConfigError` thrown before anything is written. A route that already matches is
+ * kept with its eval result; otherwise it is disabled and the new route inserted with no eval. An enabled research or
+ * synthesis route the configuration no longer has is disabled. All in one transaction: two servers starting together
+ * take turns on an advisory lock, so the second finds the first one's routes and keeps them.
  */
 export async function syncRouteFromConfig(db: Db, config: Config, log: Logger): Promise<AiRoute> {
-  const wanted = configuredRoute(config);
+  const wanted = configuredRoutes(config);
 
-  const route = await db.transaction(async (tx) => {
+  const routes = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${ROUTE_SYNC_LOCK_KEY})`);
-    const [current] = await tx
-      .select()
-      .from(aiRoutes)
-      .where(and(eq(aiRoutes.task, wanted.task), eq(aiRoutes.enabled, true)));
-    if (current && sameRoute(current, wanted)) return current;
-    if (current) await tx.update(aiRoutes).set({ enabled: false }).where(eq(aiRoutes.id, current.id));
-    const [inserted] = await tx.insert(aiRoutes).values(wanted).returning();
-    if (!inserted) throw new Error('The AI route was not inserted.');
-    return inserted;
+    const synced: AiRoute[] = [];
+    for (const spec of wanted) {
+      const [current] = await tx
+        .select()
+        .from(aiRoutes)
+        .where(and(eq(aiRoutes.task, spec.task), eq(aiRoutes.enabled, true)));
+      if (current && sameRoute(current, spec)) {
+        synced.push(current);
+        continue;
+      }
+      if (current) await tx.update(aiRoutes).set({ enabled: false }).where(eq(aiRoutes.id, current.id));
+      const [inserted] = await tx.insert(aiRoutes).values(spec).returning();
+      if (!inserted) throw new Error('The AI route was not inserted.');
+      synced.push(inserted);
+    }
+    const unused = OPTIONAL_TASKS.filter((task) => !wanted.some((r) => r.task === task));
+    if (unused.length) {
+      await tx
+        .update(aiRoutes)
+        .set({ enabled: false })
+        .where(and(inArray(aiRoutes.task, [...unused]), eq(aiRoutes.enabled, true)));
+    }
+    return synced;
   });
-  log.info('ai.route.synced', {
-    provider: route.provider,
-    model: route.model,
-    eval: evalPassed(route, config.routeEvalMinAgreement) ? 'passed' : 'pending',
-  });
-  return route;
+  for (const route of routes) {
+    log.info('ai.route.synced', {
+      task: route.task,
+      provider: route.provider,
+      model: route.model,
+      eval: evalPassed(route, config.routeEvalMinAgreement) ? 'passed' : 'pending',
+    });
+  }
+  const classify = routes.find((r) => r.task === 'classify');
+  if (!classify) throw new Error('The classify route was not synced.');
+  return classify;
 }
 
 /** Whether two routes are the same provider, model, endpoint, effort and data policy (the task is the caller's). */
@@ -123,11 +189,11 @@ export function sameRoute(a: RouteSpec, b: RouteSpec): boolean {
   );
 }
 
-/** Whether the route passed its last eval, run on this server's prompt version, with at least `minAgreement`. */
+/** Whether the route passed its last eval, run on its task's prompt version, with at least `minAgreement`. */
 function evalPassed(route: AiRoute, minAgreement: number): boolean {
   return (
     route.evalPassedAt !== null &&
-    route.evalPromptVersion === PROMPT_VERSION &&
+    route.evalPromptVersion === routePromptVersion(route.task as RouteTask) &&
     route.evalAgreement !== null &&
     route.evalAgreement >= minAgreement
   );

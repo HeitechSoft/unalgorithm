@@ -161,7 +161,7 @@ export function deniedAddress(address: string, extra?: BlockList): boolean {
 }
 
 /** EGRESS_DENY entries (an IP or `ip/prefix`) as a BlockList; a bad entry throws without echoing it. */
-function denyList(entries: readonly string[]): BlockList {
+export function denyList(entries: readonly string[]): BlockList {
   const list = new BlockList();
   entries.forEach((entry, i) => {
     const [ip = '', prefix, ...more] = entry.trim().split('/');
