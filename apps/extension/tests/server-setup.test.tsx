@@ -252,6 +252,27 @@ describe('flow', () => {
     expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
   });
 
+  it('test_cloud_consent_links_beta_documents', async () => {
+    const { user } = renderSetup();
+    await continueTo(user);
+    for (const [name, href] of [
+      ['Beta privacy notice', 'https://unalgorithmfeed.com/cloud/beta-privacy'],
+      ['Beta terms', 'https://unalgorithmfeed.com/cloud/beta-terms'],
+    ] as const) {
+      const link = screen.getByRole('link', { name }) as HTMLAnchorElement;
+      expect(link.href).toBe(href);
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toBe('noreferrer');
+    }
+  });
+
+  it('test_self_hosted_consent_has_no_beta_links', async () => {
+    const { user } = renderSetup();
+    await continueTo(user, SELF_HOSTED);
+    expect(screen.queryAllByRole('link')).toEqual([]);
+    expect(document.body.textContent).not.toMatch(/Beta privacy notice|Beta terms/);
+  });
+
   it('test_permission_requested_before_sign_in', async () => {
     let { user } = renderSetup();
     fireEvent.click(await continueTo(user));

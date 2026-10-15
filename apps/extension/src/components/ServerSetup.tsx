@@ -1,5 +1,5 @@
 import type { AISourceConfig, Device } from '@unalgorithm/core';
-import { MAX_POST_CHARS } from '@unalgorithm/protocol';
+import { CLOUD_BETA_DOCUMENTS, MAX_POST_CHARS, siteUrl } from '@unalgorithm/protocol';
 import { Badge, Banner, Button, ListRow, TextField } from '@unalgorithm/ui';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
@@ -171,6 +171,16 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
         {label.isCloud ? <p className="ua-footnote">UnAlgorithm Cloud is invite-only during the beta.</p> : null}
         <p className="ua-footnote">{WHAT_IS_SENT}</p>
         <p className="ua-footnote">{NEVER_SENT}</p>
+        {label.isCloud ? (
+          // The beta's notice and terms on the website (R47a); a self-hosted server's operator has their own.
+          <p className="ua-footnote ua-hstack ua-wrap">
+            {CLOUD_BETA_DOCUMENTS.map((doc) => (
+              <a key={doc.path} href={siteUrl(doc)} target="_blank" rel="noreferrer">
+                {doc.linkText}
+              </a>
+            ))}
+          </p>
+        ) : null}
         {problem}
         <div className="ua-hstack ua-wrap">
           <Button variant="primary" loading={busy} onClick={() => signIn(origin)}>
