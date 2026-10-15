@@ -1,4 +1,4 @@
-import { dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
+import { checkCostLine, dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
 import type { PlatformId, PostKey } from '@unalgorithm/protocol';
 import {
   Banner,
@@ -95,7 +95,7 @@ export function App() {
         {openEntry.task === 'perspectives' ? (
           <PerspectivesSheet {...sheet} result={openEntry.perspectives} />
         ) : (
-          <FactcheckSheet {...sheet} result={openEntry.result} />
+          <FactcheckSheet {...sheet} result={openEntry.result} costLine={checkCostLine(openEntry)} />
         )}
       </main>
     );

@@ -119,6 +119,46 @@ describe('FactcheckSheet', () => {
     expect(screen.getByText(`Checked ${when}`)).toBeTruthy();
   });
 
+  it('test_sheet_shows_cost_line', () => {
+    const { container } = render(
+      <FactcheckSheet
+        label="A post about a bridge"
+        status="done"
+        result={result()}
+        costLine="Charged $0.19 to your balance."
+        onBack={() => {}}
+      />,
+    );
+    const foot = container.querySelector('.ua-factcheck-foot') as HTMLElement;
+    const lines = [...foot.children].map((c) => c.textContent);
+    expect(lines.slice(1)).toEqual(['AI can be wrong, so open the sources.', 'Charged $0.19 to your balance.']);
+    cleanup();
+
+    const { container: plain } = render(
+      <FactcheckSheet label="A post about a bridge" status="done" result={result()} costLine={null} onBack={() => {}} />,
+    );
+    const plainFoot = plain.querySelector('.ua-factcheck-foot') as HTMLElement;
+    expect(plainFoot.children).toHaveLength(2);
+    expect(plainFoot.lastElementChild?.textContent).toBe('AI can be wrong, so open the sources.');
+  });
+
+  it('test_sheet_marks_earlier_check_without_empty_explanation', () => {
+    const CACHED_AT = '2026-10-14T09:00:00.000Z';
+    const r = result();
+    r.claims = [{ ...r.claims[0]!, explanation: '', cachedAt: CACHED_AT }, r.claims[1]!];
+    const { container } = render(<FactcheckSheet label="A post" status="done" result={r} onBack={() => {}} />);
+    const [cached, fresh] = screen.getAllByRole('listitem') as HTMLElement[];
+    const day = new Date(CACHED_AT).toLocaleDateString(undefined, { dateStyle: 'medium' });
+    const note = within(cached!).getByText(`From an earlier check on ${day}.`);
+    expect(note.className).toBe('ua-factcheck-note');
+    expect(note.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(cached!.querySelector('.ua-factcheck-explanation')).toBeNull();
+
+    expect(within(fresh!).getByText('Several bridges are longer.')).toBeTruthy();
+    expect(within(fresh!).queryByText(/From an earlier check/)).toBeNull();
+    expect(container.querySelectorAll('.ua-factcheck-explanation')).toHaveLength(1);
+  });
+
   it('test_sheet_shows_downgrade_note', () => {
     const r = result();
     r.claims = [

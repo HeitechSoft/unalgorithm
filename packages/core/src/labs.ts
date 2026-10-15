@@ -116,6 +116,17 @@ export function jobPriceLabel(
   return price ? `About ${formatPrice(price.typicalMicros)}, at most ${formatPrice(price.maxMicros)}` : null;
 }
 
+/**
+ * The line under a finished check (decision D72, draft wording): what it cost on the person's own key, or what their
+ * server charged. Null when nothing is known (an unpriced model, a free server). The price shown first
+ * (`jobPriceLabel`) cannot know whether the claim cache will answer; this line shows what the check actually cost.
+ */
+export function checkCostLine(e: { costMicros?: number | undefined; chargedMicros?: number | undefined }): string | null {
+  if (e.chargedMicros !== undefined) return `Charged ${formatPrice(e.chargedMicros)} to your balance.`;
+  if (e.costMicros !== undefined) return `This check cost about ${formatPrice(e.costMicros)} on your own key.`;
+  return null;
+}
+
 /** The fact-check price label: `jobPriceLabel('factcheck', …)`. */
 export const factcheckPriceLabel = (
   cfg: AISourceConfig | null,

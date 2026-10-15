@@ -2,6 +2,7 @@ import type { ServerInfo } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   type AISourceConfig,
+  checkCostLine,
   type Device,
   defaultDevice,
   factcheckOffered,
@@ -211,6 +212,16 @@ describe('Price label', () => {
     expect(factcheckPriceLabel(SERVER, { ...FREE_OFFER, factcheck: false })).toBeNull();
     expect(factcheckPriceLabel(SERVER, { ...PAID_OFFER, factcheckPrice: null })).toBeNull();
     expect(factcheckPriceLabel(ANTHROPIC, PAID_OFFER)).toBe('About $0.12 on your Anthropic account');
+  });
+});
+
+describe('Cost line', () => {
+  it('test_check_cost_line_texts', () => {
+    expect(checkCostLine({ chargedMicros: 400 })).toBe('Charged <$0.01 to your balance.');
+    expect(checkCostLine({ chargedMicros: 190_000 })).toBe('Charged $0.19 to your balance.');
+    expect(checkCostLine({ costMicros: 150 })).toBe('This check cost about <$0.01 on your own key.');
+    expect(checkCostLine({})).toBeNull();
+    expect(checkCostLine({ costMicros: 150, chargedMicros: 190_000 })).toBe('Charged $0.19 to your balance.');
   });
 });
 

@@ -273,6 +273,8 @@ describe('happy path', () => {
       expect(res.result).toStrictEqual(entry?.result);
       expect(res.costMicros).toBe(entry?.costMicros);
     }
+    expect(entry?.costMicros).toBeGreaterThan(0);
+    expect(entry).not.toHaveProperty('chargedMicros');
   });
 
   it('test_factcheck_opens_side_panel_before_first_await', async () => {

@@ -177,7 +177,7 @@ describe('lifecycle', () => {
     const billing = { chargedMicros: 270_000, balanceMicros: 4_730_000 };
     useServer(happyServer({ billing }));
     note = notes();
-    expect(await run(FB_REQ, note)).toEqual({ ok: true, result: RESULT });
+    expect(await run(FB_REQ, note)).toEqual({ ok: true, result: RESULT, chargedMicros: 270_000 });
     expect(note.settlement).toHaveBeenCalledTimes(1);
     expect(note.settlement).toHaveBeenCalledWith(ORIGIN, ACCOUNT.deviceId, billing);
     expect(note.refused).not.toHaveBeenCalled();

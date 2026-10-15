@@ -54,7 +54,8 @@ export interface ServerJobTask<R> {
   noun: 'check' | 'comparison';
   message(code: AIErrorCode, title: string): string;
 }
-export type ServerJobResult<R> = { ok: true; result: R } | { ok: false; error: BgError };
+/** `chargedMicros`: what a billing server charged for a done job (none from a `BILLING=off` server). */
+export type ServerJobResult<R> = { ok: true; result: R; chargedMicros?: number } | { ok: false; error: BgError };
 export type ServerFactcheckResult = ServerJobResult<FactcheckResult>;
 export type ServerPerspectivesResult = ServerJobResult<PerspectivesResult>;
 
@@ -170,7 +171,9 @@ export async function runJobViaServer<R>(
     ended = true;
 
     if (job.billing) await note.settlement(origin, deviceId, job.billing).catch(() => undefined);
-    if (job.status === 'done' && job.result) return { ok: true, result: job.result };
+    if (job.status === 'done' && job.result) {
+      return { ok: true, result: job.result, ...(job.billing ? { chargedMicros: job.billing.chargedMicros } : {}) };
+    }
     if (job.status === 'failed' && job.error) return refusal(job.error.code);
     return STOPPED();
   } finally {

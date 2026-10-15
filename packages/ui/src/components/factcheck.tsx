@@ -23,16 +23,20 @@ export interface FactcheckSheetProps {
   errorMessage?: string;
   /** Up to 4 older checks on this tab. */
   earlier?: { label: string; onOpen(): void }[];
+  /** What the check cost or was charged (`checkCostLine`), shown in the footer when set. */
+  costLine?: string | null | undefined;
   onBack(): void;
 }
 
 const CHECKED_AT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
+/** The date only: a cached time is kept only to the hour, and a clock time would say when someone else checked. */
+const CACHED_AT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium' };
 
 /**
  * One fact-check in the side panel: each claim with its verdict, explanation and quoted sources. Model and page text
  * render only as React text nodes; source URLs are http(s) by `FactcheckSourceSchema`.
  */
-export function FactcheckSheet({ label, status, result, errorMessage, earlier = [], onBack }: FactcheckSheetProps) {
+export function FactcheckSheet({ label, status, result, errorMessage, earlier = [], costLine, onBack }: FactcheckSheetProps) {
   return (
     <section className="ua-factcheck" aria-label="Fact-check">
       <div className="ua-factcheck-head">
@@ -69,6 +73,7 @@ export function FactcheckSheet({ label, status, result, errorMessage, earlier = 
         <footer className="ua-factcheck-foot">
           <div>Checked {new Date(result.checkedAt).toLocaleString(undefined, CHECKED_AT_FORMAT)}</div>
           <div>AI can be wrong, so open the sources.</div>
+          {costLine ? <div>{costLine}</div> : null}
         </footer>
       ) : null}
 
@@ -95,7 +100,12 @@ function ClaimItem({ claim, sources }: { claim: FactcheckClaim; sources: Factche
       <div>
         <Badge tone={verdict.tone}>{verdict.label}</Badge>
       </div>
-      <p className="ua-factcheck-explanation">{claim.explanation}</p>
+      {claim.cachedAt ? (
+        <p className="ua-factcheck-note">
+          From an earlier check on {new Date(claim.cachedAt).toLocaleDateString(undefined, CACHED_AT_FORMAT)}.
+        </p>
+      ) : null}
+      {claim.explanation ? <p className="ua-factcheck-explanation">{claim.explanation}</p> : null}
       {claim.downgraded === 'too-few-domains' ? <p className="ua-factcheck-note">Fewer than two independent sources.</p> : null}
       {claim.citations.map((cite, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: citations have no id of their own and never reorder

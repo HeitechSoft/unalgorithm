@@ -110,6 +110,8 @@ export interface FactcheckEntry {
   perspectives?: PerspectivesResult;
   error?: BgError;
   costMicros?: number;
+  /** What the server charged for this check (a billing server only). */
+  chargedMicros?: number;
 }
 
 /** A tab's fact-checks and comparisons, newest first (at most 5). Removed when the tab closes. */

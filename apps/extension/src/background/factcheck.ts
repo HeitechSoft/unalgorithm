@@ -58,7 +58,8 @@ type PerspectivesResponse = BgResponses['perspectives'];
 /** A tab's task: a fact-check, or an "Other perspectives" comparison. */
 type Task = 'factcheck' | 'perspectives';
 type Refusal = { ok: false; error: BgError };
-type TaskAnswer<R> = { ok: true; result: R; costMicros?: number } | Refusal;
+/** `costMicros`: an own-key run's cost; `chargedMicros`: what the server charged. */
+type TaskAnswer<R> = { ok: true; result: R; costMicros?: number; chargedMicros?: number } | Refusal;
 /** A source whose provider the browser calls directly, on the person's own key. */
 type OwnKey = Extract<AISourceConfig, { kind: 'anthropic' | 'openai' | 'openai-compatible' }>;
 
@@ -177,7 +178,7 @@ export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omi
 
 const ONLY_PUBLIC = 'Fact-check works only on public posts.';
 
-/** The server's own check (P3-21): the server meters, so a done entry has no `costMicros`. */
+/** The server's own check (P3-21): the server meters, so a done entry has its `chargedMicros`, never `costMicros`. */
 async function runOnServer(
   tabId: number,
   key: PostKey,
@@ -281,7 +282,10 @@ async function track<A extends TaskAnswer<unknown>>(
 
     const answer = await run();
     if (answer.ok) {
-      const cost = answer.costMicros !== undefined ? { costMicros: answer.costMicros } : {};
+      const cost = {
+        ...(answer.costMicros !== undefined ? { costMicros: answer.costMicros } : {}),
+        ...(answer.chargedMicros !== undefined ? { chargedMicros: answer.chargedMicros } : {}),
+      };
       const result = task === 'perspectives' ? { perspectives: answer.result } : { result: answer.result };
       await settle({ status: 'done', ...(result as Partial<FactcheckEntry>), ...cost });
     } else {

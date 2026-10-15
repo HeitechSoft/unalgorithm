@@ -261,9 +261,36 @@ describe('job flow', () => {
     const billing = { chargedMicros: 120_000, balanceMicros: 4_880_000 };
     useServer(happyServer({ billing }));
     const note = notes();
-    expect(await run(note)).toEqual({ ok: true, result: RESULT });
+    expect(await run(note)).toEqual({ ok: true, result: RESULT, chargedMicros: 120_000 });
     expect(note.settlement).toHaveBeenCalledTimes(1);
     expect(note.settlement).toHaveBeenCalledWith(ORIGIN, account().deviceId, billing);
+  });
+
+  it('test_server_job_returns_charged_amount', async () => {
+    const billing = { chargedMicros: 412, balanceMicros: 900_000 };
+    useServer(happyServer({ billing }));
+    expect(await run()).toEqual({ ok: true, result: RESULT, chargedMicros: 412 });
+
+    useServer(happyServer());
+    expect(await run()).not.toHaveProperty('chargedMicros');
+
+    useServer((url, init) =>
+      isStart(url, init)
+        ? json(202, job('running'))
+        : json(200, job('failed', { error: { code: 'truncated', message: SERVER_TEXT }, billing })),
+    );
+    const failed = await run();
+    expect(failed.ok).toBe(false);
+    expect(failed).not.toHaveProperty('chargedMicros');
+  });
+
+  it('test_entry_keeps_charged_amount', async () => {
+    useServer(happyServer({ billing: { chargedMicros: 412, balanceMicros: 900_000 } }));
+    await setup();
+    expect(await factcheck()).toEqual({ ok: true, result: RESULT, chargedMicros: 412 });
+    const [entry] = await entries();
+    expect(entry).toMatchObject({ status: 'done', chargedMicros: 412 });
+    expect(entry).not.toHaveProperty('costMicros');
   });
 
   it('test_server_factcheck_lost_job', async () => {
