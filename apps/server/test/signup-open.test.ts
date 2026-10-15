@@ -60,6 +60,10 @@ describe('open sign-ups', { timeout: PGLITE_TIMEOUT }, () => {
     expect(location.searchParams.get('error')).toBe('SIGNUP_CLOSED');
     expect(sessionCookie(refused)).toBe('');
     expect(await usersWithEmail(t, OTHER)).toHaveLength(0);
+
+    // Neither the sign-up nor the refusal logs an address (AC 8).
+    expect(t.lines.length).toBeGreaterThan(0);
+    expect(t.lines.filter((line) => line.includes('@'))).toEqual([]);
   });
 });
 

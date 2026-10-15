@@ -139,7 +139,7 @@ To let anyone join, set `SIGNUP=open`: every address its provider verified (an e
 `email_verified`) can create an account, with no allowlist or invite. `SIGNUP=open` lets anyone with a verified address
 create an account and use this server's AI at your cost. Use it with a billing module, or keep per-user caps
 (`USER_DAILY_POST_CAP`) and the daily spend limit (`DAILY_SPEND_LIMIT_USD`) low. Each address is sent at most 5 sign-in
-codes an hour, whoever asks, so the server cannot be used to flood someone's mailbox.
+codes at once, then one every 12 minutes, whoever asks, so the server cannot be used to flood someone's mailbox.
 
 Optional: sign in with Google, besides email codes. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` together, as the
 comment above them in `.env.example` says; it also gives the redirect address to register with Google
