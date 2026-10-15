@@ -4,7 +4,7 @@ import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin
 import { expect, test } from './fixtures.ts';
 import { BILLING_FIXTURE_MODULE } from './server-harness.ts';
 import { useLocalServer } from './server-lifecycle.ts';
-import { signInFromSettings } from './server-sign-in.ts';
+import { allowServer, signInFromSettings } from './server-sign-in.ts';
 
 /**
  * Credits end to end (CL2): the real server process with the public test billing module (100 micro-dollars a post),
@@ -112,9 +112,7 @@ function billingEnv(startMicros: number): Record<string, string> {
 
 /** Lets the extension reach the local server, then signs in from Settings with an emailed code. */
 async function signIn(context: BrowserContext, extensionId: string, serverUrl: string): Promise<void> {
-  await context.route('http://127.0.0.1:*/**', (route) => route.continue());
-  // Where the sign-in page sends the browser back; the extension reads the address from the tab and closes it.
-  await context.route(`https://${extensionId}.chromiumapp.org/**`, (route) => route.fulfill({ status: 200, body: 'ok' }));
+  await allowServer(context, extensionId);
   await signInFromSettings(context, extensionId, serverUrl, EMAIL);
 }
 

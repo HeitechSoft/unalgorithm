@@ -44,6 +44,33 @@ export function linkedinShell(scheme: 'light' | 'dark' = 'light'): string {
 </style></head><body>${cards}</body></html>`;
 }
 
+/**
+ * A persistent context on a temporary profile with the e2e build of the extension loaded. No real network at all:
+ * every request other than the extension's own is aborted unless a test routes it.
+ */
+export async function launchExtensionContext(): Promise<BrowserContext> {
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    viewport: { width: 1280, height: 860 },
+    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
+  });
+  await context.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith('chrome-extension://') || url.startsWith('data:')) return route.continue();
+    return route.abort();
+  });
+  return context;
+}
+
+/** The loaded extension's id, read from its service worker; always the id of the e2e build's dev key. */
+export async function extensionIdOf(context: BrowserContext): Promise<string> {
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  const id = new URL(sw.url()).host;
+  if (id !== devKey.id) throw new Error(`unexpected extension id ${id}`);
+  return id;
+}
+
 export const test = base.extend<{
   context: BrowserContext;
   extensionId: string;
@@ -51,26 +78,12 @@ export const test = base.extend<{
 }>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture signature
   context: async ({}, use) => {
-    const context = await chromium.launchPersistentContext('', {
-      channel: 'chromium',
-      viewport: { width: 1280, height: 860 },
-      args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
-    });
-    // No real network at all: everything is aborted unless a test serves it.
-    await context.route('**/*', (route) => {
-      const url = route.request().url();
-      if (url.startsWith('chrome-extension://') || url.startsWith('data:')) return route.continue();
-      return route.abort();
-    });
+    const context = await launchExtensionContext();
     await use(context);
     await context.close();
   },
   extensionId: async ({ context }, use) => {
-    let [sw] = context.serviceWorkers();
-    if (!sw) sw = await context.waitForEvent('serviceworker');
-    const id = new URL(sw.url()).host;
-    if (id !== devKey.id) throw new Error(`unexpected extension id ${id}`);
-    await use(id);
+    await use(await extensionIdOf(context));
   },
   feed: async ({ context }, use) => {
     await use(async (scheme = 'light') => {

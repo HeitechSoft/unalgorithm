@@ -1,5 +1,4 @@
-import AxeBuilder from '@axe-core/playwright';
-import type { BrowserContext, Locator, Page } from '@playwright/test';
+import type { BrowserContext } from '@playwright/test';
 import {
   ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
@@ -16,7 +15,7 @@ import {
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { expect, test } from './fixtures.ts';
 import { useLocalServer } from './server-lifecycle.ts';
-import { signInFromSettings } from './server-sign-in.ts';
+import { allowServer, expectAccessible, expectDialogTrapsFocus, signInFromSettings } from './server-sign-in.ts';
 
 /**
  * The walking skeleton end to end (CL1): a fresh extension signs in to a real server process with an emailed code, and
@@ -50,12 +49,9 @@ test.describe('a self-hosted server', () => {
     expect(FIRST_DEGREE_POST).toContain(AUTHOR);
 
     const classifyBodies: string[] = [];
-    await context.route('http://127.0.0.1:*/**', (route) => {
-      if (new URL(route.request().url()).pathname === CLASSIFY_PATH) classifyBodies.push(route.request().postData() ?? '');
-      return route.continue();
+    await allowServer(context, extensionId, (requestUrl, body) => {
+      if (new URL(requestUrl).pathname === CLASSIFY_PATH) classifyBodies.push(body);
     });
-    // Where the sign-in page sends the browser back; the extension reads the address from the tab and closes it.
-    await context.route(`https://${extensionId}.chromiumapp.org/**`, (route) => route.fulfill({ status: 200, body: 'ok' }));
 
     // Sign in from Settings with the emailed code; the sign-in page is checked at its email and code steps.
     await signInFromSettings(context, extensionId, url, EMAIL, (step, page) =>
@@ -174,46 +170,4 @@ async function expectAccountDialogsTrapFocus(context: BrowserContext, serverUrl:
   expect(posted).not.toContain(ACCOUNT_DELETE_PATH);
   await expect(page.getByText(`Signed in as ${EMAIL}`)).toBeVisible();
   await page.close();
-}
-
-/**
- * Opens a confirm dialog with `opener` and checks it as a modal: the focus starts on "Cancel"; pressing Tab as many
- * times as the dialog has `controls`, plus one, never focuses anything behind it (past its last control a browser may
- * hand the focus to its own toolbar, which leaves the page with no focused element, and the next Tab comes back into
- * the dialog); the Escape key closes it.
- */
-async function expectDialogTrapsFocus(page: Page, opener: Locator, controls: number): Promise<void> {
-  await opener.click();
-  const dialog = page.locator('dialog[open]');
-  await expect(dialog).toHaveCount(1);
-  await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-  /** Where the focus is: in the dialog, on nothing in the page, or on something behind the dialog. */
-  const focus = () =>
-    dialog.evaluate((d) => {
-      const active = document.activeElement;
-      if (active === null || active === document.body) return 'nothing';
-      return d.contains(active) ? 'dialog' : 'behind';
-    });
-  for (let press = 0; press <= controls; press++) {
-    await page.keyboard.press('Tab');
-    expect(await focus()).not.toBe('behind');
-  }
-  expect(await focus()).toBe('dialog');
-  await page.keyboard.press('Escape');
-  await expect(page.locator('dialog[open]')).toHaveCount(0);
-}
-
-/** No serious or critical axe violations, as `a11y.spec.ts` checks the extension's own pages. Soft, so sign-in goes on. */
-async function expectAccessible(page: Page): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
-  const problems = results.violations
-    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    .map(
-      (v) =>
-        `${v.id} (${v.impact}) ${v.nodes
-          .slice(0, 3)
-          .map((n) => n.target.join(' '))
-          .join(' | ')}`,
-    );
-  expect.soft(problems, problems.join('\n')).toEqual([]);
 }
