@@ -8,12 +8,11 @@
  * Days are UTC. A row's `created_at` is taken from the server's clock, the clock `utcDayStart` reads, so the daily
  * queries and the rows they count always agree on where a day starts.
  */
-import { costMicros, type NormalizedUsage } from '@unalgorithm/protocol';
-import { and, eq, gte, type SQL, sql } from 'drizzle-orm';
+import { type CreditTask, costMicros, type NormalizedUsage } from '@unalgorithm/protocol';
+import { and, count, eq, gt, gte, type SQL, sql } from 'drizzle-orm';
 import { type Db, queryErrorFields } from '../db/client.ts';
 import { usageEvents } from '../db/schema.ts';
 import type { Logger } from '../log.ts';
-import type { RouteTask } from './routes.ts';
 
 /**
  * How a request ended: `ok` when every requested post succeeded, `partial` when some did, `failed` when none did after
@@ -28,8 +27,9 @@ export interface UsageEventInput {
   deviceId: string | null;
   /** Null when no route served the request. */
   routeId: string | null;
-  task: RouteTask;
-  /** The route's model, whose price card prices the row. */
+  /** The task charged for: a job (`factcheck`, `perspectives`) records `postsRequested: 1, postsOk: 0`. */
+  task: CreditTask;
+  /** The route's model, whose price card prices the row unless the costs are given below. */
   model: string;
   outcome: UsageOutcome;
   postsRequested: number;
@@ -40,6 +40,10 @@ export interface UsageEventInput {
   usage: NormalizedUsage;
   /** The tokens of calls that returned a valid answer (`ClassifyOutcome.okUsage`). */
   okUsage: NormalizedUsage;
+  /** A job spanning models: the sum of its calls' costs as measured (null: a model without a price card). */
+  costMicros?: number | null;
+  /** A job: the cost of the calls that answered when it finished, 0 when it failed or was cancelled. */
+  chargeableCostMicros?: number | null;
 }
 
 /**
@@ -68,8 +72,14 @@ export async function recordUsageEvent(db: Db, e: UsageEventInput, log: Logger):
       output: usage.output,
       webSearches: usage.webSearches,
       estimated: usage.estimated,
-      costMicros: costMicros(e.model, usage) ?? null,
-      chargeableCostMicros: e.postsOk === 0 ? 0 : (costMicros(e.model, e.okUsage) ?? null),
+      // A cost given (even null) is stored as given; a job's calls may span models no single price card covers.
+      costMicros: 'costMicros' in e ? (e.costMicros ?? null) : (costMicros(e.model, usage) ?? null),
+      chargeableCostMicros:
+        'chargeableCostMicros' in e
+          ? (e.chargeableCostMicros ?? null)
+          : e.postsOk === 0
+            ? 0
+            : (costMicros(e.model, e.okUsage) ?? null),
       createdAt: new Date(),
     });
   } catch (err) {
@@ -85,6 +95,22 @@ export function utcDayStart(now: Date = new Date()): Date {
 /** The posts classified for `userId` since 00:00 UTC: the sum of `posts_ok`, for the per-user daily cap. */
 export async function postsToday(db: Db, userId: string, now: Date = new Date()): Promise<number> {
   return sumSince(db, usageEvents.postsOk, now, eq(usageEvents.userId, userId));
+}
+
+/** Checks that reached a model for `userId` since 00:00 UTC: rows with task 'factcheck' and calls > 0. */
+export async function checksToday(db: Db, userId: string, now: Date = new Date()): Promise<number> {
+  const [row] = await db
+    .select({ n: count().mapWith(Number) })
+    .from(usageEvents)
+    .where(
+      and(
+        gte(usageEvents.createdAt, utcDayStart(now)),
+        eq(usageEvents.userId, userId),
+        eq(usageEvents.task, 'factcheck'),
+        gt(usageEvents.calls, 0),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 /**

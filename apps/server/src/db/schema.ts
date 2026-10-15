@@ -150,7 +150,7 @@ export const usageEvents = pgTable(
     deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
     /** Null when no route served the request (none was configured, or none had passed its eval). */
     routeId: uuid('route_id').references(() => aiRoutes.id),
-    /** 'classify'. */
+    /** A `CreditTask`: 'classify', or a job's 'factcheck' or 'perspectives' (one row per job, `posts_ok` 0). */
     task: text('task').notNull(),
     model: text('model').notNull(),
     /** 'ok', 'partial', 'failed' or 'refused-before-call' (`UsageEventInput`). */

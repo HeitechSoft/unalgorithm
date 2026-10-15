@@ -2,7 +2,8 @@
  * The guards in front of every classify call (R24). Whoever runs a server pays its AI bill, so before a request reaches
  * a model it passes three checks, the cheap one first: a per-user rate limit, the daily spend breaker over everyone's
  * cost, and the per-user daily post cap. A refusal is an `AIError` that the app answers with 429 and `describeError`
- * text; the gateway meters it as `refused-before-call`.
+ * text; the gateway meters it as `refused-before-call`. A fact-check passes the same rate limit (one bucket) and
+ * breaker, then a per-user daily check cap instead of the post cap (`checkFactcheckLimits`).
  *
  * Days are UTC, as in metering (CL1-13). The rate buckets and the posts in flight live in memory: a deployment runs one
  * server process in CL1, so memory is enough. A shared store is needed only once the server runs as several processes.
@@ -14,7 +15,7 @@ import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import { userLimits } from '../db/schema.ts';
 import type { Logger } from '../log.ts';
-import { postsToday, spendTodayMicros, utcDayStart } from './metering.ts';
+import { checksToday, postsToday, spendTodayMicros, utcDayStart } from './metering.ts';
 
 export type RateDecision = { ok: true } | { ok: false; retryAfterMs: number };
 
@@ -91,7 +92,7 @@ export function createRateLimiter(rate: Rate): RateLimiter {
   };
 }
 
-export type LimitConfig = Pick<Config, 'userDailyPostCap' | 'dailySpendLimitMicros'>;
+export type LimitConfig = Pick<Config, 'userDailyPostCap' | 'dailySpendLimitMicros' | 'factcheck'>;
 
 export interface LimitDeps {
   db: Db;
@@ -99,10 +100,12 @@ export interface LimitDeps {
   /** One per server process, made with `config.userRequestsPerMinute`. */
   limiter: RateLimiter;
   log: Logger;
-  /** Kept by `checkLimits`: the UTC day (its start, in ms) whose breaker trip was logged, so it is logged once a day. */
+  /** Kept by the spend breaker: the UTC day (its start, in ms) whose breaker trip was logged, so it is logged once a day. */
   breakerLoggedDay?: number;
   /** Kept by `checkLimits`: each user's posts in flight, let through but not yet in a usage row. */
   inFlight?: Map<string, number>;
+  /** Kept by `checkFactcheckLimits`: each user's checks in flight, let through but not yet in a usage row. */
+  checksInFlight?: Map<string, number>;
 }
 
 /**
@@ -126,37 +129,15 @@ export async function checkLimits(
   postCount: number,
   now: Date = new Date(),
 ): Promise<() => void> {
-  const { db, config, limiter, log } = deps;
+  const { db, config } = deps;
   const { userId } = account;
 
-  const rate = limiter.take(userId, now.getTime());
-  if (!rate.ok) {
-    throw new AIError('rate-limit', 'Too many requests this minute.', { retryAfterMs: rate.retryAfterMs });
-  }
-
-  const spend = await spendTodayMicros(db, now);
-  if (spend >= config.dailySpendLimitMicros) {
-    const day = utcDayStart(now).getTime();
-    if (deps.breakerLoggedDay !== day) {
-      deps.breakerLoggedDay = day;
-      log.warn('limits.spend_breaker', { spend_micros: spend, limit_micros: config.dailySpendLimitMicros });
-    }
-    throw new AIError('cap-reached', "This server has reached today's AI spending limit. AI resumes tomorrow.");
-  }
+  takeRate(deps, userId, now);
+  await checkSpendBreaker(deps, now);
 
   // The posts join the user's in flight before the reads, so of two requests checked at once the later one counts the
   // earlier one. A request whose row is written during the reads is counted twice: that can refuse early, never late.
-  const inFlight = (deps.inFlight ??= new Map());
-  const ahead = inFlight.get(userId) ?? 0;
-  inFlight.set(userId, ahead + postCount);
-  let held = true;
-  const release = () => {
-    if (!held) return;
-    held = false;
-    const left = (inFlight.get(userId) ?? 0) - postCount;
-    if (left > 0) inFlight.set(userId, left);
-    else inFlight.delete(userId);
-  };
+  const { ahead, release } = join((deps.inFlight ??= new Map()), userId, postCount);
 
   try {
     const cap = await effectiveDailyCap(db, userId, config);
@@ -168,6 +149,75 @@ export async function checkLimits(
     throw err;
   }
   return release;
+}
+
+/**
+ * The guards in front of a check, cheap first: the user's rate limit (the same bucket classify uses), the spend
+ * breaker, then the daily check cap: `cap-reached` once checks today plus the user's checks in flight reach
+ * `USER_DAILY_CHECK_CAP` (0 refuses every check). Resolves to `release`, called once the job's usage row is written.
+ */
+export async function checkFactcheckLimits(
+  deps: LimitDeps,
+  account: Pick<DeviceAccount, 'userId'>,
+  now: Date = new Date(),
+): Promise<() => void> {
+  const { userId } = account;
+  takeRate(deps, userId, now);
+  await checkSpendBreaker(deps, now);
+
+  // Joined before the read, as in `checkLimits`, so two checks made at once count each other.
+  const { ahead, release } = join((deps.checksInFlight ??= new Map()), userId, 1);
+  try {
+    if ((await checksToday(deps.db, userId, now)) + ahead >= deps.config.factcheck.userDailyCheckCap) {
+      throw new AIError('cap-reached', "This account has reached today's fact-check limit. Checks resume tomorrow.");
+    }
+  } catch (err) {
+    release();
+    throw err;
+  }
+  return release;
+}
+
+/** Takes one request from the user's rate bucket, or throws `rate-limit` with `retryAfterMs`. */
+function takeRate(deps: LimitDeps, userId: string, now: Date): void {
+  const rate = deps.limiter.take(userId, now.getTime());
+  if (!rate.ok) {
+    throw new AIError('rate-limit', 'Too many requests this minute.', { retryAfterMs: rate.retryAfterMs });
+  }
+}
+
+/**
+ * Throws `cap-reached` once everyone's AI cost today has reached `DAILY_SPEND_LIMIT_USD`, logging
+ * `limits.spend_breaker` once per UTC day per process.
+ */
+async function checkSpendBreaker(deps: LimitDeps, now: Date): Promise<void> {
+  const { db, config, log } = deps;
+  const spend = await spendTodayMicros(db, now);
+  if (spend < config.dailySpendLimitMicros) return;
+  const day = utcDayStart(now).getTime();
+  if (deps.breakerLoggedDay !== day) {
+    deps.breakerLoggedDay = day;
+    log.warn('limits.spend_breaker', { spend_micros: spend, limit_micros: config.dailySpendLimitMicros });
+  }
+  throw new AIError('cap-reached', "This server has reached today's AI spending limit. AI resumes tomorrow.");
+}
+
+/**
+ * Adds `n` to `userId`'s count in `inFlight`. `ahead` is the count before; `release` takes the `n` back once, however
+ * often it is called.
+ */
+function join(inFlight: Map<string, number>, userId: string, n: number): { ahead: number; release: () => void } {
+  const ahead = inFlight.get(userId) ?? 0;
+  inFlight.set(userId, ahead + n);
+  let held = true;
+  const release = () => {
+    if (!held) return;
+    held = false;
+    const left = (inFlight.get(userId) ?? 0) - n;
+    if (left > 0) inFlight.set(userId, left);
+    else inFlight.delete(userId);
+  };
+  return { ahead, release };
 }
 
 /**
