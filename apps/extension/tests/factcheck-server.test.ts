@@ -304,6 +304,38 @@ describe('job flow', () => {
     expect(await fakeBrowser.storage.session.get(`factcheck:${TAB}`)).toEqual({});
   });
 
+  it('test_server_factcheck_cancel_when_tab_closes_during_start', async () => {
+    let received!: () => void;
+    const starting = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    let answerStart!: () => void;
+    useServer((url, init) => {
+      if (isStart(url, init)) {
+        received();
+        // The server already holds the job; its 202 comes back after the tab closed. A real fetch rejects once its
+        // signal aborts, and the job id (the only way to cancel it) would be lost.
+        return new Promise<Response>((resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          answerStart = () => resolve(json(202, job('running')));
+        });
+      }
+      if (isCancel(url)) return json(202, job('cancelled'));
+      return json(200, job('running'));
+    });
+    await setup();
+    const pending = factcheck();
+    await starting;
+
+    await forgetTab(TAB);
+    answerStart();
+    expect((await pending).ok).toBe(false);
+
+    expect(cancels()).toHaveLength(1);
+    expect(calls.filter((c) => isPoll(c.url))).toHaveLength(0);
+    expect(await fakeBrowser.storage.session.get(`factcheck:${TAB}`)).toEqual({});
+  });
+
   it('test_server_factcheck_deadline_cancels', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.UTC(2026, 9, 15, 9));

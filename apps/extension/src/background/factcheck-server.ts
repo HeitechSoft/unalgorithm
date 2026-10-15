@@ -69,10 +69,12 @@ export async function runFactcheckViaServer(
   };
 
   if (signal.aborted) return STOPPED();
+  // Not cut off by the run's `signal`: once sent, the server may already hold the job, and an aborted fetch would lose
+  // its id, the only way to cancel it. A tab closed meanwhile is seen below, and the job cancelled.
   const started = await serverRequest(
     origin,
     FACTCHECK_JOBS_PATH,
-    { method: 'POST', body: { v: 1, post }, timeoutMs: START_TIMEOUT_MS, signal },
+    { method: 'POST', body: { v: 1, post }, timeoutMs: START_TIMEOUT_MS },
     http,
   );
   if (!started.ok) return failure(started);
