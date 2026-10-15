@@ -181,9 +181,12 @@ test.describe
       test.setTimeout(60_000);
       const { server } = started();
       const options = optionsOf(b);
+      // The innermost group with that heading: the AI pane's own list group holds the server card, and with it the
+      // Sync group's rows, so without `hasNot` its rows would be counted too.
       const devices = options
         .locator('.ua-group')
-        .filter({ has: options.getByRole('heading', { name: /^Devices signed in to / }) });
+        .filter({ has: options.getByRole('heading', { name: /^Devices signed in to / }) })
+        .filter({ hasNot: options.locator('.ua-group') });
       const rows = devices.locator('.ua-row');
       await expect(rows).toHaveCount(2);
       await expect(rows.filter({ hasText: 'This computer' })).toHaveCount(1);
