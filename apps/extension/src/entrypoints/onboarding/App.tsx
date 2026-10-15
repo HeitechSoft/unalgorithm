@@ -262,7 +262,7 @@ export function App() {
       ) : (
         <footer className="ob-foot ua-footnote">
           Free and open source · by HeitechSoft ·{' '}
-          <a href="https://github.com/HeitechSoft/unalgorithm/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">
+          <a href="https://unalgorithmfeed.com/privacy/" target="_blank" rel="noreferrer">
             Privacy
           </a>
         </footer>

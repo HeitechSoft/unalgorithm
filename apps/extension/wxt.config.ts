@@ -55,7 +55,7 @@ export default defineConfig({
     description: '__MSG_extDescription__',
     default_locale: 'en',
     minimum_chrome_version: '130',
-    homepage_url: 'https://github.com/HeitechSoft/unalgorithm',
+    homepage_url: 'https://unalgorithmfeed.com/',
     permissions: ['storage', 'sidePanel', 'scripting'],
     host_permissions: [
       'https://www.linkedin.com/*',

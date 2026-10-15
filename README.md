@@ -8,6 +8,10 @@
 An open-source browser extension by HeitechSoft that quietly folds away ads, suggested posts and other noise on LinkedIn
 and Facebook.</p>
 
+<p align="center"><a href="https://unalgorithmfeed.com/">unalgorithmfeed.com</a> ·
+<a href="https://unalgorithmfeed.com/help/">Help</a> ·
+<a href="https://unalgorithmfeed.com/privacy/">Privacy</a></p>
+
 <p align="center">
   <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-0B7A75" /></a>
   <img alt="Chrome MV3" src="https://img.shields.io/badge/Chrome-MV3-0B7A75" />
