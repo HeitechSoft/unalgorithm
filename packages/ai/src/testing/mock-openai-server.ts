@@ -102,6 +102,45 @@ function defaultVerdict(text: string): MockVerdict {
   return { relevance: onTopic ? 92 : 40, noise: [], topics: onTopic ? ['automation'] : ['other'] };
 }
 
+/**
+ * The mock's structured answer to a user turn, told apart by the prompt wording (claims, verdict, story, comparison,
+ * else classify), and how many items it holds. Shared with the Responses mock (mock-openai-responses.ts).
+ */
+export function mockStructuredAnswer(
+  user: string,
+  verdict: (postText: string) => MockVerdict = defaultVerdict,
+): { json: unknown; items: number } {
+  if (user.includes(CLAIMS_PHRASE)) {
+    const claims = claimsOf(user);
+    return { json: { claims }, items: claims.length };
+  }
+  if (user.includes(VERDICT_PHRASE)) {
+    const verdicts = verdictsOf(user);
+    return { json: { verdicts }, items: verdicts.length };
+  }
+  if (user.includes(STORY_PHRASE)) {
+    const title = LINK_TAG.exec(user)?.[1]?.trim() ?? '';
+    return { json: { query: title === '(no title)' ? '' : title }, items: 1 };
+  }
+  if (user.includes(COMPARISON_PHRASE)) {
+    const comparison = comparisonOf(user);
+    return { json: comparison, items: comparison.matched.length };
+  }
+  const results = fencedPosts(user).map(({ id, text }) => {
+    const v = verdict(text);
+    return {
+      id,
+      topics: v.topics,
+      noise: v.noise,
+      reason: 'Test verdict.',
+      relevance: v.relevance,
+      isNews: v.isNews ?? false,
+      hasCheckableClaims: v.hasCheckableClaims ?? false,
+    };
+  });
+  return { json: { results }, items: results.length };
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -148,35 +187,8 @@ export async function startMockOpenAI(opts: MockOpenAIOptions = {}): Promise<Moc
     if (failure) return send(res, failure.status, failure.body);
     const user = userTurn(body);
     if (user === undefined) return send(res, 400, JSON.stringify({ error: { message: 'The body is not JSON.' } }));
-    if (user.includes(CLAIMS_PHRASE)) {
-      const claims = claimsOf(user);
-      return answer(res, { claims }, claims.length);
-    }
-    if (user.includes(VERDICT_PHRASE)) {
-      const verdicts = verdictsOf(user);
-      return answer(res, { verdicts }, verdicts.length);
-    }
-    if (user.includes(STORY_PHRASE)) {
-      const title = LINK_TAG.exec(user)?.[1]?.trim() ?? '';
-      return answer(res, { query: title === '(no title)' ? '' : title }, 1);
-    }
-    if (user.includes(COMPARISON_PHRASE)) {
-      const comparison = comparisonOf(user);
-      return answer(res, comparison, comparison.matched.length);
-    }
-    const results = fencedPosts(user).map(({ id, text }) => {
-      const v = verdict(text);
-      return {
-        id,
-        topics: v.topics,
-        noise: v.noise,
-        reason: 'Test verdict.',
-        relevance: v.relevance,
-        isNews: v.isNews ?? false,
-        hasCheckableClaims: v.hasCheckableClaims ?? false,
-      };
-    });
-    answer(res, { results }, results.length);
+    const { json, items } = mockStructuredAnswer(user, verdict);
+    answer(res, json, items);
   }
 
   /** A completion carrying `json`; fixed usage numbers so metering tests can assert exact amounts. */

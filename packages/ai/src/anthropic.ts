@@ -1,14 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {
-  addUsage,
-  FactcheckSourceSchema,
-  MAX_RETRIEVED_SOURCES,
-  type NormalizedUsage,
-  type RetrievedSource,
-  ZERO_USAGE,
-} from '@unalgorithm/protocol';
+import { addUsage, type NormalizedUsage, type RetrievedSource, ZERO_USAGE } from '@unalgorithm/protocol';
 import { AIError, codeForStatus } from './errors.ts';
 import { anthropicCanDisableThinking } from './models.ts';
+import { createSourceCollector, MAX_NOTES_CHARS } from './research-sources.ts';
 import type {
   AIClient,
   Capabilities,
@@ -71,22 +65,6 @@ function systemBlocks(req: { system: string; cachePrefix?: string | undefined })
 
 const DEFAULT_RESEARCH_TIMEOUT_MS = 120_000;
 const MAX_RESEARCH_CONTINUATIONS = 2;
-const MAX_NOTES_CHARS = 8_000;
-const MAX_URL_CHARS = 2_048;
-const MAX_SNIPPET_CHARS = 600;
-
-/** The `www.`-less lowercased hostname of an http(s) URL of sane length, or undefined. */
-function sourceDomain(url: string): string | undefined {
-  if (url.length > MAX_URL_CHARS) return undefined;
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
-    return u.hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Sources, notes and search errors from a research answer, in content order. Sources come only from search results
  * (a citation never creates one); cited passages become their snippets. `encrypted_content` is never read.
@@ -98,8 +76,7 @@ function parseResearch(blocks: readonly Anthropic.Messages.ContentBlock[]): {
   /** Search result blocks that came back as results rather than errors. */
   searchesOk: number;
 } {
-  const byUrl = new Map<string, RetrievedSource>();
-  const seen = new Set<string>();
+  const collector = createSourceCollector();
   const searchErrors: string[] = [];
   let notes = '';
   let searchesOk = 0;
@@ -110,33 +87,15 @@ function parseResearch(blocks: readonly Anthropic.Messages.ContentBlock[]): {
         continue;
       }
       searchesOk++;
-      for (const r of block.content) {
-        if (seen.has(r.url)) continue;
-        seen.add(r.url);
-        if (byUrl.size >= MAX_RETRIEVED_SOURCES) continue;
-        const domain = sourceDomain(r.url);
-        if (!domain) continue;
-        const source = {
-          id: `s${byUrl.size + 1}`,
-          url: r.url,
-          domain,
-          title: (r.title ?? '').slice(0, 300),
-          pageAge: r.page_age ? r.page_age.slice(0, 64) : null,
-        };
-        if (!FactcheckSourceSchema.safeParse(source).success) continue;
-        byUrl.set(r.url, { ...source, snippets: [] });
-      }
+      for (const r of block.content) collector.addResult({ url: r.url, title: r.title ?? '', pageAge: r.page_age ?? null });
     } else if (block.type === 'text') {
       notes += block.text;
       for (const c of block.citations ?? []) {
-        if (c.type !== 'web_search_result_location') continue;
-        const source = byUrl.get(c.url);
-        const snippet = (c.cited_text ?? '').slice(0, MAX_SNIPPET_CHARS);
-        if (source && snippet && !source.snippets.includes(snippet)) source.snippets.push(snippet);
+        if (c.type === 'web_search_result_location') collector.addSnippet(c.url, c.cited_text ?? '');
       }
     }
   }
-  return { notes: notes.slice(0, MAX_NOTES_CHARS), sources: [...byUrl.values()], searchErrors, searchesOk };
+  return { notes: notes.slice(0, MAX_NOTES_CHARS), sources: collector.sources(), searchErrors, searchesOk };
 }
 
 /**
