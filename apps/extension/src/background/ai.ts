@@ -49,7 +49,7 @@ import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, 
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from '../lib/storage.ts';
-import { clearCache, getCached, getSecret, putCached, setSecret } from './idb.ts';
+import { clearCache, clearClaimChecks, getCached, getSecret, putCached, setSecret } from './idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
 import { balanceStatus } from './server-balance.ts';
 import { classifyViaServer, SERVER_USAGE_MODEL } from './server-source.ts';
@@ -545,7 +545,7 @@ export async function onDeviceStatus(): Promise<OnDeviceAvailability> {
 }
 
 export async function clearAiData(): Promise<void> {
-  await clearCache();
+  await Promise.all([clearCache(), clearClaimChecks()]);
 }
 
 /** Forget what was learned about AI servers (their addresses and supported output modes). */

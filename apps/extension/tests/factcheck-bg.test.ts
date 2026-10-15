@@ -21,15 +21,34 @@ import {
   structuredResponse,
 } from '@unalgorithm/ai/testing/openai-responses';
 import { type AISourceConfig, dayUsage, defaultDevice, sourceId, type WebSearchKey } from '@unalgorithm/core';
-import { FactcheckResultSchema, type PostForAI, type PostKey } from '@unalgorithm/protocol';
+import {
+  AUTHORIZE_PAGE_PATH,
+  costMicros,
+  FACTCHECK_JOBS_PATH,
+  FactcheckResultSchema,
+  factcheckJobPath,
+  type PostForAI,
+  type PostKey,
+  type ServerInfo,
+  TOKEN_PATH,
+} from '@unalgorithm/protocol';
+import { CachedClaimSchema } from '@unalgorithm/research';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { setSecret } from '../src/background/idb.ts';
+import { CLAIM_CACHE_SECRET_ID, deviceClaimCache } from '../src/background/claim-cache.ts';
+import { clearClaimChecks, getSecret, setSecret } from '../src/background/idb.ts';
+import { serverAccountItem } from '../src/background/server-auth.ts';
 import { forgetTab } from '../src/background/tabs.ts';
 import { handlers } from '../src/entrypoints/background.ts';
 import type { BgRequest } from '../src/lib/messages.ts';
 import { deviceItem, factcheckItem, usageItem } from '../src/lib/storage.ts';
+
+// The device's claim cache, as itself, watched: a server check must never create one.
+vi.mock('../src/background/claim-cache.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/background/claim-cache.ts')>();
+  return { ...actual, deviceClaimCache: vi.fn(actual.deviceClaimCache) };
+});
 
 const ANTHROPIC: AISourceConfig = { kind: 'anthropic', model: null };
 const OPENAI: AISourceConfig = { kind: 'openai', model: null };
@@ -132,6 +151,7 @@ beforeEach(async () => {
   vi.spyOn(fakeBrowser.sidePanel, 'open').mockImplementation(panelOpen as never);
   await setSecret(sourceId(ANTHROPIC), 'sk-ant-test');
   await setSecret(sourceId(OPENAI), 'sk-test');
+  await clearClaimChecks();
   useAnthropic(happy);
 });
 afterEach(() => {
@@ -639,8 +659,10 @@ describe('own-key modes', () => {
     expect(day.byModel['gpt-5-mini']?.calls).toBe(1);
     expect(day.byModel['gpt-5']?.calls).toBe(2);
 
-    // A failed research call is in the ledger too.
+    // A failed research call is in the ledger too. The first check's two-domain answer is in the device's claim cache
+    // (P3-60), which would answer this one without research.
     await usageItem.removeValue();
+    await clearClaimChecks();
     useOwnKeyNetwork({
       openai: (kind, body) => (kind === 'research' ? errorResponse(500, 'server error') : openaiAnswer(kind, body)),
     });
@@ -659,5 +681,191 @@ describe('own-key modes', () => {
     expect(day.posts).toBe(0);
     expect(day.calls).toBeGreaterThanOrEqual(2);
     expect(day.byModel['llama3.2']?.calls).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('device claim cache', () => {
+  const CLAIM = 'The bridge opened in 1932.';
+  const NEWS = 'https://news.example.org/bridge';
+  const RECORDS = 'https://records.example.net/opening';
+  const KEY2 = 'li:urn:li:activity:2' as PostKey;
+
+  /** One claim, two sources on two domains, a supported verdict: an answer the cache keeps. */
+  const twoDomains: Responder = (_body, kind) => {
+    if (kind === 'claims') return ok(structuredMessage({ claims: [{ claim: CLAIM }] }));
+    if (kind === 'research')
+      return ok(
+        researchMessage({
+          results: [
+            { url: NEWS, title: 'Span history' },
+            { url: RECORDS, title: 'City records' },
+          ],
+          notes: [
+            {
+              text: 'Both sources give the same year.',
+              cites: [
+                { url: NEWS, citedText: 'Traffic first crossed the span in 1932, after four years of work.' },
+                { url: RECORDS, citedText: 'Opened to traffic in 1932 by the city council.' },
+              ],
+            },
+          ],
+        }),
+      );
+    if (kind === 'verdict')
+      return ok(
+        structuredMessage(
+          {
+            verdicts: [
+              {
+                claimId: 'c1',
+                verdict: 'supported',
+                explanation: 'Two independent sources give the same year.',
+                citations: [
+                  { sourceId: 's1', quote: 'Traffic first crossed the span in 1932' },
+                  { sourceId: 's2', quote: 'Opened to traffic in 1932' },
+                ],
+              },
+            ],
+          },
+          { model: 'claude-sonnet-5-5' },
+        ),
+      );
+    return apiError(400, 'invalid_request_error', 'unexpected request');
+  };
+
+  /** Every `claimChecks` row, read on a connection of its own. */
+  async function claimRows(): Promise<unknown[]> {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('unalgorithm');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const req = db.transaction('claimChecks', 'readonly').objectStore('claimChecks').getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  it('test_own_key_repeat_check_answered_from_device_cache', async () => {
+    await setup();
+    useAnthropic(twoDomains);
+    expect((await factcheck()).ok).toBe(true);
+    expect(kinds).toStrictEqual(['claims', 'research', 'verdict']);
+    const [fresh] = await entries();
+    expect(fresh?.result?.claims[0]?.cachedAt).toBeUndefined();
+    // The first check made the only claims call so far: its cost is what the cached check costs.
+    const claimsUsage = dayUsage(await usageItem.getValue()).byModel['claude-haiku-5-5']?.usage;
+    const claimsCost = claimsUsage && costMicros('claude-haiku-5-5', claimsUsage);
+    expect(claimsCost).toBeGreaterThan(0);
+
+    // The same post met again, shared by another friend.
+    useAnthropic(twoDomains);
+    const second = await factcheck(POST, KEY2);
+    expect(second.ok).toBe(true);
+    expect(kinds).toStrictEqual(['claims']);
+    expect(fetchMock.bodies).toHaveLength(1);
+    const [entry] = await entries();
+    expect(entry).toMatchObject({ key: KEY2, status: 'done', costMicros: claimsCost });
+    expect(entry?.result?.claims).toHaveLength(1);
+    expect(entry?.result?.claims[0]).toMatchObject({ verdict: 'supported', cachedAt: expect.any(String) });
+    expect(entry?.result?.sources.map((s) => s.url)).toStrictEqual([NEWS, RECORDS]);
+  });
+
+  it('test_device_cache_rows_hold_no_post_or_claim_text', async () => {
+    await setup();
+    useAnthropic(twoDomains);
+    expect((await factcheck()).ok).toBe(true);
+    const rows = (await claimRows()) as Record<string, unknown>[];
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(Object.keys(row ?? {}).sort()).toStrictEqual(['entry', 'expiresAt', 'key']);
+    expect(row?.key).toMatch(/^[0-9a-f]{64}$/);
+    expect(CachedClaimSchema.safeParse(row?.entry).success).toBe(true);
+    expect(typeof row?.expiresAt).toBe('number');
+    const json = JSON.stringify(row).toLowerCase();
+    expect(json).not.toContain(POST.text.toLowerCase());
+    expect(json).not.toContain(CLAIM.toLowerCase().replace(/\.$/, ''));
+    expect(json).not.toContain('activity');
+  });
+
+  it('test_server_source_never_uses_device_cache', async () => {
+    const origin = 'https://ai.example.org';
+    const info: ServerInfo = {
+      v: 1,
+      name: 'Example AI',
+      version: '0.1.0',
+      source: 'https://github.com/example/unalgorithm',
+      billing: false,
+      capabilities: { classify: true, sync: false, factcheck: true },
+      auth: { methods: ['email-otp'], authorizePath: AUTHORIZE_PAGE_PATH, tokenPath: TOKEN_PATH },
+      limits: { maxPostsPerRequest: 12 },
+    };
+    await setup({ source: { kind: 'server', baseUrl: `${origin}/` } });
+    await serverAccountItem.setValue({
+      origin,
+      email: 'ada@example.org',
+      deviceId: '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3d',
+      signedInAt: Date.now(),
+      info,
+      needsSignIn: false,
+    });
+    // A valid access token, so no refresh is attempted.
+    await fakeBrowser.storage.session.set({
+      serverAccess: { origin, token: 'access-token-1', expiresAt: Date.now() + 3_600_000 },
+    });
+    const jobId = '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3e';
+    const result = {
+      v: 1,
+      checkedAt: new Date().toISOString(),
+      model: 'claude-sonnet-5-5',
+      promptVersion: 1,
+      claims: [],
+      sources: [],
+    };
+    const paths: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      paths.push(url.pathname);
+      if (url.pathname === FACTCHECK_JOBS_PATH && init.method === 'POST')
+        return new Response(JSON.stringify({ v: 1, id: jobId, status: 'running' }), { status: 202 });
+      if (url.pathname === factcheckJobPath(jobId))
+        return new Response(JSON.stringify({ v: 1, id: jobId, status: 'done', result }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'not-available', message: 'nope' }), { status: 404 });
+    });
+    await setSecret(CLAIM_CACHE_SECRET_ID, undefined);
+    vi.mocked(deviceClaimCache).mockClear();
+
+    expect(await factcheck()).toMatchObject({ ok: true });
+    expect(paths).toContain(FACTCHECK_JOBS_PATH);
+    expect(deviceClaimCache).not.toHaveBeenCalled();
+    expect(await claimRows()).toStrictEqual([]);
+    expect(await getSecret(CLAIM_CACHE_SECRET_ID)).toBeUndefined();
+  });
+
+  it('test_clear_data_removes_claim_checks', async () => {
+    await setup();
+    useAnthropic(twoDomains);
+    expect((await factcheck()).ok).toBe(true);
+    expect(await claimRows()).toHaveLength(1);
+    const secret = await getSecret(CLAIM_CACHE_SECRET_ID);
+    expect(secret).toBeDefined();
+
+    const page = {} as Browser.runtime.MessageSender;
+    expect(await handlers.clearData({ type: 'clearData', what: 'cache' }, page)).toStrictEqual({ ok: true });
+    expect(await claimRows()).toStrictEqual([]);
+    expect(await getSecret(CLAIM_CACHE_SECRET_ID)).toBe(secret);
+
+    useAnthropic(twoDomains);
+    expect((await factcheck(POST, KEY2)).ok).toBe(true);
+    expect(kinds).toStrictEqual(['claims', 'research', 'verdict']);
+    expect(await claimRows()).toHaveLength(1);
+    expect(await handlers.clearData({ type: 'clearData', what: 'all' }, page)).toStrictEqual({ ok: true });
+    expect(await claimRows()).toStrictEqual([]);
+    expect(await getSecret(CLAIM_CACHE_SECRET_ID)).toBeUndefined();
   });
 });

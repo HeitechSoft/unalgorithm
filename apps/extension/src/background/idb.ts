@@ -1,11 +1,13 @@
 import { CACHE_MAX_ENTRIES, type CachedClassification, isFresh } from '@unalgorithm/core';
+import type { CachedClaim } from '@unalgorithm/research';
 
 /**
  * IndexedDB in the extension's own origin. Content scripts run in the page's origin, so they cannot open this
  * database: API keys stored here are unreachable from LinkedIn or Facebook pages (unlike chrome.storage.local).
  */
 const DB_NAME = 'unalgorithm';
-const DB_VERSION = 1;
+/** 2 adds `claimChecks` (P3-60); a version 1 database keeps its stores. */
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | undefined;
 
@@ -18,6 +20,10 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('classifications')) {
         const store = db.createObjectStore('classifications', { keyPath: 'key' });
         store.createIndex('at', 'at');
+      }
+      if (!db.objectStoreNames.contains('claimChecks')) {
+        const store = db.createObjectStore('claimChecks', { keyPath: 'key' });
+        store.createIndex('expiresAt', 'expiresAt');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -33,7 +39,9 @@ function done<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-async function store(name: 'secrets' | 'classifications', mode: IDBTransactionMode) {
+type StoreName = 'secrets' | 'classifications' | 'claimChecks';
+
+async function store(name: StoreName, mode: IDBTransactionMode) {
   return (await open()).transaction(name, mode).objectStore(name);
 }
 
@@ -107,4 +115,65 @@ async function prune(): Promise<void> {
 
 export async function clearCache(): Promise<void> {
   await done((await store('classifications', 'readwrite')).clear());
+}
+
+// ---------- claim cache (P3-60): a keyed hash of a claim, its verdict and citations; no post or claim text ----------
+
+export interface ClaimCheckRow {
+  /** HMAC of the normalized claim under this device's own secret. */
+  key: string;
+  entry: CachedClaim;
+  /** Epoch ms: the entry's `checkedAt` + CLAIM_CACHE_TTL_MS. */
+  expiresAt: number;
+}
+
+function committed(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/** The rows under `keys` that expire after `now`. */
+export async function getClaimChecks(keys: readonly string[], now: number): Promise<Map<string, ClaimCheckRow>> {
+  const s = await store('claimChecks', 'readonly');
+  const out = new Map<string, ClaimCheckRow>();
+  await Promise.all(
+    [...new Set(keys)].map(async (k) => {
+      const row = (await done(s.get(k))) as ClaimCheckRow | undefined;
+      if (row && row.expiresAt > now) out.set(k, row);
+    }),
+  );
+  return out;
+}
+
+/**
+ * Writes each row unless an unexpired row holds its key (an expired one is replaced), then deletes every row that
+ * expired by `now`. One transaction.
+ */
+export async function putClaimChecks(rows: readonly ClaimCheckRow[], now: number): Promise<void> {
+  const s = await store('claimChecks', 'readwrite');
+  const result = committed(s.transaction);
+  for (const row of rows) {
+    if (row.expiresAt <= now) continue;
+    const get = s.get(row.key);
+    get.onsuccess = () => {
+      const existing = get.result as ClaimCheckRow | undefined;
+      if (!existing || existing.expiresAt <= now) s.put(row);
+    };
+  }
+  const cursor = s.index('expiresAt').openCursor(IDBKeyRange.upperBound(now));
+  cursor.onsuccess = () => {
+    const c = cursor.result;
+    if (!c) return;
+    // A row written above expires after `now`, so the cursor never reaches it.
+    c.delete();
+    c.continue();
+  };
+  await result;
+}
+
+export async function clearClaimChecks(): Promise<void> {
+  await done((await store('claimChecks', 'readwrite')).clear());
 }

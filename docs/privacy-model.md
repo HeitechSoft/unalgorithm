@@ -79,6 +79,17 @@ The result is kept in session storage under `session:factcheck:<tabId>` (the 5 n
 the tab closes, when the browser restarts and by "Erase everything". Usage goes to the local usage ledger with no post
 counted. Nothing goes to HeitechSoft.
 
+Own-key checks (Anthropic, OpenAI, OpenAI-compatible) use a per-device claim cache (P3-60,
+`apps/extension/src/background/claim-cache.ts`) under P3-57's rules, for public posts only. It lives in the
+`claimChecks` store of the extension's IndexedDB, which content scripts cannot open (ADR 0005). A row is `{ key,
+entry, expiresAt }`: `key` is HMAC-SHA-256 of the normalized claim under `claim-cache-key`, 32 random bytes kept in
+`secrets` (never synced or exported); `entry` is the verdict, at least two public sources on independent domains
+(URL, host, title, a short quote; none on Facebook or LinkedIn, none echoing the post) and the hour checked;
+`expiresAt` is that hour plus 24 hours. No claim text, post text, explanation, post id, author or account id. A later
+check whose claims all hit sends only the claims call (step 1) and replays the kept verdicts, marked `cachedAt`; it
+costs that call. Expired rows are deleted on the next write. "Clear cache" empties the store; "Erase everything" also
+deletes the key. A `server` source never reads or writes it.
+
 With a `server` source (P3-21), the check runs on the person's UnAlgorithm server instead, and only when that server's
 discovery document offers fact-check (`serverOfferFrom`, `sourceCapabilities(cfg, offer)`) on the source's own origin.
 The same gates apply first (Labs on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,

@@ -35,6 +35,7 @@ import type { BgError, BgResponses } from '../lib/messages.ts';
 import { leansMatchRegistry, perspectivesRegistry } from '../lib/outlets.ts';
 import { type FactcheckEntry, factcheckItem, readDevice } from '../lib/storage.ts';
 import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
+import { deviceClaimCache } from './claim-cache.ts';
 import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
 import { deviceSearchProvider } from './search-key.ts';
 import { serverAccountItem } from './server-auth.ts';
@@ -214,7 +215,9 @@ async function runOwnKey(post: PostForAI, cfg: OwnKey, mode: OwnKeyMode): Promis
   const spends: Promise<void>[] = [];
   try {
     const client = await clientFor(cfg);
-    const run = await runFactcheck({ ...post, ref: 'p1' }, factcheckDepsForMode(client, mode), {
+    // This device's own claim cache (P3-60); the pipeline uses it for public posts only.
+    const deps = { ...factcheckDepsForMode(client, mode), claimCache: deviceClaimCache() };
+    const run = await runFactcheck({ ...post, ref: 'p1' }, deps, {
       onUsage: (u) => spends.push(recordSpend(u.model, u.usage, { posts: 0, failed: u.failed })),
     });
     await Promise.all(spends);

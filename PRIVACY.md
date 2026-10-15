@@ -50,6 +50,16 @@ OpenAI ask it not to store responses (`store: false`), and no approximate locati
 The result stays in this browser's temporary session storage for that tab and is removed when the tab closes or the
 browser restarts. Facebook posts that aren't public are never checked, and nothing goes to HeitechSoft.
 
+**Fact-check's cache on this device.** So that meeting the same public post again doesn't pay for the same research
+twice, a check on your own key (Anthropic, OpenAI, or your own AI server with a web search key) keeps, for each claim
+that two independent sources settled, a row in this browser's own storage: a keyed hash of the claim (under a random
+key created on this device and never synced or exported), the verdict, the public sources' addresses, titles and short
+quotes, and the hour it was checked. Never the claim, the post's text, the explanation, the post or its author, and no
+source on Facebook or LinkedIn. For 24 hours, a later check of the same claim on this device still sends the post to
+find its claims, then shows the kept verdict instead of searching and judging again, marked with when it was checked.
+Feed pages can't read this storage. Settings → Clear AI results cache removes the rows; Erase everything removes the
+rows and the key. Checks on an UnAlgorithm server never use or fill it.
+
 **Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
 Cloud) and it offers fact-check, turning on Settings → Labs → Fact-check and confirming a check on a public post sends
 that one post to **that server only**, with your device's sign-in: the same post fields and masking as above (at most
