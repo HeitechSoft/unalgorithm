@@ -17,7 +17,7 @@ import { ServerSetup } from '../src/components/ServerSetup.tsx';
 import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
 import { type BgRequest, type BgResponses, type PublicServerAccount, sendToBackground } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN, recipientText, serverLabel } from '../src/lib/server-label.ts';
-import { manifestFor } from '../wxt.config.ts';
+import { ANTHROPIC_HOST, manifestFor } from '../wxt.config.ts';
 
 const flag = vi.hoisted(() => ({ cloud: false }));
 vi.mock('../src/components/ServerSetup.tsx', async (importOriginal) => {
@@ -446,5 +446,20 @@ describe('manifest', () => {
       expect(e2e.host_permissions).toContain('http://127.0.0.1/*');
       expect(e2e.permissions).not.toContain('tabs');
     }
+  });
+
+  it('test_anthropic_host_permission_only_in_e2e_manifest', () => {
+    for (const env of [undefined, '1']) {
+      vi.stubEnv('UA_CLOUD', env);
+      for (const mode of ['production', 'development']) {
+        const m = manifestFor(mode);
+        expect(m.host_permissions ?? []).not.toContain(ANTHROPIC_HOST);
+        expect(m.host_permissions?.join(' ')).not.toContain('anthropic');
+        // Still reachable after setup asks for it.
+        expect(m.optional_host_permissions).toContain('https://*/*');
+      }
+      expect(manifestFor('e2e').host_permissions).toContain(ANTHROPIC_HOST);
+    }
+    vi.unstubAllEnvs();
   });
 });

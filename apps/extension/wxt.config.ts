@@ -38,6 +38,9 @@ export function cloudEnabled(mode: string): boolean {
   return process.env.UA_CLOUD === '1' || mode === 'development' || mode === 'e2e';
 }
 
+/** Store and development builds ask for it at setup, as an optional permission; only e2e builds have it from the start. */
+export const ANTHROPIC_HOST = 'https://api.anthropic.com/*';
+
 /** The manifest for a build mode. Pure, so tests can check every mode. */
 export function manifestFor(mode: string): UserManifest {
   const e2e = mode === 'e2e';
@@ -57,7 +60,8 @@ export function manifestFor(mode: string): UserManifest {
       'https://www.linkedin.com/*',
       'https://www.facebook.com/*',
       // The e2e sign-in tab reports the URL it is sent back to only to a host permission for that address (CL1-16).
-      ...(e2e ? ['http://127.0.0.1/*', `https://${devKey.id}.chromiumapp.org/*`] : []),
+      // Anthropic is asked for at setup everywhere else; Playwright can't answer that prompt (P3-09).
+      ...(e2e ? ['http://127.0.0.1/*', `https://${devKey.id}.chromiumapp.org/*`, ANTHROPIC_HOST] : []),
     ],
     // AI endpoints are requested at setup, one origin at a time, from a click. Servers are reached through CORS
     // (ADR 0004).
