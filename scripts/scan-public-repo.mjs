@@ -38,6 +38,7 @@ const NOT_PUBLIC = [
   ['172.16.0.0', 12], // private
   ['192.0.0.0', 24], // IETF protocol assignments
   ['192.0.2.0', 24], // documentation (TEST-NET-1)
+  ['192.88.99.0', 24], // deprecated 6to4 relay anycast (RFC 7526), never reassigned
   ['192.168.0.0', 16], // private
   ['198.18.0.0', 15], // benchmarking
   ['198.51.100.0', 24], // documentation (TEST-NET-2)

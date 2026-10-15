@@ -99,9 +99,25 @@ describe('IPv4', () => {
     for (const address of notPublic) expect([address, isPublicIPv4(address)]).toEqual([address, false]);
 
     // Range edges: the first and last address inside each block, and its public neighbours.
-    for (const address of ['172.16.0.0', '172.31.255.255', '100.127.255.255', '198.19.255.255', '255.255.255.255'])
+    // 192.88.99.0/24 is the deprecated 6to4 relay anycast block (RFC 7526), which the egress policy names.
+    for (const address of [
+      '172.16.0.0',
+      '172.31.255.255',
+      '100.127.255.255',
+      '198.19.255.255',
+      '255.255.255.255',
+      '192.88.99.0',
+      '192.88.99.255',
+    ])
       expect([address, isPublicIPv4(address)]).toEqual([address, false]);
-    for (const address of [pub(172, 15, 255, 255), pub(172, 32, 0, 0), pub(100, 128, 0, 0), pub(198, 20, 0, 0)])
+    for (const address of [
+      pub(172, 15, 255, 255),
+      pub(172, 32, 0, 0),
+      pub(100, 128, 0, 0),
+      pub(198, 20, 0, 0),
+      pub(192, 88, 98, 255),
+      pub(192, 88, 100, 0),
+    ])
       expect([address, isPublicIPv4(address)]).toEqual([address, true]);
     expect(isPublicIPv4(pub(223, 255, 255, 255))).toBe(true);
     expect(isPublicIPv4('1.2.3')).toBe(false);

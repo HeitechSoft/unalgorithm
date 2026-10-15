@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { createServer, type IncomingHttpHeaders } from 'node:http';
+import { createServer, globalAgent, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -287,6 +287,8 @@ describe('transport', () => {
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const { port } = server.address() as AddressInfo;
+    // The shared keep-alive agent is never used: its pool is keyed by host and port, not by the pinned address.
+    const pooled = vi.spyOn(globalAgent, 'createConnection');
 
     const send = (path: string) =>
       nodeSend({
@@ -319,5 +321,7 @@ describe('transport', () => {
     }
     // A fresh connection per request: no pooled socket is reused.
     expect(connections).toBe(2);
+    expect(pooled).not.toHaveBeenCalled();
+    pooled.mockRestore();
   });
 });
