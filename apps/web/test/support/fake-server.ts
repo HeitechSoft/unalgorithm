@@ -8,7 +8,9 @@
  *
  * The session's `role` is the admin plugin's: the admin routes answer 403 unless it is `admin`. The accounts the admin
  * page lists (`adminUsers`) are kept too: setting one's cap, access or role changes the next list, as CL4-06's routes
- * do, and changing the signed-in admin's own access or role answers 400.
+ * do, and changing the signed-in admin's own access or role answers 400. Inviting an address (CL4-06) adds it, as the
+ * server keeps it (trimmed, lower case), to the next list's invites at `INVITED_AT`, or answers 400 when an account has
+ * it; removing one takes it off. The overview (`adminOverview`) is answered as given.
  */
 import {
   ACCOUNT_DELETE_PATH,
@@ -17,8 +19,12 @@ import {
   ACCOUNT_EXPORT_PATH,
   type AccountDevice,
   type AccountExport,
+  ADMIN_INVITE_REMOVE_PATH,
+  ADMIN_INVITES_PATH,
+  ADMIN_OVERVIEW_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
+  type AdminOverview,
   type AdminUsers,
   AUTHORIZE_API_PATH,
   adminUserActionPath,
@@ -126,6 +132,27 @@ export const OWN_ACCOUNT = { status: 400, body: { code: 'bad-request', message: 
 /** No accounts listed: the admin page's routes answer this unless a test passes its own. */
 export const NO_ADMIN_USERS: AdminUsers = { users: [], truncated: false, invites: [], defaultDailyPostCap: 1000 };
 
+/** When the fake server's invite routes invite an address. */
+export const INVITED_AT = '2026-10-15T12:00:00.000Z';
+/** What `POST /v1/admin/invites` answers for an address that already has an account (CL4-06). */
+export const HAS_ACCOUNT = { status: 400, body: { code: 'bad-request', message: 'This address already has an account.' } };
+
+/** A usage day with no usage. */
+function quietDay(day: string) {
+  return { day, posts: 0, requests: 0, costMicros: 0 };
+}
+/** The overview the admin page's usage section shows unless a test passes its own: a quiet day, no status yet. */
+export const OVERVIEW: AdminOverview = {
+  version: '0.1.0',
+  users: 0,
+  today: quietDay('2026-10-15'),
+  last30Days: [quietDay('2026-10-14'), quietDay('2026-10-15')],
+  spendLimitMicros: 5_000_000,
+  breakerTripped: false,
+  defaultDailyPostCap: 1000,
+  ops: null,
+};
+
 /** A setup link's token (CL4-04): 43 URL-safe base64 characters, from the fragment of `/setup#<token>`. */
 export const SETUP_TOKEN = 'c2V0dXAtbGluay10b2tlbi1mb3ItdGhlLWZpcnN0LWE';
 /** What `POST /v1/admin/setup` answers for a token that doesn't work: unknown, expired, used, or another address's. */
@@ -189,6 +216,7 @@ export function fakeServer({
   session = null,
   role = null,
   adminUsers = NO_ADMIN_USERS,
+  adminOverview = OVERVIEW,
   info = INFO,
   devices = [],
   passkeys = [],
@@ -198,6 +226,7 @@ export function fakeServer({
   /** The session user's `role`, whoever signs in. */
   role?: string | null;
   adminUsers?: AdminUsers;
+  adminOverview?: AdminOverview;
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -278,6 +307,20 @@ export function fakeServer({
       return { status: 200, body: { ok: true } };
     }),
     [`GET ${ADMIN_USERS_PATH}`]: asAdmin(() => ({ status: 200, body: accounts })),
+    [`GET ${ADMIN_OVERVIEW_PATH}`]: asAdmin(() => ({ status: 200, body: adminOverview })),
+    [`POST ${ADMIN_INVITES_PATH}`]: asAdmin((call) => {
+      const email = field(call, 'email')?.trim().toLowerCase() ?? '';
+      if (accounts.users.some((u) => u.email.toLowerCase() === email)) return HAS_ACCOUNT;
+      if (!accounts.invites.some((i) => i.email === email)) {
+        accounts = { ...accounts, invites: [{ email, createdAt: INVITED_AT }, ...accounts.invites] };
+      }
+      return { status: 200, body: { ok: true } };
+    }),
+    [`POST ${ADMIN_INVITE_REMOVE_PATH}`]: asAdmin((call) => {
+      const email = field(call, 'email')?.trim().toLowerCase();
+      accounts = { ...accounts, invites: accounts.invites.filter((i) => i.email !== email) };
+      return { status: 200, body: { ok: true } };
+    }),
     ...Object.fromEntries(
       adminUsers.users.flatMap(({ id, email }) => {
         /** Changes the account's row in the next list; the admin's own access and role are refused. */

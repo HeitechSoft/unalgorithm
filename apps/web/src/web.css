@@ -110,3 +110,41 @@
 .web-dialog-section h3 {
   font: var(--ua-type-headline);
 }
+/* The admin page's Invites and Usage sections: a title over the section's groups. */
+.web-section h2 {
+  font: var(--ua-type-title3);
+}
+/* The sentence an admin passes on and the line under it: an address or an origin wraps anywhere, and the link sits in a
+   line of text, so it is underlined rather than told apart by color alone (WCAG 1.4.1). */
+.web-notes {
+  display: grid;
+  gap: var(--ua-space-2);
+  overflow-wrap: anywhere;
+}
+.web-notes a {
+  text-decoration: underline;
+}
+/* The admin page's last 30 days: one row a day, its figures right-aligned. */
+.web-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--ua-type-footnote);
+  font-variant-numeric: tabular-nums;
+}
+.web-table caption {
+  font: var(--ua-type-headline);
+  text-align: start;
+  padding-bottom: var(--ua-space-2);
+}
+.web-table th,
+.web-table td {
+  padding: var(--ua-space-1) var(--ua-space-2);
+  border-bottom: 1px solid var(--ua-separator);
+  text-align: end;
+}
+.web-table th:first-child {
+  text-align: start;
+}
+.web-table thead th {
+  color: var(--ua-text-secondary);
+}

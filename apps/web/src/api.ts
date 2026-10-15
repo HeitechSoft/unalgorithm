@@ -2,7 +2,7 @@
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
  * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
- * accounts and the changes an admin makes to one. All same-origin, so the browser sends the session cookie and the
+ * accounts and the changes an admin makes to one, its invites and the server's usage overview. All same-origin, so the browser sends the session cookie and the
  * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all) and
  * the error body's `code` when it has one, except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`,
  * and its other errors keep their name.
@@ -22,9 +22,14 @@ import {
   type AccountDevice,
   AccountDevicesResponseSchema,
   AccountExportSchema,
+  ADMIN_INVITE_REMOVE_PATH,
+  ADMIN_INVITES_PATH,
+  ADMIN_OVERVIEW_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
   AdminOkSchema,
+  type AdminOverview,
+  AdminOverviewSchema,
   type AdminRole,
   type AdminUsers,
   AdminUsersSchema,
@@ -35,6 +40,7 @@ import {
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
   CreditAccountSchema,
+  type InviteRequest,
   OkResponseSchema,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -296,4 +302,27 @@ export async function setUserAccess(id: string, access: UserAccess): Promise<voi
 export async function setUserRole(id: string, role: AdminRole): Promise<void> {
   const body: SetRoleRequest = { role };
   await request(adminUserActionPath(id, 'role'), AdminOkSchema, body);
+}
+
+/**
+ * Today's usage and the last 30 days against the daily spend limit, and the server's content-free status (null until it
+ * reports one); 401 without a session, 403 for a non-admin.
+ */
+export async function adminOverview(): Promise<AdminOverview> {
+  return request(ADMIN_OVERVIEW_PATH, AdminOverviewSchema);
+}
+
+/**
+ * Lets the address create an account; no email is sent. Inviting it twice is fine; 400 when the address already has an
+ * account. The server keeps the address trimmed and in lower case.
+ */
+export async function addInvite(email: string): Promise<void> {
+  const body: InviteRequest = { email };
+  await request(ADMIN_INVITES_PATH, AdminOkSchema, body);
+}
+
+/** Withdraws the address's invite, whether or not it had one; an account it already made stays. */
+export async function removeInvite(email: string): Promise<void> {
+  const body: InviteRequest = { email };
+  await request(ADMIN_INVITE_REMOVE_PATH, AdminOkSchema, body);
 }

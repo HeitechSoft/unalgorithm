@@ -1,6 +1,7 @@
 /**
  * The admin page every server serves at `/admin` (R38): who uses this server, and for each person the daily post cap,
- * access and role (`AdminUsers`). Everything it shows comes from the admin routes, which answer only an admin of this
+ * access and role (`AdminUsers`); the addresses invited to make an account (`AdminInvites`); and the server's usage
+ * against its daily spend limit with its content-free status (`AdminUsage`). Everything it shows comes from the admin routes, which answer only an admin of this
  * server (CL4-05, CL4-06): the page is the same for everyone, and tells a signed-in non-admin so. It names the server
  * only by its discovery document. The page keeps the accounts list and hands its sections a way to ask for it again; a
  * section that finds the session gone sends the person back to the sign-in, saying so.
@@ -8,6 +9,8 @@
 import { ADMIN_PAGE_PATH, type AdminUsers as AdminUsersData, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { AdminInvites } from './AdminInvites.tsx';
+import { AdminUsage } from './AdminUsage.tsx';
 import { AdminUsers } from './AdminUsers.tsx';
 import { ApiError, adminUsers, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
@@ -136,6 +139,8 @@ export function Admin() {
   return (
     <Page info={info} heading={heading} intro={INTRO}>
       <AdminUsers data={step.users} email={step.email} reload={reloadUsers} onSignedOut={sessionEnded} />
+      <AdminInvites invites={step.users.invites} reload={reloadUsers} onSignedOut={sessionEnded} />
+      <AdminUsage onSignedOut={sessionEnded} />
     </Page>
   );
 }

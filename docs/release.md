@@ -55,7 +55,7 @@ Store builds show the UnAlgorithm Cloud card only as "Coming soon". The working 
 Cloud or another UnAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
 `alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
 `apps/extension/wxt.config.ts`; development and e2e builds always have them). A store build may carry them only when
-all eight of these are done:
+all nine of these are done:
 
 1. The UnAlgorithm Cloud beta privacy notice and beta terms are live on unalgorithm.app.
 2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
@@ -70,6 +70,8 @@ all eight of these are done:
    answers). CI's privacy-gate test (`apps/extension/tests/privacy-gate.test.ts`) refuses the release workflow
    otherwise.
 8. The Chrome Web Store data-use answers cover sync.
+9. Remove the store-build line under the admin page's pass-on sentence (`apps/web/src/AdminInvites.tsx`, CL4-09) in the
+   same release.
 
 Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zip" step of
 `release.yml`. Until that PR, `release.yml` never sets it.
