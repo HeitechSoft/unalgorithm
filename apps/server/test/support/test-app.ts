@@ -90,6 +90,12 @@ export interface TestAppOptions {
   linkCheck?: AppDeps['linkCheck'];
   /** The fact-check job store, such as one on a test clock. Default: the app's own. */
   factcheckJobs?: AppDeps['factcheckJobs'];
+  /** The perspectives registry: `FIXTURE_REGISTRY`, or null. Default: the app's own (the bundled registry if usable). */
+  outlets?: AppDeps['outlets'];
+  /** The perspectives job store. Default: the app's own. */
+  perspectivesJobs?: AppDeps['perspectivesJobs'];
+  /** The shared link's resolution (the egress fetcher's in production). Default: none. */
+  resolveLink?: AppDeps['resolveLink'];
 }
 
 /**
@@ -146,6 +152,9 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       // The billing host's schedule, so discovery and the job gates price checks as the module does.
       priceSchedule: host.priceSchedule,
       factcheckJobs: overrides.factcheckJobs,
+      perspectivesJobs: overrides.perspectivesJobs,
+      resolveLink: overrides.resolveLink,
+      outlets: overrides.outlets,
     };
     const app = createApp(deps);
     return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };

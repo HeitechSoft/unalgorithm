@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
+import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
@@ -22,6 +23,7 @@ import {
   GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
   PASSKEY_METHOD,
+  type PerspectivesResult,
   SERVER_INFO_PATH,
   SETUP_PAGE_PATH,
   type ServerInfo,
@@ -37,6 +39,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { searchProviderFor } from '../ai/factcheck.ts';
 import { createRateLimiter, type LimitDeps } from '../ai/limits.ts';
+import { perspectivesOffer } from '../ai/perspectives.ts';
 import type { AiRoute } from '../ai/routes.ts';
 import { type Auth, mountAuth } from '../auth/better-auth.ts';
 import type { BillingProvider } from '../billing/provider.ts';
@@ -52,6 +55,7 @@ import { classifyRoutes } from '../routes/classify.ts';
 import { factcheckOffer, factcheckRoutes } from '../routes/factcheck.ts';
 import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
+import { perspectivesRoutes } from '../routes/perspectives.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
 import type { AccessResolver } from '../sync/spaces.ts';
@@ -99,6 +103,15 @@ export interface AppDeps {
   priceSchedule?: CreditPriceSchedule;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }). */
   factcheckJobs?: JobStore<FactcheckResult>;
+  /**
+   * The outlet registry perspectives compares across; null: perspectives is not offered. Default:
+   * `usableRegistry(bundledRegistry())`, null while the bundled registry is a draft. Tests pass `FIXTURE_REGISTRY`.
+   */
+  outlets?: Registry | null;
+  /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }). */
+  perspectivesJobs?: JobStore<PerspectivesResult>;
+  /** The egress fetcher's resolution of a shared link to its canonical URL (P3-32); default: none (the link as shared). */
+  resolveLink?: (url: string, signal: AbortSignal) => Promise<string | null>;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -183,6 +196,7 @@ export function createApp(deps: AppDeps): App {
   });
 
   const priceSchedule = deps.priceSchedule ?? CREDIT_PRICE_SCHEDULE;
+  const outlets = deps.outlets === undefined ? usableRegistry(bundledRegistry()) : deps.outlets;
   const serverInfo: ServerInfo = {
     v: 1,
     name: config.instanceName,
@@ -204,10 +218,16 @@ export function createApp(deps: AppDeps): App {
     c.header('Access-Control-Allow-Origin', '*');
     // Per request: whether checks are offered, and their price, follow the schedule entry in effect now.
     const offer = factcheckOffer(config, priceSchedule);
+    const compare = perspectivesOffer(config, priceSchedule, outlets);
+    const billed = config.billing === 'module';
+    const jobPrices = {
+      ...(offer.offered && offer.price && billed ? { factcheck: offer.price } : {}),
+      ...(compare.offered && compare.price && billed ? { perspectives: compare.price } : {}),
+    };
     const info: ServerInfo = {
       ...serverInfo,
-      capabilities: { ...serverInfo.capabilities, factcheck: offer.offered },
-      ...(offer.offered && offer.price && config.billing === 'module' ? { jobPrices: { factcheck: offer.price } } : {}),
+      capabilities: { ...serverInfo.capabilities, factcheck: offer.offered, perspectives: compare.offered },
+      ...(Object.keys(jobPrices).length ? { jobPrices } : {}),
     };
     return c.json(info);
   });
@@ -217,7 +237,7 @@ export function createApp(deps: AppDeps): App {
   mountAuth(app, auth, config);
   authRoutes(app, deps);
   accountRoutes(app, deps);
-  // One per app, shared by classify and fact-check: one rate bucket per user, and the breaker's log state and the
+  // One per app, shared by classify, fact-check and perspectives: one rate bucket per user, and the breaker's log state and the
   // requests in flight last as long as the server process.
   const limits: LimitDeps = {
     db: db.db,
@@ -226,13 +246,26 @@ export function createApp(deps: AppDeps): App {
     log,
   };
   classifyRoutes(app, deps, limits);
+  const search = deps.search === undefined ? searchProviderFor(config) : deps.search;
   factcheckRoutes(
     app,
     {
       ...deps,
-      search: deps.search === undefined ? searchProviderFor(config) : deps.search,
+      search,
       priceSchedule,
       factcheckJobs: deps.factcheckJobs ?? createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }),
+    },
+    limits,
+  );
+  perspectivesRoutes(
+    app,
+    {
+      ...deps,
+      search,
+      priceSchedule,
+      outlets,
+      perspectivesJobs:
+        deps.perspectivesJobs ?? createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }),
     },
     limits,
   );

@@ -183,7 +183,7 @@ describe('discovery and auth', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await createTestApp();
     cleanup.push(t.close);
     const doc = ServerInfoSchema.parse(await (await t.app.request(SERVER_INFO_PATH)).json());
-    expect(doc.capabilities).toEqual({ classify: true, sync: true, factcheck: false });
+    expect(doc.capabilities).toEqual({ classify: true, sync: true, factcheck: false, perspectives: false });
   });
 
   it('test_sync_routes_require_device', async () => {

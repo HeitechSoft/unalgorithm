@@ -9,7 +9,8 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { AIError } from '@unalgorithm/ai';
-import { FACTCHECK_JOB_TTL_MS, type FactcheckResult } from '@unalgorithm/protocol';
+import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
+import { FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
 import { logSetupNeeded } from './admin/setup.ts';
 import { searchProviderFor } from './ai/factcheck.ts';
 import { clientForRoute } from './ai/provider.ts';
@@ -58,13 +59,18 @@ export interface StartOptions {
    * window, which the default logger does not feed.
    */
   errors?: ErrorWindow;
+  /**
+   * The outlet registry perspectives compares across; null: not offered. Default: `usableRegistry(bundledRegistry())`.
+   * Only the test entry (`test/support/fixture-outlets-entry.ts`) passes the fixture registry.
+   */
+  outlets?: Registry | null;
 }
 
 export interface RunningServer {
   /** `http://<host>:<port>` as bound. */
   url: string;
   /**
-   * Stops accepting, aborts the fact-check jobs and answers sync long-polls at once, waits up to 30 s for requests in
+   * Stops accepting, aborts the fact-check and perspectives jobs and answers sync long-polls at once, waits up to 30 s for requests in
    * flight (each answer closes its connection) and up to 10 s more for handlers still running, and meanwhile up to 10 s
    * for the jobs to release their holds and write their rows; then stops the background jobs (waiting for running ones)
    * and closes the database. Safe to call twice.
@@ -81,6 +87,12 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   const inFlight = inFlightRequests();
   // In memory only: a restart loses running checks (their holds are released on a stop, and expire after a crash).
   const factcheckJobs = createJobStore<FactcheckResult>({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 });
+  const perspectivesJobs = createJobStore<PerspectivesResult>({
+    ttlMs: FACTCHECK_JOB_TTL_MS,
+    maxRunning: 4,
+    maxKeptPerUser: 5,
+  });
+  const outlets = opts.outlets === undefined ? usableRegistry(bundledRegistry()) : opts.outlets;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     await logSetupNeeded(db.db, log);
@@ -116,8 +128,11 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       errors,
       search,
       linkCheck: egress.checkLinks,
+      resolveLink: egress.resolveLink,
       priceSchedule: host.priceSchedule,
       factcheckJobs,
+      perspectivesJobs,
+      outlets,
     });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
@@ -131,7 +146,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   let closing: Promise<void> | undefined;
   return {
     url: `http://${config.host.includes(':') ? `[${config.host}]` : config.host}:${port}`,
-    close: () => (closing ??= stop(server, { stopping, inFlight, log, jobs: factcheckJobs }, running, db)),
+    close: () => (closing ??= stop(server, { stopping, inFlight, log, jobs: [factcheckJobs, perspectivesJobs] }, running, db)),
   };
 }
 
@@ -159,10 +174,11 @@ export interface StopServingOptions {
   /** Default: `DRAIN_LIMIT_MS`. */
   drainMs?: number;
   /**
-   * The fact-check jobs (`AppDeps.factcheckJobs`): aborted with `stopping`, and drained (up to `drainMs`) alongside the
-   * requests, so each releases its hold and writes its row before the database closes. Default: none.
+   * The job stores (`AppDeps.factcheckJobs`, `AppDeps.perspectivesJobs`): aborted with `stopping`, and drained together
+   * (up to `drainMs`) alongside the requests, so each job releases its hold and writes its row before the database
+   * closes. Default: none.
    */
-  jobs?: JobStore<FactcheckResult>;
+  jobs?: readonly JobStore<unknown>[];
 }
 
 /**
@@ -175,8 +191,9 @@ export async function stopServing(server: Server, opts: StopServingOptions): Pro
   const drainMs = opts.drainMs ?? DRAIN_LIMIT_MS;
   // First: a sync long-poll would otherwise wait up to 20 s, and a check up to 4 minutes.
   opts.stopping.abort();
-  opts.jobs?.abortAll(new AIError('timeout', 'The server is stopping.'));
-  const jobsDrained = opts.jobs ? drainJobs(opts.jobs, drainMs, opts.log) : Promise.resolve();
+  const jobs = opts.jobs ?? [];
+  for (const store of jobs) store.abortAll(new AIError('timeout', 'The server is stopping.'));
+  const jobsDrained = Promise.all(jobs.map((store) => drainJobs(store, drainMs, opts.log)));
   try {
     await stopRequests(server, opts, drainMs);
   } finally {
@@ -184,7 +201,7 @@ export async function stopServing(server: Server, opts: StopServingOptions): Pro
   }
 }
 
-async function drainJobs(jobs: JobStore<FactcheckResult>, drainMs: number, log: Logger): Promise<void> {
+async function drainJobs(jobs: JobStore<unknown>, drainMs: number, log: Logger): Promise<void> {
   await jobs.drain(drainMs);
   if (jobs.running > 0) log.warn('server.stop_jobs_timeout', { running: jobs.running });
 }
@@ -233,7 +250,8 @@ export function startFailureMessage(err: unknown): string | undefined {
   return undefined;
 }
 
-async function main(): Promise<void> {
+/** Runs the server from the environment until SIGTERM or SIGINT. `opts.outlets`: see `StartOptions` (the test entry). */
+export async function main(opts: Pick<StartOptions, 'outlets'> = {}): Promise<void> {
   let config: Config;
   try {
     config = loadConfig(process.env);
@@ -249,7 +267,7 @@ async function main(): Promise<void> {
   const log = createLogger({ level: config.logLevel, onError: () => errors.record() });
   let server: RunningServer;
   try {
-    server = await startServer(config, { log, errors });
+    server = await startServer(config, { ...opts, log, errors });
   } catch (err) {
     const message = startFailureMessage(err);
     if (message !== undefined) console.error(message);

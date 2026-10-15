@@ -2,7 +2,8 @@
  * The canary (R22): posts pass through the server and nothing is kept. A marker in post text, link titles and the
  * interest profile is sent down every classify path in one run against one app and one database: a success, provider
  * failures that echo it, and requests the server refuses. The fact-check job endpoints get the same (P3-19): a done job,
- * a provider failure that echoes it, a friends-only post and an invalid body. Afterwards it must be in none of the app's
+ * a provider failure that echoes it, a friends-only post and an invalid body; so do the perspectives job endpoints
+ * (P3-35), with the marker in the shared link's URL path and title. Afterwards it must be in none of the app's
  * log lines, nothing the process wrote to standard output, standard error or the console, no error answer and no row of
  * any table, graphile-worker's included. The model (and, for a check, the search provider) is the one place it may
  * reach, and never from a friends-only post.
@@ -13,12 +14,16 @@
 import { readFileSync } from 'node:fs';
 import { format } from 'node:util';
 import { describeError } from '@unalgorithm/ai';
+import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
 import {
   CLASSIFY_PATH,
   ClassifyResponseSchema,
   FACTCHECK_JOBS_PATH,
   FactcheckJobSchema,
   factcheckJobPath,
+  PERSPECTIVES_JOBS_PATH,
+  PerspectivesJobSchema,
+  perspectivesJobPath,
 } from '@unalgorithm/protocol';
 import { FACTCHECK_PROMPT_VERSION } from '@unalgorithm/research';
 import { startMockSearxng } from '@unalgorithm/research/testing';
@@ -41,9 +46,36 @@ const RUN_TIMEOUT = 90_000;
 
 const TOM = 'tom@example.com';
 
-/** Fact-check on, researching through a mock SearXNG at `searchUrl`. */
+/** Fact-check and perspectives on, researching through a mock SearXNG at `searchUrl`. */
 const configFor = (searchUrl: string) =>
-  testConfig({ SIGNUP_ALLOWLIST: TOM, FACTCHECK: 'on', SEARCH_PROVIDER: 'searxng', SEARCH_URL: searchUrl });
+  testConfig({
+    SIGNUP_ALLOWLIST: TOM,
+    FACTCHECK: 'on',
+    PERSPECTIVES: 'on',
+    SEARCH_PROVIDER: 'searxng',
+    SEARCH_URL: searchUrl,
+  });
+
+/** A shared link carrying the marker in its URL path and its title: all of a link that leaves the device. */
+const CANARY_SHARED = { url: `https://news.example.com/2026/${CANARY}/bridge`, title: `Bridge reopens ${CANARY}` };
+/** The friends-only post's link, with `FRIENDS_ONLY` in its path so a test can tell whether it went anywhere. */
+const FRIENDS_SHARED = { url: `https://news.example.com/${FRIENDS_ONLY}/${CANARY}`, title: `Family ${CANARY}` };
+
+/**
+ * The mock SearXNG's answers: on a bucket search (a `site:` clause), one hit an hour old on each fixture domain named, so
+ * a comparison finds coverage; otherwise its default three hits.
+ */
+function canaryHits(query: string) {
+  const sites = [...query.matchAll(/site:([a-z0-9.-]+)/g)].map((m) => m[1] ?? '');
+  const domains = sites.length ? sites : ['a.example', 'b.example', 'c.example'];
+  const published = sites.length ? new Date(Date.now() - 3_600_000).toISOString() : null;
+  return domains.map((d, i) => ({
+    url: `https://${d}/record-${i + 1}`,
+    title: `Record ${i + 1}`,
+    snippet: `Records show that ${query.slice(0, 80)}.`,
+    published,
+  }));
+}
 const INSTANCE_NAME = testConfig().instanceName;
 
 /**
@@ -104,6 +136,14 @@ interface Answers {
   checkFriendsOnly: Answer;
   /** 11: a check whose body fails the schema. */
   checkInvalid: Answer;
+  /** 12: a comparison of the marked link, polled until done. */
+  compareDone: Answer;
+  /** 13: a comparison whose provider fails with a body that echoes the marker, polled until failed. */
+  compareProviderEcho: Answer;
+  /** 14: a comparison of a friends-only Facebook post's link, refused before a job. */
+  compareFriendsOnly: Answer;
+  /** 15: a comparison body carrying post text (the marker) in `text`, refused by the strict schema. */
+  compareInvalid: Answer;
 }
 
 interface CanaryRun {
@@ -116,8 +156,12 @@ interface CanaryRun {
   tables: Map<string, string>;
   /** Every body the mock provider received. */
   sent: string[];
-  /** Every query the mock SearXNG received. */
+  /** Every query the mock SearXNG received from the fact-check paths on. */
   searched: string[];
+  /** The queries of the done comparison (path 12). */
+  compareSearched: string[];
+  /** Every query the mock SearXNG received. */
+  allSearched: string[];
 }
 
 interface CanaryDatabase {
@@ -191,9 +235,9 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
   try {
     const database = await open();
     cleanup.push(() => database.close());
-    const searx = await startMockSearxng();
+    const searx = await startMockSearxng({ hits: canaryHits });
     cleanup.push(() => searx.close());
-    const t = await createTestApp({ config: configFor(searx.url), db: database.handle });
+    const t = await createTestApp({ config: configFor(searx.url), db: database.handle, outlets: FIXTURE_REGISTRY });
     cleanup.push(t.close);
     await seedPassingRoute(database.handle.db, {
       task: 'synthesis',
@@ -235,6 +279,22 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       }
     };
 
+    const startCompare = (body: unknown) => request(() => postJson(t.app, PERSPECTIVES_JOBS_PATH, body, auth));
+    /** Starts a comparison and polls it until it ends, as `check` does. */
+    const compare = async (body: unknown): Promise<Answer> => {
+      const before = t.mock.bodies.length;
+      const start = await startCompare(body);
+      if (start.status !== 202) return start;
+      const { id } = PerspectivesJobSchema.parse(JSON.parse(start.body));
+      for (;;) {
+        const res = await t.app.request(`${perspectivesJobPath(id)}?wait=1`, { headers: auth });
+        const answer = await res.text();
+        if (PerspectivesJobSchema.parse(JSON.parse(answer)).status === 'running') continue;
+        const headers = JSON.stringify([...res.headers]);
+        return { status: res.status, headers, body: answer, sent: t.mock.bodies.slice(before) };
+      }
+    };
+
     const classify = (body: unknown, auth: string | null = token) => request(() => postClassify(t.app, body, auth));
 
     const classified = await classify(classifyBody(posts, profile));
@@ -265,6 +325,22 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     // Neither refused check reached the search provider.
     expect(searx.queries.length).toBe(searchedPublic);
 
+    const compareSearchedBefore = searx.queries.length;
+    const compareDone = await compare({ v: 1, link: CANARY_SHARED, platform: 'linkedin' });
+    const compareSearched = searx.queries.slice(compareSearchedBefore);
+    t.mock.failNext(500, `echo: ${CANARY}`);
+    const compareProviderEcho = await compare({ v: 1, link: CANARY_SHARED, platform: 'facebook', audience: 'public' });
+    const comparedPublic = searx.queries.length;
+    const compareFriendsOnly = await compare({ v: 1, link: FRIENDS_SHARED, platform: 'facebook', audience: 'friends' });
+    const compareInvalid = await startCompare({
+      v: 1,
+      link: CANARY_SHARED,
+      platform: 'linkedin',
+      text: `Quarterly update ${CANARY}`,
+    });
+    // Neither refused comparison reached the search provider.
+    expect(searx.queries.length).toBe(comparedPublic);
+
     const answers: Answers = {
       classified,
       providerEcho,
@@ -278,6 +354,10 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       checkProviderEcho,
       checkFriendsOnly,
       checkInvalid,
+      compareDone,
+      compareProviderEcho,
+      compareFriendsOnly,
+      compareInvalid,
     };
     // `output` is filled when the capture stops, after the app and the database have closed.
     return {
@@ -287,6 +367,8 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       tables: await scanTables(database.handle),
       sent: t.mock.bodies,
       searched: searx.queries.slice(searchedBefore),
+      compareSearched,
+      allSearched: [...searx.queries],
     };
   } finally {
     try {
@@ -347,8 +429,8 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     for (const table of REQUIRED_TABLES) expect(names).toContain(`public.${table}`);
     // Better Auth's table was read, not the current role, and the rows written during the run were there to scan.
     expect(run.tables.get('public.user')).toContain(TOM);
-    // Five classify rows and two fact-check job rows.
-    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(7);
+    // Five classify rows, two fact-check job rows and two perspectives job rows.
+    expect(JSON.parse(run.tables.get('public.usage_events') ?? '[]')).toHaveLength(9);
     expect([...run.tables].filter(([, rows]) => rows.includes(CANARY)).map(([name]) => name)).toEqual([]);
   });
 
@@ -409,6 +491,51 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
 
     // Jobs live in memory only: the route module never touches graphile-worker.
     const source = readFileSync(new URL('../src/routes/factcheck.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/(?:from|import)\s*\(?\s*'[^']*(?:graphile-worker|jobs\/worker)/);
+  });
+
+  check('test_canary_perspectives_link_never_kept', () => {
+    const { compareDone, compareProviderEcho, compareFriendsOnly, compareInvalid } = run.answers;
+
+    // A done comparison: the link travelled to the model and, as its story query, to the search provider.
+    expect(compareDone.status).toBe(200);
+    const done = PerspectivesJobSchema.parse(JSON.parse(compareDone.body));
+    expect(done.status).toBe('done');
+    expect(done.result?.sources.length).toBeGreaterThan(0);
+    expect(compareDone.sent.length).toBeGreaterThanOrEqual(2);
+    expect(compareDone.sent.some((body) => body.includes(CANARY))).toBe(true);
+    expect(run.compareSearched).toHaveLength(5);
+    // Only the shared link left: no post text of any canary post reached the model during a comparison.
+    for (const body of [...compareDone.sent, ...compareProviderEcho.sent]) expect(body).not.toContain('Quarterly update');
+
+    // The provider echoed the marker: the job failed with `describeError` text only.
+    const failed = PerspectivesJobSchema.parse(JSON.parse(compareProviderEcho.body));
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toEqual({ code: 'overloaded', message: describeError('overloaded', INSTANCE_NAME) });
+    expect(compareProviderEcho.sent).toHaveLength(1);
+
+    // Refused before a job: the friends-only link reached neither the model nor the search provider.
+    expect(compareFriendsOnly.status).toBe(400);
+    expect(compareInvalid.status).toBe(400);
+    for (const answer of [compareFriendsOnly, compareInvalid]) expect(answer.sent).toEqual([]);
+    for (const body of run.sent) expect(body).not.toContain(FRIENDS_ONLY);
+    for (const query of run.allSearched) expect(query).not.toContain(FRIENDS_ONLY);
+
+    for (const answer of [compareDone, compareProviderEcho, compareFriendsOnly, compareInvalid]) {
+      expect(answer.headers).not.toContain(CANARY);
+    }
+    for (const answer of [compareProviderEcho, compareFriendsOnly, compareInvalid]) expect(answer.body).not.toContain(CANARY);
+    expect(run.log.filter((line) => line.includes('"event":"perspectives.done"'))).toHaveLength(2);
+    expect(run.log.filter((line) => line.includes(CANARY) || line.includes('news.example.com'))).toEqual([]);
+    expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
+
+    // Two job rows (done, failed), and no table holds the marker: graphile-worker's too on Postgres.
+    const rows = JSON.parse(run.tables.get('public.usage_events') ?? '[]') as { task: string }[];
+    expect(rows.filter((r) => r.task === 'perspectives')).toHaveLength(2);
+    expect([...run.tables].filter(([, r]) => r.includes(CANARY) || r.includes('news.example.com')).map(([t]) => t)).toEqual([]);
+
+    // Jobs live in memory only: the route module never touches graphile-worker.
+    const source = readFileSync(new URL('../src/routes/perspectives.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/(?:from|import)\s*\(?\s*'[^']*(?:graphile-worker|jobs\/worker)/);
   });
 });

@@ -593,7 +593,7 @@ describe('fact-check jobs: polling and lifecycle', { timeout: PGLITE_TIMEOUT }, 
 
     const GRACE_MS = 1_500;
     let stopped = false;
-    const stop = stopServing(server, { stopping, inFlight, log: t.deps.log, graceMs: GRACE_MS, jobs }).then(() => {
+    const stop = stopServing(server, { stopping, inFlight, log: t.deps.log, graceMs: GRACE_MS, jobs: [jobs] }).then(() => {
       stopped = true;
     });
     // Aborted at the start of the stop: the job has ended, its row written and its hold released, while the classify
