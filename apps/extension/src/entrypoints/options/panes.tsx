@@ -56,6 +56,7 @@ import { replaceSettings } from '../../lib/settings-store.ts';
 import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
+type SaveDevice = (mutate: (d: Device) => void) => Promise<void>;
 
 const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
 
@@ -974,10 +975,11 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
 
 // ---------- About ----------
 
-export function AboutPane() {
+export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: SaveDevice }) {
   const version = browser.runtime.getManifest().version;
   const site = 'https://unalgorithmfeed.com';
   const repo = 'https://github.com/HeitechSoft/unalgorithm';
+  const devBuild = import.meta.env.MODE !== 'production';
   return (
     <>
       <div className="ua-stack" style={{ justifyItems: 'center', textAlign: 'center', padding: '12px 0 28px' }}>
@@ -1000,6 +1002,23 @@ export function AboutPane() {
           onSelect={() => sendQuietly({ type: 'openPage', page: 'onboarding' })}
         />
       </ListGroup>
+      {devBuild ? (
+        <ListGroup
+          header="Developer"
+          footer="Development builds only. Labels show what UnAlgorithm read and decided for each post, never names or text."
+        >
+          <ListRow
+            title="Show detection labels on posts"
+            control={
+              <Switch
+                checked={device.dev.debugOverlay}
+                label="Show detection labels on posts"
+                onCheckedChange={(v) => void saveDevice((d) => void (d.dev.debugOverlay = v))}
+              />
+            }
+          />
+        </ListGroup>
+      ) : null}
       <Banner title="Built in the open">
         Found a post that was hidden by mistake? Use Why? → Wrong call on the post, or open an issue.{' '}
         <ExternalLink size={12} aria-hidden="true" style={{ display: 'inline' }} />

@@ -32,7 +32,7 @@ export function sampleHostTheme(doc: Document, sample: Element | null, fallback:
  * The only CSS we put on the host page itself: attribute rules on post roots, plus theme variables that
  * cascade into every shadow root. Removed when UnAlgorithm stops on the page.
  */
-export function globalCss(t: HostTheme): string {
+export function globalCss(t: HostTheme, debug = false): string {
   const ring = t.scheme === 'dark' ? 'rgb(60 207 192 / .75)' : 'rgb(11 122 117 / .7)';
   const glow = t.scheme === 'dark' ? 'rgb(60 207 192 / .14)' : 'rgb(11 122 117 / .1)';
   const vars = [
@@ -53,5 +53,18 @@ export function globalCss(t: HostTheme): string {
 @media (prefers-reduced-motion: reduce) { [data-unalgo] > * { animation: none !important; transition: none !important; } }
 unalgo-post { display: block; }
 unalgo-post, unalgo-layer { ${vars} }
-`;
+${debug ? DEBUG_CSS : ''}`;
 }
+
+/** Developer labels (dev builds only): a small tag in each feed item's top-right corner. */
+const DEBUG_CSS = `
+[data-unalgo-debug] { position: relative; }
+[data-unalgo-debug]::after {
+  content: attr(data-unalgo-debug); position: absolute; top: 0; right: 0; z-index: 3; max-width: 78%;
+  padding: 2px 6px; border-radius: 0 8px 0 6px; pointer-events: none; white-space: normal; text-align: left;
+  background: rgb(17 24 39 / .88); color: #fff; font: 500 10.5px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+[data-unalgo-debug*=" → HIDE"]::after, [data-unalgo-debug^="module"][data-unalgo-debug*="HIDE"]::after { background: rgb(180 35 24 / .92); }
+[data-unalgo-debug*="FOR YOU"]::after { background: rgb(11 122 117 / .94); }
+[data-unalgo-debug*="WAIT"]::after { background: rgb(161 92 0 / .94); }
+`;
