@@ -14,6 +14,16 @@
   minutes (was one every 3 minutes), so an open server cannot be used to flood someone's mailbox; a refused request never reaches Better Auth and logs
   `auth.code_limited` without the address.
 
+### Patch Changes
+
+- Updated dependencies [[`f2c45ea`](https://github.com/HeitechSoft/unalgorithm/commit/f2c45eabc82acd39e8a6b2d600a32a9894a78072), [`f2c45ea`](https://github.com/HeitechSoft/unalgorithm/commit/f2c45eabc82acd39e8a6b2d600a32a9894a78072)]:
+  - @unalgorithm/protocol@0.1.0
+  - @unalgorithm/core@0.1.0
+  - @unalgorithm/ai@0.0.1
+  - @unalgorithm/outlets@0.0.1
+  - @unalgorithm/research@0.0.1
+  - @unalgorithm/sync@0.0.1
+
 ## 0.2.0
 
 ### Minor Changes
