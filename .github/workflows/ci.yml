@@ -41,7 +41,8 @@ jobs:
         run: pnpm typecheck
 
       - name: Unit tests
-        run: pnpm test
+        # Every project but the server's, which the server job runs: the same files, on PGlite and on Postgres.
+        run: pnpm test --project '!server'
 
       - name: Fixtures contain no personal data
         run: pnpm fixtures:check
@@ -75,6 +76,22 @@ jobs:
 
       - name: Build
         run: pnpm zip
+
+      - name: Playwright version
+        id: playwright
+        working-directory: apps/extension
+        shell: bash
+        run: |
+          version=$(pnpm exec playwright --version)
+          echo "version=${version#Version }" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        # Downloading it takes 2-3 minutes on Windows. The install step below still runs: it adds the system packages
+        # on Linux and downloads nothing when the cached browser matches this Playwright version.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.os == 'Windows' && '~/AppData/Local/ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
 
       - name: Install Chromium
         working-directory: apps/extension
