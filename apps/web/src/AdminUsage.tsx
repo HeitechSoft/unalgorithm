@@ -92,6 +92,7 @@ function UsageDetails({ overview: { today, last30Days, spendLimitMicros, breaker
         <ListRow title="AI cost" control={figure(formatApproxCost(today.costMicros))} />
         <ListRow title="Daily spend limit" control={figure(formatPrice(spendLimitMicros))} />
       </ListGroup>
+      {ops ? <ServerStatus ops={ops} /> : null}
       <table className="web-table">
         <caption>Last 30 days (UTC)</caption>
         <thead>
@@ -113,7 +114,6 @@ function UsageDetails({ overview: { today, last30Days, spendLimitMicros, breaker
           ))}
         </tbody>
       </table>
-      {ops ? <ServerStatus ops={ops} /> : null}
     </>
   );
 }
