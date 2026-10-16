@@ -1,19 +1,15 @@
 # Releasing
 
-## Two release trains
+## What is released here
 
-UnAlgorithm Feed ships from this repository on two trains, versioned independently. Neither train's tags trigger the
-other's workflow.
+The extension is released from this repository: `vX.Y.Z` tags, built by `.github/workflows/release.yml` into the Chrome
+zip on a GitHub Release, then the Chrome Web Store (the steps below).
 
-| Train | Tag | Workflow | What it publishes |
-|---|---|---|---|
-| Extension | `vX.Y.Z` | `.github/workflows/release.yml` | The Chrome zip on a GitHub Release, then the Chrome Web Store (the steps below) |
-| Server | `server-vX.Y.Z` | `.github/workflows/server-release.yml` | The private image `ghcr.io/heitechsoft/unalgorithm-server`, for UnAlgorithm Cloud; no GitHub Release ([Server releases](#server-releases)) |
-
-UnAlgorithm Cloud, HeitechSoft's hosted server, is not released from here: its private repository pins a server
-release and builds the Cloud image from that tag (ADR 0007, [Pinning a release](#pinning-a-release)). Security fixes
-follow their own rule: see [Security fixes](#security-fixes). Credit prices are dated: a raise is scheduled at least
-30 days ahead, a cut can start at the next 00:00 UTC, and every part switches on its date: see
+The server (`apps/server`) is not released from here: no tags, no GitHub Releases and no public images (Tom,
+2026-10-16). It runs UnAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
+repository (ADR 0007, amended; [The server](#the-server)). Its source stays public here. Security fixes follow their
+own rule: see [Security fixes](#security-fixes). Credit prices are dated: a raise is scheduled at least 30 days ahead,
+a cut can start at the next 00:00 UTC, and every part switches on its date: see
 [Changing a price card](#changing-a-price-card).
 
 ## Versioning
@@ -85,76 +81,21 @@ Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the
           UA_CLOUD: "1"
 ```
 
-## Server releases
-
-The server (`apps/server`) has a release train of its own: tags `server-vX.Y.Z`, built by
-`.github/workflows/server-release.yml` into the image `ghcr.io/heitechsoft/unalgorithm-server`. The image is private
-and a server release creates no GitHub Release: the server is for UnAlgorithm Cloud and its billing (Tom, 2026-10-16),
-so the repository's releases list shows only the extension. Its source stays public here. The extension's
-`v*.*.*` tags and the server's `server-v*.*.*` tags never trigger each other's workflow. The steps above are for the
-extension.
-
-### Versioning
+## The server
 
 The server version lives in `apps/server/package.json` and follows semver, independently of the extension. A PR that
 changes the server adds a changeset for `@unalgorithm/server` (`pnpm changeset`); the **Version packages** PR bumps the
-version and writes `apps/server/CHANGELOG.md`, the server's history.
+version and writes `apps/server/CHANGELOG.md`, the server's history. The server is not tagged or released here.
 
-### Steps
+UnAlgorithm Cloud's private repository pins a commit of this repository's `main`, builds the Cloud image from it
+(`apps/server/Dockerfile`, with the repository root as the build context) together with its billing module, and deploys
+it. Before it builds, it checks that no price in effect changed since the commit it last deployed
+(`scripts/check-price-schedule.mjs --base <that commit> --in-effect-only`). A running server reports its `version`
+from `apps/server/package.json` in `/.well-known/unalgorithm.json`, and the Cloud sets `SOURCE_URL` to the pinned
+commit's tree, so `source` there links to the exact code it runs (AGPL section 13).
 
-1. Review the `apps/server/CHANGELOG.md` wording in the **Version packages** PR, then merge it.
-2. Tag the merge commit and push the tag:
-   ```bash
-   git tag server-v0.1.0 && git push origin server-v0.1.0
-   ```
-3. `server-release.yml`'s `verify` job installs the dependencies and runs lint, typecheck, tests and the server
-   licence check with a read-only token.
-4. Approve the deployment: the `publish` job runs in the protected `release` environment and waits for a reviewer. It
-   holds the write, OIDC and attestation rights and runs no pnpm or project dependency on the runner. It checks the tag
-   matches the version in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and
-   pushes the image and attests its build provenance.
-
-### The `release` environment
-
-Both trains deploy through the same protected `release` environment. Its deployment tag rules (Settings → Environments
-→ release → Deployment branches and tags) must list both patterns, each of type tag:
-
-- `v*.*.*` for the extension;
-- `server-v*.*.*` for the server. Without it, the server job is rejected before any step runs instead of waiting for
-  approval.
-
-Add the server rule before pushing the first server tag, then check that this call lists both patterns, each with
-`"type": "tag"`:
-
-```bash
-gh api repos/HeitechSoft/unalgorithm/environments/release/deployment-branch-policies
-```
-
-### What is published
-
-- The image `ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z`, and `:latest` moved to it. The image carries an SBOM and
-  BuildKit provenance, and its OCI labels name the source repository, the licence (AGPL-3.0-only) and the version.
-- A build provenance attestation for the image digest, stored in the registry and on GitHub. With access to the
-  package, check it:
-  ```bash
-  gh attestation verify oci://ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z --repo HeitechSoft/unalgorithm
-  ```
-
-**The package stays private.** GHCR creates it private on the first push. UnAlgorithm Cloud's private repository and
-its server pull it with access granted in the package settings (Package settings → Manage Actions access, for the
-private repository's workflows) or with a token that can read packages. Don't change its visibility: a public package
-can't be made private again.
-
-### Pinning a release
-
-A server pins a release with `UNALGORITHM_VERSION=X.Y.Z` in the `.env` next to `apps/server/compose.yaml` (unset,
-compose runs `latest`), and upgrades by changing it and running `docker compose pull && docker compose up -d`, with
-access to the private package.
-A running server reports its release as `version` in `/.well-known/unalgorithm.json`, and `source` links to the
-`server-vX.Y.Z` tree unless `SOURCE_URL` names the source of a modified build.
-
-UnAlgorithm Cloud, HeitechSoft's hosted server, pins a server release in its private repository and builds its image
-from that tag (ADR 0007), so its `/.well-known/unalgorithm.json` reports the public release it runs.
+The image `ghcr.io/heitechsoft/unalgorithm-server:0.2.0`, pushed on 2026-10-16 before this change, stays private and is
+not updated.
 
 ### After restoring a database
 
@@ -183,7 +124,8 @@ The `price-schedule` CI job enforces them on pull requests and pushes to `main`:
 - A cut may take effect from the next 00:00 UTC, and a scheduled raise may be lowered or cancelled before its date.
 - An entry not yet in effect may be removed, unless that raises a price within the 30 days.
 
-`server-release.yml` checks the first rule again before it builds an image, against the previous `server-v*` release.
+UnAlgorithm Cloud's private build checks the first rule again (`--in-effect-only`) before it builds an image, against
+the commit it last deployed ([The server](#the-server)).
 
 ### Adding a task
 
@@ -212,13 +154,14 @@ classify and perspectives cards unchanged.
 
 The check uses its run's clock, and GitHub does not run it again at merge. On the day you merge a pull request that
 touches the schedule, re-run its `price-schedule` check first and merge only on green. Merge a cut early enough that
-its push-to-`main` run and steps 2 to 4 below finish before 00:00 UTC of its date.
+its push-to-`main` run and steps 2 and 3 below finish before 00:00 UTC of its date.
 
-A red `price-schedule` run on `main` is fixed before any server release, with two exceptions that need no fix:
+A red `price-schedule` run on `main` is fixed before the Cloud deploys a commit after it, with two exceptions that
+need no fix:
 
-- A cut merged after its date, or whose push run started after its date, stays as merged. Rule 1 still holds at release
-  (the previous release lacks the entry), no release charges a date already past, and the Cloud charges the previous
-  card until it runs the cut.
+- A cut merged after its date, or whose push run started after its date, stays as merged. Rule 1 still holds at the
+  Cloud build (the previously deployed commit lacks the entry), no build charges a date already past, and the Cloud
+  charges the previous card until it runs the cut.
 - The restoration below, whose own push run is red as expected.
 
 When the red run is a price in effect that was removed, the fix restores the entry exactly. The check refuses that
@@ -231,26 +174,25 @@ All of it is done before the effective date:
 
 1. Add the entry, with the code owner's sign-off (@TomHeiber) and changesets for the server and the extension, and
    merge it.
-2. Cut a `server-vX.Y.Z` release ([Server releases](#server-releases)).
-3. HeitechSoft adds the same entry to the Cloud module's multiplier schedule, pins that release, and deploys the Cloud.
-   The module's CI and its start-up check refuse a schedule that differs from the release's, future entries included.
-4. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit with the entry.
-5. Deploy the website.
+2. HeitechSoft adds the same entry to the Cloud module's multiplier schedule, pins a commit with the entry, and deploys
+   the Cloud ([The server](#the-server)). The module's CI and its start-up check refuse a schedule that differs from the
+   pinned commit's, future entries included.
+3. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit with the entry.
+4. Deploy the website.
 
 **Price cuts.** A cut may take effect from the next 00:00 UTC; raises keep the 30-day notice. Date a cut at the first
-00:00 UTC by which the server release and the Cloud deploy (steps 2 and 3) can be done, and release the server, deploy
-the Cloud and release the extension (steps 1 to 4) before that date. The Cloud keeps charging the previous card until
-it runs a release with the cut, and the ledger records which card priced each request (`price_from`). A cut is never
+00:00 UTC by which the Cloud deploy (step 2) can be done, and deploy the Cloud and release the extension (steps 1 to 3)
+before that date. The Cloud keeps charging the previous card until it runs a build with the cut, and the ledger records which card priced each request (`price_from`). A cut is never
 cancelled because a step is late (within 30 days of its date the check refuses that): finish the late steps as soon as
 possible. An extension release that trails the cut is harmless: older extensions estimate fewer posts than the balance
-buys. The website is redeployed on or after the date, and only once the Cloud runs the cut (step 5 is not needed
+buys. The website is redeployed on or after the date, and only once the Cloud runs the cut (step 4 is not needed
 before it): until then it shows the earlier, higher price, never a lower one than the Cloud charges.
 
 On the date, at 00:00 UTC, each part switches by itself:
 
 - the Cloud charges requests checked from then on at the new card;
 - the account page shows the new price;
-- extensions with step 4's release estimate at it.
+- extensions with step 3's release estimate at it.
 
 The website is the exception. It is static, so it cannot switch by itself. Every line on it about a scheduled price is
 dated, so a scheduled change stays true on it. Deploy it again on or after the date so its first line and its examples
@@ -263,13 +205,13 @@ balance buys, never more.
 ### Cancelling
 
 Before the date, a change is cancelled by removing its entry, except a cut within 30 days of its date: removing it
-would raise a price people were told, and the check refuses it. Steps 2 to 5 are repeated before the date, the
+would raise a price people were told, and the check refuses it. Steps 2 to 4 are repeated before the date, the
 extension release included, or installed extensions estimate at the cancelled price from that date. If any step of a
 raise, or of a cut more than 30 days from its date, cannot be finished before the date, cancel the change, also before
 the date; a cut within 30 days of its date is never cancelled because a step is late (Price cuts, above).
 
 A cancellation that has not reached the Cloud by the date leaves that price in effect: the Cloud charges it from 00:00
-UTC and then refuses to start on a release without it. So the entry is restored on `main` (the override above) and is
+UTC and then refuses to start on a build without it. So the entry is restored on `main` (the override above) and is
 changed from then on only by a new dated entry (a cut back to the earlier price can start at the next 00:00 UTC).
 
 ### Once in effect, no rollback
@@ -280,9 +222,9 @@ There is no rollback of a price in effect. A wrong price is corrected by a new d
 ### The starter credit
 
 `STARTER_CREDIT` (`packages/protocol/src/billing.ts`) is not a price and is not dated. A change to it is merged,
-released in a `server-vX.Y.Z`, pinned and deployed on the Cloud, released in the extension, and only then shown by a
-website deploy. The website is not deployed between the merge and the Cloud deploy unless from a commit whose
-`STARTER_CREDIT` equals the running Cloud release's. It is reverted the same way.
+pinned and deployed on the Cloud, released in the extension, and only then shown by a website deploy. The website is
+not deployed between the merge and the Cloud deploy unless from a commit whose `STARTER_CREDIT` equals the running
+Cloud build's. It is reverted the same way.
 
 ## Security fixes
 
@@ -290,9 +232,7 @@ Vulnerabilities are reported privately ([SECURITY.md](../SECURITY.md)), and thei
 released.
 
 - **Extension:** the fix ships in the next `vX.Y.Z` release.
-- **Server:** the fix may reach UnAlgorithm Cloud before the public server release, as in any coordinated disclosure
-  (ADR 0007). The public `server-vX.Y.Z` release with the fix follows within 30 days of the Cloud fix, or at once if
-  the issue is already public.
-- The GitHub security advisory is published with the public release and names the server release that fixes the issue
-  (and the extension release, when the extension changed too), so self-hosters know which `UNALGORITHM_VERSION` to
-  pin.
+- **Server:** the fix may reach UnAlgorithm Cloud before it is merged here, as in any coordinated disclosure (ADR
+  0007). It is merged to `main` within 30 days of the Cloud fix, or at once if the issue is already public.
+- The GitHub security advisory is published when the fix is public and names the commit that fixes the server (and
+  the extension release, when the extension changed too).

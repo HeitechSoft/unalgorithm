@@ -1,5 +1,10 @@
 # Run your own UnAlgorithm Feed server
 
+> **Note (2026-10-16):** HeitechSoft no longer publishes server releases or images: the server is for UnAlgorithm
+> Cloud. To run your own, clone this repository at a commit of `main` instead of a `server-v<version>` tag, and build
+> the image yourself (`docker compose build` in `apps/server`) instead of pulling it. The steps below still describe
+> releases and `docker compose pull`.
+
 This guide takes you from a fresh Linux server to your own UnAlgorithm server: HTTPS, you as its admin, the people you
 invite, daily limits, nightly encrypted backups, and a restore after losing the machine. Every command below is meant
 to be copied as it is. Replace only these placeholders: `<version>` (a server release, such as `0.1.0`), `<file>` (a

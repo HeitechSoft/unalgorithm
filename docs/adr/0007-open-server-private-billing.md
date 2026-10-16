@@ -44,3 +44,12 @@ code it keeps private.
   contributions are merged only with a signed CLA, and no third-party copyleft code goes into the server or the module.
 - Security fixes may reach the Cloud before their public release, as in any coordinated disclosure.
 - Two release trains: server releases here, then a Cloud release that pins one.
+
+## Amendment (2026-10-16)
+
+Tom: the server is for UnAlgorithm Cloud and its billing. There are no public server releases: no `server-v*` tags, no
+GitHub Releases and no public image. The private repository builds the Cloud image from a pinned commit of this
+repository (not from a tagged release or a published image), adds the billing module through `BillingProvider`, and
+still never patches the server. The Cloud reports the server version it runs in `/.well-known/unalgorithm.json`, and
+its `SOURCE_URL` links to the pinned commit. The source stays public under the AGPL, and the website doesn't publish
+the self-hosting guide. This replaces "Two release trains" above: the extension is the only train released here.
