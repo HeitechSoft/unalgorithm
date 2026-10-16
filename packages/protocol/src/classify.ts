@@ -78,7 +78,7 @@ export const ClassificationSchema = z.object({
   topics: z.array(z.string().max(32)).max(3),
   /** One short, plain-language sentence explaining the call. */
   reason: z.string().max(140),
-  /** Phase 3 hooks: stored now, used to offer "Check facts" / "Other perspectives" later. */
+  /** Phase 3 hooks: stored now, used to offer "Check facts" / "UnEcho Chamber" later. */
   isNews: z.boolean(),
   hasCheckableClaims: z.boolean(),
 });

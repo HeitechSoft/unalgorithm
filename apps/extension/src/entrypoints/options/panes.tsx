@@ -21,7 +21,7 @@ import {
   sourceCapabilities,
   type Topic,
 } from '@unalgorithm/core';
-import { NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
 import {
   Badge,
   Banner,
@@ -765,13 +765,13 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
       {onCompat ? <WebSearchKey device={device} /> : null}
       <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
         <ListRow
-          title="Fact-check"
+          title={FEATURE_NAMES.factcheck}
           subtitle={capable ? undefined : needs}
           control={
             <Switch
               checked={capable && device.labs.factcheck}
               disabled={!capable}
-              label="Fact-check"
+              label={FEATURE_NAMES.factcheck}
               onCheckedChange={(v) => void saveDevice((d) => void (d.labs.factcheck = v))}
             />
           }
@@ -786,14 +786,16 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
       </ListGroup>
       {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
       {perspectivesRegistry() !== null ? (
-        <ListGroup footer="Adds Other perspectives to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.">
+        <ListGroup
+          footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.`}
+        >
           <ListRow
-            title="Other perspectives"
+            title={FEATURE_NAMES.perspectives}
             subtitle={
               can.perspectives
                 ? undefined
                 : onServer
-                  ? "Your server doesn't offer Other perspectives."
+                  ? `Your server doesn't offer ${FEATURE_NAMES.perspectives}.`
                   : onCompat
                     ? needsKey
                     : 'Needs your own Anthropic key or a server that offers it.'
@@ -802,7 +804,7 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
               <Switch
                 checked={can.perspectives && device.labs.perspectives}
                 disabled={!can.perspectives}
-                label="Other perspectives"
+                label={FEATURE_NAMES.perspectives}
                 onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
               />
             }

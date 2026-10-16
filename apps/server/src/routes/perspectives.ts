@@ -1,5 +1,5 @@
 /**
- * Other perspectives jobs (F22, F18): one shared link in, a comparison of its coverage across the registry's lean
+ * UnEcho Chamber jobs (F22, F18): one shared link in, a comparison of its coverage across the registry's lean
  * buckets out, on the job kit (`routes/jobs.ts`), which owns the lifecycle, the holds, the usage row and the no-content
  * logging. The request is the link alone (URL and link-card title) with the platform and audience: the schema is strict,
  * so a body carrying post text or any other field is refused, never stripped. The link is never logged or stored.
@@ -8,6 +8,7 @@ import { AIError } from '@unalgorithm/ai';
 import type { Registry } from '@unalgorithm/outlets';
 import {
   type CreditPriceSchedule,
+  FEATURE_NAMES,
   PERSPECTIVES_JOBS_PATH,
   type PerspectivesJobRequest,
   PerspectivesJobRequestSchema,
@@ -48,11 +49,11 @@ export function perspectivesRoutes(
       request: PerspectivesJobRequestSchema,
       view: PerspectivesJobSchema,
       texts: {
-        notOffered: 'Other perspectives is not offered on this server.',
+        notOffered: `${FEATURE_NAMES.perspectives} is not offered on this server.`,
         start: 'The comparison is running',
         refused400: 'The request was not valid, or the post is not public',
         refused429: "Too many requests, a comparison already running, or today's limit is reached",
-        unavailable503: 'Other perspectives is not offered, no AI route is available, or the server is busy',
+        unavailable503: `${FEATURE_NAMES.perspectives} is not offered, no AI route is available, or the server is busy`,
         busyUser: 'A comparison is already running for this account.',
         busyServer: 'The server is running as many comparisons as it can.',
       },

@@ -97,7 +97,7 @@ export interface Bridge {
   /** True when the side panel opened (P3-06 `openFactcheck`); false when Chrome refused, or on a stale context. */
   openFactcheck(): Promise<boolean>;
   /**
-   * "Other perspectives" for one post's shared link (P3-38). Only the link (URL and link-card title), the platform and
+   * UnEcho Chamber for one post's shared link (P3-38). Only the link (URL and link-card title), the platform and
    * the audience leave the content script, never post text; only ever called after the person confirmed the price.
    */
   perspectives(
@@ -153,7 +153,7 @@ export interface Entry {
   coach?: boolean;
   /** "Check facts" progress; absent means offered (when the offer rule holds). */
   factcheck?: JobProgress;
-  /** "Other perspectives" progress, as fact-check's. */
+  /** UnEcho Chamber progress, as fact-check's. */
   perspectives?: JobProgress;
 }
 

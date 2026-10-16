@@ -114,8 +114,8 @@ describe('Labs pane', () => {
 
   it('test_labs_perspectives_row_hidden_without_registry', () => {
     render(<LabsPane device={device({ kind: 'anthropic', model: null })} saveDevice={vi.fn(async () => {})} />);
-    expect(screen.queryByText('Other perspectives')).toBeNull();
-    expect(screen.queryByRole('switch', { name: 'Other perspectives' })).toBeNull();
+    expect(screen.queryByText('UnEcho Chamber')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'UnEcho Chamber' })).toBeNull();
     const fc = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
     expect(fc.disabled).toBe(false);
   });
@@ -131,7 +131,7 @@ describe('Labs pane', () => {
     });
     render(<LabsPane device={stored} saveDevice={saveDevice} />);
     expect(screen.getByText(/sends only the link and its title/)).toBeTruthy();
-    const sw = screen.getByRole('switch', { name: 'Other perspectives' }) as HTMLButtonElement;
+    const sw = screen.getByRole('switch', { name: 'UnEcho Chamber' }) as HTMLButtonElement;
     expect(sw.disabled).toBe(false);
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await user.click(sw);
@@ -153,10 +153,10 @@ describe('Labs pane', () => {
     const save = vi.fn(async () => {});
     render(<LabsPane device={onServer} saveDevice={save} />);
     await waitFor(() => expect((screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement).disabled).toBe(false));
-    const off = screen.getByRole('switch', { name: 'Other perspectives' }) as HTMLButtonElement;
+    const off = screen.getByRole('switch', { name: 'UnEcho Chamber' }) as HTMLButtonElement;
     expect(off.disabled).toBe(true);
     expect(off.getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByText("Your server doesn't offer Other perspectives.")).toBeTruthy();
+    expect(screen.getByText("Your server doesn't offer UnEcho Chamber.")).toBeTruthy();
     await user.click(off);
     expect(save).not.toHaveBeenCalled();
   });

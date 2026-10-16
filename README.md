@@ -71,7 +71,7 @@ Requires Chrome (or another Chromium browser) 130 or newer. LinkedIn and Faceboo
 | AI | Anthropic, OpenAI and OpenAI-compatible servers work end to end. Chrome's on-device AI depends on your hardware and Chrome version. |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is next: UnAlgorithm Cloud (sync, hosted AI with pay-as-you-go
-credits), fact-checking and "Other perspectives", more browsers and platforms.
+credits), fact-checking and UnEcho Chamber, more browsers and platforms.
 
 ## Develop
 

@@ -1,5 +1,5 @@
 import type { FilterReason } from '@unalgorithm/core';
-import type { PlatformId } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, type PlatformId } from '@unalgorithm/protocol';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../components/controls.tsx';
 import { Badge } from '../components/feedback.tsx';
@@ -33,7 +33,7 @@ import type { WhyActionId, WhyModel } from './why.ts';
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
 
 /**
- * A Labs job on a public post ("Check facts", "Other perspectives"): offered, then the price, then running, then the
+ * A Labs job on a public post ("Check facts", "UnEcho Chamber"): offered, then the price, then running, then the
  * outcome.
  */
 export interface FactcheckItemModel {
@@ -65,7 +65,7 @@ export interface FeedItemModel {
   vote?: 'more' | 'less';
   coach?: boolean;
   factcheck?: FactcheckItemModel;
-  /** "Other perspectives" on a public news post that shares a link (Labs); same states as fact-check. */
+  /** UnEcho Chamber on a public news post that shares a link (Labs); same states as fact-check. */
   perspectives?: FactcheckItemModel;
 }
 
@@ -261,11 +261,14 @@ function Row({ children, bar, label }: { children: ReactNode; bar?: boolean; lab
   );
 }
 
-/** Per-feature words of a job row. Copy is a draft (D37). */
+/** Per-feature words of a job row. Copy is a draft (D37, D74). */
 interface JobWords {
-  /** The row's group label. */
-  label: 'Fact-check' | 'Other perspectives';
-  start: 'Check facts' | 'Other perspectives';
+  /** The row's group label: the feature's name (`FEATURE_NAMES`). */
+  label: string;
+  /** The start button's visible text. */
+  start: string;
+  /** The start button's accessible name when its text alone doesn't say what it does; it starts with `start`. */
+  startLabel?: string;
   confirm: 'Check' | 'Compare';
   running: 'Checking facts…' | 'Comparing coverage…';
   done: 'Checked.' | 'Compared.';
@@ -273,7 +276,7 @@ interface JobWords {
 }
 
 const FACTCHECK_WORDS: JobWords = {
-  label: 'Fact-check',
+  label: FEATURE_NAMES.factcheck,
   start: 'Check facts',
   confirm: 'Check',
   running: 'Checking facts…',
@@ -282,8 +285,10 @@ const FACTCHECK_WORDS: JobWords = {
 };
 
 const PERSPECTIVES_WORDS: JobWords = {
-  label: 'Other perspectives',
-  start: 'Other perspectives',
+  label: FEATURE_NAMES.perspectives,
+  start: FEATURE_NAMES.perspectives,
+  // The visible name first (WCAG 2.5.3, label in name), then what the button does.
+  startLabel: `${FEATURE_NAMES.perspectives}: see how outlets across the spectrum covered this story`,
   confirm: 'Compare',
   running: 'Comparing coverage…',
   done: 'Compared.',
@@ -310,7 +315,14 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
     <div className="ua-row ua-row--bar ua-fc" role="group" aria-label={words.label}>
       {model.state === 'offered' ? (
         <>
-          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={words.icon} onClick={() => on('start')}>
+          <Button
+            size="sm"
+            variant="tinted"
+            className="ua-btn ua-btn--tint"
+            icon={words.icon}
+            aria-label={words.startLabel}
+            onClick={() => on('start')}
+          >
             {words.start}
           </Button>
           <Badge tone="ai">Labs</Badge>

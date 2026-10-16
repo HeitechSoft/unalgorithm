@@ -1,5 +1,5 @@
 import { checkCostLine, dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
-import type { PlatformId, PostKey } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, type PlatformId, type PostKey } from '@unalgorithm/protocol';
 import {
   Banner,
   Button,
@@ -85,7 +85,7 @@ export function App() {
         .filter((e) => e !== openEntry)
         .slice(0, 4)
         .map((e) => ({
-          label: e.task === 'perspectives' ? `Other perspectives: ${e.label}` : e.label,
+          label: e.task === 'perspectives' ? `${FEATURE_NAMES.perspectives}: ${e.label}` : e.label,
           onOpen: () => setNav({ tabId, at: Date.now(), pick: e.startedAt }),
         })),
       onBack: () => setNav({ tabId, at: Date.now(), pick: null }),

@@ -1,5 +1,5 @@
 /**
- * "Other perspectives" eval set v0 (RM4, decision D33): ten synthetic stories shared from fictional `*.example` outlets
+ * UnEcho Chamber eval set v0 (RM4, decision D33): ten synthetic stories shared from fictional `*.example` outlets
  * of the fixture registry, never a real person, outlet or event. Four mirror pairs share the same story from
  * opposite-bucket outlets with neutral titles; one story has a coverage gap; one link title carries an instruction aimed
  * at the model. A live set needs a reviewed registry v0 and real links (decision D51): not this file.

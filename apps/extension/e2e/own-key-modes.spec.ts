@@ -41,7 +41,7 @@ import {
 } from './perspectives-fixtures.ts';
 
 /**
- * Fact-check and Other perspectives end to end on RM4's own-key modes (P3-47): the real extension in Chromium on an own
+ * Fact-check and UnEcho Chamber end to end on RM4's own-key modes (P3-47): the real extension in Chromium on an own
  * OpenAI key (a mocked api.openai.com) and on an OpenAI-compatible server (the mock OpenAI server on 127.0.0.1) with a
  * Brave key entered in Settings → Labs (a mocked api.search.brave.com). The e2e build has both hosts from the start,
  * since Playwright can't answer a permission prompt. Every other request is aborted by the fixtures. No server, no Docker.
@@ -245,7 +245,7 @@ async function mockBrave(context: BrowserContext): Promise<MockBrave> {
 // ---------- setup ----------
 
 /** Test and save the OpenAI key from an extension page (the model comes from the mocked list), and turn a Labs switch on. */
-async function setUpOpenAI(context: BrowserContext, extensionId: string, labs: 'Fact-check' | 'Other perspectives') {
+async function setUpOpenAI(context: BrowserContext, extensionId: string, labs: 'Fact-check' | 'UnEcho Chamber') {
   const options = await saveSource(context, extensionId, OPENAI_SOURCE, OPENAI_KEY, { test: true });
   await turnOnLabs(options, labs);
   return options;

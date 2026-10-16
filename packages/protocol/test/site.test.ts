@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CLOUD_BETA_DOCUMENTS,
@@ -6,6 +6,7 @@ import {
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
   CREDITS_PAGE,
+  FEATURE_NAMES,
   PRICING_FOOTER_LINK,
   PRICING_REDIRECT,
   STARTER_CREDIT,
@@ -170,6 +171,54 @@ describe('cloud beta documents', () => {
       // No placeholder left for review to fill.
       expect(text, name).not.toMatch(/<[A-Z]+>|\bTODO\b|\bTBD\b/);
       expect(text, name).toMatch(/^Last updated: \d{1,2} \w+ \d{4}$/m);
+    }
+  });
+});
+
+describe('feature names (P3-63)', () => {
+  /** Every text file under `path` (a file or a directory), skipping dependencies, release history and changesets. */
+  const textFiles = (path: string): string[] => {
+    const url = new URL(path, REPO_ROOT);
+    if (!existsSync(url)) return [];
+    if (statSync(url).isFile()) {
+      const bytes = readFileSync(url);
+      return /(^|\/)CHANGELOG\.md$/.test(path) || bytes.includes(0) ? [] : [path];
+    }
+    return readdirSync(url)
+      .filter((name) => name !== 'node_modules' && name !== '.changeset')
+      .flatMap((name) => textFiles(`${path.replace(/\/$/, '')}/${name}`));
+  };
+  /** The directories directly inside `parent` (`apps`, `packages`). */
+  const children = (parent: string): string[] =>
+    readdirSync(new URL(`${parent}/`, REPO_ROOT)).filter((name) =>
+      statSync(new URL(`${parent}/${name}`, REPO_ROOT)).isDirectory(),
+    );
+  const markdownUnder = (path: string): string[] => textFiles(path).filter((file) => file.endsWith('.md'));
+
+  it('test_feature_names_unecho_chamber', () => {
+    expect(FEATURE_NAMES).toStrictEqual({ factcheck: 'Fact-check', perspectives: 'UnEcho Chamber' });
+    expect(Object.isFrozen(FEATURE_NAMES)).toBe(true);
+  });
+
+  it('test_old_feature_name_is_gone', () => {
+    const roots = [
+      ...children('apps').map((app) => `apps/${app}/src`),
+      ...children('packages').flatMap((pkg) => [`packages/${pkg}/src`, `packages/${pkg}/eval`, `packages/${pkg}/README.md`]),
+      'apps/server/.env.example',
+      '.github',
+      ...readdirSync(REPO_ROOT).filter((name) => name.endsWith('.md')),
+    ];
+    const files = [...roots.flatMap(textFiles), ...markdownUnder('docs')];
+    expect(files.length).toBeGreaterThan(100);
+    expect(files.filter((file) => /other\s+perspectives|reality\s+mode/i.test(read(file)))).toStrictEqual([]);
+  });
+
+  it('test_brand_doc_names_unecho_chamber', () => {
+    const brand = flat(read('docs/brand.md'));
+    const section = brand.slice(brand.indexOf('## Feature names'));
+    expect(brand).toContain('## Feature names');
+    for (const phrase of ['UnEcho Chamber', 'never a separate product', 'never shortened', '`perspectives`', 'FEATURE_NAMES']) {
+      expect(section, phrase).toContain(phrase);
     }
   });
 });

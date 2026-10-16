@@ -254,7 +254,9 @@ describe('Check facts: price first, then the check', () => {
     const { c, b, user } = await offeredPost();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await flush();
-    expect(screen.getByRole('button', { name: 'Check facts' })).toBeTruthy();
+    const start = screen.getByRole('button', { name: 'Check facts' });
+    // Its visible text is its whole name: no aria-label (only UnEcho Chamber's button adds what it does).
+    expect(start.hasAttribute('aria-label')).toBe(false);
     expect(screen.getByText('Labs')).toBeTruthy();
     expect(screen.queryByText(PRICE)).toBeNull();
     expect(b.factcheck).not.toHaveBeenCalled();

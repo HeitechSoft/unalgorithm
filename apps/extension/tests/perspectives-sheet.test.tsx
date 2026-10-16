@@ -182,6 +182,8 @@ describe('PerspectivesSheet', () => {
 
   it('test_perspectives_sheet_footer_labels', () => {
     sheet();
+    const region = screen.getByRole('region', { name: 'UnEcho Chamber' });
+    expect(within(region).getByRole('heading', { level: 2 }).textContent).toBe('UnEcho Chamber');
     expect(screen.getByText('AI-generated')).toBeTruthy();
     const when = new Date(CHECKED_AT).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     expect(screen.getByText(`Compared ${when}`)).toBeTruthy();
@@ -242,7 +244,7 @@ describe('side panel', () => {
     });
     await factcheckItem(TAB.id).setValue({ entries: [comparison, older] });
     render(<SidePanel />);
-    expect(await screen.findByRole('heading', { name: 'Other perspectives' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'UnEcho Chamber' })).toBeTruthy();
     expect(screen.getByText('The bridge reopened on Monday.')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Fact-check' })).toBeNull();
     cleanup();
@@ -251,6 +253,6 @@ describe('side panel', () => {
     render(<SidePanel />);
     expect(await screen.findByRole('heading', { name: 'Fact-check' })).toBeTruthy();
     expect(screen.getByText('The bridge opened in 1932.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Other perspectives: Harbour bridge reopens' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'UnEcho Chamber: Harbour bridge reopens' })).toBeTruthy();
   });
 });

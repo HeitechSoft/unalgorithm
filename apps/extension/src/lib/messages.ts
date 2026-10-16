@@ -146,7 +146,7 @@ export type BgRequest =
    */
   | { type: 'balanceCheck' }
   /**
-   * "Other perspectives" for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
+   * UnEcho Chamber for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
    * browser, never post text. Opens the side panel for the tab.
    */
   | {

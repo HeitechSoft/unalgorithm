@@ -1,5 +1,5 @@
 /**
- * "Other perspectives": the wire contract every RM3 piece shares (pipeline, server endpoint, extension, side panel).
+ * UnEcho Chamber: the wire contract every RM3 piece shares (pipeline, server endpoint, extension, side panel).
  * The only part of a post a comparison sends anywhere is its shared link (`SharedLinkSchema`); lean labels come only
  * from the reviewed outlet registry (packages/outlets), never from a model.
  */

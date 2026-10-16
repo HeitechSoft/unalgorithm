@@ -58,7 +58,7 @@ function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
 }
 
 /**
- * The one offer rule for "Other perspectives": Labs flag on, a source that can compare, a usable outlet registry
+ * The one offer rule for UnEcho Chamber: Labs flag on, a source that can compare, a usable outlet registry
  * (`registryReady`, decided by the extension: P3-38's `perspectivesRegistry() !== null`), the classifier flagged the
  * post as news, the post shares an http(s) link, and the post is public (decision D38).
  */

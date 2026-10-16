@@ -47,7 +47,7 @@ key and confirm a check on a public post, UnAlgorithm sends that one post to tha
 with your key: the same post fields classification sends, with the same masking described above (email addresses and
 phone numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most
 2,000 characters, a shared link's domain and title). Your interests are not sent. The provider then runs web searches
-based on the claims it found in the post (for Other perspectives, below, on the story's search words). Requests to
+based on the claims it found in the post (for UnEcho Chamber, below, on the story's search words). Requests to
 OpenAI ask it not to store responses (`store: false`), and no approximate location is sent with OpenAI's web search.
 The result stays in this browser's temporary session storage for that tab and is removed when the tab closes or the
 browser restarts. Facebook posts that aren't public are never checked, and nothing goes to HeitechSoft.
@@ -81,7 +81,7 @@ its claims, then gets the kept verdict and explanation, marked with when it was 
 So a result dated earlier tells the person who asked that someone on that server checked the same public claim within
 the last day, never who. The cache stays on that server and is never shared with another.
 
-**Other perspectives (Labs, off by default).** When you turn on Settings → Labs → Other perspectives, use your own
+**UnEcho Chamber (Labs, off by default).** When you turn on Settings → Labs → UnEcho Chamber, use your own
 Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
 per-click parameters removed first) and its link-card title go from your browser to that provider, which searches news
 sites from our outlet list for coverage of the same story and compares it. The post's text is never sent, nor its
@@ -89,17 +89,17 @@ author, your interests or anything else about you. Lean labels come only from Un
 never from the AI. The result stays in this browser's temporary session storage for that tab, as a fact-check's does,
 and nothing goes to HeitechSoft.
 
-**Fact-check and Other perspectives with your own AI server and a web search key.** If your AI option is a local or
+**Fact-check and UnEcho Chamber with your own AI server and a web search key.** If your AI option is a local or
 self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → Labs,
-a fact-check sends the post (with the same fields and masking as above) and Other perspectives sends the link and
+a fact-check sends the post (with the same fields and masking as above) and UnEcho Chamber sends the link and
 title (with tracking parameters removed) **only to the AI server address you entered**. The web searches go from your
-browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for Other
-perspectives, the story's search words and the outlet sites to search. The post itself is never sent to Brave or
+browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for
+UnEcho Chamber, the story's search words and the outlet sites to search. The post itself is never sent to Brave or
 Tavily. Saving the key sends one test search for the word "UnAlgorithm". The key is stored only in this browser, like
 an API key, and Facebook posts that aren't public are never checked.
 
-**Other perspectives on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers Other
-perspectives, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
+**UnEcho Chamber on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers
+UnEcho Chamber, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
 with your device's sign-in, never the post's text. The server follows the link's redirects to find the story's address
 and searches through the search provider its operator configured; it keeps the comparison in its memory only, for at
 most 10 minutes. Closing the tab cancels a comparison that is still running. This browser shows a result only when

@@ -64,7 +64,7 @@ export interface LocalServer {
  * `env` is added after the harness's own variables, for the server and `route-eval` alike: a billing module
  * (`BILLING=module`, `BILLING_MODULE=BILLING_FIXTURE_MODULE` and the module's own `BILLING_*` variables), or a changed
  * default. `entry` picks the server's entry point: `'default'` (`src/index.ts`, as shipped) or `'fixture-outlets'`
- * (the same server with the fictional fixture registry, for Other perspectives).
+ * (the same server with the fictional fixture registry, for UnEcho Chamber).
  */
 export async function startLocalServer(opts: {
   aiBaseUrl: string;

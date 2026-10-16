@@ -23,11 +23,11 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
 - **Organizations**: shared policies, private AI endpoints, invoicing (HeitechSoft Private AI).
 - **On the website**: how credits work, with live prices and the published margin; terms of service.
 
-## Phase 3: Fact-check and Other perspectives
+## Phase 3: Fact-check and UnEcho Chamber
 
 - **Fact-check** on posts with checkable claims: claims, verdicts and sources, with "AI can be wrong, open the
   sources". Price shown before running.
-- **Other perspectives** ("reality mode") for shared news links: how outlets across the spectrum covered the same
+- **UnEcho Chamber** for shared news links: how outlets across the spectrum covered the same
   story, what they agree on, what differs, with links to every source. Outlet leanings come from an open,
   reviewable registry, never from the model.
 - The **methodology**, the outlet registry, corrections and regular **transparency reports** are published on the

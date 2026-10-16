@@ -142,7 +142,7 @@ export interface Config {
     /** Public posts' checks read and write the server's claim cache (F27, `CLAIM_CACHE`, default on); false while fact-check is off. */
     claimCache: boolean;
   };
-  /** Other perspectives (Labs, F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
+  /** UnEcho Chamber (Labs, F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
   perspectives: { enabled: boolean };
   /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
   egressDeny: string[];
@@ -440,7 +440,7 @@ export function loadConfig(env: Env = process.env): Config {
       if (searchValue !== undefined) bad('SEARCH_PROVIDER', `must be unset when BILLING is module: ${why}`);
     }
   }
-  // Other perspectives (Labs, decision D33): read on every load, like the fact-check names.
+  // UnEcho Chamber (Labs, decision D33): read on every load, like the fact-check names.
   const perspectives = oneOf('PERSPECTIVES', ['off', 'on'] as const, 'off');
   if (perspectives === 'on' && !factcheckOn) {
     bad('PERSPECTIVES', 'must be off when FACTCHECK is off: perspectives uses the fact-check routes and search provider');

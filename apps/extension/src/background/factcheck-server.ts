@@ -6,6 +6,7 @@ import {
   type FactcheckJob,
   FactcheckJobSchema,
   type FactcheckResult,
+  FEATURE_NAMES,
   factcheckJobCancelPath,
   factcheckJobPath,
   PERSPECTIVES_JOBS_PATH,
@@ -78,7 +79,7 @@ export function runFactcheckViaServer(account: ServerAccount, post: PostForAI, o
 }
 
 /**
- * Other perspectives on the server: only the shared link (URL and link-card title), the platform and, on Facebook, the
+ * UnEcho Chamber on the server: only the shared link (URL and link-card title), the platform and, on Facebook, the
  * audience leave the browser. The body is built field by field, `link` too, so nothing else on the caller's objects
  * (post text included) can ride along.
  */
@@ -203,7 +204,9 @@ export function jobServerMessage(task: JobTaskId, code: AIErrorCode, title: stri
       // The server's cost ceiling and a model answer cut off at its token limit share this code (P3-11).
       return `This ${fc ? 'check' : 'comparison'} stopped before it finished, so nothing was charged.`;
     case 'not-available':
-      return fc ? "This server doesn't offer fact-check right now." : "This server doesn't offer Other perspectives right now.";
+      return fc
+        ? "This server doesn't offer fact-check right now."
+        : `This server doesn't offer ${FEATURE_NAMES.perspectives} right now.`;
     default:
       return describeError(code, title);
   }

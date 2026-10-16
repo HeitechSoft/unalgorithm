@@ -1,6 +1,6 @@
 /**
  * `pnpm eval:trust`: RM4's trust gates per own-key AI mode (F25). It builds a mode's deps exactly as the extension does
- * (`factcheckDepsForMode` / `perspectivesDepsForMode`), runs the fact-check or Other perspectives eval, checks the cited
+ * (`factcheckDepsForMode` / `perspectivesDepsForMode`), runs the fact-check or UnEcho Chamber eval, checks the cited
  * links through the server's SSRF-safe egress fetcher (the only code allowed to fetch a retrieved URL) and exits on the
  * gates.
  *
@@ -19,6 +19,7 @@ import { formatPrice } from '@unalgorithm/core';
 import { bundledRegistry, usableRegistry } from '@unalgorithm/outlets';
 import {
   FACTCHECK_TYPICAL_COST_MICROS,
+  FEATURE_NAMES,
   OPENAI_FACTCHECK_TYPICAL_COST_MICROS,
   OPENAI_PERSPECTIVES_TYPICAL_COST_MICROS,
   PERSPECTIVES_TYPICAL_COST_MICROS,
@@ -63,7 +64,7 @@ export const USAGE = [
   '              compat     COMPAT_BASE_URL, COMPAT_MODEL, [COMPAT_API_KEY], SEARCH_PROVIDER=brave|tavily, SEARCH_API_KEY',
 ].join('\n');
 
-export const NO_REGISTRY = 'Other perspectives needs a reviewed outlet registry; this build has none.';
+export const NO_REGISTRY = `${FEATURE_NAMES.perspectives} needs a reviewed outlet registry; this build has none.`;
 
 const MODES: readonly Mode[] = ['anthropic', 'openai', 'compat'];
 const TASKS: readonly Task[] = ['factcheck', 'perspectives'];

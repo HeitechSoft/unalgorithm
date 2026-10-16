@@ -1,4 +1,10 @@
-import type { DIFFERENCE_KINDS, LeanBucket, PerspectivesResult, PerspectivesSource } from '@unalgorithm/protocol';
+import {
+  type DIFFERENCE_KINDS,
+  FEATURE_NAMES,
+  type LeanBucket,
+  type PerspectivesResult,
+  type PerspectivesSource,
+} from '@unalgorithm/protocol';
 import type { ReactNode } from 'react';
 import { ChevronLeft, ExternalLink, LoaderCircle, Newspaper } from '../icons.ts';
 import { IconButton } from './controls.tsx';
@@ -41,16 +47,16 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, DAY_FOR
 const pageDay = (age: string) => (Number.isNaN(Date.parse(age)) ? age : day(age));
 
 /**
- * One "Other perspectives" comparison in the side panel: who covered the story by lean bucket (every gap named),
+ * One UnEcho Chamber comparison in the side panel: who covered the story by lean bucket (every gap named),
  * facts agreed across sides, differences and one-side claims, each with quoted sources. Model and page text render
  * only as React text nodes; source URLs are http(s) by `PerspectivesSourceSchema`.
  */
 export function PerspectivesSheet({ label, status, result, errorMessage, earlier = [], onBack }: PerspectivesSheetProps) {
   return (
-    <section className="ua-factcheck ua-perspectives" aria-label="Other perspectives">
+    <section className="ua-factcheck ua-perspectives" aria-label={FEATURE_NAMES.perspectives}>
       <div className="ua-factcheck-head">
         <IconButton icon={ChevronLeft} label="Back" onClick={onBack} />
-        <h2 className="ua-factcheck-title">Other perspectives</h2>
+        <h2 className="ua-factcheck-title">{FEATURE_NAMES.perspectives}</h2>
         <Badge tone="ai">AI-generated</Badge>
       </div>
       <div className="ua-factcheck-post">{label}</div>

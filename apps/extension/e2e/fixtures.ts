@@ -141,7 +141,7 @@ export async function saveSource(
 }
 
 /** Turns a Labs switch (default Fact-check) on through the options page (on `#/labs`); it must be enabled and off. */
-export async function turnOnLabs(options: Page, name: 'Fact-check' | 'Other perspectives' = 'Fact-check'): Promise<void> {
+export async function turnOnLabs(options: Page, name: 'Fact-check' | 'UnEcho Chamber' = 'Fact-check'): Promise<void> {
   const toggle = options.getByRole('switch', { name });
   await expect(toggle).toBeEnabled();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');

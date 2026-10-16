@@ -14,7 +14,7 @@ import { BUCKET_SEARCH_SYSTEM, buildBucketSearchUser } from './perspectives-prom
 import { cleanSnippet, hitUrl, type SearchProvider } from './search.ts';
 
 /**
- * The bucket search for "Other perspectives" (RM3): one search per lean bucket, restricted to that bucket's registry
+ * The bucket search for UnEcho Chamber (RM3): one search per lean bucket, restricted to that bucket's registry
  * outlets and to a date window. The spread is enforced here, in code, whatever a model or a search provider returns:
  * a hit is kept only when its host is a labelled outlet of the bucket searched and its date falls in the window, and
  * its outlet and bucket come from the registry, never from a model.

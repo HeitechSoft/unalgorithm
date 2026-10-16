@@ -1,5 +1,5 @@
 /**
- * The outlet registry this build may use for "Other perspectives", and the check that keeps every lean shown to the
+ * The outlet registry this build may use for UnEcho Chamber, and the check that keeps every lean shown to the
  * person this build's own. Lean labels come only from a reviewed registry, never from a model or a server.
  */
 import { bundledRegistry, outletForHost, type Registry, usableRegistry } from '@unalgorithm/outlets';

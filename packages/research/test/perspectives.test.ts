@@ -13,7 +13,7 @@ import {
   runPerspectives,
   storyWindow,
 } from '../src/perspectives.ts';
-import { COMPARISON_SYSTEM, STORY_SYSTEM } from '../src/perspectives-prompts.ts';
+import { COMPARISON_SYSTEM, PERSPECTIVES_PROMPT_VERSION, STORY_SYSTEM } from '../src/perspectives-prompts.ts';
 
 const NONCE = MOCK_NONCE;
 const NOW = MOCK_NOW;
@@ -247,5 +247,12 @@ describe('runPerspectives: self-hosted mock', () => {
     } finally {
       await mock.close();
     }
+  });
+});
+
+describe('runPerspectives: the UnEcho Chamber rename (P3-63)', () => {
+  it('test_perspectives_prompt_version_unchanged_by_rename', () => {
+    // The rename touched only names people read; no prompt text names the feature, so the prompts are unchanged.
+    expect(PERSPECTIVES_PROMPT_VERSION).toBe(1);
   });
 });

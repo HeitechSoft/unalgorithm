@@ -18,6 +18,14 @@ export const TASK_UNITS: Readonly<Record<CreditTask, CreditUnit>> = Object.freez
   factcheck: 'check',
   perspectives: 'comparison',
 });
+/**
+ * Each on-demand feature's name as people read it (decision D75, docs/brand.md). Every user-facing string takes the name
+ * from here; code identifiers stay the task ids (`perspectives` is UnEcho Chamber).
+ */
+export const FEATURE_NAMES: Readonly<Record<Exclude<CreditTask, 'classify'>, string>> = Object.freeze({
+  factcheck: 'Fact-check',
+  perspectives: 'UnEcho Chamber',
+});
 
 export interface CreditPriceCard {
   /**

@@ -17,7 +17,7 @@ import { useLocalServer } from './server-lifecycle.ts';
 import { allowServer, signInFromSettings } from './server-sign-in.ts';
 
 /**
- * Other perspectives end to end through a self-hosted server (P3-41, RM3): the real extension in Chromium, signed in
+ * UnEcho Chamber end to end through a self-hosted server (P3-41, RM3): the real extension in Chromium, signed in
  * to the real server process started from `test/support/fixture-outlets-entry.ts` (the server with the fictional
  * fixture registry), goes from the public Facebook link share to the comparison in the side panel with no key in the
  * browser. The server runs on Postgres with `FACTCHECK=on` and `PERSPECTIVES=on`, the mock OpenAI-compatible provider
@@ -111,7 +111,7 @@ test.describe
       await signInFromSettings(context, extensionId, server.url, EMAIL);
       const options = await context.newPage();
       await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
-      // Enabled because the server offers Other perspectives.
+      // Enabled because the server offers UnEcho Chamber.
       await turnOnLabs(options, PERSPECTIVES);
 
       facebook = await facebookFeed(context);

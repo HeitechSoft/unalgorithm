@@ -188,8 +188,8 @@ describe('content', () => {
     expect(titles).toEqual([
       'Fact-check, 2 checks',
       'Fact-check, 1 check',
-      'Other perspectives, 3 comparisons',
-      'Other perspectives, 1 comparison',
+      'UnEcho Chamber, 3 comparisons',
+      'UnEcho Chamber, 1 comparison',
     ]);
   });
 

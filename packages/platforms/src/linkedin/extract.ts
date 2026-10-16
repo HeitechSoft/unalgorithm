@@ -243,7 +243,7 @@ function extractMedia(root: Element): MediaKind {
   return 'none';
 }
 
-/** First link in the post that leads off LinkedIn (a shared article), for "Other perspectives" later. */
+/** First link in the post that leads off LinkedIn (a shared article), for UnEcho Chamber later. */
 function extractSharedLink(root: Element): PostData['sharedLink'] {
   for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
     if (isInCommentsArea(a)) continue;

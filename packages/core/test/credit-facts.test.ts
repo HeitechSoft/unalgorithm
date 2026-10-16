@@ -104,11 +104,11 @@ describe('credit facts', () => {
     // Before perspectives (2026-11-01) and fact-check (2026-12-01): both dated, at cost × 2 with their hold caps.
     expect(creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14).labsPrices.split('\n')).toEqual([
       '- **Fact-check**: from Dec 1, 2026 (UTC), 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check.',
-      '- **Other perspectives**: from Nov 1, 2026 (UTC), 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
+      '- **UnEcho Chamber**: from Nov 1, 2026 (UTC), 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
     ]);
     // Once in effect, the same line without its date.
     expect(creditFacts(CREDIT_PRICE_SCHEDULE, new Date('2026-11-01T00:00:00Z')).labsPrices.split('\n')[1]).toBe(
-      '- **Other perspectives**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
+      '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
     );
     // A change to a card in effect is dated like classify's.
     const pv = priceCardsAt(new Date('2026-11-01T00:00:00Z'));
@@ -118,7 +118,7 @@ describe('credit facts', () => {
       { effectiveFrom: '2027-01-01T00:00:00Z', cards: { ...pv.cards, perspectives: cut } },
     ];
     expect(creditFacts(changed, NOV_15).labsPrices).toBe(
-      '- **Other perspectives**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison. That price applies until Jan 1, 2027 (UTC). From Jan 1, 2027 (UTC): 1.5× our AI cost, typically about $0.20 per comparison, and never more than $0.50 for one comparison.',
+      '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison. That price applies until Jan 1, 2027 (UTC). From Jan 1, 2027 (UTC): 1.5× our AI cost, typically about $0.20 per comparison, and never more than $0.50 for one comparison.',
     );
     // Only classify priced, now and later.
     expect(creditFacts([LAUNCH], OCT_14).labsPrices).toBe('Labs features are not offered on UnAlgorithm Cloud yet.');

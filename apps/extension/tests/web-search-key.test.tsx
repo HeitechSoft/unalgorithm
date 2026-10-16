@@ -143,7 +143,7 @@ describe('Settings → Labs', () => {
     mocks.registry.ready = true;
     const labs = { factcheck: true, perspectives: true };
     render(<LabsPane device={device(COMPAT, { labs })} saveDevice={vi.fn(async () => {})} />);
-    for (const name of ['Fact-check', 'Other perspectives']) {
+    for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;
       expect(sw.disabled).toBe(true);
       expect(sw.getAttribute('aria-checked')).toBe('false');
@@ -155,7 +155,7 @@ describe('Settings → Labs', () => {
     // With a key: enabled and on, and the section shows the saved key (never the key itself) with Remove.
     const user = setupUser();
     render(<LabsPane device={device(COMPAT, { labs, webSearch: { provider: 'brave' } })} saveDevice={vi.fn(async () => {})} />);
-    for (const name of ['Fact-check', 'Other perspectives']) {
+    for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;
       expect(sw.disabled).toBe(false);
       expect(sw.getAttribute('aria-checked')).toBe('true');

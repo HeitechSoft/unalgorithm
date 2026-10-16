@@ -282,6 +282,7 @@ describe('trust eval: live on mocked transports', () => {
     );
     expect(code).toBe(2);
     expect(err).toEqual([NO_REGISTRY]);
+    expect(NO_REGISTRY).toBe('UnEcho Chamber needs a reviewed outlet registry; this build has none.');
     expect(fetch.spy).not.toHaveBeenCalled();
   });
 

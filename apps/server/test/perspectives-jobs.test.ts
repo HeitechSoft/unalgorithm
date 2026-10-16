@@ -492,6 +492,8 @@ describe('perspectives jobs: lifecycle', { timeout: PGLITE_TIMEOUT }, () => {
     const paths = doc.paths ?? {};
     const codes = (op: { responses?: object } | undefined) => Object.keys(op?.responses ?? {}).sort();
     expect(codes(paths[PERSPECTIVES_JOBS_PATH]?.post)).toEqual(['202', '400', '401', '402', '429', '500', '503']);
+    const unavailable = paths[PERSPECTIVES_JOBS_PATH]?.post?.responses?.['503'] as { description?: string } | undefined;
+    expect(unavailable?.description?.startsWith('UnEcho Chamber is not offered')).toBe(true);
     expect(codes(paths[perspectivesJobPath('{id}')]?.get)).toEqual(['200', '401', '404']);
     expect(codes(paths[perspectivesJobCancelPath('{id}')]?.post)).toEqual(['202', '401', '404']);
   });

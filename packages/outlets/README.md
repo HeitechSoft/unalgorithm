@@ -1,6 +1,6 @@
 # @unalgorithm/outlets
 
-The open outlet registry that "Other perspectives" sorts coverage with: which news outlets exist, their domains and
+The open outlet registry that UnEcho Chamber sorts coverage with: which news outlets exist, their domains and
 country, and, only where the review panel approved one, a lean label.
 
 - **Code** (`src/`, `test/`): AGPL-3.0-only, as the rest of the repository.

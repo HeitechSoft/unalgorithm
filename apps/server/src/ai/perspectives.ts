@@ -1,5 +1,5 @@
 /**
- * Other perspectives on the server (F22): the offer rule and `PerspectivesDeps` on the fact-check routes. Perspectives has
+ * UnEcho Chamber on the server (F22): the offer rule and `PerspectivesDeps` on the fact-check routes. Perspectives has
  * no route or eval of its own in RM3 (decision D33): it is served on the routes past the fact-check eval, with the story
  * query and the searches on the classify route's model and the comparison on the synthesis route.
  */

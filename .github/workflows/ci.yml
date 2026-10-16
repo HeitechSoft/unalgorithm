@@ -121,7 +121,7 @@ jobs:
   server:
     # The server against real Postgres 17 and Mailpit, and the extension signing in to it end to end (e2e/cloud.spec.ts),
     # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts),
-    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and Other perspectives through
+    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and UnEcho Chamber through
     # the server with the fixture outlet registry (e2e/perspectives-server.spec.ts).
     runs-on: ubuntu-latest
     services:

@@ -4,13 +4,15 @@ import { LEAN_BUCKETS, type LeanBucket } from '@unalgorithm/protocol';
 import { expect } from './fixtures.ts';
 
 /**
- * Shared by the two "Other perspectives" end-to-end specs (P3-41): the Facebook link share's link, the fictional
+ * Shared by the two UnEcho Chamber end-to-end specs (P3-41): the Facebook link share's link, the fictional
  * fixture registry's buckets and the coverage the mocks return for them, and the side-panel sheet's checks. Every
  * outlet is a fixture outlet on `*.example`: no real outlet, no real lean.
  */
 
-/** The action's name, and the Labs switch's. */
-export const PERSPECTIVES = 'Other perspectives';
+/** The feature's name: the Labs switch's, the feed row's and the side-panel sheet's. */
+export const PERSPECTIVES = 'UnEcho Chamber';
+/** The in-feed start button's accessible name: the visible "UnEcho Chamber", then what it does (D74). */
+export const PERSPECTIVES_START = 'UnEcho Chamber: see how outlets across the spectrum covered this story';
 /** `ORGANIC_LINK_SHARE` (Facebook, public): its text, which never leaves for a comparison, and its shared link. */
 export const LINK_POST_TEXT = 'Interesting read on city transit funding.';
 export const LINK_URL = 'news.example.com/transit';
@@ -111,9 +113,9 @@ export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   return sheet;
 }
 
-/** A Facebook post's "Other perspectives" button. */
+/** A Facebook post's UnEcho Chamber button. */
 export const perspectivesButton = (post: Locator): Locator =>
-  post.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES, exact: true });
+  post.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START, exact: true });
 
 /** The Facebook fixture feed's two posts: friends-only first, then the public link share. */
 export function facebookPosts(page: Page): { friends: Locator; share: Locator } {
@@ -121,7 +123,7 @@ export function facebookPosts(page: Page): { friends: Locator; share: Locator } 
   return { friends, share };
 }
 
-/** Other perspectives on the link share: the price line `price`, `beforeConfirm`, then Compare, then "See result". */
+/** UnEcho Chamber on the link share: the price line `price`, `beforeConfirm`, then Compare, then "See result". */
 export async function compare(share: Locator, price: string, beforeConfirm?: () => unknown): Promise<void> {
   const ui = share.locator('unalgo-post');
   await perspectivesButton(share).click();

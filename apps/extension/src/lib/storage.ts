@@ -93,7 +93,7 @@ export function tabStateItem(tabId: number) {
 }
 
 /** One fact-check of a post on this tab. Session storage only: gone when the browser closes, never synced. */
-/** A fact-check or an "Other perspectives" comparison, kept for the side panel. */
+/** A fact-check or an UnEcho Chamber comparison, kept for the side panel. */
 export interface FactcheckEntry {
   key: PostKey;
   /** Absent: a fact-check (entries stored before RM3 read as before). */

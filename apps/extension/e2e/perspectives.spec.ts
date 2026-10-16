@@ -37,12 +37,13 @@ import {
   LINK_TITLE,
   LINK_URL,
   PERSPECTIVES,
+  PERSPECTIVES_START,
   perspectivesButton,
   today,
 } from './perspectives-fixtures.ts';
 
 /**
- * Other perspectives end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built
+ * UnEcho Chamber end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built
  * in e2e mode (so `perspectivesRegistry()` is the fictional fixture registry), goes from the public Facebook link share
  * to the comparison in the side panel, with nothing but a mocked api.anthropic.com answered through `context.route`.
  * Every other request is aborted by the fixtures. No server, no Docker.
@@ -164,14 +165,14 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   return mock;
 }
 
-/** Save the Anthropic source from an extension page; with `labs`, turn Labs → Other perspectives on. */
+/** Save the Anthropic source from an extension page; with `labs`, turn Labs → UnEcho Chamber on. */
 async function setUp(context: BrowserContext, extensionId: string, opts: { labs: boolean }): Promise<Page> {
   const options = await saveSource(context, extensionId, { kind: 'anthropic', model: null }, API_KEY);
   if (opts.labs) await turnOnLabs(options, PERSPECTIVES);
   return options;
 }
 
-/** Other perspectives on the link share: the price, then Compare, then "See result". */
+/** UnEcho Chamber on the link share: the price, then Compare, then "See result". */
 const compare = (share: Locator) => compareAt(share, PRICE);
 
 test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, extensionId, feed }) => {
@@ -181,18 +182,18 @@ test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, 
   const facebook = await facebookFeed(context);
   const { friends, share } = facebookPosts(facebook);
 
-  // Labs off: both feeds classified (their picks marked), and no post offers Other perspectives.
+  // Labs off: both feeds classified (their picks marked), and no post offers UnEcho Chamber.
   await expect(linkedinPost(linkedin)).toHaveAttribute('data-unalgo-pick', '');
   await expect(share).toHaveAttribute('data-unalgo-pick', '');
   for (const page of [linkedin, facebook])
-    await expect(page.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(0);
+    await expect(page.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(0);
 
   // Labs on: only the public link share the mock called news gets it.
   await turnOnLabs(options, PERSPECTIVES);
   await expect(perspectivesButton(share)).toBeVisible();
   await expect(perspectivesButton(friends)).toHaveCount(0);
-  await expect(facebook.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(1);
-  await expect(linkedin.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(0);
+  await expect(facebook.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(1);
+  await expect(linkedin.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(0);
   // Offered, never started: nothing but classification reached the model.
   expect(mock.comparison()).toEqual([]);
 });

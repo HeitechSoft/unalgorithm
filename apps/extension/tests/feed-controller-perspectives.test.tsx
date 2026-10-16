@@ -134,7 +134,10 @@ function Item({ c, e }: { c: FeedController; e: Entry }) {
 
 const flush = () => act(async () => {});
 
-/** One offered post rendered, with "Other perspectives" clicked (the price is showing). */
+/** The start button's accessible name: its visible text, "UnEcho Chamber", then what it does (D74). */
+const START = 'UnEcho Chamber: see how outlets across the spectrum covered this story';
+
+/** One offered post rendered, with its UnEcho Chamber button clicked (the price is showing). */
 async function started(
   b = bridge(),
   d = device(true),
@@ -147,7 +150,9 @@ async function started(
   const { container } = render(<Item c={f.c} e={e} />);
   await flush();
   const user = setupUser();
-  await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+  const start = screen.getByRole('button', { name: START });
+  expect(start.textContent).toBe('UnEcho Chamber');
+  await user.click(start);
   await flush();
   return { ...f, e, user, item: within(container) };
 }
@@ -166,7 +171,7 @@ afterEach(() => {
 describe('Other perspectives: where it is offered', () => {
   it('test_feed_perspectives_offered_with_price', async () => {
     const { c, b } = await started();
-    expect(screen.getByRole('group', { name: 'Other perspectives' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'UnEcho Chamber' })).toBeTruthy();
     expect(screen.getByText(PRICE)).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Compare' }));
     expect(screen.queryByRole('group', { name: 'Fact-check' })).toBeNull();
@@ -214,7 +219,7 @@ describe('Other perspectives: where it is offered', () => {
     // Every offered item rendered: twenty rows, and still no call.
     render(keys.map((k) => <Item key={k} c={f.c} e={entryOf(f.c, k)} />));
     await flush();
-    const starts = screen.getAllByRole('button', { name: 'Other perspectives' });
+    const starts = screen.getAllByRole('button', { name: START });
     expect(starts).toHaveLength(20);
     expect(b.perspectives).not.toHaveBeenCalled();
     const user = setupUser();
@@ -272,9 +277,9 @@ describe('Other perspectives: the comparison', () => {
     // Cancel from confirming returns to offered.
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await flush();
-    expect(screen.getByRole('button', { name: 'Other perspectives' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: START })).toBeTruthy();
     expect(screen.queryByText(PRICE)).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+    await user.click(screen.getByRole('button', { name: START }));
     await flush();
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();
@@ -330,9 +335,9 @@ describe('Other perspectives: the comparison', () => {
     render(<Item c={f.c} e={e} />);
     await flush();
     const groups = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'));
-    expect(groups).toStrictEqual(['Fact-check', 'Other perspectives']);
+    expect(groups).toStrictEqual(['Fact-check', 'UnEcho Chamber']);
     const user = setupUser();
-    await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+    await user.click(screen.getByRole('button', { name: START }));
     await flush();
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();

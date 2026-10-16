@@ -301,11 +301,11 @@ describe('gates', () => {
     const refusal = (code: string, message: string) => ({ ok: false, error: { code, message } });
 
     await setup({ labs: false });
-    expect(await perspectives()).toStrictEqual(refusal('not-available', 'Turn on Other perspectives in Settings → Labs.'));
+    expect(await perspectives()).toStrictEqual(refusal('not-available', 'Turn on UnEcho Chamber in Settings → Labs.'));
 
     await setup();
     reg.value = null;
-    expect(await perspectives()).toStrictEqual(refusal('not-available', "Other perspectives isn't available yet."));
+    expect(await perspectives()).toStrictEqual(refusal('not-available', "UnEcho Chamber isn't available yet."));
     reg.value = FIXTURE_REGISTRY;
 
     expect(await perspectives({ link: { url: 'javascript:alert(1)' } })).toStrictEqual(
@@ -313,7 +313,7 @@ describe('gates', () => {
     );
 
     expect(await perspectives({ platform: 'facebook', audience: 'friends' })).toStrictEqual(
-      refusal('not-available', 'Other perspectives works only on public posts.'),
+      refusal('not-available', 'UnEcho Chamber works only on public posts.'),
     );
     // A platform or audience the protocol doesn't know can't be shown public, and never leaves as sent.
     const unknownPlaces = [
@@ -323,13 +323,13 @@ describe('gates', () => {
     ];
     for (const place of unknownPlaces) {
       expect(await perspectives(place as never)).toStrictEqual(
-        refusal('not-available', 'Other perspectives works only on public posts.'),
+        refusal('not-available', 'UnEcho Chamber works only on public posts.'),
       );
     }
     await setup({ source: SERVER });
     for (const place of unknownPlaces) {
       expect(await perspectives(place as never)).toStrictEqual(
-        refusal('not-available', 'Other perspectives works only on public posts.'),
+        refusal('not-available', 'UnEcho Chamber works only on public posts.'),
       );
     }
 
@@ -337,12 +337,12 @@ describe('gates', () => {
     expect(await perspectives()).toStrictEqual(
       refusal(
         'unsupported',
-        'Other perspectives needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
+        'UnEcho Chamber needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
       ),
     );
 
     await setup({ source: SERVER, info: { ...INFO, capabilities: { ...INFO.capabilities, perspectives: false } } });
-    expect(await perspectives()).toStrictEqual(refusal('unsupported', "This server doesn't offer Other perspectives."));
+    expect(await perspectives()).toStrictEqual(refusal('unsupported', "This server doesn't offer UnEcho Chamber."));
 
     expect(requests).toHaveLength(0);
     expect(await entries()).toStrictEqual([]);
@@ -656,17 +656,17 @@ describe('docs', () => {
   it('test_privacy_mentions_perspectives_flows', () => {
     const privacy = readFileSync(join(REPO_ROOT, 'PRIVACY.md'), 'utf8');
     const paragraph = (start: string) => privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '';
-    const ownKey = paragraph('**Other perspectives (Labs');
-    const server = paragraph('**Other perspectives on your UnAlgorithm server');
+    const ownKey = paragraph('**UnEcho Chamber (Labs');
+    const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
     for (const p of [ownKey, server]) {
-      expect(p).toContain('Other perspectives');
+      expect(p).toContain('UnEcho Chamber');
       expect(p).toMatch(/never the post's text|post's text is never sent/);
     }
     expect(ownKey).toContain('Anthropic');
     expect(ownKey).toContain('OpenAI');
     expect(server).toContain('10 minutes');
     // P3-46: the own AI server with a web search key, and its optional permission.
-    const compat = paragraph('**Fact-check and Other perspectives with your own AI server and a web search key');
+    const compat = paragraph('**Fact-check and UnEcho Chamber with your own AI server and a web search key');
     expect(compat).toMatch(/only to the AI server address you entered/);
     expect(compat).toMatch(/never sent to Brave or\s+Tavily/);
     expect(compat).toContain('"UnAlgorithm"');

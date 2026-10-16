@@ -202,7 +202,7 @@ describe('lifecycle', () => {
     });
 
     useServer(() => serverError(503, 'not-available'));
-    expect(await run()).toMatchObject({ error: { message: "This server doesn't offer Other perspectives right now." } });
+    expect(await run()).toMatchObject({ error: { message: "This server doesn't offer UnEcho Chamber right now." } });
     expect(cancels()).toHaveLength(0);
   });
 

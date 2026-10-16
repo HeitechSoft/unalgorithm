@@ -24,7 +24,7 @@ import { startRun, structuredStep, type UsageReport, untilAborted } from './run.
 import { type ComparisonStats, validateComparison } from './validate-perspectives.ts';
 
 /**
- * "Other perspectives" (RM3): the one pipeline the extension (own key) and the server both run. From a shared link only
+ * UnEcho Chamber (RM3): the one pipeline the extension (own key) and the server both run. From a shared link only
  * (URL and link-card title, never post text): canonical URL and ± 3-day window, a neutral story query from a small
  * model, one search per lean bucket on registry outlets, a comparison of the matched coverage with no tools, and the
  * validator. Lean labels come only from the registry the caller passes; no model is told about sides.

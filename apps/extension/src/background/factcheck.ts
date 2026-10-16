@@ -13,6 +13,7 @@ import {
 import type { Registry } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
+  FEATURE_NAMES,
   type PerspectivesJobRequest,
   PerspectivesJobRequestSchema,
   type PostForAI,
@@ -55,7 +56,7 @@ const running = new Map<number, AbortController>();
 
 type FactcheckResponse = BgResponses['factcheck'];
 type PerspectivesResponse = BgResponses['perspectives'];
-/** A tab's task: a fact-check, or an "Other perspectives" comparison. */
+/** A tab's task: a fact-check, or an UnEcho Chamber comparison. */
 type Task = 'factcheck' | 'perspectives';
 type Refusal = { ok: false; error: BgError };
 /** `costMicros`: an own-key run's cost; `chargedMicros`: what the server charged. */
@@ -70,11 +71,9 @@ const BUSY: Record<Task, string> = {
   perspectives: 'A check or comparison is already running on this page.',
 };
 
-const NEEDS: Record<Task, string> = {
-  factcheck: 'Fact-check needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
-  perspectives:
-    'Other perspectives needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
-};
+const needs = (task: Task) =>
+  `${FEATURE_NAMES[task]} needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.`;
+const NEEDS: Record<Task, string> = { factcheck: needs('factcheck'), perspectives: needs('perspectives') };
 
 /**
  * Opens the side panel for a tab. Called before any `await` in the handler, so Chrome still sees the click's user
@@ -309,7 +308,7 @@ const PLACE = PerspectivesJobRequestSchema.pick({ platform: true, audience: true
 const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
 
 /**
- * "Other perspectives" for one shared link in a feed tab, on the person's own key (as fact-check) or on their
+ * UnEcho Chamber for one shared link in a feed tab, on the person's own key (as fact-check) or on their
  * UnAlgorithm server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link
  * leaves the browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when
  * every lean in it is this build's own registry's (`leansMatchRegistry`).
@@ -320,9 +319,9 @@ export async function runPerspectivesForTab(
   req: PerspectivesTabRequest,
 ): Promise<PerspectivesResponse> {
   const device = await readDevice();
-  if (!device.labs.perspectives) return refuse('not-available', 'Turn on Other perspectives in Settings → Labs.');
+  if (!device.labs.perspectives) return refuse('not-available', `Turn on ${FEATURE_NAMES.perspectives} in Settings → Labs.`);
   const registry = perspectivesRegistry();
-  if (!registry) return refuse('not-available', "Other perspectives isn't available yet.");
+  if (!registry) return refuse('not-available', `${FEATURE_NAMES.perspectives} isn't available yet.`);
   const parsed = SharedLinkSchema.safeParse(req.link);
   const url = parsed.success ? canonicalLink(parsed.data.url) : null;
   if (!parsed.success || !url) return refuse('bad-request', NOT_COMPARABLE);
@@ -334,7 +333,8 @@ export async function runPerspectivesForTab(
   const where = place.success
     ? { platform: place.data.platform, ...(place.data.audience ? { audience: place.data.audience } : {}) }
     : null;
-  if (!where || !serverMayReceive(where)) return refuse('not-available', 'Other perspectives works only on public posts.');
+  if (!where || !serverMayReceive(where))
+    return refuse('not-available', `${FEATURE_NAMES.perspectives} works only on public posts.`);
 
   const label = title?.trim() ? title.trim().slice(0, LABEL_CHARS) : new URL(url).hostname;
   const checked = (answer: PerspectivesResponse): PerspectivesResponse =>
@@ -344,7 +344,7 @@ export async function runPerspectivesForTab(
   if (cfg?.kind === 'server') {
     const account = await serverAccountItem.getValue();
     if (!account || !sourceCapabilities(cfg, serverOfferFrom(account)).perspectives)
-      return refuse('unsupported', "This server doesn't offer Other perspectives.");
+      return refuse('unsupported', `This server doesn't offer ${FEATURE_NAMES.perspectives}.`);
     return track(tabId, key, label, 'perspectives', cfg, async () =>
       checked(await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where }, { signal }))),
     );

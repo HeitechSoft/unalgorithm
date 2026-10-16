@@ -53,7 +53,7 @@ Rules run in your browser and need no AI. To also spot off-topic posts, engageme
 LABS (OFF BY DEFAULT)
 Two extras for posts in your feed, with your own Anthropic or OpenAI key, or your own AI server and a Brave or Tavily search key:
 • Fact-check: checks the claims in a public post against sources on the web, and shows each verdict with its sources and quotes. A check runs only when you confirm it.
-• Other perspectives: shows how other news outlets cover the story behind a shared link, with lean labels from UnAlgorithm's reviewed outlet list.
+• UnEcho Chamber: shows how other news outlets cover the story behind a shared link, with lean labels from UnAlgorithm's reviewed outlet list.
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
@@ -104,7 +104,7 @@ results before committing: fonts come from the machine that renders them.
 ### Single purpose
 
 ```text
-UnAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Its Labs features, off by default, are feed features too: Fact-check checks the claims in a public post the user picks in their feed, and Other perspectives shows other outlets' coverage of a link shared in a post in their feed.
+UnAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Its Labs features, off by default, are feed features too: Fact-check checks the claims in a public post the user picks in their feed, and UnEcho Chamber shows other outlets' coverage of a link shared in a post in their feed.
 ```
 
 ### Permission justifications
@@ -121,7 +121,7 @@ Keeps the user's settings, interests, exceptions ("always show/hide"), feedback 
 **sidePanel**
 
 ```text
-Shows Highlights in Chrome's side panel: the posts picked for the user and the posts folded away on the current LinkedIn or Facebook page, each with a link to go to it, and the results of the Labs fact-checks and Other perspectives the user asked for. The user opens it from the popup, or from a Labs result in the feed.
+Shows Highlights in Chrome's side panel: the posts picked for the user and the posts folded away on the current LinkedIn or Facebook page, each with a link to go to it, and the results of the Labs fact-checks and UnEcho Chamber comparisons the user asked for. The user opens it from the popup, or from a Labs result in the feed.
 ```
 
 **scripting**
@@ -159,7 +159,7 @@ What user data does UnAlgorithm Feed collect? Tick only **Website content**; lea
 
 | Category | Answer | Why |
 |---|---|---|
-| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Labs, when the user turns it on and confirms a check, sends one post (Fact-check) or one shared link and its title (Other perspectives) to that same service, and the claims or search words to Brave or Tavily with the user's own key. None of it goes to HeitechSoft |
+| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Labs, when the user turns it on and confirms a check, sends one post (Fact-check) or one shared link and its title (UnEcho Chamber) to that same service, and the claims or search words to Brave or Tavily with the user's own key. None of it goes to HeitechSoft |
 | Personally identifiable information, health, financial and payment, authentication, personal communications, location, web history, user activity | No | Author names, profile links, comments, images and browsing history are never sent. API keys stay in the browser and go only to the provider they belong to |
 
 With each classification, the AI service also receives the user's interests, the optional "About you" note and, if
