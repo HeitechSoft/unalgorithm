@@ -1,5 +1,5 @@
-import type { FilterDecision, PostData } from '@unalgorithm/core';
-import { noiseName } from '@unalgorithm/core';
+import type { FilterDecision, PostCharge, PostData } from '@unalgorithm/core';
+import { formatCharge, noiseName } from '@unalgorithm/core';
 import type { PlatformId } from '@unalgorithm/protocol';
 
 export type WhyActionId =
@@ -19,12 +19,30 @@ export interface WhyModel {
   saw?: string;
   footnote: string;
   actions: { id: WhyActionId; label: string }[];
+  /** What the post's batch cost on a billing server (R35). */
+  cost?: string;
 }
 
 const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
 
-/** Plain-language explanation for a hidden post, with the quick fixes that make sense for that reason. */
-export function whyCopy(d: FilterDecision, post: PostData | undefined, platform: PlatformId, preset: string): WhyModel {
+/** "This batch of 12 posts cost $0.0018 of your credit." — only for the AI reasons, only with a charge. */
+function costOf(charge: PostCharge | undefined): { cost?: string } {
+  if (!charge) return {};
+  const n = charge.batchPosts;
+  return { cost: `This batch of ${n} ${n === 1 ? 'post' : 'posts'} cost ${formatCharge(charge.chargedMicros)} of your credit.` };
+}
+
+/**
+ * Plain-language explanation for a hidden post, with the quick fixes that make sense for that reason. `charge`: what a
+ * billing server charged for the post's batch; only the AI reasons show it.
+ */
+export function whyCopy(
+  d: FilterDecision,
+  post: PostData | undefined,
+  platform: PlatformId,
+  preset: string,
+  charge?: PostCharge,
+): WhyModel {
   const site = SITE[platform];
   const who = post?.author.name;
   const author = who ?? 'this author';
@@ -167,6 +185,7 @@ export function whyCopy(d: FilterDecision, post: PostData | undefined, platform:
           { id: 'not-bait', label: `This isn't ${name.toLowerCase()}` },
           { id: 'stop-hiding', label: `Stop hiding ${name.toLowerCase()}` },
         ],
+        ...costOf(charge),
       };
     }
     case 'low-relevance':
@@ -180,6 +199,7 @@ export function whyCopy(d: FilterDecision, post: PostData | undefined, platform:
           { id: 'want-like-this', label: 'I want posts like this' },
           { id: 'stop-hiding', label: 'Stop hiding off-topic posts' },
         ],
+        ...costOf(charge),
       };
   }
 }

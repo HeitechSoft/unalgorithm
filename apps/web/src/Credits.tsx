@@ -1,13 +1,16 @@
 /**
  * The account page's Credits section, on a server that advertises billing: the balance and about how many posts it
  * classifies, the promotional credit with the starter credit's state, the purchased credit, the history newest first,
- * the links the server gives (adding credit, how credits work, the refund policy), and the price in effect with the next
+ * the links the server gives (adding credit, auto-reload, how credits work, the refund policy), and the price in effect with the next
  * scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
  * extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product; its price line is the
  * published schedule of the release this server runs.
  */
 import { formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice } from '@unalgorithm/core';
 import {
+  type AutoReloadSummary,
+  CREDIT_AMOUNT_MAX_MICROS,
+  CREDIT_AMOUNT_MIN_MICROS,
   CREDIT_PRICE_SCHEDULE,
   type CreditAccount,
   type CreditBalance,
@@ -35,15 +38,21 @@ const HISTORY: Record<Exclude<CreditHistoryItem['reason'], CreditTask>, string> 
   'promo-expired': 'Promotional credit expired',
   correction: 'Correction',
   goodwill: 'Credit from support',
-  'credit-pack': 'Credit pack',
+  // The reason keeps the name it had when credit came in packs; any amount within the rules is a purchase now.
+  'credit-pack': 'Credit purchase',
   refund: 'Refund',
   chargeback: 'Chargeback',
   'chargeback-reversed': 'Chargeback reversed',
   'test-mode-void': 'Test credit removed',
+  'auto-reload': 'Auto-reload',
 };
 /** Dates in UTC, as the server keeps them: "Jan 11, 2027". */
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 const COUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+/** Whole dollars, as the amount rules have them: "$5", "$500". */
+const wholeDollars = (micros: number): string => `$${COUNT.format(micros / 1_000_000)}`;
+/** "Any amount from $5 to $500.": the rules a purchase on the server's page follows (`creditAmount`). Draft copy (D21). */
+const AMOUNT_RANGE = `Any amount from ${wholeDollars(CREDIT_AMOUNT_MIN_MICROS)} to ${wholeDollars(CREDIT_AMOUNT_MAX_MICROS)}.`;
 
 /** `at`: when the account answer arrived, the instant the price and the estimate are read at. */
 type State = { name: 'loading' } | { name: 'failed' } | { name: 'loaded'; account: CreditAccount; at: Date };
@@ -99,7 +108,7 @@ function nextClassifyPriceChange(at: Date, schedule: CreditPriceSchedule) {
 }
 
 function CreditDetails({
-  account: { balance, history, addCreditPath, pricingUrl, refundPolicyUrl },
+  account: { balance, history, addCreditPath, autoReload, pricingUrl, refundPolicyUrl },
   at,
   schedule,
 }: {
@@ -150,13 +159,17 @@ function CreditDetails({
       </ListGroup>
       <div className="web-credit-actions">
         {addCreditPath ? (
-          // A page on this server, so it opens in place (`Button`'s links open a new tab).
-          <a className="ua-button ua-button--primary" href={addCreditPath}>
-            Add credit
-          </a>
+          <>
+            {/* A page on this server, so it opens in place (`Button`'s links open a new tab). */}
+            <a className="ua-button ua-button--primary" href={addCreditPath}>
+              Add credit
+            </a>
+            <p className="ua-footnote">{AMOUNT_RANGE}</p>
+          </>
         ) : (
           <p className="ua-footnote">Adding credit isn't available yet.</p>
         )}
+        {autoReload ? <AutoReloadLine summary={autoReload} /> : null}
         {pricingUrl ? (
           <a href={pricingUrl} target="_blank" rel="noreferrer">
             How credits work
@@ -168,6 +181,29 @@ function CreditDetails({
           </a>
         ) : null}
       </div>
+    </>
+  );
+}
+
+/**
+ * Whether credit is bought automatically, with a link to the server's auto-reload page (it opens in place, like "Add
+ * credit"). Draft copy (D21).
+ */
+function AutoReloadLine({ summary }: { summary: AutoReloadSummary }) {
+  const { path, state, amountMicros = 0, thresholdMicros = 0, monthlyLimitMicros = 0 } = summary;
+  const [sentence, label] =
+    state === 'on'
+      ? [
+          `Auto-reload: ${formatBalance(amountMicros)} when the balance is under ${formatBalance(thresholdMicros)}, up to ${formatBalance(monthlyLimitMicros)} a month.`,
+          'Change auto-reload',
+        ]
+      : state === 'stopped'
+        ? ["Auto-reload is off: the last automatic payment didn't go through.", 'Set up auto-reload again']
+        : ['Auto-reload is off.', 'Set up auto-reload'];
+  return (
+    <>
+      <p className="ua-footnote">{sentence}</p>
+      <a href={path}>{label}</a>
     </>
   );
 }

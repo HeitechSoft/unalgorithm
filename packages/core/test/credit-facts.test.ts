@@ -1,16 +1,23 @@
 import { readFileSync } from 'node:fs';
 import {
-  CREDIT_PACKS,
+  CREDIT_AMOUNT_MAX_MICROS,
+  CREDIT_AMOUNT_MIN_MICROS,
+  CREDIT_AMOUNT_PRESETS,
   CREDIT_PRICE_SCHEDULE,
   CREDITS_PAGE,
   type CreditPriceSchedule,
+  creditAmount,
+  DEFAULT_CREDIT_AMOUNT,
+  estimatePosts,
   priceCardsAt,
+  retailMicrosPer1000Posts,
   STARTER_CREDIT,
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   CALCULATOR_INPUT_ERROR,
   CREDITS_PLACEHOLDERS,
+  calculatorAmountError,
   calculatorData,
   calculatorResult,
   creditFacts,
@@ -188,38 +195,44 @@ const DOUBLED: CreditPriceSchedule = [
     cards: { classify: { ...LAUNCH_CLASSIFY, multiplier: LAUNCH_CLASSIFY.multiplier * 2 } },
   }),
 ];
-const packRows = (packs: string): string[] => packs.split('\n').filter((line) => /^\| \$/.test(line));
+const amountRows = (amounts: string): string[] => amounts.split('\n').filter((line) => /^\| \$/.test(line));
 
-describe('pricing: credit packs (CL5-09)', () => {
-  it('test_pricing_packs_table_at_fixed_date', () => {
-    const { packs } = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+describe('pricing: buying credit, any amount (CL5-09)', () => {
+  it('test_pricing_amounts_table_at_fixed_date', () => {
+    const facts = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    expect(facts.amountMin).toBe('$5');
+    expect(facts.amountMax).toBe('$500');
+    const { amounts } = facts;
     expect(
-      packs
+      amounts
         .split('\n')
         .filter((line) => line.startsWith('|'))
         .slice(0, 2),
-    ).toEqual(['| Pack | You pay | Credit added | About |', '|---|---|---|---|']);
-    expect(packRows(packs)).toEqual([
-      '| $5.00 | $5.00 + tax where it applies | $5.00 | about 34,000 posts |',
-      '| $10.00 (default) | $10.00 + tax where it applies | $10.00 | about 68,000 posts |',
-      '| $25.00 | $25.00 + tax where it applies | $25.00 | about 170,000 posts |',
+    ).toEqual(['| You pay | Credit added | About |', '|---|---|---|']);
+    expect(amountRows(amounts)).toEqual([
+      '| $5.00 + tax where it applies | $5.00 | about 34,000 posts |',
+      '| $10.00 + tax where it applies | $10.00 | about 68,000 posts |',
+      '| $25.00 + tax where it applies | $25.00 | about 170,000 posts |',
     ]);
-    expect(packs.match(/\(default\)/g)).toHaveLength(1);
-    expect(packRows(packs)).toHaveLength(CREDIT_PACKS.length);
-    // In the page, the table follows the section's words.
+    expect(amountRows(amounts)).toHaveLength(CREDIT_AMOUNT_PRESETS.length);
+    expect(amounts).not.toMatch(/pack|default/i);
+    // In the page, the range and the examples follow the section's words.
     const page = creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14);
     const buying = page.slice(page.indexOf('## Buying credit'));
-    expect(buying).toContain(packs);
+    expect(flat(buying)).toContain('Load any amount from $5 to $500, in whole dollars.');
+    expect(flat(buying)).toContain('You pay exactly the amount you pick, plus tax where it applies');
+    expect(buying).toContain(amounts);
     expect(flat(buying)).toContain('Purchased credit never expires.');
     expect(buying).toContain('(/refunds)');
+    expect(page).not.toMatch(/\bpacks?\b/i);
   });
 
-  it('test_pricing_packs_table_dated_caption', () => {
-    const dated = creditFacts(DOUBLED, OCT_14).packs;
+  it('test_pricing_amounts_table_dated_caption', () => {
+    const dated = creditFacts(DOUBLED, OCT_14).amounts;
     expect(dated.split('\n')[0]).toBe('At the price until Nov 3, 2026 (UTC).');
-    expect(packRows(dated)).toHaveLength(CREDIT_PACKS.length); // one table, dated: no second column set
-    expect(dated.split('\n')[2]).toBe('| Pack | You pay | Credit added | About |');
-    const undated = creditFacts([LAUNCH], OCT_14).packs;
+    expect(amountRows(dated)).toHaveLength(CREDIT_AMOUNT_PRESETS.length); // one table, dated: no second column set
+    expect(dated.split('\n')[2]).toBe('| You pay | Credit added | About |');
+    const undated = creditFacts([LAUNCH], OCT_14).amounts;
     expect(undated.startsWith('|')).toBe(true);
     expect(undated).not.toContain('At the price until');
   });
@@ -229,10 +242,9 @@ describe('pricing: credit packs (CL5-09)', () => {
     expect(template).not.toContain('×');
     expect(template).not.toMatch(/\d[\d,.]*\s+posts/);
     expect(template).not.toMatch(/^\|/m);
-    expect(template).toContain('{{packs}}');
-    expect(template).not.toMatch(/\(default\)/); // the default marker comes from DEFAULT_CREDIT_PACK
-    expect(() => creditsMarkdown(`${template}\n{{packz}}`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/packz/);
-    expect(() => creditsMarkdown(`${template}\n{{packs`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/left over/);
+    for (const name of ['{{amountMin}}', '{{amountMax}}', '{{amounts}}']) expect(template).toContain(name);
+    expect(() => creditsMarkdown(`${template}\n{{amountz}}`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/amountz/);
+    expect(() => creditsMarkdown(`${template}\n{{amounts`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/left over/);
     expect(creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14)).not.toMatch(/\{\{|\}\}/);
   });
 });
@@ -240,57 +252,98 @@ describe('pricing: credit packs (CL5-09)', () => {
 describe('pricing: credit calculator (CL5-09)', () => {
   it('test_calculator_data_covers_next_change', () => {
     const data = calculatorData(DOUBLED, OCT_14);
-    expect(data.packs.map((pack) => [pack.id, pack.label, pack.isDefault])).toEqual([
-      ['pack-5', '$5.00', false],
-      ['pack-10', '$10.00', true],
-      ['pack-25', '$25.00', false],
+    expect(data.amount).toEqual({ minDollars: 5, maxDollars: 500, presetDollars: [5, 10, 25], defaultDollars: 10 });
+    expect(data.amount.minDollars * 1_000_000).toBe(CREDIT_AMOUNT_MIN_MICROS);
+    expect(data.amount.maxDollars * 1_000_000).toBe(CREDIT_AMOUNT_MAX_MICROS);
+    expect(data.amount.presetDollars.map((d) => d * 1_000_000)).toEqual([...CREDIT_AMOUNT_PRESETS]);
+    expect(data.amount.defaultDollars * 1_000_000).toBe(DEFAULT_CREDIT_AMOUNT);
+    expect(data.prices).toEqual([
+      { from: LAUNCH.effectiveFrom, microsPer1000Posts: retailMicrosPer1000Posts(OCT_14, 'classify', DOUBLED) },
+      { from: NOV_3, microsPer1000Posts: retailMicrosPer1000Posts(new Date(NOV_3), 'classify', DOUBLED) },
     ]);
-    for (const pack of data.packs) {
-      expect(pack.posts).toHaveLength(2);
-      const [now, next] = pack.posts;
-      expect(now?.from).toBe(LAUNCH.effectiveFrom);
-      expect(next?.from).toBe(NOV_3);
-      expect(next!.posts / now!.posts).toBeGreaterThan(0.45);
-      expect(next!.posts / now!.posts).toBeLessThan(0.55);
+    const [now, next] = data.prices;
+    expect(next!.microsPer1000Posts / now!.microsPer1000Posts).toBeGreaterThan(1.9);
+    expect(next!.microsPer1000Posts / now!.microsPer1000Posts).toBeLessThan(2.1);
+    // No later change: one price.
+    expect(calculatorData([LAUNCH], OCT_14).prices).toHaveLength(1);
+  });
+
+  it('test_calculator_posts_match_estimate_for_every_amount', () => {
+    const data = calculatorData(CREDIT_PRICE_SCHEDULE, OCT_14);
+    for (let dollars = data.amount.minDollars; dollars <= data.amount.maxDollars; dollars++) {
+      const result = calculatorResult(data, String(dollars), '1', OCT_14);
+      const micros = creditAmount({ dollars })?.micros ?? 0;
+      expect(result, String(dollars)).toMatchObject({ ok: true, posts: estimatePosts(micros, OCT_14) });
     }
-    // The real schedule at the fixed date: the figures of the packs table.
-    const real = calculatorData(CREDIT_PRICE_SCHEDULE, OCT_14);
-    expect(real.packs.map((pack) => pack.posts[0]?.posts)).toEqual([34_000, 68_000, 170_000]);
-    // No later change: one entry each.
-    expect(calculatorData([LAUNCH], OCT_14).packs.every((pack) => pack.posts.length === 1)).toBe(true);
   });
 
   it('test_calculator_days_and_input_errors', () => {
     const data = calculatorData([LAUNCH], OCT_14);
     const now = OCT_14;
-    expect(calculatorResult(data, 'pack-10', '150', now)).toEqual({
+    expect(calculatorResult(data, '10', '150', now)).toEqual({
       ok: true,
       days: 453,
-      text: 'A $10.00 pack lasts about 453 days at 150 posts a day.',
+      posts: 68_000,
+      text: '$10 of credit lasts about 453 days at 150 posts a day.',
     });
-    expect(calculatorResult(data, 'pack-25', '150', now)).toMatchObject({
+    expect(calculatorResult(data, '25', '150', now)).toMatchObject({
       ok: true,
-      text: 'A $25.00 pack lasts about 1,133 days at 150 posts a day.',
+      text: '$25 of credit lasts about 1,133 days at 150 posts a day.',
     });
-    expect(calculatorResult(data, 'pack-5', '5000', now)).toMatchObject({
-      text: 'A $5.00 pack lasts about 6 days at 5,000 posts a day.',
+    expect(calculatorResult(data, '5', '5000', now)).toMatchObject({
+      text: '$5 of credit lasts about 6 days at 5,000 posts a day.',
     });
-    for (const input of ['0', '5001', '', '  ', 'abc', '1.5', '-3', 'Infinity']) {
-      expect(calculatorResult(data, 'pack-10', input, now), input).toEqual({ ok: false, error: CALCULATOR_INPUT_ERROR });
+    // Any whole-dollar amount, not only the quick picks; a leading "$" is fine.
+    expect(calculatorResult(data, ' $40 ', '150', now)).toMatchObject({ ok: true, days: Math.floor(270_000 / 150) });
+    expect(calculatorResult(data, '500', '150', now)).toMatchObject({
+      ok: true,
+      text: '$500 of credit lasts about 22,666 days at 150 posts a day.',
+    });
+    const amountError = calculatorAmountError(data);
+    expect(amountError).toBe('Enter a whole-dollar amount from $5 to $500.');
+    for (const amount of [
+      '4',
+      '501',
+      '0',
+      '010',
+      '10000000',
+      '',
+      '  ',
+      'abc',
+      '10.5',
+      '10.00',
+      '-10',
+      '1e1',
+      '$$10',
+      'Infinity',
+    ]) {
+      expect(calculatorResult(data, amount, '150', now), amount).toEqual({ ok: false, field: 'amount', error: amountError });
+      // The calculator takes exactly what a purchase takes.
+      expect(creditAmount({ dollars: amount.trim() }), amount).toBeNull();
     }
+    for (const input of ['0', '5001', '', '  ', 'abc', '1.5', '-3', 'Infinity']) {
+      expect(calculatorResult(data, '10', input, now), input).toEqual({
+        ok: false,
+        field: 'posts',
+        error: CALCULATOR_INPUT_ERROR,
+      });
+    }
+    // A wrong amount is reported first.
+    expect(calculatorResult(data, '4', '0', now)).toMatchObject({ field: 'amount' });
     expect(CALCULATOR_INPUT_ERROR).toBe('Enter a number from 1 to 5,000.');
-    expect(calculatorResult(data, 'pack-10', ' 1 ', now)).toMatchObject({ ok: true, days: 68_000 });
+    expect(calculatorResult(data, '10', ' 1 ', now)).toMatchObject({ ok: true, days: 68_000 });
     // What runs in the browser imports nothing at run time (the protocol would bundle zod).
     const browser = readFileSync(new URL('packages/core/src/credit-calculator.ts', REPO_ROOT), 'utf8');
-    expect(browser.match(/^import .*$/gm)).toEqual(["import type { CreditPackId } from '@unalgorithm/protocol';"]);
+    expect(browser.match(/^import .*$/gm)).toBeNull();
   });
 
   it('test_calculator_switches_card_after_change_date', () => {
     const data = calculatorData(DOUBLED, OCT_14);
-    const before = calculatorResult(data, 'pack-10', '150', new Date('2026-11-02T23:59:59Z'));
-    const after = calculatorResult(data, 'pack-10', '150', new Date(NOV_3));
-    const [now, next] = data.packs[1]!.posts;
-    expect(before).toMatchObject({ ok: true, days: Math.floor(now!.posts / 150) });
-    expect(after).toMatchObject({ ok: true, days: Math.floor(next!.posts / 150) });
+    const before = calculatorResult(data, '10', '150', new Date('2026-11-02T23:59:59Z'));
+    const after = calculatorResult(data, '10', '150', new Date(NOV_3));
+    const postsAt = (at: Date) => estimatePosts(10_000_000, at, 'classify', DOUBLED);
+    expect(before).toMatchObject({ ok: true, days: Math.floor(postsAt(OCT_14) / 150) });
+    expect(after).toMatchObject({ ok: true, days: Math.floor(postsAt(new Date(NOV_3)) / 150) });
+    expect((before as { days: number }).days).toBeGreaterThan((after as { days: number }).days);
   });
 });
