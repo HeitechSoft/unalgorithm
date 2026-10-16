@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { defineConfig, type UserManifest } from 'wxt';
@@ -27,6 +27,10 @@ function devBrowser(): string | undefined {
 }
 
 const devChrome = devBrowser();
+
+/** Persistent dev profile (sign in once). The launcher writes its log here before Chrome starts, so it must exist. */
+const devProfile = resolve(import.meta.dirname, '.wxt/chrome-data');
+mkdirSync(devProfile, { recursive: true });
 const licenses = process.env.UA_LICENSES === '1';
 
 /**
@@ -102,7 +106,7 @@ export default defineConfig({
   manifest: ({ mode }) => manifestFor(mode),
   webExt: {
     ...(devChrome ? { binaries: { chrome: devChrome } } : {}),
-    chromiumProfile: resolve(import.meta.dirname, '.wxt/chrome-data'),
+    chromiumProfile: devProfile,
     keepProfileChanges: true,
     startUrls: [startUrl],
   },

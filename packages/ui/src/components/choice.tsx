@@ -56,6 +56,7 @@ export function ChoiceCard({
     <div className="ua-choice">
       <label style={{ display: 'block', cursor: disabled ? 'default' : 'pointer' }}>
         <input
+          className="ua-choice-input"
           type="radio"
           name={g.name}
           value={value}

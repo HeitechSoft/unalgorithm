@@ -44,7 +44,7 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
     const ok = await t.app.request('/health');
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ ok: true, version: SERVER_VERSION });
-    expect(SERVER_VERSION).toBe('0.1.0');
+    expect(SERVER_VERSION).toBe(JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version);
 
     await t.deps.db.close();
     const down = await t.app.request('/health');
