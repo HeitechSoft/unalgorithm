@@ -9,6 +9,7 @@ import {
   creditAmount,
   DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
+  FEATURE_NAMES,
   priceCardsAt,
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
@@ -121,7 +122,9 @@ describe('credit facts', () => {
       '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison. That price applies until Jan 1, 2027 (UTC). From Jan 1, 2027 (UTC): 1.5× our AI cost, typically about $0.20 per comparison, and never more than $0.50 for one comparison.',
     );
     // Only classify priced, now and later.
-    expect(creditFacts([LAUNCH], OCT_14).labsPrices).toBe('Labs features are not offered on UnAlgorithm Cloud yet.');
+    expect(creditFacts([LAUNCH], OCT_14).labsPrices).toBe(
+      'Fact-check and UnEcho Chamber are not offered on UnAlgorithm Cloud yet.',
+    );
   });
 
   it('test_reference_model_has_label', () => {
@@ -149,6 +152,12 @@ describe('credits page copy', () => {
     // Every placeholder the copy uses is a fact, and every fact is used.
     const used = [...template.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
     expect(new Set(used)).toEqual(new Set(CREDITS_PLACEHOLDERS));
+  });
+
+  it('test_credits_page_heading_out_of_labs', () => {
+    // P3-64: Fact-check and UnEcho Chamber left Labs; the page names them (the placeholder keeps its code name).
+    expect(template).toContain(`\n### ${FEATURE_NAMES.factcheck} and ${FEATURE_NAMES.perspectives}\n\n{{labsPrices}}\n`);
+    expect(template).not.toMatch(/\bLabs\b/);
   });
 
   it('test_unknown_placeholder_fails', () => {

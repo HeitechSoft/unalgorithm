@@ -42,7 +42,7 @@ It **never** sends author names, profile links, group names, comments, images or
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
-**Fact-check (Labs, off by default).** When you turn on Settings → Labs → Fact-check, use your own Anthropic or OpenAI
+**Fact-check (off by default).** When you turn on Settings → AI → Fact-check, use your own Anthropic or OpenAI
 key and confirm a check on a public post, UnAlgorithm sends that one post to that provider, directly from your browser
 with your key: the same post fields classification sends, with the same masking described above (email addresses and
 phone numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most
@@ -64,7 +64,7 @@ this storage. Settings → Clear AI results cache removes the rows; Erase everyt
 on an UnAlgorithm server never use or fill it.
 
 **Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
-Cloud) and it offers fact-check, turning on Settings → Labs → Fact-check and confirming a check on a public post sends
+Cloud) and it offers fact-check, turning on Settings → AI → Fact-check and confirming a check on a public post sends
 that one post to **that server only**, with your device's sign-in: the same post fields and masking as above (at most
 2,000 characters, a shared link's domain and title, no author names, no interests). The server keeps the check in its
 memory only, for at most 10 minutes, and stores no post content; its usage records hold the time, model, outcome and
@@ -81,7 +81,7 @@ its claims, then gets the kept verdict and explanation, marked with when it was 
 So a result dated earlier tells the person who asked that someone on that server checked the same public claim within
 the last day, never who. The cache stays on that server and is never shared with another.
 
-**UnEcho Chamber (Labs, off by default).** When you turn on Settings → Labs → UnEcho Chamber, use your own
+**UnEcho Chamber (off by default).** When you turn on Settings → AI → UnEcho Chamber, use your own
 Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
 per-click parameters removed first) and its link-card title go from your browser to that provider, which searches news
 sites from our outlet list for coverage of the same story and compares it. The post's text is never sent, nor its
@@ -90,7 +90,7 @@ never from the AI. The result stays in this browser's temporary session storage 
 and nothing goes to HeitechSoft.
 
 **Fact-check and UnEcho Chamber with your own AI server and a web search key.** If your AI option is a local or
-self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → Labs,
+self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → AI,
 a fact-check sends the post (with the same fields and masking as above) and UnEcho Chamber sends the link and
 title (with tracking parameters removed) **only to the AI server address you entered**. The web searches go from your
 browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for
@@ -125,7 +125,7 @@ review the issue and submit it yourself, under GitHub's terms and privacy statem
 | Side panel | To show Highlights: the posts picked for you and the ones that were hidden |
 | Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
-| Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → Labs, for that one service |
+| Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → AI, for that one service |
 | Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses UnAlgorithm. It removes the `Origin` header from UnAlgorithm's own requests to that one server |
 
 ## This website

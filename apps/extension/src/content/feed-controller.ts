@@ -106,7 +106,7 @@ export interface Bridge {
   ): Promise<BgResponses['perspectives']>;
 }
 
-/** The Labs jobs a post can offer, in the order their rows render. */
+/** The jobs a post can offer (Fact-check, UnEcho Chamber), in the order their rows render. */
 type Job = 'factcheck' | 'perspectives';
 const JOBS: readonly Job[] = ['factcheck', 'perspectives'];
 
@@ -576,7 +576,7 @@ export class FeedController {
     let jobUi = false;
     for (const job of JOBS) {
       const offered = this.jobOffered(e, job);
-      // Labs switched off, the source changed or the post folded: an offer not yet confirmed goes away.
+      // The feature switched off, the source changed or the post folded: an offer not yet confirmed goes away.
       if (!offered && (e[job]?.state === 'offered' || e[job]?.state === 'confirming')) e[job] = undefined;
       jobUi ||= offered || !!e[job];
     }

@@ -43,7 +43,7 @@ import {
 /**
  * Fact-check and UnEcho Chamber end to end on RM4's own-key modes (P3-47): the real extension in Chromium on an own
  * OpenAI key (a mocked api.openai.com) and on an OpenAI-compatible server (the mock OpenAI server on 127.0.0.1) with a
- * Brave key entered in Settings → Labs (a mocked api.search.brave.com). The e2e build has both hosts from the start,
+ * Brave key entered in Settings → AI (a mocked api.search.brave.com). The e2e build has both hosts from the start,
  * since Playwright can't answer a permission prompt. Every other request is aborted by the fixtures. No server, no Docker.
  */
 
@@ -244,20 +244,20 @@ async function mockBrave(context: BrowserContext): Promise<MockBrave> {
 
 // ---------- setup ----------
 
-/** Test and save the OpenAI key from an extension page (the model comes from the mocked list), and turn a Labs switch on. */
+/** Test and save the OpenAI key from an extension page (the model comes from the mocked list), and turn a switch on. */
 async function setUpOpenAI(context: BrowserContext, extensionId: string, labs: 'Fact-check' | 'UnEcho Chamber') {
   const options = await saveSource(context, extensionId, OPENAI_SOURCE, OPENAI_KEY, { test: true });
   await turnOnLabs(options, labs);
   return options;
 }
 
-/** Save the mock server as an OpenAI-compatible source (no web search key yet). Returns Settings → Labs. */
+/** Save the mock server as an OpenAI-compatible source (no web search key yet). Returns Settings → AI. */
 function saveCompat(context: BrowserContext, extensionId: string, ai: MockOpenAI): Promise<Page> {
   const config = { kind: 'openai-compatible', preset: 'custom', baseUrl: ai.baseUrl, auth: 'none', model: 'mock-model' };
   return saveSource(context, extensionId, config);
 }
 
-/** Settings → Labs → Web search key → Brave → key → Save, through the UI. */
+/** Settings → AI → Web search key → Brave → key → Save, through the UI. */
 async function saveBraveKey(options: Page): Promise<void> {
   await options.getByRole('radio', { name: /^Brave/ }).check();
   await options.getByLabel('Brave API key').fill(BRAVE_KEY);

@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundledRegistry, usableRegistry } from '@unalgorithm/outlets';
+import { FEATURE_NAMES } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestFor } from '../wxt.config.ts';
 
@@ -12,6 +14,7 @@ import { manifestFor } from '../wxt.config.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const STORE = join(REPO_ROOT, 'docs/store');
+const read = (file: string) => readFileSync(join(REPO_ROOT, file), 'utf8');
 const listing = () => readFileSync(join(REPO_ROOT, 'docs/store-listing.md'), 'utf8').replace(/\r\n/g, '\n');
 const messages = () =>
   JSON.parse(readFileSync(join(REPO_ROOT, 'apps/extension/public/_locales/en/messages.json'), 'utf8')) as Record<
@@ -85,5 +88,24 @@ describe('Chrome Web Store material', () => {
     }
     // The store build has no Cloud card, so nothing about the permissions it would add.
     for (const cloudOnly of ['identity', 'alarms']) expect(headings.join(' ')).not.toContain(cloudOnly);
+  });
+
+  it('test_store_listing_without_labs', () => {
+    // P3-64: Fact-check and UnEcho Chamber left Labs, so no disclosure or doc page names it.
+    const docs = [
+      'PRIVACY.md',
+      'CLOUD-BETA-NOTICE.md',
+      'docs/store-listing.md',
+      'docs/ai-sources.md',
+      'docs/privacy-model.md',
+      'docs/site/credits.md',
+    ];
+    for (const file of docs) expect(read(file), file).not.toMatch(/\bLabs\b/);
+  });
+
+  it('test_store_listing_names_unecho_chamber_only_with_a_usable_registry', () => {
+    // D79: a listing must not describe a feature the build hides. Store builds show UnEcho Chamber only with a reviewed,
+    // usable bundled registry; add it back to the listing in the release that ships one.
+    if (usableRegistry(bundledRegistry()) === null) expect(listing()).not.toContain(FEATURE_NAMES.perspectives);
   });
 });

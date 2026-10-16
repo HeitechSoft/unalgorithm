@@ -2,7 +2,6 @@ import type { FilterReason } from '@unalgorithm/core';
 import { FEATURE_NAMES, type PlatformId } from '@unalgorithm/protocol';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../components/controls.tsx';
-import { Badge } from '../components/feedback.tsx';
 import {
   CircleSlash2,
   Clapperboard,
@@ -33,7 +32,7 @@ import type { WhyActionId, WhyModel } from './why.ts';
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
 
 /**
- * A Labs job on a public post ("Check facts", "UnEcho Chamber"): offered, then the price, then running, then the
+ * A job on a public post ("Check facts", "UnEcho Chamber"): offered, then the price, then running, then the
  * outcome.
  */
 export interface FactcheckItemModel {
@@ -65,7 +64,7 @@ export interface FeedItemModel {
   vote?: 'more' | 'less';
   coach?: boolean;
   factcheck?: FactcheckItemModel;
-  /** UnEcho Chamber on a public news post that shares a link (Labs); same states as fact-check. */
+  /** UnEcho Chamber on a public news post that shares a link; same states as fact-check. */
   perspectives?: FactcheckItemModel;
 }
 
@@ -295,7 +294,7 @@ const PERSPECTIVES_WORDS: JobWords = {
   icon: Newspaper,
 };
 
-/** The quiet row of a Labs job. A job never starts without the price shown and a second click to confirm it. */
+/** The quiet row of a fact-check or UnEcho Chamber job. A job never starts without the price shown and a second click to confirm it. */
 function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void; words: JobWords }) {
   const checkRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -314,19 +313,16 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
   return (
     <div className="ua-row ua-row--bar ua-fc" role="group" aria-label={words.label}>
       {model.state === 'offered' ? (
-        <>
-          <Button
-            size="sm"
-            variant="tinted"
-            className="ua-btn ua-btn--tint"
-            icon={words.icon}
-            aria-label={words.startLabel}
-            onClick={() => on('start')}
-          >
-            {words.start}
-          </Button>
-          <Badge tone="ai">Labs</Badge>
-        </>
+        <Button
+          size="sm"
+          variant="tinted"
+          className="ua-btn ua-btn--tint"
+          icon={words.icon}
+          aria-label={words.startLabel}
+          onClick={() => on('start')}
+        >
+          {words.start}
+        </Button>
       ) : null}
       <span className="ua-fc-status" aria-live="polite">
         {model.state === 'running' ? <LoaderCircle className="ua-glyph ua-spin" aria-hidden="true" /> : null}

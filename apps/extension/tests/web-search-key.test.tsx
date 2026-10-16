@@ -1,5 +1,5 @@
 /**
- * The web search key for an OpenAI-compatible source (P3-45, F24): Settings → Labs shows it for that source only and
+ * The web search key for an OpenAI-compatible source (P3-45, F24): Settings → AI shows it for that source only and
  * asks for the provider's host permission from the Save click; the background tests the key with one fixed search
  * before storing it like an AI key, and only extension pages may save or forget it. Search is a stub: no real service.
  */
@@ -14,7 +14,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { clearSecrets, getSecret, setSecret } from '../src/background/idb.ts';
 import { deviceSearchProvider } from '../src/background/search-key.ts';
 import { handlers } from '../src/entrypoints/background.ts';
-import { LabsPane } from '../src/entrypoints/options/panes.tsx';
+import { CheckSettings } from '../src/entrypoints/options/panes.tsx';
 import { sendToBackground } from '../src/lib/messages.ts';
 import { deviceItem, readDevice } from '../src/lib/storage.ts';
 
@@ -86,7 +86,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Settings → Labs', () => {
+describe('Settings → AI', () => {
   it('test_labs_web_search_section_only_for_compat', () => {
     const others: Array<AISourceConfig | null> = [
       { kind: 'anthropic', model: null },
@@ -96,11 +96,11 @@ describe('Settings → Labs', () => {
       null,
     ];
     for (const source of others) {
-      render(<LabsPane device={device(source)} saveDevice={vi.fn(async () => {})} />);
+      render(<CheckSettings device={device(source)} saveDevice={vi.fn(async () => {})} />);
       expect(screen.queryByRole('heading', { name: 'Web search key' })).toBeNull();
       cleanup();
     }
-    render(<LabsPane device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
     expect(screen.getByRole('heading', { name: 'Web search key' })).toBeTruthy();
     expect(screen.getByText(/search the web with your own Brave or Tavily key/)).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Brave/ })).toBeTruthy();
@@ -110,7 +110,7 @@ describe('Settings → Labs', () => {
   it('test_save_requests_permission_from_click', async () => {
     const request = vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => true) as never);
     const user = setupUser();
-    render(<LabsPane device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
     expect(request).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText('Brave API key'), ' brave-key ');
     // A synchronous click: the request must already have been made when the handler returns.
@@ -126,7 +126,7 @@ describe('Settings → Labs', () => {
   it('test_permission_denied_sends_nothing', async () => {
     vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => false) as never);
     const user = setupUser();
-    render(<LabsPane device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
     await user.click(screen.getByRole('radio', { name: /Tavily/ }));
     await user.type(screen.getByLabelText('Tavily API key'), 'tvly-key');
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -142,7 +142,7 @@ describe('Settings → Labs', () => {
   it('test_labs_switches_follow_search_key', async () => {
     mocks.registry.ready = true;
     const labs = { factcheck: true, perspectives: true };
-    render(<LabsPane device={device(COMPAT, { labs })} saveDevice={vi.fn(async () => {})} />);
+    render(<CheckSettings device={device(COMPAT, { labs })} saveDevice={vi.fn(async () => {})} />);
     for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;
       expect(sw.disabled).toBe(true);
@@ -154,7 +154,9 @@ describe('Settings → Labs', () => {
 
     // With a key: enabled and on, and the section shows the saved key (never the key itself) with Remove.
     const user = setupUser();
-    render(<LabsPane device={device(COMPAT, { labs, webSearch: { provider: 'brave' } })} saveDevice={vi.fn(async () => {})} />);
+    render(
+      <CheckSettings device={device(COMPAT, { labs, webSearch: { provider: 'brave' } })} saveDevice={vi.fn(async () => {})} />,
+    );
     for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;
       expect(sw.disabled).toBe(false);

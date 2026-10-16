@@ -9,7 +9,7 @@ import { expect } from './fixtures.ts';
  * outlet is a fixture outlet on `*.example`: no real outlet, no real lean.
  */
 
-/** The feature's name: the Labs switch's, the feed row's and the side-panel sheet's. */
+/** The feature's name: the AI pane switch's, the feed row's and the side-panel sheet's. */
 export const PERSPECTIVES = 'UnEcho Chamber';
 /** The in-feed start button's accessible name: the visible "UnEcho Chamber", then what it does (D74). */
 export const PERSPECTIVES_START = 'UnEcho Chamber: see how outlets across the spectrum covered this story';

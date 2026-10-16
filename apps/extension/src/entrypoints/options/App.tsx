@@ -2,10 +2,12 @@ import { Lockup, Search } from '@unalgorithm/ui';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useDevice, useSettings } from '../../lib/hooks.ts';
 import { NAV, type PaneId } from './nav.ts';
-import { AboutPane, AiPane, DisplayPane, InterestsPane, LabsPane, PlatformPane, PrivacyPane } from './panes.tsx';
+import { AboutPane, AiPane, DisplayPane, InterestsPane, PlatformPane, PrivacyPane } from './panes.tsx';
 
 function paneFromHash(): PaneId {
-  const id = location.hash.replace(/^#\/?/, '').split('/')[0] as PaneId;
+  const read = location.hash.replace(/^#\/?/, '').split('/')[0];
+  // The Labs pane's switches moved to the end of AI (P3-64): old links in docs, issues and bookmarks open AI.
+  const id = (read === 'labs' ? 'ai' : read) as PaneId;
   return NAV.some((n) => n.id === id) ? id : 'linkedin';
 }
 
@@ -54,10 +56,7 @@ export function App() {
       content = <InterestsPane settings={settings} save={save} />;
       break;
     case 'ai':
-      content = <AiPane settings={settings} save={save} device={device} />;
-      break;
-    case 'labs':
-      content = <LabsPane device={device} saveDevice={saveDevice} />;
+      content = <AiPane settings={settings} save={save} device={device} saveDevice={saveDevice} />;
       break;
     case 'privacy':
       content = <PrivacyPane settings={settings} device={device} />;

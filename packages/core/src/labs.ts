@@ -23,11 +23,11 @@ import type { Device } from './settings/schema.ts';
 import { formatPrice } from './usage.ts';
 
 /**
- * The one offer rule for "Check facts", shared by the in-feed button and the background: Labs → Fact-check is on, the
- * active source can fact-check, the classifier flagged the post as news or as making checkable claims, and the post is
- * public (a Facebook post that isn't public never gets it, on any source). `serverOffer` is what the signed-in server
- * offers (`local:serverOffer`); only a server source reads it. `device.webSearch` only matters to an OpenAI-compatible
- * source.
+ * The one offer rule for "Check facts", shared by the in-feed button and the background: Settings → AI → Fact-check is
+ * on, the active source can fact-check, the classifier flagged the post as news or as making checkable claims, and the
+ * post is public (a Facebook post that isn't public never gets it, on any source). `serverOffer` is what the signed-in
+ * server offers (`local:serverOffer`); only a server source reads it. `device.webSearch` only matters to an
+ * OpenAI-compatible source.
  */
 export function factcheckOffered(i: {
   device: Pick<Device, 'aiSource' | 'labs' | 'webSearch'>;
@@ -58,9 +58,9 @@ function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
 }
 
 /**
- * The one offer rule for UnEcho Chamber: Labs flag on, a source that can compare, a usable outlet registry
- * (`registryReady`, decided by the extension: P3-38's `perspectivesRegistry() !== null`), the classifier flagged the
- * post as news, the post shares an http(s) link, and the post is public (decision D38).
+ * The one offer rule for UnEcho Chamber: its switch on (`labs.perspectives`), a source that can compare, a usable
+ * outlet registry (`registryReady`, decided by the extension: P3-38's `perspectivesRegistry() !== null`), the
+ * classifier flagged the post as news, the post shares an http(s) link, and the post is public (decision D38).
  */
 export function perspectivesOffered(i: {
   device: Pick<Device, 'aiSource' | 'labs' | 'webSearch'>;

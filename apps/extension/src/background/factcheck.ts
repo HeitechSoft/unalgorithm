@@ -120,7 +120,7 @@ async function ownKeyMode(cfg: OwnKey, device: Device): Promise<OwnKeyMode | Ref
   if (cfg.kind !== 'openai-compatible') return { kind: cfg.kind };
   if (!cfg.model) return refuse('no-model', 'Choose a model in Settings → AI.');
   const search = await deviceSearchProvider(device);
-  if (!search) return refuse('no-key', 'Add a web search key in Settings → Labs.');
+  if (!search) return refuse('no-key', 'Add a web search key in Settings → AI.');
   return { kind: cfg.kind, model: cfg.model, search };
 }
 
@@ -134,8 +134,7 @@ function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
   const e = err instanceof AIError ? err : new AIError('unknown', String(err));
   if (e instanceof WebSearchFailure) {
     const name = e.provider === 'searxng' ? 'the search service' : webSearchName(e.provider);
-    if (e.code === 'not-available')
-      return { code: e.code, message: `Your ${name} key was refused. Check it in Settings → Labs.` };
+    if (e.code === 'not-available') return { code: e.code, message: `Your ${name} key was refused. Check it in Settings → AI.` };
     if (e.code === 'rate-limit')
       return { code: e.code, message: `${name} is limiting searches right now. Try again in a minute.` };
     return { code: e.code, message: `Couldn't reach ${name}.` };
@@ -160,7 +159,7 @@ function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
  */
 export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<FactcheckResponse> {
   const device = await readDevice();
-  if (!device.labs.factcheck) return refuse('not-available', 'Turn on Fact-check in Settings → Labs.');
+  if (!device.labs.factcheck) return refuse('not-available', 'Turn on Fact-check in Settings → AI.');
   const cfg = device.aiSource;
   if (cfg?.kind === 'server') return runOnServer(tabId, key, input, cfg);
   const own = capableOwnKey(cfg, device, 'factcheck');
@@ -245,7 +244,7 @@ async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | 
   const name = webSearchName(webSearch.provider);
   return refuse(
     'host-permission',
-    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → Labs.`,
+    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → AI.`,
   );
 }
 
@@ -319,7 +318,7 @@ export async function runPerspectivesForTab(
   req: PerspectivesTabRequest,
 ): Promise<PerspectivesResponse> {
   const device = await readDevice();
-  if (!device.labs.perspectives) return refuse('not-available', `Turn on ${FEATURE_NAMES.perspectives} in Settings → Labs.`);
+  if (!device.labs.perspectives) return refuse('not-available', `Turn on ${FEATURE_NAMES.perspectives} in Settings → AI.`);
   const registry = perspectivesRegistry();
   if (!registry) return refuse('not-available', `${FEATURE_NAMES.perspectives} isn't available yet.`);
   const parsed = SharedLinkSchema.safeParse(req.link);

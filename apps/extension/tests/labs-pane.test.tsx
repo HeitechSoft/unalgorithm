@@ -1,15 +1,16 @@
 /**
- * Settings → Labs (P3-05): the Fact-check switch works only with a source that can fact-check (an own Anthropic key in
- * RM1), writes the device-local `labs.factcheck` flag, and otherwise points to AI setup. Settings search finds the pane.
- * The Other perspectives row (P3-40) shows only when this build has a usable outlet registry.
+ * Fact-check and UnEcho Chamber out of Labs (P3-64, D77, D78): their switches sit at the end of Settings → AI, next to
+ * the source they need. The Fact-check switch works only with a source that can fact-check and writes the device-local
+ * `labs.factcheck` flag, whose stored name and value are kept from Labs. The UnEcho Chamber row (P3-40) shows only when
+ * this build has a usable outlet registry (RM3 D36). The sidebar has no Labs item; `#/labs` opens the AI pane.
  */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { type AISourceConfig, type Device, defaultDevice } from '@unalgorithm/core';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { type AISourceConfig, type Device, defaultDevice, defaultSettings, migrateDevice } from '@unalgorithm/core';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App } from '../src/entrypoints/options/App.tsx';
-import { LabsPane } from '../src/entrypoints/options/panes.tsx';
+import { AiPane } from '../src/entrypoints/options/panes.tsx';
 import { serverOfferItem } from '../src/lib/storage.ts';
 
 /** Whether this build has a usable registry (the fictional fixture); none by default, as in store builds today. */
@@ -29,6 +30,34 @@ vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
 }));
 
 const device = (aiSource: AISourceConfig | null): Device => ({ ...defaultDevice('dev1'), aiSource });
+const NOT_CAPABLE = 'Needs your own Anthropic or OpenAI key, or a server that offers it.';
+const ORIGIN = 'https://unalgo.example';
+const COMPAT: AISourceConfig = {
+  kind: 'openai-compatible',
+  preset: 'groq',
+  baseUrl: 'https://api.groq.com/openai/v1',
+  auth: 'bearer',
+  model: 'llama',
+};
+
+/** A saveDevice that applies each change to `holder.stored`, as the real one does to storage. */
+function deviceStore(initial: Device) {
+  const holder = { stored: initial };
+  const saveDevice = vi.fn(async (m: (d: Device) => void) => {
+    const next = structuredClone(holder.stored);
+    m(next);
+    holder.stored = next;
+  });
+  return { holder, saveDevice };
+}
+
+function renderAi(d: Device, saveDevice: (m: (d: Device) => void) => Promise<void> = vi.fn(async () => {})) {
+  return render(<AiPane settings={defaultSettings()} save={vi.fn(async () => {})} device={d} saveDevice={saveDevice} />);
+}
+
+const factcheckSwitch = () => screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
+/** True when `a` comes before `b` in the document. */
+const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 afterEach(() => {
   registry.ready = false;
@@ -37,127 +66,167 @@ afterEach(() => {
   fakeBrowser.reset();
 });
 
-describe('Labs pane', () => {
-  it('test_labs_pane_switch_saves_flag_for_anthropic', async () => {
+describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
+  it('test_ai_pane_factcheck_switch_saves_flag', async () => {
     const user = setupUser();
-    let stored = device({ kind: 'anthropic', model: null });
-    const saveDevice = vi.fn(async (m: (d: Device) => void) => {
-      const next = structuredClone(stored);
-      m(next);
-      stored = next;
-    });
-    render(<LabsPane device={stored} saveDevice={saveDevice} />);
-    expect(screen.getByRole('heading', { name: 'Labs' })).toBeTruthy();
-    expect(screen.getByText('Early features. They may change or go away.')).toBeTruthy();
-    const sw = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
+    const { holder, saveDevice } = deviceStore(device({ kind: 'anthropic', model: null }));
+    renderAi(holder.stored, saveDevice);
+    expect(screen.getByRole('heading', { level: 1, name: 'AI' })).toBeTruthy();
+    expect(screen.queryByText(/\bLabs\b/)).toBeNull();
+    // Its own group at the end of the pane, after the daily limit; no "Set up AI" (the person is on the AI pane).
+    const header = screen.getByRole('heading', { level: 3, name: 'Fact-check' });
+    expect(before(screen.getByRole('heading', { level: 3, name: 'Daily limit' }), header)).toBe(true);
+    expect(
+      within(header.closest('section') as HTMLElement).getByText(
+        'Adds Check facts to public posts that make factual claims. It runs only when you click, on the AI you chose above, and shows the price first. AI can be wrong, so open the sources.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Set up AI' })).toBeNull();
+    const sw = factcheckSwitch();
     expect(sw.disabled).toBe(false);
     expect(sw.getAttribute('aria-checked')).toBe('false');
-    expect(screen.queryByText('Needs your own Anthropic key or a server that offers it.')).toBeNull();
+    expect(screen.queryByText(NOT_CAPABLE)).toBeNull();
     await user.click(sw);
     expect(saveDevice).toHaveBeenCalledTimes(1);
-    expect(stored.labs.factcheck).toBe(true);
+    expect(holder.stored.labs.factcheck).toBe(true);
   });
 
-  it('test_labs_pane_disabled_with_setup_link_without_capability', async () => {
-    for (const source of [{ kind: 'on-device' } as const, null]) {
+  it('test_ai_pane_keeps_factcheck_on_from_labs', () => {
+    // A device that turned Fact-check on in Labs: the stored flag keeps its name and value, with no migration.
+    const fromLabs: Device = { ...device({ kind: 'anthropic', model: null }), labs: { factcheck: true, perspectives: false } };
+    expect(migrateDevice(structuredClone(fromLabs), () => 'other').labs).toStrictEqual({ factcheck: true, perspectives: false });
+    expect(defaultDevice('x').labs).toStrictEqual({ factcheck: false, perspectives: false });
+    renderAi(fromLabs);
+    const sw = factcheckSwitch();
+    expect(sw.disabled).toBe(false);
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('test_ai_pane_factcheck_disabled_reasons', async () => {
+    // No source (and on-device): disabled and off, even with a flag stored earlier, which stays stored.
+    for (const source of [null, { kind: 'on-device' } as const]) {
       const user = setupUser();
       const saveDevice = vi.fn(async () => {});
-      // A flag stored earlier stays stored, but the switch shows off.
-      const d = { ...device(source), labs: { factcheck: true, perspectives: false } };
-      render(<LabsPane device={d} saveDevice={saveDevice} />);
-      const sw = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
+      renderAi({ ...device(source), labs: { factcheck: true, perspectives: false } }, saveDevice);
+      const sw = factcheckSwitch();
       expect(sw.disabled).toBe(true);
       expect(sw.getAttribute('aria-checked')).toBe('false');
-      expect(screen.getByText('Needs your own Anthropic key or a server that offers it.')).toBeTruthy();
-      await user.click(screen.getByRole('button', { name: 'Set up AI' }));
-      expect(location.hash).toBe('#/ai');
+      expect(screen.getByText(NOT_CAPABLE)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Set up AI' })).toBeNull();
+      await user.click(sw);
       expect(saveDevice).not.toHaveBeenCalled();
       cleanup();
-      location.hash = '';
     }
+
+    // A server whose offer lacks fact-check: the server's own reason.
+    await serverOfferItem.setValue({
+      origin: ORIGIN,
+      billing: false,
+      factcheck: false,
+      factcheckPrice: null,
+      perspectives: true,
+      perspectivesPrice: null,
+    });
+    renderAi(device({ kind: 'server', baseUrl: ORIGIN }));
+    await act(async () => {});
+    expect(factcheckSwitch().disabled).toBe(true);
+    expect(screen.getByText("Your server doesn't offer fact-check.")).toBeTruthy();
+    cleanup();
+
+    // An OpenAI-compatible source: the web search key section above the switch, which needs a key.
+    renderAi(device(COMPAT));
+    expect(before(screen.getByRole('heading', { name: 'Web search key' }), factcheckSwitch())).toBe(true);
+    expect(factcheckSwitch().disabled).toBe(true);
+    expect(screen.getByText('Needs a web search key (above).')).toBeTruthy();
   });
 
-  it('test_labs_pane_server_offer_enables_switch', async () => {
-    const origin = 'https://unalgo.example';
-    const d = device({ kind: 'server', baseUrl: origin });
-    const saveDevice = vi.fn(async () => {});
-    // No offer from the signed-in server: off, with the server's own reason.
-    render(<LabsPane device={d} saveDevice={saveDevice} />);
-    const off = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
-    expect(off.disabled).toBe(true);
+  it('test_ai_pane_server_offer_enables_switch', async () => {
+    renderAi(device({ kind: 'server', baseUrl: ORIGIN }));
+    expect(factcheckSwitch().disabled).toBe(true);
     expect(screen.getByText("Your server doesn't offer fact-check.")).toBeTruthy();
     // The server starts offering it: the switch turns on live, without a reload (once the first read has settled).
     await act(async () => {});
     await serverOfferItem.setValue({
-      origin,
+      origin: ORIGIN,
       billing: false,
       factcheck: true,
       factcheckPrice: null,
       perspectives: false,
       perspectivesPrice: null,
     });
-    await waitFor(() => expect((screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(factcheckSwitch().disabled).toBe(false));
     expect(screen.queryByText("Your server doesn't offer fact-check.")).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Set up AI' })).toBeNull();
-    expect(screen.getByText(/with your own Anthropic key or your UnAlgorithm server/)).toBeTruthy();
   });
 
-  it('test_settings_search_finds_labs', async () => {
-    const user = setupUser();
-    render(<App />);
-    const search = await screen.findByRole('searchbox', { name: 'Search settings' });
-    await user.type(search, 'fact');
-    const nav = screen.getByRole('navigation', { name: 'Settings' });
-    const items = [...nav.querySelectorAll('.sidebar-item:not(.sidebar-identity)')].map((b) => b.textContent);
-    expect(items).toEqual(['Labs']);
-  });
-
-  it('test_labs_perspectives_row_hidden_without_registry', () => {
-    render(<LabsPane device={device({ kind: 'anthropic', model: null })} saveDevice={vi.fn(async () => {})} />);
+  it('test_ai_pane_unecho_chamber_only_with_registry', async () => {
+    // No usable registry (every real build today): no header, row or switch.
+    renderAi(device({ kind: 'anthropic', model: null }));
     expect(screen.queryByText('UnEcho Chamber')).toBeNull();
     expect(screen.queryByRole('switch', { name: 'UnEcho Chamber' })).toBeNull();
-    const fc = screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement;
-    expect(fc.disabled).toBe(false);
-  });
+    expect(factcheckSwitch().disabled).toBe(false);
+    cleanup();
 
-  it('test_labs_perspectives_switch_and_disabled', async () => {
+    // The fixture registry and an Anthropic source: an enabled switch that sets `labs.perspectives`.
     registry.ready = true;
     const user = setupUser();
-    let stored = device({ kind: 'anthropic', model: null });
-    const saveDevice = vi.fn(async (m: (d: Device) => void) => {
-      const next = structuredClone(stored);
-      m(next);
-      stored = next;
-    });
-    render(<LabsPane device={stored} saveDevice={saveDevice} />);
-    expect(screen.getByText(/sends only the link and its title/)).toBeTruthy();
+    const { holder, saveDevice } = deviceStore(device({ kind: 'anthropic', model: null }));
+    renderAi(holder.stored, saveDevice);
+    const header = screen.getByRole('heading', { level: 3, name: 'UnEcho Chamber' });
+    expect(before(screen.getByRole('heading', { level: 3, name: 'Fact-check' }), header)).toBe(true);
+    expect(within(header.closest('section') as HTMLElement).getByText(/sends only the link and its title/)).toBeTruthy();
     const sw = screen.getByRole('switch', { name: 'UnEcho Chamber' }) as HTMLButtonElement;
     expect(sw.disabled).toBe(false);
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await user.click(sw);
     expect(saveDevice).toHaveBeenCalledTimes(1);
-    expect(stored.labs).toStrictEqual({ factcheck: false, perspectives: true });
+    expect(holder.stored.labs).toStrictEqual({ factcheck: false, perspectives: true });
     cleanup();
 
-    // A server whose offer has fact-check but not perspectives.
-    const origin = 'https://unalgo.example';
+    // A server whose offer has fact-check but not UnEcho Chamber.
     await serverOfferItem.setValue({
-      origin,
+      origin: ORIGIN,
       billing: false,
       factcheck: true,
       factcheckPrice: null,
       perspectives: false,
       perspectivesPrice: null,
     });
-    const onServer = { ...device({ kind: 'server', baseUrl: origin }), labs: { factcheck: true, perspectives: true } };
+    const onServer: Device = { ...device({ kind: 'server', baseUrl: ORIGIN }), labs: { factcheck: true, perspectives: true } };
     const save = vi.fn(async () => {});
-    render(<LabsPane device={onServer} saveDevice={save} />);
-    await waitFor(() => expect((screen.getByRole('switch', { name: 'Fact-check' }) as HTMLButtonElement).disabled).toBe(false));
+    renderAi(onServer, save);
+    await waitFor(() => expect(factcheckSwitch().disabled).toBe(false));
     const off = screen.getByRole('switch', { name: 'UnEcho Chamber' }) as HTMLButtonElement;
     expect(off.disabled).toBe(true);
     expect(off.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText("Your server doesn't offer UnEcho Chamber.")).toBeTruthy();
     await user.click(off);
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('Settings navigation', () => {
+  const sidebarItems = () =>
+    [...screen.getByRole('navigation', { name: 'Settings' }).querySelectorAll('.sidebar-item:not(.sidebar-identity)')].map(
+      (b) => b.textContent,
+    );
+
+  it('test_settings_has_no_labs_and_search_finds_ai', async () => {
+    const user = setupUser();
+    render(<App />);
+    const search = await screen.findByRole('searchbox', { name: 'Search settings' });
+    expect(sidebarItems()).toContain('AI');
+    expect(sidebarItems()).not.toContain('Labs');
+    await user.type(search, 'fact');
+    expect(sidebarItems()).toEqual(['AI']);
+  });
+
+  it('test_labs_hash_opens_ai_pane', async () => {
+    // Old links in docs, issues and bookmarks.
+    location.hash = '#/labs';
+    render(<App />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Fact-check' })).toBeTruthy();
+    const current = screen.getByRole('navigation', { name: 'Settings' }).querySelector('[aria-current="page"]');
+    expect(current?.textContent).toBe('AI');
   });
 });

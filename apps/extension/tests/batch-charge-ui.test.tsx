@@ -225,7 +225,7 @@ describe('usage view', () => {
 
   async function showUsage(day: DayUsage) {
     await usageItem.setValue({ [dateKey()]: day });
-    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={device} />);
+    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={device} saveDevice={vi.fn(async () => {})} />);
   }
   const groupOf = (header: string) => screen.getByRole('heading', { name: header }).closest('section') as HTMLElement;
 

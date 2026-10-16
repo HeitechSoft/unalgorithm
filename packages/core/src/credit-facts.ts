@@ -105,7 +105,10 @@ function jobPriceText(
   return `${times(card)} our AI cost, typically about ${formatPrice(price.typicalMicros)} per ${unit}${model}, and never more than ${formatPrice(price.maxMicros)} for one ${unit}.`;
 }
 
-/** One bullet per Labs task priced at `at` or by a later entry; each dated where it is not yet in effect. */
+/**
+ * One bullet per job task (Fact-check, UnEcho Chamber) priced at `at` or by a later entry; each dated where it is not
+ * yet in effect. The name `labsPrices` is kept from when both were Labs features (it is the page's placeholder).
+ */
 function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
   const lines: string[] = [];
   for (const task of CREDIT_TASKS) {
@@ -127,7 +130,9 @@ function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
     }
     lines.push(line);
   }
-  return lines.length > 0 ? lines.join('\n') : 'Labs features are not offered on UnAlgorithm Cloud yet.';
+  return lines.length > 0
+    ? lines.join('\n')
+    : `${FEATURE_NAMES.factcheck} and ${FEATURE_NAMES.perspectives} are not offered on UnAlgorithm Cloud yet.`;
 }
 
 /**

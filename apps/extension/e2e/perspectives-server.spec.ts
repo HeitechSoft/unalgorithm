@@ -110,7 +110,7 @@ test.describe
       await allowServer(context, extensionId);
       await signInFromSettings(context, extensionId, server.url, EMAIL);
       const options = await context.newPage();
-      await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
+      await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
       // Enabled because the server offers UnEcho Chamber.
       await turnOnLabs(options, PERSPECTIVES);
 

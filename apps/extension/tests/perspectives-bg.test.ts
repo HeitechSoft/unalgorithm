@@ -301,7 +301,7 @@ describe('gates', () => {
     const refusal = (code: string, message: string) => ({ ok: false, error: { code, message } });
 
     await setup({ labs: false });
-    expect(await perspectives()).toStrictEqual(refusal('not-available', 'Turn on UnEcho Chamber in Settings → Labs.'));
+    expect(await perspectives()).toStrictEqual(refusal('not-available', 'Turn on UnEcho Chamber in Settings → AI.'));
 
     await setup();
     reg.value = null;
@@ -656,7 +656,7 @@ describe('docs', () => {
   it('test_privacy_mentions_perspectives_flows', () => {
     const privacy = readFileSync(join(REPO_ROOT, 'PRIVACY.md'), 'utf8');
     const paragraph = (start: string) => privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '';
-    const ownKey = paragraph('**UnEcho Chamber (Labs');
+    const ownKey = paragraph('**UnEcho Chamber (off by default');
     const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
     for (const p of [ownKey, server]) {
       expect(p).toContain('UnEcho Chamber');

@@ -627,7 +627,17 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
 
 // ---------- AI ----------
 
-export function AiPane({ settings, save, device }: { settings: Settings; save: Save; device: Device }) {
+export function AiPane({
+  settings,
+  save,
+  device,
+  saveDevice,
+}: {
+  settings: Settings;
+  save: Save;
+  device: Device;
+  saveDevice: SaveDevice;
+}) {
   const usage = useStorageItem(usageItem, {});
   const day = dayUsage(usage);
   const cost = dayCostMicros(day);
@@ -736,6 +746,7 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
           ))}
         </ListGroup>
       ) : null}
+      <CheckSettings device={device} saveDevice={saveDevice} />
     </>
   );
 }
@@ -744,9 +755,13 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
 const SHOWN_BATCHES = 10;
 const BATCH_TIME = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
-// ---------- Labs ----------
+// ---------- Fact-check and UnEcho Chamber (end of the AI pane) ----------
 
-export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
+/**
+ * The switches for Fact-check and UnEcho Chamber, at the end of Settings → AI next to the source they need (P3-64,
+ * D77). Both stay off until turned on (D78); the device-local flags keep their Labs-era names (`device.labs.*`).
+ */
+export function CheckSettings({ device, saveDevice }: { device: Device; saveDevice: SaveDevice }) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
   const offer = useStorageItem(serverOfferItem, null);
   const can = sourceCapabilities(device.aiSource, offer, device.webSearch);
@@ -754,19 +769,19 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
   const onServer = device.aiSource?.kind === 'server';
   const onCompat = device.aiSource?.kind === 'openai-compatible';
   const needsKey = 'Needs a web search key (above).';
-  const needs = onServer
-    ? "Your server doesn't offer fact-check."
-    : onCompat
-      ? needsKey
-      : 'Needs your own Anthropic key or a server that offers it.';
+  // Neither a server nor OpenAI-compatible: an own Anthropic or OpenAI key can check and compare (RM4).
+  const needsSource = 'Needs your own Anthropic or OpenAI key, or a server that offers it.';
   return (
     <>
-      <Title intro="Early features. They may change or go away.">Labs</Title>
       {onCompat ? <WebSearchKey device={device} /> : null}
-      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
+      {/* Copy is a draft (D91). */}
+      <ListGroup
+        header={FEATURE_NAMES.factcheck}
+        footer="Adds Check facts to public posts that make factual claims. It runs only when you click, on the AI you chose above, and shows the price first. AI can be wrong, so open the sources."
+      >
         <ListRow
           title={FEATURE_NAMES.factcheck}
-          subtitle={capable ? undefined : needs}
+          subtitle={capable ? undefined : onServer ? "Your server doesn't offer fact-check." : onCompat ? needsKey : needsSource}
           control={
             <Switch
               checked={capable && device.labs.factcheck}
@@ -776,17 +791,11 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
             />
           }
         />
-        {capable || onCompat ? null : (
-          <div style={{ padding: '0 12px 12px' }}>
-            <Button variant="plain" size="sm" onClick={() => (location.hash = '#/ai')}>
-              Set up AI
-            </Button>
-          </div>
-        )}
       </ListGroup>
       {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
       {perspectivesRegistry() !== null ? (
         <ListGroup
+          header={FEATURE_NAMES.perspectives}
           footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.`}
         >
           <ListRow
@@ -798,7 +807,7 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
                   ? `Your server doesn't offer ${FEATURE_NAMES.perspectives}.`
                   : onCompat
                     ? needsKey
-                    : 'Needs your own Anthropic key or a server that offers it.'
+                    : needsSource
             }
             control={
               <Switch

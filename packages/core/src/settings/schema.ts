@@ -118,7 +118,10 @@ export const SettingsSchema = z.looseObject({
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-/** Experimental features, per device: Labs flags are never synced (DeviceSchema is never synced or exported). */
+/**
+ * The Fact-check and UnEcho Chamber switches, per device (named `labs` from when they were Labs features; P3-64 kept
+ * the name and values): never synced (DeviceSchema is never synced or exported).
+ */
 export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
 export type Labs = z.infer<typeof LabsSchema>;
 

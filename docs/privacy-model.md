@@ -61,11 +61,11 @@ For both kinds of UnAlgorithm server, Facebook posts that aren't public are neve
 by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
 
-### Fact-check (Labs)
+### Fact-check
 
-Fact-check (RM1) runs on the user's own Anthropic key (or on their UnAlgorithm server, below), only when Settings → Labs → Fact-check is on, and only
+Fact-check (RM1) runs on the user's own Anthropic key (or on their UnAlgorithm server, below), only when Settings → AI → Fact-check is on, and only
 after the user confirms a check of one post. The background (`apps/extension/src/background/factcheck.ts`) checks
-every gate again: Labs on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
+every gate again: Fact-check on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
 author name are dropped, the text is capped at 2,000 characters with the same masking as above), and
 `serverMayReceive` passes, so a Facebook post that isn't public is never checked, on an own key too. Three calls go
 directly from the browser to Anthropic:
@@ -96,7 +96,7 @@ deletes the key. A `server` source never reads or writes it.
 
 With a `server` source (P3-21), the check runs on the person's UnAlgorithm server instead, and only when that server's
 discovery document offers fact-check (`serverOfferFrom`, `sourceCapabilities(cfg, offer)`) on the source's own origin.
-The same gates apply first (Labs on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
+The same gates apply first (Fact-check on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
 `serverMayReceive`), then `apps/extension/src/background/factcheck-server.ts` sends one `POST /v1/jobs/factcheck` with
 `{ v: 1, post }` (the same fields classification sends, ref `p1`, no interests) and the device's bearer token, no
 cookies, and long-polls the job. The server keeps the job in memory only (at most 10 minutes after it ends; a restart

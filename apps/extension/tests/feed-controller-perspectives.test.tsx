@@ -187,7 +187,7 @@ describe('Other perspectives: where it is offered', () => {
     expect(ok.c.mounted()).toHaveLength(1);
     ok.c.stop();
 
-    // The Labs flag off.
+    // The UnEcho Chamber flag off.
     const off = await feed(feed2026(postCard(NEWS_LINK)), device(false));
     expect(off.c.mounted()).toHaveLength(0);
     off.c.stop();

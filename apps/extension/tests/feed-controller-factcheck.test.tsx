@@ -229,7 +229,7 @@ describe('Check facts: where it is offered', () => {
     expect(c.mounted()).toHaveLength(0);
     c.update({ ...rt, device: device(true) });
     expect(offered(c).map((e) => e.id)).toStrictEqual([id(CLAIMS)]);
-    // ...and goes away again when Labs is switched off.
+    // ...and goes away again when Fact-check is switched off.
     c.update({ ...rt, device: device(false) });
     expect(c.mounted()).toHaveLength(0);
     expect(b.classify).toHaveBeenCalledTimes(1);
@@ -257,7 +257,7 @@ describe('Check facts: price first, then the check', () => {
     const start = screen.getByRole('button', { name: 'Check facts' });
     // Its visible text is its whole name: no aria-label (only UnEcho Chamber's button adds what it does).
     expect(start.hasAttribute('aria-label')).toBe(false);
-    expect(screen.getByText('Labs')).toBeTruthy();
+    expect(screen.queryByText('Labs')).toBeNull();
     expect(screen.queryByText(PRICE)).toBeNull();
     expect(b.factcheck).not.toHaveBeenCalled();
     c.stop();

@@ -128,7 +128,7 @@ export interface Config {
     baseUrl?: string;
     dataPolicy: 'vendor-zdr' | 'self-hosted';
   };
-  /** Fact-check (Labs, F12): off unless `FACTCHECK=on`. */
+  /** Fact-check (F12): off unless `FACTCHECK=on`. */
   factcheck: {
     enabled: boolean;
     /** The `research` route's model; unused when `search` is set (the model then reads search results instead). */
@@ -142,7 +142,7 @@ export interface Config {
     /** Public posts' checks read and write the server's claim cache (F27, `CLAIM_CACHE`, default on); false while fact-check is off. */
     claimCache: boolean;
   };
-  /** UnEcho Chamber (Labs, F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
+  /** UnEcho Chamber (F22): off unless `PERSPECTIVES=on`, which needs `FACTCHECK=on` (its routes and search). */
   perspectives: { enabled: boolean };
   /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
   egressDeny: string[];
@@ -391,7 +391,7 @@ export function loadConfig(env: Env = process.env): Config {
     : oneOf('AI_DATA_POLICY', ['vendor-zdr', 'self-hosted'] as const, 'vendor-zdr');
   if (anthropic && dataPolicy === 'self-hosted') bad('AI_DATA_POLICY', 'must be vendor-zdr when AI_PROVIDER is anthropic');
 
-  // Fact-check (Labs). Every name is read on every load, so the parity test sees them with fact-check off too.
+  // Fact-check. Every name is read on every load, so the parity test sees them with fact-check off too.
   const factcheck = oneOf('FACTCHECK', ['off', 'on'] as const, 'off');
   const factcheckOn = factcheck === 'on';
   const claimCacheOn = oneOf('CLAIM_CACHE', ['off', 'on'] as const, 'on') === 'on';
@@ -440,7 +440,7 @@ export function loadConfig(env: Env = process.env): Config {
       if (searchValue !== undefined) bad('SEARCH_PROVIDER', `must be unset when BILLING is module: ${why}`);
     }
   }
-  // UnEcho Chamber (Labs, decision D33): read on every load, like the fact-check names.
+  // UnEcho Chamber (decision D33): read on every load, like the fact-check names.
   const perspectives = oneOf('PERSPECTIVES', ['off', 'on'] as const, 'off');
   if (perspectives === 'on' && !factcheckOn) {
     bad('PERSPECTIVES', 'must be off when FACTCHECK is off: perspectives uses the fact-check routes and search provider');

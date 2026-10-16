@@ -99,7 +99,7 @@ test.describe
       await signInFromSettings(context, extensionId, server.url, EMAIL);
 
       const options = await context.newPage();
-      await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
+      await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
       // Enabled because the server offers fact-check; then turned on for the rest of the run.
       await turnOnLabs(options);
     });

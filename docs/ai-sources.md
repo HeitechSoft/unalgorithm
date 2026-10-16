@@ -66,9 +66,9 @@ If it speaks the OpenAI chat completions API:
 Otherwise implement an `AIClient` in `packages/ai/src/` and add a source kind to `AISourceConfigSchema` in
 `packages/core/src/ai-source.ts`.
 
-## Fact-check (Labs)
+## Fact-check
 
-With your own Anthropic key, **Settings → Labs → Fact-check** checks the claims in a public post you choose. It is
+With your own Anthropic key, **Settings → AI → Fact-check** checks the claims in a public post you choose. It is
 three calls on your key, directly from your browser: Claude Haiku 5.5 picks up to 3 claims, Claude Sonnet 5.5
 researches them with Anthropic's web search (one search per claim plus one, at most 5; web search must be turned on for your Anthropic
 organization), and Sonnet gives a verdict per claim, keeping only citations that trace to the sources it found.
@@ -80,4 +80,4 @@ With an UnAlgorithm server as your source, fact-check runs on that server when i
 post (the same fields classification sends) to the server, which researches it with its own model and search provider
 and keeps nothing of the post once the check is gone from its memory (at most 10 minutes). On a server that charges,
 the price is shown before you confirm and a check that stops early costs nothing. Closing the tab cancels a running
-check. Other sources can't fact-check yet. See the [privacy model](privacy-model.md#fact-check-labs).
+check. See the [privacy model](privacy-model.md#fact-check).

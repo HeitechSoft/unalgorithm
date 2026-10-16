@@ -19,9 +19,9 @@ const DESCRIPTIONS: Record<WebSearchProviderId, string> = {
 type Result = { ok: boolean; text: string };
 
 /**
- * Settings → Labs, for an OpenAI-compatible source only (P3-45, F24): the person's own Brave or Tavily key, which
- * fact-check and UnEcho Chamber search the web with. The provider's host permission is asked for from the Save
- * click only. The saved key stays in the background and is never read back into this page.
+ * Settings → AI, above the Fact-check switch, for an OpenAI-compatible source only (P3-45, F24): the person's own
+ * Brave or Tavily key, which fact-check and UnEcho Chamber search the web with. The provider's host permission is
+ * asked for from the Save click only. The saved key stays in the background and is never read back into this page.
  */
 export function WebSearchKey({ device }: { device: Device }) {
   const saved = device.webSearch;
