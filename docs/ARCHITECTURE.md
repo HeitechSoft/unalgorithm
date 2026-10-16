@@ -105,8 +105,8 @@ usage is recorded even when a call fails.
 Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. UnAlgorithm Cloud
 runs this same server; HeitechSoft's private repository adds only a billing module and its own operations
 configuration (ADR 0007).
-One image holds both apps (`apps/server/Dockerfile`), released on the server train
-([release.md](release.md#server-releases)). What a server keeps is in
+One image holds both apps (`apps/server/Dockerfile`). It is not released from here: UnAlgorithm Cloud's private
+repository builds it from a pinned commit ([release.md](release.md#the-server)). What a server keeps is in
 [privacy-model.md](privacy-model.md#what-a-server-stores).
 
 ### Sign-in

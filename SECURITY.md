@@ -15,8 +15,8 @@ keep you updated, and credit you in the release notes unless you prefer otherwis
 ## Scope
 
 - The UnAlgorithm Feed extension (`apps/extension` and the packages it is built from).
-- The UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in `server-vX.Y.Z` tags
-  (the source of UnAlgorithm Cloud's server).
+- The UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, on `main` (the source of UnAlgorithm
+  Cloud's server, which has no releases of its own).
   This includes:
   - the admin page (`/admin`) and its routes (`/v1/admin/*`);
   - setup links (`setup-link`, `/setup`);
@@ -28,17 +28,17 @@ A problem in someone else's running copy of the server is for its operator, unle
 
 ## Supported versions
 
-During the preview, security fixes go to the latest release of each of the two release trains
-([release.md](docs/release.md#two-release-trains)):
+During the preview, security fixes go to:
 
-- the extension, tagged `vX.Y.Z`;
-- the server, tagged `server-vX.Y.Z`.
+- the extension's latest release, tagged `vX.Y.Z`;
+- the server on `main`, which UnAlgorithm Cloud runs. The server is not released separately
+  ([release.md](docs/release.md#the-server)).
 
 ## Security fixes and UnAlgorithm Cloud
 
-A security fix for the server may reach UnAlgorithm Cloud before the public server release, as in any coordinated
-disclosure (ADR 0007). The public `server-v*` release with the fix follows within 30 days of the Cloud fix, or at
-once if the issue is already public. The GitHub security advisory names the server release that fixes it.
+A security fix for the server may reach UnAlgorithm Cloud before it is merged here, as in any coordinated disclosure
+(ADR 0007). It is merged to `main` within 30 days of the Cloud fix, or at once if the issue is already public. The
+GitHub security advisory names the commit that fixes it.
 
 ## What we care about most
 

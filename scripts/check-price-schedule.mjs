@@ -4,7 +4,7 @@
 //
 //   node --import ./apps/server/src/require-node.js scripts/check-price-schedule.mjs --base <git revision> [--in-effect-only]
 //
-// `--in-effect-only` applies the first rule alone (the server release's check). Exit code 0: allowed; 1: a rule fails;
+// `--in-effect-only` applies the first rule alone (the UnAlgorithm Cloud build's check). Exit code 0: allowed; 1: a rule fails;
 // 2: the check could not run. Needs `pnpm install` (the protocol package imports zod) and a Node.js with type stripping.
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';

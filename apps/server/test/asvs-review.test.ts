@@ -49,7 +49,7 @@ const GOOD_FINDINGS = [
   '',
   'Severity: medium',
   'Status: fixed',
-  'Fix: GHSA-xxxx-xxxx-xxxx, server-v1.2.3',
+  'Fix: GHSA-xxxx-xxxx-xxxx, commit 1a2b3c4',
   `Regression test: ${TEST}`,
 ].join('\n');
 

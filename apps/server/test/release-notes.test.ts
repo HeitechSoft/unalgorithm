@@ -3,12 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
 import { notesFor } from '../../../scripts/release-notes.mjs';
 import { PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const WORKFLOW = join(REPO_ROOT, '.github/workflows/server-release.yml');
 
 /** A readFile over in-memory files by repository path; undefined for any other path, as for a missing file. */
 function files(contents: Record<string, string>) {
@@ -135,129 +133,5 @@ attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
     };
     expect(run.stdout).toBe(`${notesFor('server-v9.9.9', readRepo)}\n`);
     expect(run.stdout.startsWith('UnAlgorithm Feed server 9.9.9\n')).toBe(true);
-  });
-});
-
-interface Step {
-  name?: string;
-  id?: string;
-  uses?: string;
-  run?: string;
-  with?: Record<string, unknown>;
-}
-
-/** The workflow's text, the parsed workflow, its two jobs and the publish job's steps. */
-function loadWorkflow() {
-  const text = readFileSync(WORKFLOW, 'utf8');
-  const workflow = parse(text);
-  const { verify, publish } = workflow.jobs;
-  const steps: Step[] = publish.steps;
-  return { text, workflow, verify, publish, steps };
-}
-
-/** `${{ expression }}` as a workflow writes it (a template literal, so it is not read as a mistyped placeholder). */
-const expr = (expression: string) => `$\{{ ${expression} }}`;
-/** `${name}` as the shell reads it. */
-const shellVar = (name: string) => `$\{${name}}`;
-
-describe('workflow file', () => {
-  it('test_server_release_workflow_pins_and_triggers', () => {
-    const { text, workflow, verify, publish } = loadWorkflow();
-    // Server tags only: no branches, no pull requests, no other event.
-    expect(workflow.on).toEqual({ push: { tags: ['server-v*.*.*'] } });
-    expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(Object.keys(workflow.jobs)).toEqual(['verify', 'publish']);
-
-    // Every action is pinned to a full commit SHA, with the version it was in a comment.
-    const uses = [...verify.steps, ...publish.steps].flatMap((step: Step) => (step.uses ? [step.uses] : []));
-    expect(uses.length).toBeGreaterThanOrEqual(9);
-    for (const action of uses) expect(action).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
-    const usesLines = text.split('\n').filter((line) => /^\s*(- )?uses:/.test(line));
-    expect(usesLines).toHaveLength(uses.length);
-    for (const line of usesLines) expect(line).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+\s*$/);
-  });
-
-  it('test_server_release_runs_dependencies_only_without_write_rights', () => {
-    const { verify, publish } = loadWorkflow();
-    const verifySteps: Step[] = verify.steps;
-    const publishSteps: Step[] = publish.steps;
-    const runs = (steps: Step[]) => steps.flatMap((step) => (step.run ? [step.run] : [])).join('\n');
-    const checkouts = (steps: Step[]) => steps.filter((step) => step.uses?.startsWith('actions/checkout@'));
-
-    // verify: a read-only token and no environment; it installs the dependencies and runs every check.
-    expect(verify.permissions).toEqual({ contents: 'read' });
-    expect(verify.environment).toBeUndefined();
-    expect(runs(verifySteps)).toContain('pnpm install --frozen-lockfile');
-    expect(runs(verifySteps)).toContain('pnpm check && pnpm licenses:server');
-
-    // publish: after verify, in the protected environment, with the write rights; no pnpm, no dependency code.
-    expect(publish.needs).toBe('verify');
-    expect(publish.environment).toBe('release');
-    expect(publish.permissions).toEqual({
-      contents: 'write',
-      packages: 'write',
-      'id-token': 'write',
-      attestations: 'write',
-    });
-    expect(runs(publishSteps)).not.toMatch(/\b(pnpm|npm|npx|yarn|corepack)\b/);
-    expect(publishSteps.some((step) => step.uses?.startsWith('pnpm/'))).toBe(false);
-
-    // Neither job keeps the token in the git config or restores a dependency cache.
-    for (const steps of [verifySteps, publishSteps]) {
-      expect(checkouts(steps)).toHaveLength(1);
-      for (const step of checkouts(steps)) expect(step.with?.['persist-credentials']).toBe(false);
-      for (const step of steps) expect(step.with?.cache).toBeUndefined();
-    }
-  });
-
-  it('test_server_release_checks_the_tag_before_pushing', () => {
-    const { steps } = loadWorkflow();
-    const at = (match: (step: Step) => boolean) => {
-      const index = steps.findIndex(match);
-      expect(index).toBeGreaterThanOrEqual(0);
-      return index;
-    };
-    const tagCheck = at((step) => step.id === 'version');
-    const login = at((step) => step.uses?.startsWith('docker/login-action@') === true);
-    const build = at((step) => step.uses?.startsWith('docker/build-push-action@') === true);
-    const attest = at((step) => step.uses?.startsWith('actions/attest-build-provenance@') === true);
-    const publish = at((step) => step.run?.includes('gh release create') === true);
-    const order = [tagCheck, login, build, attest, publish];
-    expect(order).toEqual(order.toSorted((a, b) => a - b));
-
-    // The tag check compares the tag with the server's package version and fails the job otherwise.
-    const check = steps[tagCheck]?.run ?? '';
-    expect(check).toContain("require('./apps/server/package.json').version");
-    expect(check).toContain(`"server-v$version" != "${shellVar('GITHUB_REF_NAME')}"`);
-    expect(check).toContain('exit 1');
-
-    // The image goes out under the version and latest, with an SBOM and provenance, and is attested by digest.
-    const buildStep = steps[build];
-    expect(buildStep?.id).toBe('build');
-    expect(buildStep?.with).toMatchObject({
-      context: '.',
-      file: 'apps/server/Dockerfile',
-      push: true,
-      sbom: true,
-      provenance: 'mode=max',
-    });
-    const version = expr('steps.version.outputs.version');
-    expect(buildStep?.with?.['build-args']).toBe(`VERSION=${version}`);
-    expect(String(buildStep?.with?.tags).trim().split('\n')).toEqual([
-      `ghcr.io/heitechsoft/unalgorithm-server:${version}`,
-      'ghcr.io/heitechsoft/unalgorithm-server:latest',
-    ]);
-    expect(steps[attest]?.with).toEqual({
-      'subject-name': 'ghcr.io/heitechsoft/unalgorithm-server',
-      'subject-digest': expr('steps.build.outputs.digest'),
-      'push-to-registry': true,
-    });
-
-    // The GitHub Release is titled for the server and never takes "Latest" from the extension.
-    const notes = steps[publish]?.run ?? '';
-    expect(notes).toContain(`node scripts/release-notes.mjs "${shellVar('GITHUB_REF_NAME')}" > release-notes.md`);
-    expect(notes).toContain(`--title "UnAlgorithm Feed server ${shellVar('VERSION')}"`);
-    expect(notes).toContain('--verify-tag');
-    expect(notes).toContain('--latest=false');
   });
 });

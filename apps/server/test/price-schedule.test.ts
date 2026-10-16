@@ -207,26 +207,6 @@ describe('ci', () => {
     expect(result.stdout).toMatch(/^No price in effect changed \(\d+ of \d+ entries in effect\)\.$/m);
     expect(result.stdout).not.toContain('nothing to compare');
   });
-
-  it('test_server_release_checks_prices_in_effect', () => {
-    const { verify, publish } = workflow('server-release.yml').jobs;
-    const steps: Step[] = verify.steps;
-    expect(steps.find((step) => step.uses?.startsWith('actions/checkout@'))?.with?.['fetch-depth']).toBe(0);
-    const install = steps.findIndex((step) => step.run === 'pnpm install --frozen-lockfile');
-    const check = steps.findIndex((step) => step.run?.includes('--in-effect-only') === true);
-    expect(install).toBeGreaterThanOrEqual(0);
-    expect(check).toBeGreaterThan(install);
-    // Before the first docker/ action: verify has none, and publish (with every docker/ step) runs only after it.
-    expect(steps.some((step) => step.uses?.startsWith('docker/'))).toBe(false);
-    expect(publish.needs).toBe('verify');
-    expect((publish.steps as Step[]).some((step) => step.uses?.startsWith('docker/'))).toBe(true);
-
-    const script = steps[check]?.run ?? '';
-    expect(script).toContain("git tag --list 'server-v*' --sort=-v:refname");
-    expect(script).toContain('$GITHUB_REF_NAME');
-    expect(script).toContain('if [ -z "$PREV" ]');
-    expect(script).toContain('scripts/check-price-schedule.mjs --base "$PREV" --in-effect-only');
-  });
 });
 
 describe('docs', () => {
@@ -242,7 +222,7 @@ describe('docs', () => {
       'price-schedule',
       '00:00 UTC',
       'STARTER_CREDIT',
-      'server-release.yml',
+      '--in-effect-only',
       're-run',
       'no rollback',
       'Price cuts',
