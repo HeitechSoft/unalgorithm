@@ -1,5 +1,12 @@
 # @unalgorithm/platforms
 
+## 0.0.2
+
+### Patch Changes
+
+- Updated dependencies [[`cc177d8`](https://github.com/HeitechSoft/unalgorithm/commit/cc177d85def2c43a854e97c4c0b786fab3040237)]:
+  - @unalgorithm/core@0.1.1
+
 ## 0.0.1
 
 ### Patch Changes

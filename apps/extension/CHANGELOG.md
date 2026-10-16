@@ -1,5 +1,17 @@
 # @unalgorithm/extension
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [[`cc177d8`](https://github.com/HeitechSoft/unalgorithm/commit/cc177d85def2c43a854e97c4c0b786fab3040237)]:
+  - @unalgorithm/core@0.1.1
+  - @unalgorithm/ai@0.0.2
+  - @unalgorithm/platforms@0.0.2
+  - @unalgorithm/research@0.0.2
+  - @unalgorithm/sync@0.0.2
+  - @unalgorithm/ui@0.0.2
+
 ## 0.2.1
 
 ### Patch Changes
