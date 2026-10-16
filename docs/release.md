@@ -36,11 +36,15 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 
 ## Chrome Web Store listing
 
+The paste-ready listing, permission justifications and data-use answers are in [store-listing.md](store-listing.md),
+and the screenshots and promo tiles in [store/](store/).
+
 - **Name:** UnAlgorithm Feed. It comes from `extName` in `apps/extension/public/_locales/en/messages.json`; never
   plain "UnAlgorithm" (see [brand.md](brand.md)). Publish from the HeitechSoft developer account, so the listing shows
   HeitechSoft as the developer, and open the long description with "UnAlgorithm Feed by HeitechSoft".
 - 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tile, short and long descriptions
-  with the non-affiliation line.
+  with the non-affiliation line. `pnpm --filter @unalgorithm/extension store:screens` remakes the screenshots and
+  `node scripts/make-icons.mjs --store` the promo tiles.
 - **Website, support and privacy policy URLs:** `https://unalgorithmfeed.com/`, `https://unalgorithmfeed.com/help/`
   and `https://unalgorithmfeed.com/privacy/` once the website is live; until then the GitHub repo, SUPPORT.md and
   PRIVACY.md on GitHub. The website's privacy page is built from PRIVACY.md, so a merged change reaches it with the
