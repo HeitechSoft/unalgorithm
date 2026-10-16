@@ -23,10 +23,9 @@ import { backupLine } from '../src/AdminUsage.tsx';
 import { fakeServer, OVERVIEW, type Reply, SESSION_GONE, TOM } from './support/fake-server.ts';
 
 const HAS_ACCOUNT = 'This address already has an account.';
-const GUIDE = 'https://github.com/HeitechSoft/unalgorithm/blob/main/docs/self-hosting.md';
 const STORE_LINE =
-  'Until the store version of UnAlgorithm Feed offers servers, they need the build described in the self-hosting ' +
-  'guide, Connect the extension, with its id in EXTENSION_IDS.';
+  'Until the store version of UnAlgorithm Feed offers servers, they need a build of UnAlgorithm Feed that does, with ' +
+  'its id in EXTENSION_IDS.';
 const BREAKER = "Today's AI spending limit is reached. AI resumes for everyone at 00:00 UTC.";
 const LOAD_FAILED = "Couldn't load usage.";
 const NOT_WATCHED = "Backups aren't watched on this server.";
@@ -184,16 +183,15 @@ describe('invites', () => {
     await screen.findByLabelText('Email address');
     // Nobody invited: nothing but the form.
     expect(screen.queryByText(/^Tell /)).toBeNull();
-    expect(screen.queryByRole('link', { name: 'the self-hosting guide, Connect the extension' })).toBeNull();
+    expect(screen.queryByText(STORE_LINE)).toBeNull();
 
     await invite(user, 'New@Example.org');
     const sentence = await screen.findByText(
       `Tell new@example.org: install UnAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`,
     );
-    const link = screen.getByRole('link', { name: 'the self-hosting guide, Connect the extension' });
-    expect(link.getAttribute('href')).toBe(GUIDE);
-    const line = link.closest('p');
-    expect(line?.textContent).toBe(STORE_LINE);
+    const line = screen.getByText(STORE_LINE);
+    // A plain line: it links nowhere.
+    expect(line.querySelector('a')).toBeNull();
     expect(line && sentence.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // The last address invited is the one to pass on.

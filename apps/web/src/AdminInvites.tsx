@@ -3,7 +3,7 @@
  * address may then create an account. The server sends no email, so the page gives the admin the sentence to pass on:
  * it names the extension and this server's address, never the server's own name, so it is right on any server. Under it
  * a line for the admin: until store builds offer servers (docs/release.md, *Before a store build carries the Cloud
- * card*), the person needs the build the self-hosting guide describes; the release that passes that gate removes it.
+ * card*), the person needs a build that offers servers; the release that passes that gate removes it.
  * The pending invites come from the accounts list the page keeps, asked for again after each change.
  */
 import { type AdminUsers, InviteRequestSchema } from '@unalgorithm/protocol';
@@ -12,7 +12,6 @@ import { type FormEvent, useId, useState } from 'react';
 import { ApiError, addInvite, removeInvite } from './api.ts';
 import { failureMessage } from './SignIn.tsx';
 
-export const SELF_HOSTING_GUIDE = 'https://github.com/HeitechSoft/unalgorithm/blob/main/docs/self-hosting.md';
 const HAS_ACCOUNT = 'This address already has an account.';
 /** Dates in UTC, as the server keeps them: "Oct 15, 2026". */
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
@@ -93,11 +92,8 @@ export function AdminInvites({ invites, reload, onSignedOut }: AdminInvitesProps
             {`Tell ${passOn}: install UnAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`}
           </p>
           <p className="ua-footnote">
-            Until the store version of UnAlgorithm Feed offers servers, they need the build described in{' '}
-            <a href={SELF_HOSTING_GUIDE} target="_blank" rel="noreferrer">
-              the self-hosting guide, Connect the extension
-            </a>
-            , with its id in EXTENSION_IDS.
+            Until the store version of UnAlgorithm Feed offers servers, they need a build of UnAlgorithm Feed that does, with its
+            id in EXTENSION_IDS.
           </p>
         </div>
       ) : null}

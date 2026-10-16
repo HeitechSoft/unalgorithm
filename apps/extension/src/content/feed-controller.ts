@@ -1019,6 +1019,11 @@ export class FeedController {
     }
   }
 
+  /** Why AI is paused on this tab (R27), or undefined while it runs. */
+  pausedFor(): BgError['code'] | undefined {
+    return this.aiPause?.code;
+  }
+
   getHealth(): HealthReport {
     return this.health;
   }

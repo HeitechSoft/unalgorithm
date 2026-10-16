@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 /**
- * The compose model self-hosters run (`apps/server/compose.yaml`), as Compose reads it, and the caddy profile's
- * Caddyfile. The container checks are compose-smoke.sh's, backup-smoke.sh's and profiles-smoke.sh's, in CI.
+ * The compose model CI's compose-smoke job runs (`apps/server/compose.yaml`), as Compose reads it, and the caddy
+ * profile's Caddyfile. The container checks are compose-smoke.sh's, backup-smoke.sh's and profiles-smoke.sh's, in CI.
  */
 interface Service {
   image?: string;

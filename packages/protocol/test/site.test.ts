@@ -6,6 +6,8 @@ import {
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
   CREDITS_PAGE,
+  PRICING_FOOTER_LINK,
+  PRICING_REDIRECT,
   STARTER_CREDIT,
   siteUrl,
   WEBSITE_ORIGIN,
@@ -49,6 +51,16 @@ describe('site documents', () => {
       ['Beta terms', '/cloud/beta-terms'],
       ['How credits work', '/credits'],
     ]);
+  });
+});
+
+describe('pricing (CL5-09)', () => {
+  it('test_pricing_redirect_page_and_footer_link', () => {
+    // /pricing is a prerendered page that leads to /credits: one pricing page, one source for every figure.
+    expect(PRICING_REDIRECT).toEqual({ path: '/pricing', to: '/credits', linkText: 'Pricing and credits' });
+    expect(PRICING_REDIRECT.to).toBe(CREDITS_PAGE.path);
+    expect(PRICING_FOOTER_LINK).toEqual({ linkText: 'Pricing', path: '/credits' });
+    expect(siteUrl(PRICING_FOOTER_LINK)).toBe(siteUrl(CREDITS_PAGE));
   });
 });
 

@@ -1,8 +1,15 @@
 import { createHmac } from 'node:crypto';
-import { CLAIM_CACHE_TTL_MS, type FactcheckClaim, type FactcheckSource, type PostForAI } from '@unalgorithm/protocol';
+import {
+  CLAIM_CACHE_TTL_MS,
+  type FactcheckClaim,
+  type FactcheckSource,
+  MAX_EXPLANATION_CHARS,
+  type PostForAI,
+} from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   type CachedClaim,
+  CachedClaimSchema,
   cacheEntryFor,
   hmacClaimKeyer,
   memoryClaimCache,
@@ -73,14 +80,15 @@ describe('keys', () => {
 });
 
 describe('entries', () => {
-  it('test_entry_keeps_only_verdict_citations_and_time', () => {
+  it('test_entry_keeps_only_verdict_explanation_citations_and_time', () => {
     const entry = cacheEntryFor(CLAIM, SOURCES, POST, AT);
     expect(entry).not.toBeNull();
-    expect(Object.keys(entry ?? {}).sort()).toEqual(['checkedAt', 'citations', 'v', 'verdict']);
+    expect(Object.keys(entry ?? {}).sort()).toEqual(['checkedAt', 'citations', 'explanation', 'v', 'verdict']);
     for (const c of entry?.citations ?? []) expect(Object.keys(c).sort()).toEqual(['domain', 'quote', 'title', 'url']);
     expect(entry).toEqual({
       v: 1,
       verdict: 'supported',
+      explanation: CLAIM.explanation,
       checkedAt: '2026-10-15T12:00:00.000Z',
       citations: [
         { url: 'https://www.example.com/s1', domain: 'www.example.com', title: 'Title s1', quote: CLAIM.citations[0]?.quote },
@@ -89,9 +97,115 @@ describe('entries', () => {
     });
     const json = JSON.stringify(entry);
     expect(json).not.toContain(CLAIM.claim);
-    expect(json).not.toContain(CLAIM.explanation);
     expect(json).not.toContain(POST.text);
     expect(json).not.toContain('2 days');
+  });
+
+  it('test_entry_explanation_dropped_when_it_echoes_the_post', () => {
+    const explained = (explanation: string, post: PostForAI = POST) =>
+      cacheEntryFor({ ...CLAIM, explanation }, SOURCES, post, AT);
+    // Six consecutive words of the post text, or of its link title: the entry keeps its verdict and citations only.
+    const echo = explained('Reports confirm the city council finally approved the new budget.');
+    expect(echo).not.toBeNull();
+    expect(echo).not.toHaveProperty('explanation');
+    expect(echo?.citations).toHaveLength(2);
+    expect(explained('Outlets say the harbour bridge budget approved after a vote.')).not.toHaveProperty('explanation');
+    // Five consecutive words are kept.
+    expect(explained('Reports confirm the city council finally approved it.')?.explanation).toBe(
+      'Reports confirm the city council finally approved it.',
+    );
+    // A short post repeated whole.
+    const short = { ...POST, text: 'Bridge-opening was 1932', link: undefined };
+    expect(explained('Records show bridge opening was 1932 indeed.', short)).not.toHaveProperty('explanation');
+    // Chinese, Japanese and Thai: a sentence is split into its words, so a repeated sentence is an echo.
+    const unspaced = [
+      ['據報導大橋於1932年開通市長說這是偉大的成就', '新聞稿指出據報導大橋於1932年開通市長說這是偉大的成就'],
+      ['橋は1932年に開通したと市長が述べた', '報道によると橋は1932年に開通したと市長が述べた'],
+      ['สะพานเปิดในปี1932นายกเทศมนตรีกล่าวว่าเป็นความสำเร็จที่ยิ่งใหญ่', 'รายงานว่าสะพานเปิดในปี1932นายกเทศมนตรีกล่าวว่าเป็นความสำเร็จที่ยิ่งใหญ่'],
+    ] as const;
+    for (const [text, echoed] of unspaced) {
+      expect(explained(echoed, { ...POST, text, link: undefined }), text).not.toHaveProperty('explanation');
+    }
+    expect(explained('大橋全長兩公里', { ...POST, text: unspaced[0][0], link: undefined })?.explanation).toBe('大橋全長兩公里');
+    // An empty explanation is not kept; an overlong one is cut to the result schema's bound.
+    expect(explained('')).not.toHaveProperty('explanation');
+    const long = 'Independent outlets agree. '.repeat(20);
+    expect(explained(long)?.explanation).toBe(long.slice(0, MAX_EXPLANATION_CHARS));
+  });
+
+  it('test_entry_explanation_dropped_when_it_echoes_a_claim', () => {
+    // The entry is keyed by a hash of the claim; text repeating any claim of the check must not land in it either.
+    const claims = [CLAIM.claim, 'The new harbour bridge will cost the city ten million euros.', 'Tolls start in May.'];
+    const explained = (explanation: string) => cacheEntryFor({ ...CLAIM, explanation }, SOURCES, POST, AT, claims);
+    // The cached claim restated.
+    const restated = explained('Yes: the council approved the bridge budget, two outlets say.');
+    expect(restated).not.toBeNull();
+    expect(restated).not.toHaveProperty('explanation');
+    expect(restated?.citations).toHaveLength(2);
+    expect(JSON.stringify(restated)).not.toContain('approved the bridge');
+    // Without the other claims, the cached claim itself still counts.
+    const alone = cacheEntryFor(
+      { ...CLAIM, explanation: 'In short, the council approved the bridge budget.' },
+      SOURCES,
+      POST,
+      AT,
+    );
+    expect(alone).not.toHaveProperty('explanation');
+    // Six consecutive words of another claim of the same post.
+    expect(explained('Reports add that the bridge will cost the city ten million in total.')).not.toHaveProperty('explanation');
+    // A claim shorter than six words, contained whole.
+    expect(explained('Officials confirm tolls start in May this year.')).not.toHaveProperty('explanation');
+    // Five consecutive words of another claim, or an unrelated reason, are kept.
+    expect(explained('The bridge will cost the city more, outlets say.')?.explanation).toBe(
+      'The bridge will cost the city more, outlets say.',
+    );
+    expect(explained('Two outlets report the approval.')?.explanation).toBe('Two outlets report the approval.');
+    // Chinese: the claim is split into its words, so a restated sentence is an echo.
+    const zh = '大橋於1932年開通市長說這是偉大的成就';
+    const zhPost = { ...POST, text: 'x', link: undefined };
+    expect(cacheEntryFor({ ...CLAIM, explanation: `報導指出${zh}` }, SOURCES, zhPost, AT, [zh])).not.toHaveProperty(
+      'explanation',
+    );
+  });
+
+  it('test_entry_citation_text_echoing_a_claim_dropped', () => {
+    const claims = [CLAIM.claim, 'Tolls start in May.'];
+    const titled = [src('s1', 'www.example.com', 'The council approved the bridge budget on Tuesday'), ...SOURCES.slice(1)];
+    const entry = cacheEntryFor(
+      {
+        ...CLAIM,
+        citations: [
+          { sourceId: 's1', quote: 'the council voted to approve the budget' },
+          { sourceId: 's2', quote: 'Officials said tolls start in May.' },
+          { sourceId: 's3', quote: 'a third independent report' },
+        ],
+      },
+      titled,
+      POST,
+      AT,
+      claims,
+    );
+    // The citation stays (its URL still backs the verdict); only the text repeating a claim is emptied.
+    expect(entry?.citations).toEqual([
+      {
+        url: 'https://www.example.com/s1',
+        domain: 'www.example.com',
+        title: '',
+        quote: 'the council voted to approve the budget',
+      },
+      { url: 'https://news.other.org/s2', domain: 'news.other.org', title: 'Title s2', quote: '' },
+      { url: 'https://third.net/s3', domain: 'third.net', title: 'Title s3', quote: 'a third independent report' },
+    ]);
+    expect(CachedClaimSchema.safeParse(entry).success).toBe(true);
+  });
+
+  it('test_entry_schema_bounds_explanation', () => {
+    const base = { v: 1, verdict: 'supported', checkedAt: AT, citations: ENTRY.citations };
+    expect(CachedClaimSchema.safeParse({ ...base, explanation: 'Short reason.' }).success).toBe(true);
+    expect(CachedClaimSchema.safeParse(base).success).toBe(true);
+    expect(CachedClaimSchema.safeParse({ ...base, explanation: 'x'.repeat(MAX_EXPLANATION_CHARS + 1) }).success).toBe(false);
+    expect(CachedClaimSchema.safeParse({ ...base, explanation: '' }).success).toBe(false);
+    expect(CachedClaimSchema.safeParse({ ...base, explanation: 'ok', claim: 'x' }).success).toBe(false);
   });
 
   it('test_entry_skips_unverifiable_and_downgraded', () => {
@@ -218,6 +332,8 @@ const NOW = Date.parse('2026-10-15T12:00:00.000Z');
 describe('replay', () => {
   it('test_replay_rejects_malformed_blocked_dead_and_expired', () => {
     expect(replayCached(ENTRY, { blocked: [], now: NOW })).toEqual(ENTRY);
+    const explained = { ...ENTRY, explanation: 'Two outlets disagree.' };
+    expect(replayCached(explained, { blocked: ['b.org'], now: NOW })?.explanation).toBe('Two outlets disagree.');
     expect(replayCached({ ...ENTRY, claim: 'x' }, { blocked: [], now: NOW })).toBeNull();
     expect(replayCached({ ...ENTRY, verdict: 'unverifiable' }, { blocked: [], now: NOW })).toBeNull();
     expect(replayCached('nope', { blocked: [], now: NOW })).toBeNull();

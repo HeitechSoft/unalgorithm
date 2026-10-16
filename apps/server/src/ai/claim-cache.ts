@@ -1,7 +1,7 @@
 /**
  * The server's shared claim cache (F27, decisions D59–D61): the `claim_cache` table behind P3-57's `ClaimCache`. A row is
- * a keyed hash of a normalized public claim, the verdict, its validated citations and two whole-hour times, nothing
- * else. The key's secret is derived from this server's BETTER_AUTH_SECRET and never stored, so no other server can find
+ * a keyed hash of a normalized public claim, the verdict, its explanation unless it repeats the post, its validated
+ * citations and two whole-hour times, nothing else. The key's secret is derived from this server's BETTER_AUTH_SECRET and never stored, so no other server can find
  * a row, and changing that secret makes every row unreachable until the hourly purge removes it.
  * `docs/privacy-model.md` → *What a server stores* gives the retention.
  */
@@ -45,13 +45,20 @@ export function pgClaimCache(db: Db, o: { secret: Uint8Array; now?: () => number
         .select({
           key: claimCache.key,
           verdict: claimCache.verdict,
+          explanation: claimCache.explanation,
           citations: claimCache.citations,
           checkedAt: claimCache.checkedAt,
         })
         .from(claimCache)
         .where(and(inArray(claimCache.key, unique), gt(claimCache.expiresAt, new Date(now()))));
       for (const row of rows) {
-        out.set(row.key, { v: 1, verdict: row.verdict, citations: row.citations, checkedAt: row.checkedAt.toISOString() });
+        out.set(row.key, {
+          v: 1,
+          verdict: row.verdict,
+          ...(row.explanation === null ? {} : { explanation: row.explanation }),
+          citations: row.citations,
+          checkedAt: row.checkedAt.toISOString(),
+        });
       }
       return out;
     },
@@ -69,6 +76,7 @@ export function pgClaimCache(db: Db, o: { secret: Uint8Array; now?: () => number
         rows.push({
           key: k,
           verdict: entry.verdict,
+          explanation: entry.explanation ?? null,
           citations: entry.citations,
           checkedAt: new Date(checkedAt),
           expiresAt: new Date(checkedAt + ttl),
@@ -82,6 +90,7 @@ export function pgClaimCache(db: Db, o: { secret: Uint8Array; now?: () => number
           target: claimCache.key,
           set: {
             verdict: sql.raw('excluded.verdict'),
+            explanation: sql.raw('excluded.explanation'),
             citations: sql.raw('excluded.citations'),
             checkedAt: sql.raw('excluded.checked_at'),
             expiresAt: sql.raw('excluded.expires_at'),

@@ -15,6 +15,7 @@ export const auth = createAuth({
     publicOrigin: 'http://localhost:8787',
     // A placeholder: the CLI signs nothing.
     authSecret: '0'.repeat(32),
+    signup: 'allowlist',
     signupAllowlist: [],
     // The Google provider adds no tables.
     google: undefined,

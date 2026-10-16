@@ -10,7 +10,9 @@
  * every server table, not only schema `billing`. Routes it adds through `mount` receive the request like any server
  * route, the client address (`clientIp`) and raw headers included. What the seam passes: account id, email, verified
  * flag and account creation time (`accounts`); device id, request id, model, token usage, cost and posts counted, and
- * the instant the server checked the request (`checkedAt`) (`BillingProvider`). What the host does not offer: the
+ * the instant the server checked the request (`checkedAt`) (`BillingProvider`); the signed-in person's id and email on a
+ * page request (`auth.webUser`). Pages it renders (`pages.render`) get the server's frame, stylesheet and CSP around
+ * HTML escaped by `html`, with no script. What the host does not offer: the
  * server's Drizzle schema, `AppDeps`, the AI clients, the classify request body or any post field. No post text, prompt or interest reaches a module, because the server
  * neither stores nor passes them (ADR 0007). Adding to `BillingHost` is a reviewed public change.
  *
@@ -18,16 +20,20 @@
  * come back as a string, a number or a bigint, so read it with `Number()`; read times as epoch milliseconds
  * (`(extract(epoch from t) * 1000)::bigint`) and pass them as ISO strings cast `::timestamptz`.
  */
+import { formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice } from '@unalgorithm/core';
 import * as protocol from '@unalgorithm/protocol';
 import { eq, type SQL, sql } from 'drizzle-orm';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
+import { html } from 'hono/html';
+import { costByDay, type DayModelCost } from '../ai/metering.ts';
 import { type DeviceEnv, requireDevice } from '../auth/bearer.ts';
 import type { Auth } from '../auth/better-auth.ts';
-import { requireWebSession, type WebSessionEnv } from '../auth/web-session.ts';
+import { ownPageOnly, requireWebSession, type WebSessionEnv, type WebUser, webUserFrom } from '../auth/web-session.ts';
 import type { Config } from '../config.ts';
 import type { Db, DbHandle } from '../db/client.ts';
 import { runMigrations } from '../db/migrate.ts';
 import { user } from '../db/schema.ts';
+import { type ModulePage, renderModulePage } from '../http/page-frame.ts';
 import type { JobRegistry } from '../jobs/worker.ts';
 import type { Logger } from '../log.ts';
 import type { BillingProvider } from './provider.ts';
@@ -76,9 +82,38 @@ export interface BillingHost {
     get(userId: string): Promise<BillingUser | null>;
     findByEmail(email: string): Promise<BillingUser | null>;
   };
-  /** Route middleware: the extension's bearer check and the server page's session check. */
-  readonly auth: { device: MiddlewareHandler<DeviceEnv>; webSession: MiddlewareHandler<WebSessionEnv> };
+  /** Route middleware and checks: the extension's bearer check, the server page's session check, and for page routes. */
+  readonly auth: {
+    device: MiddlewareHandler<DeviceEnv>;
+    webSession: MiddlewareHandler<WebSessionEnv>;
+    /** Who the request's web session signs in, or null: for pages that send a signed-out person to sign in. */
+    webUser(c: Context): Promise<WebUser | null>;
+    /**
+     * 403 `permission` unless Origin is this server's own origin: in front of every state-changing page route.
+     * Script-free form posts from module pages rely on renderModulePage's `<meta name="referrer" content="same-origin">`,
+     * because under the server's no-referrer header a form POST carries `Origin: null`.
+     */
+    ownPage: MiddlewareHandler;
+  };
   readonly jobs: JobRegistry;
+  /** hono/html's tag: interpolated values are escaped; nested results are kept. */
+  readonly html: typeof html;
+  /** A module's own page in the server's frame, stylesheet and CSP (`renderModulePage`), with no script. */
+  readonly pages: { render(c: Context, page: ModulePage): Promise<Response> };
+  /** The wording every surface shows (@unalgorithm/core), so a module never formats money itself. */
+  readonly format: Readonly<{
+    formatBalance: typeof formatBalance;
+    formatCreditAmount: typeof formatCreditAmount;
+    formatPostsEstimate: typeof formatPostsEstimate;
+    formatPrice: typeof formatPrice;
+  }>;
+  /**
+   * The server's own metered AI cost (`usage_events`), content-free: per UTC day and model, the summed cost and the
+   * request counts, for days in [from, to) (both 00:00 UTC, at most 62 days, else a `RangeError`). Never a user id,
+   * request id or token count. `usage_events` rows are deleted with their account (`onDelete: 'cascade'`), so a day's
+   * total can fall after the day when an account is deleted: compare it with the vendor's report allowing a tolerance.
+   */
+  readonly usage: Readonly<{ costByDay(from: Date, to: Date): Promise<DayModelCost[]> }>;
 }
 
 /** What `BILLING_MODULE` exports. */
@@ -138,8 +173,21 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
       // Better Auth stores addresses in lowercase.
       findByEmail: (email: string) => findAccount(eq(user.email, email.trim().toLowerCase())),
     }),
-    auth: Object.freeze({ device: requireDevice(deps), webSession: requireWebSession(deps) }),
+    auth: Object.freeze({
+      device: requireDevice(deps),
+      webSession: requireWebSession(deps),
+      async webUser(c: Context): Promise<WebUser | null> {
+        const web = await webUserFrom(c, deps);
+        // Who, never when the session began or a token.
+        return web && { userId: web.userId, email: web.email };
+      },
+      ownPage: ownPageOnly(config.publicOrigin),
+    }),
     jobs,
+    html,
+    pages: Object.freeze({ render: (c: Context, page: ModulePage) => renderModulePage(c, { config, log }, page) }),
+    format: Object.freeze({ formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice }),
+    usage: Object.freeze({ costByDay: (from: Date, to: Date) => costByDay(db.db, from, to) }),
   });
 }
 

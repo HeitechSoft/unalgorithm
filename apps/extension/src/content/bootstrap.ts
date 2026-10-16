@@ -9,6 +9,9 @@ import { type Bridge, FeedController, type Runtime } from './feed-controller.ts'
 import { reportProblemUrl } from './report.ts';
 import { mountUiHost, UiLayer } from './ui-layer.tsx';
 
+/** A paused tab asks the background about the balance at most this often (the background's own limit is the same). */
+const BALANCE_CHECK_INTERVAL_MS = 30_000;
+
 /** Shared startup for every platform's content script: same controller, different adapter. */
 export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentScriptContext): Promise<void> {
   const rt: Runtime = {
@@ -135,7 +138,20 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
   };
   browser.runtime.onMessage.addListener(onMessage);
 
+  // Paused at $0 (R27): credit may have been added in another tab. Back on this one, the background checks the balance
+  // (at most every 30 s) and resumes every feed tab through `aiResume` once it is above 0. Credit lifts no other pause.
+  let lastBalanceCheck = Number.NEGATIVE_INFINITY;
+  const onVisibility = () => {
+    if (!ctx.isValid || document.visibilityState !== 'visible') return;
+    if (controller.pausedFor() !== 'insufficient-credits') return;
+    if (Date.now() - lastBalanceCheck < BALANCE_CHECK_INTERVAL_MS) return;
+    lastBalanceCheck = Date.now();
+    sendQuietly({ type: 'balanceCheck' });
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+
   ctx.onInvalidated(() => {
+    document.removeEventListener('visibilitychange', onVisibility);
     for (const u of unwatch) {
       try {
         u();

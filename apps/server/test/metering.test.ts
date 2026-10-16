@@ -1,10 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { postsToday, recordUsageEvent, spendTodayMicros, type UsageEventInput, utcDayStart } from '../src/ai/metering.ts';
+import {
+  costByDay,
+  postsToday,
+  recordUsageEvent,
+  spendTodayMicros,
+  type UsageEventInput,
+  utcDayStart,
+} from '../src/ai/metering.ts';
 import { type Db, type DbHandle, openPostgres } from '../src/db/client.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
 import { devices, usageEvents, user } from '../src/db/schema.ts';
+import { createTestHost } from './support/billing-host.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
@@ -153,6 +161,55 @@ describe('daily queries', { timeout: PGLITE_TIMEOUT }, () => {
   });
 });
 
+describe('cost by day', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_cost_by_day_groups_by_utc_day_and_model', async () => {
+    const db = await testDb();
+    await seedUsers(db);
+    await costByDayCase(db);
+  });
+
+  it('test_cost_by_day_rejects_bad_ranges', async () => {
+    const db = await testDb();
+    const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+    const cases: [from: Date, to: Date][] = [
+      [new Date('2026-10-12T00:00:00.001Z'), day('2026-10-13')],
+      [day('2026-10-12'), new Date('2026-10-13T12:00:00.000Z')],
+      [new Date('2026-10-12T00:00:00.000-05:00'), day('2026-10-14')],
+      [day('2026-10-12'), day('2026-10-12')],
+      [day('2026-10-13'), day('2026-10-12')],
+      // 63 days.
+      [day('2026-08-01'), day('2026-10-03')],
+      [new Date(Number.NaN), day('2026-10-12')],
+    ];
+    for (const [from, to] of cases) {
+      const err = await costByDay(db, from, to).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(RangeError);
+      const message = (err as Error).message;
+      expect(message).not.toMatch(/\d{4}-\d{2}-\d{2}|2026|GMT/);
+    }
+    // 62 days is the longest range.
+    await expect(costByDay(db, day('2026-08-01'), day('2026-10-02'))).resolves.toEqual([]);
+  });
+
+  it('test_host_usage_cost_by_day_fields', async () => {
+    const t = await createTestHost();
+    cleanup.push(() => t.close());
+    await seedUsers(t.db.db);
+    await recordCostRows(t.db.db);
+    const from = new Date('2026-10-12T00:00:00.000Z');
+    const to = new Date('2026-10-14T00:00:00.000Z');
+
+    const rows = await t.host.usage.costByDay(from, to);
+    expect(rows).toEqual(await costByDay(t.db.db, from, to));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows)
+      expect(Object.keys(row).sort()).toEqual(['costMicros', 'day', 'model', 'requests', 'unpricedRequests']);
+  });
+});
+
 /**
  * The same cases on real Postgres, whose driver returns a `sum()` as a string where PGlite returns a number. Skipped
  * unless `TEST_DATABASE_URL` is set.
@@ -179,6 +236,8 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', { timeout: PGLITE_TIMEOUT }, () 
     await postsTodayCase(db);
     await db.delete(usageEvents);
     await spendTodayCase(db);
+    await db.delete(usageEvents);
+    await costByDayCase(db);
   });
 });
 
@@ -262,4 +321,36 @@ async function spendTodayCase(db: Db): Promise<void> {
   // A day whose only row has no price card, and a day with no rows at all.
   expect(await spendTodayMicros(db)).toBe(0);
   expect(await spendTodayMicros(db, new Date('2026-10-14T00:00:00.000Z'))).toBe(0);
+}
+
+/**
+ * Rows on 12 and 13 October (UTC): Haiku at 435 and 150 micro-dollars on the 12th, the last at 23:59:59; a Haiku row
+ * and an unpriced `mock-model` row at 00:00:00 on the 13th, and a priced `mock-model` row given its cost later that day.
+ * A row on the 14th lies outside [12th, 14th).
+ */
+async function recordCostRows(db: Db): Promise<void> {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  await recordAt(db, '2026-10-12T08:00:00.000Z', event());
+  await recordAt(db, '2026-10-12T23:59:59.000Z', event({ outcome: 'failed', postsOk: 0, usage: FAILED_USAGE, userId: OTHER }));
+  await recordAt(db, '2026-10-13T00:00:00.000Z', event());
+  await recordAt(db, '2026-10-13T00:00:00.000Z', event({ model: 'mock-model' }));
+  await recordAt(db, '2026-10-13T09:00:00.000Z', event({ model: 'mock-model', costMicros: 70, chargeableCostMicros: 70 }));
+  await recordAt(db, '2026-10-14T00:00:00.000Z', event());
+  vi.useRealTimers();
+}
+
+/** AC 6: one row per UTC day and model, failed calls counted, an unpriced row adding 0 and counted apart. */
+async function costByDayCase(db: Db): Promise<void> {
+  await recordCostRows(db);
+  const rows = await costByDay(db, new Date('2026-10-12T00:00:00.000Z'), new Date('2026-10-14T00:00:00.000Z'));
+  expect(rows).toEqual([
+    { day: '2026-10-12', model: 'claude-haiku-5-5', costMicros: 585, unpricedRequests: 0, requests: 2 },
+    { day: '2026-10-13', model: 'claude-haiku-5-5', costMicros: 435, unpricedRequests: 0, requests: 1 },
+    { day: '2026-10-13', model: 'mock-model', costMicros: 70, unpricedRequests: 1, requests: 2 },
+  ]);
+  for (const row of rows) {
+    expect(typeof row.costMicros).toBe('number');
+    expect(typeof row.requests).toBe('number');
+    expect(typeof row.unpricedRequests).toBe('number');
+  }
 }

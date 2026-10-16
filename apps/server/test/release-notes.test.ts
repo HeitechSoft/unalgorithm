@@ -60,15 +60,15 @@ describe('release notes', () => {
     const notes = notesFor('server-v0.1.0', files({ 'apps/server/CHANGELOG.md': SERVER_CHANGELOG }));
 
     // The 0.1.0 section only: not the heading, not the newer 0.2.0 section.
-    expect(notes.startsWith('### Minor Changes\n\n- 1a2b3c4: Email sign-in and classify over HTTP.\n\n**Install:**')).toBe(true);
+    expect(notes.startsWith('### Minor Changes\n\n- 1a2b3c4: Email sign-in and classify over HTTP.\n\n**Source:**')).toBe(true);
     expect(notes).not.toContain('Rate limits per user');
     expect(notes).not.toContain('\r');
-    expect(notes).toContain('`ghcr.io/heitechsoft/unalgorithm-server:0.1.0`');
-    expect(notes).toContain('`UNALGORITHM_VERSION=0.1.0`');
-    expect(notes).toContain('`apps/server/compose.yaml`');
-    expect(notes).toContain(
-      '`gh attestation verify oci://ghcr.io/heitechsoft/unalgorithm-server:0.1.0 --repo HeitechSoft/unalgorithm`',
-    );
+    // The source this release is built from, under the AGPL. The image is private (UnAlgorithm Cloud's), so nothing
+    // tells anyone to pull it.
+    expect(notes).toContain('(https://github.com/HeitechSoft/unalgorithm/tree/server-v0.1.0)');
+    expect(notes).toContain('AGPL-3.0-only');
+    expect(notes).toContain('private');
+    expect(notes).not.toMatch(/\bpull\b|docker compose|UNALGORITHM_VERSION|gh attestation/);
     // Nothing from the extension's install text.
     expect(notes).not.toMatch(/chrome|\.zip|SHA256SUMS/);
   });
@@ -76,8 +76,8 @@ describe('release notes', () => {
   it('test_server_tag_fallback_heading', () => {
     // No changelog at all, as for the first server release.
     const notes = notesFor('server-v0.1.0', files({}));
-    expect(notes.startsWith('UnAlgorithm Feed server 0.1.0\n\n**Install:**')).toBe(true);
-    expect(notes).toContain('ghcr.io/heitechsoft/unalgorithm-server:0.1.0');
+    expect(notes.startsWith('UnAlgorithm Feed server 0.1.0\n\n**Source:**')).toBe(true);
+    expect(notes).toContain('/tree/server-v0.1.0)');
 
     // A changelog without that version: the same fallback. The extension's changelog is never read for a server tag.
     const missing = notesFor(

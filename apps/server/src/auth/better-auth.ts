@@ -5,7 +5,8 @@
  * `authRoutesFor` lists are reachable over HTTP; everything else Better Auth offers stays unmounted.
  *
  * The server's operator pays for its AI, so accounts are created only for addresses their provider verified that are
- * allow-listed or invited (`admin/invites.ts`). Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
+ * allow-listed or invited (`admin/invites.ts`), or for every verified address when the operator opens sign-ups
+ * (`SIGNUP=open`). Nothing here logs an address or a code: Better Auth's own log messages are dropped (`authLog`), its refusals
  * are answered without a log line, any other failure goes to the app's `onError`, and mail failures log `errorFields`
  * only.
  */
@@ -125,7 +126,7 @@ const PASSKEY_SIGN_IN_LIMITS = {
 };
 
 export interface AuthDeps {
-  config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signupAllowlist' | 'google'>;
+  config: Pick<Config, 'instanceName' | 'publicUrl' | 'publicOrigin' | 'authSecret' | 'signup' | 'signupAllowlist' | 'google'>;
   db: DbHandle;
   mailer: Mailer;
   log: Logger;
@@ -142,15 +143,16 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
 
   /**
    * Better Auth calls this after storing the code's hash; for a sign-in code, for every valid address. Only sign-in
-   * codes go out, and only to an existing account, an allow-listed address or an invited one. The endpoint answers the
-   * same either way, so it never tells who may sign in.
+   * codes go out, and only to an existing account, an allow-listed address or an invited one, or to any address when
+   * sign-ups are open. The endpoint answers the same either way, so it never tells who may sign in.
    */
   async function sendVerificationOTP({ email, otp, type }: { email: string; otp: string; type: string }) {
     if (type !== 'sign-in') return;
     // Both looked up for every address, before deciding, so the answer takes as long whether a code goes out or not,
     // and whether the address is on the allowlist or not.
     const [known, invited] = await Promise.all([hasUser(email), isInvited(db.db, email)]);
-    if (!known && !isEmailAllowed(email, config.signupAllowlist) && !invited) return;
+    const send = known || config.signup === 'open' || isEmailAllowed(email, config.signupAllowlist) || invited;
+    if (!send) return;
     const message = signInCodeEmail({ code: otp, instanceName: config.instanceName, minutes: OTP_TTL_SECONDS / 60 });
     // Not awaited (Better Auth's advice against timing attacks); a failure is logged without its message.
     void mailer.send({ to: email, ...message }).catch((err: unknown) => log.error('mail.otp_failed', errorFields(err)));
@@ -260,7 +262,7 @@ export function authOptions({ config, db, mailer, log, rateLimitEnabled = true }
         create: {
           before: async (user) => {
             // Every new account needs an address its provider verified (email codes always are; Google says so in
-            // `email_verified`) that is allow-listed or invited. The code turns the refusal into a redirect with
+            // `email_verified`) that is allow-listed or invited, or any such address when sign-ups are open. The code turns the refusal into a redirect with
             // `error=SIGNUP_CLOSED` in Better Auth's Google callback; without one it would fail the request.
             if (user.emailVerified !== true || !(await mayCreateAccount({ db: db.db, config }, user.email)))
               throw new APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED', message: 'Sign-up is closed.' });
@@ -296,11 +298,15 @@ export function createAuth(deps: AuthDeps) {
 
 export type Auth = ReturnType<typeof createAuth>;
 
+/** Sign-in codes one address can be sent in an hour, whoever asks for them. */
+export const SIGNIN_CODES_PER_ADDRESS_PER_HOUR = 5;
 /**
- * Codes emailed to one address, whoever asks: 5 in 15 minutes, then one every 3 minutes. Better Auth's limits count per
- * client address, which anyone with many addresses gets past, and each new code brings 3 more tries.
+ * Codes emailed to one address, whoever asks: `SIGNIN_CODES_PER_ADDRESS_PER_HOUR` at once, then one every 12 minutes
+ * (the count refills over the hour). Better Auth's limits count per client address, which anyone with many addresses
+ * gets past, and each new code brings 3 more tries. With open sign-ups any address can be sent codes, so this also keeps
+ * the server from flooding someone's mailbox.
  */
-export const CODE_SENDS_PER_EMAIL = { max: 5, windowMs: 15 * 60_000 } as const;
+export const CODE_SENDS_PER_EMAIL = { max: SIGNIN_CODES_PER_ADDRESS_PER_HOUR, windowMs: 60 * 60_000 } as const;
 /** Wrong codes tried for one address, whoever tries them: 10 an hour, then one every 6 minutes. A sign-in is not counted. */
 export const FAILED_SIGN_INS_PER_EMAIL = { max: 10, windowMs: 60 * 60_000 } as const;
 
@@ -315,9 +321,9 @@ type Forward = (c: Context<AppEnv>) => Promise<Response>;
  * removed when there is none. With Better Auth's rate limit on, the emailed code is also limited per email address
  * (`CODE_SENDS_PER_EMAIL`, `FAILED_SIGN_INS_PER_EMAIL`), in this process's memory.
  */
-export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'google'>): void {
+export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'google'>, log: Logger): void {
   const forward: Forward = (c) => auth.handler(withClientIp(c));
-  const limited = auth.options.rateLimit.enabled ? perEmailLimits(forward) : new Map<string, Forward>();
+  const limited = auth.options.rateLimit.enabled ? perEmailLimits(forward, log) : new Map<string, Forward>();
   for (const [method, path] of authRoutesFor(config)) app.on(method, path, limited.get(path) ?? forward);
 }
 
@@ -327,7 +333,7 @@ export function mountAuth(app: Hono<AppEnv>, auth: Auth, config: Pick<Config, 'g
  * address) is given back, and a counter given everything back is dropped, so only codes sent and wrong codes tried hold
  * memory: no more than Better Auth's per-client limits let through.
  */
-function perEmailLimits(forward: Forward): Map<string, Forward> {
+function perEmailLimits(forward: Forward, log: Logger): Map<string, Forward> {
   const sends = createRateLimiter(CODE_SENDS_PER_EMAIL);
   const failures = createRateLimiter(FAILED_SIGN_INS_PER_EMAIL);
   return new Map<string, Forward>([
@@ -336,9 +342,13 @@ function perEmailLimits(forward: Forward): Map<string, Forward> {
       async (c) => {
         const key = await emailKeyOf(c);
         if (key === undefined) return forward(c);
-        // Past the limit: Better Auth's answer to a code sent, with no code made or mailed. It says nothing about
-        // whether the address may sign in.
-        if (!sends.take(key).ok) return c.json({ success: true });
+        // Past the limit: Better Auth's answer to a code sent, before Better Auth is called, so no code is made, mailed
+        // or swapped for the one last emailed (which still works). It says nothing about whether the address may sign
+        // in. The log line names no address.
+        if (!sends.take(key).ok) {
+          log.warn('auth.code_limited');
+          return c.json({ success: true });
+        }
         const res = await forward(c);
         // Every valid address gets 200 whether a code goes out or not, so another answer made no code.
         if (!res.ok) sends.refund(key);
@@ -363,8 +373,8 @@ function perEmailLimits(forward: Forward): Map<string, Forward> {
 }
 
 /**
- * The counter's key for the body's `email`, lowercased as Better Auth compares it (a SHA-256 hash), or undefined. The
- * request's body stays unread.
+ * The counter's key for the body's `email`, or undefined when it has none (Better Auth then answers 400). The request's
+ * body stays unread.
  */
 async function emailKeyOf(c: Context<AppEnv>): Promise<string | undefined> {
   const body: unknown = await c.req.raw
@@ -372,7 +382,15 @@ async function emailKeyOf(c: Context<AppEnv>): Promise<string | undefined> {
     .json()
     .catch(() => undefined);
   const email = typeof body === 'object' && body !== null ? (body as { email?: unknown }).email : undefined;
-  return typeof email === 'string' ? createHash('sha256').update(email.toLowerCase()).digest('base64url') : undefined;
+  return typeof email === 'string' ? emailLimitKey(email) : undefined;
+}
+
+/**
+ * The per-address counters' key: a SHA-256 hash (hex) of the address trimmed and lowercased, as Better Auth compares
+ * it, so the process's memory never holds an address.
+ */
+export function emailLimitKey(email: string): string {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
 
 function withClientIp(c: Context<AppEnv>): Request {

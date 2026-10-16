@@ -1,5 +1,5 @@
 # The UnAlgorithm Feed server image: the server's TypeScript source, run by Node.js's built-in type stripping, with the
-# sign-in page (apps/web) built in. Self-hosters and HeitechSoft run this same image (ADR 0007).
+# sign-in page (apps/web) built in. UnAlgorithm Cloud runs this image, built from a public release tag (ADR 0007).
 #
 #   docker build -f apps/server/Dockerfile .          from the repository root (.dockerignore keeps .env files out)
 #   docker compose -f apps/server/compose.yaml up -d  with the server and Postgres

@@ -270,7 +270,7 @@ describe('rate limit and IP', { timeout: PGLITE_TIMEOUT }, () => {
     const fresh = () => ({ 'X-Forwarded-For': `192.0.2.${++n}` });
     const signInFrom = (email: string, otp: string) => post(t, SIGN_IN, { email, otp }, fresh());
 
-    // Five codes per address in 15 minutes, however the address is written. Past that the answer is the same and no
+    // Five codes per address an hour, however the address is written. Past that the answer is the same and no
     // code is made or mailed, so the endpoint still does not tell which addresses may sign in.
     for (let i = 0; i < 8; i++) {
       const res = await sendCode(t, i % 2 === 0 ? TOM : TOM.toUpperCase(), fresh());

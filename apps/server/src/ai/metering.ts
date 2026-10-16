@@ -9,7 +9,7 @@
  * queries and the rows they count always agree on where a day starts.
  */
 import { type CreditTask, costMicros, type NormalizedUsage } from '@unalgorithm/protocol';
-import { and, count, eq, gt, gte, inArray, type SQL, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, gte, inArray, lt, type SQL, sql } from 'drizzle-orm';
 import { type Db, queryErrorFields } from '../db/client.ts';
 import { usageEvents } from '../db/schema.ts';
 import type { Logger } from '../log.ts';
@@ -122,6 +122,59 @@ export async function checksToday(db: Db, userId: string, now: Date = new Date()
  */
 export async function spendTodayMicros(db: Db, now: Date = new Date()): Promise<number> {
   return sumSince(db, usageEvents.costMicros, now);
+}
+
+/** One UTC day's AI cost on one model: counts and amounts only, never a user, request or token count. */
+export interface DayModelCost {
+  /** 'YYYY-MM-DD', the UTC day. */
+  day: string;
+  model: string;
+  /** Sum of cost_micros: every call, failed ones included (what the vendor bills). Rows without a price card add 0. */
+  costMicros: number;
+  /** Requests whose model had no price card (cost_micros null). */
+  unpricedRequests: number;
+  requests: number;
+}
+
+const DAY_MS = 86_400_000;
+/** The longest range `costByDay` answers, in days. */
+const COST_BY_DAY_MAX_DAYS = 62;
+
+/**
+ * Per UTC day and model, for days in [from, to): both must be 00:00 UTC, `to` after `from`, at most 62 days apart,
+ * else a `RangeError` (whose message never holds the dates). Sorted by day, then model. Sums are converted with
+ * `Number()`, as `sumSince` does.
+ */
+export async function costByDay(db: Db, from: Date, to: Date): Promise<DayModelCost[]> {
+  const start = from.getTime();
+  const end = to.getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start % DAY_MS !== 0 || end % DAY_MS !== 0) {
+    throw new RangeError('costByDay takes days that start at 00:00 UTC');
+  }
+  if (end <= start) throw new RangeError('costByDay needs to after from');
+  if (end - start > COST_BY_DAY_MAX_DAYS * DAY_MS) {
+    throw new RangeError(`costByDay answers at most ${COST_BY_DAY_MAX_DAYS} days`);
+  }
+  const day = sql<string>`to_char(date_trunc('day', ${usageEvents.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
+  const rows = await db
+    .select({
+      day,
+      model: usageEvents.model,
+      costMicros: sql`coalesce(sum(${usageEvents.costMicros}), 0)`.mapWith(Number),
+      unpricedRequests: sql`count(*) filter (where ${usageEvents.costMicros} is null)`.mapWith(Number),
+      requests: count().mapWith(Number),
+    })
+    .from(usageEvents)
+    .where(and(gte(usageEvents.createdAt, from), lt(usageEvents.createdAt, to)))
+    .groupBy(day, usageEvents.model)
+    .orderBy(asc(day), asc(usageEvents.model));
+  return rows.map((r) => ({
+    day: String(r.day),
+    model: r.model,
+    costMicros: r.costMicros,
+    unpricedRequests: r.unpricedRequests,
+    requests: r.requests,
+  }));
 }
 
 /**

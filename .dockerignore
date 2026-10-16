@@ -1,4 +1,4 @@
-# The server image's build context is the repository root (apps/server/Dockerfile). A self-hoster keeps the filled .env
+# The server image's build context is the repository root (apps/server/Dockerfile). An operator keeps the filled .env
 # in apps/server, next to compose.yaml: it never reaches the build, nor do the host's node_modules or build output.
 **/.env
 **/.env.*
@@ -12,6 +12,6 @@
 **/playwright-report
 **/test-results
 **/*.pem
-# A self-hoster's encrypted backups and backup public key, next to compose.yaml (the build copies all of apps/server).
+# An operator's encrypted backups and backup public key, next to compose.yaml (the build copies all of apps/server).
 **/backups
 **/backup-key

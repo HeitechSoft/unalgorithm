@@ -73,13 +73,15 @@ export async function hasAccount(db: Db, email: string): Promise<boolean> {
 }
 
 /**
- * Who may create an account: an address on `SIGNUP_ALLOWLIST` (`isEmailAllowed`) or an invited one. The invite is
- * looked up for every address, allow-listed or not, so the work done never depends on the allowlist.
+ * Who may create an account: with `SIGNUP=open`, every address (the caller checks that its provider verified it);
+ * otherwise an address on `SIGNUP_ALLOWLIST` (`isEmailAllowed`) or an invited one. The invite is looked up for every
+ * address, allow-listed or not, so the work done never depends on the allowlist.
  */
 export async function mayCreateAccount(
-  deps: { db: Db; config: Pick<Config, 'signupAllowlist'> },
+  deps: { db: Db; config: Pick<Config, 'signup' | 'signupAllowlist'> },
   email: string,
 ): Promise<boolean> {
+  if (deps.config.signup === 'open') return true;
   const address = normalizeEmail(email);
   const invited = await isInvited(deps.db, address);
   return invited || isEmailAllowed(address, deps.config.signupAllowlist);

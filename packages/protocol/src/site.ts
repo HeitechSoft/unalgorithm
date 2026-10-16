@@ -52,5 +52,19 @@ export const CREDITS_PAGE = {
 /** The website footer's Cloud links, in order: the beta notice and terms, then "How credits work". */
 export const CLOUD_FOOTER_LINKS: readonly SiteDocument[] = [...CLOUD_BETA_DOCUMENTS, CREDITS_PAGE];
 
+/**
+ * `/pricing` (CL5-09): a prerendered page that leads to "How credits work", so there is one pricing page. The website
+ * renders it with `<meta http-equiv="refresh" content="0; url={to}">`, a canonical link to `to` and a plain link saying
+ * `linkText` (it works without script); a static site needs no server redirect.
+ */
+export const PRICING_REDIRECT = {
+  path: '/pricing',
+  to: CREDITS_PAGE.path,
+  linkText: 'Pricing and credits',
+} as const;
+
+/** The "Pricing" link of the website's footer and home page: to "How credits work", never to `/pricing`. */
+export const PRICING_FOOTER_LINK = { linkText: 'Pricing', path: CREDITS_PAGE.path } as const;
+
 /** A website page's full URL. */
 export const siteUrl = (doc: Pick<SiteDocument, 'path'>): string => `${WEBSITE_ORIGIN}${doc.path}`;

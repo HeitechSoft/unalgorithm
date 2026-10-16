@@ -15,8 +15,8 @@ keep you updated, and credit you in the release notes unless you prefer otherwis
 ## Scope
 
 - The UnAlgorithm Feed extension (`apps/extension` and the packages it is built from).
-- The self-hostable UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in the
-  `ghcr.io/heitechsoft/unalgorithm-server` image.
+- The UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in `server-vX.Y.Z` tags
+  (the source of UnAlgorithm Cloud's server).
   This includes:
   - the admin page (`/admin`) and its routes (`/v1/admin/*`);
   - setup links (`setup-link`, `/setup`);
@@ -73,9 +73,12 @@ once if the issue is already public. The GitHub security advisory names the serv
   nonce before it reaches a model, and model output must match a strict schema.
 - No remote code. AI hosts are optional permissions requested one origin at a time; an UnAlgorithm server needs none,
   because it answers the extension through CORS.
-- Emailed sign-in codes are limited per email address as well as per client address: 5 codes an address in 15
-  minutes (past that the server answers as before and sends nothing) and 10 wrong codes an address an hour (then 429),
-  so many IP addresses buy no more guesses.
+- Emailed sign-in codes are limited per email address as well as per client address: 5 codes an address an hour,
+  refilled over the hour (past that the server answers as before and sends nothing) and 10 wrong codes an address an
+  hour (then 429), so many IP addresses buy no more guesses, and a server with `SIGNUP=open` cannot be used to flood
+  someone's mailbox. What remains: anyone can still use up an address's code sends for the hour, so its owner may wait
+  for a new code; a refused request never reaches Better Auth, so the last code emailed keeps working, and passkey and
+  Google sign-in are unaffected.
 - The server builds every prompt itself: `/v1/classify` takes posts and the interest profile, never a prompt, and logs
   no request body. The canary test (`apps/server/test/canary.test.ts`) checks that a marker sent in posts reaches no
   log line and no database row.
