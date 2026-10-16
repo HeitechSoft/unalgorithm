@@ -3,7 +3,8 @@
  * against text normalized and rebuilt from visible characters, never against raw HTML.
  */
 export const FACEBOOK_EN = {
-  sponsored: /^sponsored$/i,
+  /** The ad label: "Sponsored", or "Ad" since 2026. */
+  sponsored: /^(sponsored|ad)$/i,
   paidPartnership: /^paid partnership\b/i,
   /** Header lines that mark a recommendation rather than something you follow. */
   suggestedHeader:
@@ -29,7 +30,7 @@ export const FACEBOOK_EN = {
   } as const,
   audience: {
     public: /^shared with public$/i,
-    friends: /^shared with (your )?friends( of friends)?$/i,
+    friends: /^shared with (your |.+['’]s )?friends( of friends)?$/i,
     custom: /^shared with (custom|only me|.+)$/i,
   },
   /** Action-bar words, for the locale self-test. */

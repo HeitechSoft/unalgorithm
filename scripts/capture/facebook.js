@@ -12,7 +12,7 @@
 (async () => {
   const N = Number(prompt('How many feed items?', '30')) || 30;
   const KEEP =
-    /^(sponsored|paid partnership|suggested for you|suggested post|follow|following|join|join group|see more|like|comment|share|send|reels( and short videos)?|people you may know|suggested groups|stories|learn more|shop now|sign up|commented on|reacted to|shared|this|a|post|public|friends|shared with|add friend)$/i;
+    /^(sponsored|paid partnership|suggested for you|suggested post|follow|following|join|join group|see more|like|comment|share|send|reels( and short videos)?|people you may know|suggested groups|stories|learn more|shop now|sign up|commented on|reacted to|shared|this|a|post|public|friends|shared with|with|ad|add friend)$/i;
   const words = new Map();
   const fake = (w) => {
     if (!words.has(w)) {
@@ -76,9 +76,24 @@
     'data-ad-comet-preview',
     'data-ad-rendering-role',
     'data-pagelet',
+    'data-virtualized',
+    'title',
     'width',
   ]);
-  const feed = document.querySelector('[role="main"] [role="feed"]') || document.querySelector('[role="feed"]');
+  // Until 2026 the feed list was role="feed"; now it is the unlabelled block right after a screen-reader heading,
+  // holding posts marked aria-posinset (the same rule as the adapter's feedLists()).
+  const afterHeading = (el) => {
+    let s = el.previousElementSibling;
+    for (let i = 0; s && i < 3; i++, s = s.previousElementSibling) if (s.matches('h2, h3')) return true;
+    return false;
+  };
+  const postList = () => {
+    for (let el = document.querySelector('[role="main"] [aria-posinset]')?.parentElement; el; el = el.parentElement)
+      if (afterHeading(el)) return el;
+    return null;
+  };
+  const roleFeed = document.querySelector('[role="main"] [role="feed"]') || document.querySelector('[role="feed"]');
+  const feed = roleFeed || postList();
   if (!feed) return alert('No feed found. Open your Facebook home feed first.');
   const external = new Set();
   const clone = (src) => {
@@ -92,7 +107,8 @@
     if (['script', 'style', 'img', 'video', 'image', 'path', 'noscript', 'iframe'].includes(tag)) return null;
     for (const a of Array.from(out.attributes)) if (!ALLOWED.has(a.name)) out.removeAttribute(a.name);
     if (out.hasAttribute('href')) out.setAttribute('href', cleanHref(src.getAttribute('href')));
-    if (out.hasAttribute('aria-label')) out.setAttribute('aria-label', scramble(src.getAttribute('aria-label')));
+    for (const attr of ['aria-label', 'title'])
+      if (out.hasAttribute(attr)) out.setAttribute(attr, scramble(src.getAttribute(attr)));
     for (const attr of ['aria-labelledby', 'aria-describedby'])
       for (const id of (src.getAttribute(attr) || '').split(/\s+/).filter(Boolean)) external.add(id);
     const s = getComputedStyle(src);
@@ -124,9 +140,9 @@
     .map((el) => clone(el).outerHTML);
   const rail = document.querySelector('[role="complementary"]');
   const html = `<!-- captured ${new Date().toISOString().slice(0, 10)} lang=${document.documentElement.lang} -->
-<div role="main"><div role="feed">
+<div role="main">${roleFeed ? '<div role="feed">' : '<div><h3>Feed posts</h3><div aria-hidden="true"></div><div>'}
 ${items.join('\n')}
-</div></div>
+${roleFeed ? '</div>' : '</div></div>'}</div>
 ${rail ? clone(rail).outerHTML : ''}
 <div data-ua-external hidden>${appendix.join('\n')}</div>`;
   await navigator.clipboard.writeText(html);

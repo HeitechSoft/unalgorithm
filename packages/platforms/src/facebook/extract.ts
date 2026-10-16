@@ -8,6 +8,7 @@ const ORIGIN = 'https://www.facebook.com';
 /** Hooks Facebook renders for ads previews and the story layout; they also mark ordinary posts. */
 export const FB_SEL = {
   feed: '[role="feed"]',
+  post: '[aria-posinset]',
   message: '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-ad-rendering-role="story_message"]',
   profileName: '[data-ad-rendering-role="profile_name"]',
   heading: 'h2, h3, h4',
@@ -16,7 +17,7 @@ export const FB_SEL = {
     'a[href*="/posts/"], a[href*="story_fbid="], a[href*="/permalink/"], a[href*="/reel/"], a[href*="/videos/"], a[href*="/photo"]',
   outboundLink: 'a[href*="l.facebook.com/l.php"], a[href^="https://l.facebook.com/"]',
   groupLink: 'a[href*="/groups/"]',
-  audience: '[aria-label^="Shared with"]',
+  audience: '[aria-label^="Shared with"], [title^="Shared with"]',
 } as const;
 
 /** Elements Facebook renders but hides (anti-adblock decoys). The capture script marks them `data-ua-hidden`. */
@@ -337,7 +338,8 @@ export function extractFacebookPost(root: HTMLElement, m: FacebookMarkers): Post
   );
   const groupName = groupLink ? normalizeText(getLines(groupLink)[0] ?? '') : undefined;
 
-  const audienceLabel = normalizeText(root.querySelector(FB_SEL.audience)?.getAttribute('aria-label') ?? '');
+  const audienceEl = root.querySelector(FB_SEL.audience);
+  const audienceLabel = normalizeText(audienceEl?.getAttribute('aria-label') ?? audienceEl?.getAttribute('title') ?? '');
   const audience = !audienceLabel
     ? 'unknown'
     : m.audience.public.test(audienceLabel)
