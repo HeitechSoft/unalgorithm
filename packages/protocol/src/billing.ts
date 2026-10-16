@@ -478,7 +478,8 @@ export type CreditEntryKind = (typeof CREDIT_ENTRY_KINDS)[number];
  * `correction` and `goodwill` an adjustment by support. Money entries: `credit-pack` a pack was paid; `refund` credit
  * removed because money went back to the person; `chargeback` credit removed because the card issuer took the money back
  * (a dispute); `chargeback-reversed` that credit returned because the dispute was won; `test-mode-void` credit removed
- * that a payment provider's test-mode purchase added (no real money was paid), before the server takes live payments.
+ * that a payment provider's test-mode purchase added (no real money was paid), before the server takes live payments;
+ * `auto-reload` credit bought automatically because the balance fell under the threshold the person chose (opt-in).
  * A billing database's reason list must equal this one.
  */
 export const CREDIT_ENTRY_REASONS = [
@@ -494,6 +495,7 @@ export const CREDIT_ENTRY_REASONS = [
   'chargeback',
   'chargeback-reversed',
   'test-mode-void',
+  'auto-reload',
 ] as const;
 export type CreditEntryReason = (typeof CREDIT_ENTRY_REASONS)[number];
 
@@ -501,7 +503,7 @@ const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReas
   grant: ['starter-credit'],
   usage: CREDIT_TASKS,
   adjustment: ['promo-expired', 'correction', 'goodwill'],
-  purchase: ['credit-pack'],
+  purchase: ['credit-pack', 'auto-reload'],
   refund: ['refund', 'test-mode-void'],
   chargeback: ['chargeback', 'chargeback-reversed'],
 };
@@ -512,6 +514,7 @@ const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReas
  */
 const ADDS_CREDIT: Partial<Record<CreditEntryReason, boolean>> = {
   'credit-pack': true,
+  'auto-reload': true,
   'chargeback-reversed': true,
   refund: false,
   chargeback: false,
@@ -543,6 +546,29 @@ export const CreditHistoryItemSchema = z
   .refine(amountFitsReason, { path: ['amountMicros'] });
 export type CreditHistoryItem = z.infer<typeof CreditHistoryItemSchema>;
 
+/** `off` also covers "never set up"; `stopped`: turned off by the server after a payment failed (R34). */
+export const AUTO_RELOAD_STATES = ['off', 'on', 'stopped'] as const;
+/** Whether credit is bought automatically when the balance runs low (opt-in, off by default), as the account page shows it. */
+export const AutoReloadSummarySchema = z
+  .object({
+    /** The server's own auto-reload page. */
+    path: OriginPathSchema,
+    state: z.enum(AUTO_RELOAD_STATES),
+    /** Credit added per automatic purchase (= its price before tax, as for packs). Present unless `off`. */
+    amountMicros: Micros.optional(),
+    /** A purchase starts when the balance falls under this. Present unless `off`. */
+    thresholdMicros: Micros.optional(),
+    /** The most charged in one calendar month (UTC), before tax. Present unless `off`. */
+    monthlyLimitMicros: Micros.optional(),
+  })
+  .refine(
+    (s) =>
+      s.state === 'off' ||
+      (s.amountMicros !== undefined && s.thresholdMicros !== undefined && s.monthlyLimitMicros !== undefined),
+    { path: ['state'] },
+  );
+export type AutoReloadSummary = z.infer<typeof AutoReloadSummarySchema>;
+
 /** What the account page shows: the balance and the history, newest first. */
 export const CreditAccountSchema = z.object({
   v: z.literal(1),
@@ -554,5 +580,7 @@ export const CreditAccountSchema = z.object({
   refundPolicyUrl: z.url({ protocol: /^https$/ }).optional(),
   /** A page on this server where credit can be added; absent while adding credit is not offered (all of CL2). */
   addCreditPath: OriginPathSchema.optional(),
+  /** Absent on servers without auto-reload. */
+  autoReload: AutoReloadSummarySchema.optional(),
 });
 export type CreditAccount = z.infer<typeof CreditAccountSchema>;

@@ -724,7 +724,7 @@ describe('money entries (CL5-01)', () => {
       'goodwill',
     ]);
     expect(CREDIT_ENTRY_KINDS.slice(3)).toEqual(['purchase', 'refund', 'chargeback']);
-    expect(CREDIT_ENTRY_REASONS.slice(7)).toEqual([
+    expect(CREDIT_ENTRY_REASONS.slice(7, 12)).toEqual([
       'credit-pack',
       'refund',
       'chargeback',
@@ -739,5 +739,67 @@ describe('money entries (CL5-01)', () => {
     const withPolicy = { ...minimal, refundPolicyUrl: 'https://unalgorithm.app/refunds' };
     expect(CreditAccountSchema.parse(withPolicy)).toEqual(withPolicy);
     expect(CreditAccountSchema.safeParse({ ...minimal, refundPolicyUrl: 'http://unalgorithm.app/refunds' }).success).toBe(false);
+  });
+});
+
+describe('auto-reload (CL6-01)', () => {
+  const AT = '2026-11-02T10:00:00Z';
+  it('test_auto_reload_reason_appended', () => {
+    expect(CREDIT_ENTRY_REASONS).toHaveLength(13);
+    expect(CREDIT_ENTRY_REASONS.slice(0, 12)).toEqual([
+      'starter-credit',
+      'classify',
+      'factcheck',
+      'perspectives',
+      'promo-expired',
+      'correction',
+      'goodwill',
+      'credit-pack',
+      'refund',
+      'chargeback',
+      'chargeback-reversed',
+      'test-mode-void',
+    ]);
+    expect(CREDIT_ENTRY_REASONS[12]).toBe('auto-reload');
+  });
+
+  it('test_auto_reload_history_item_sign_and_kind', () => {
+    const item = { kind: 'purchase', reason: 'auto-reload', amountMicros: 10_000_000, at: AT };
+    expect(CreditHistoryItemSchema.parse(item)).toEqual(item);
+    for (const amountMicros of [0, -1]) {
+      const result = CreditHistoryItemSchema.safeParse({ ...item, amountMicros });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path)).toEqual([['amountMicros']]);
+    }
+    const refund = CreditHistoryItemSchema.safeParse({ ...item, kind: 'refund' });
+    expect(refund.success).toBe(false);
+    expect(refund.error?.issues.map((issue) => issue.path)).toEqual([['reason']]);
+  });
+
+  it('test_account_auto_reload_summary_shapes', () => {
+    const minimal = { v: 1, balance, history: [] };
+    const path = '/billing/auto-reload';
+    const amounts = { amountMicros: 10_000_000, thresholdMicros: 1_000_000, monthlyLimitMicros: 25_000_000 };
+    const accepted = [
+      minimal,
+      { ...minimal, autoReload: { path, state: 'off' } },
+      { ...minimal, autoReload: { path, state: 'on', ...amounts } },
+      { ...minimal, autoReload: { path, state: 'stopped', ...amounts } },
+    ];
+    for (const account of accepted) expect(CreditAccountSchema.parse(account)).toEqual(account);
+
+    const { thresholdMicros: _threshold, ...withoutThreshold } = amounts;
+    const missing = CreditAccountSchema.safeParse({ ...minimal, autoReload: { path, state: 'on', ...withoutThreshold } });
+    expect(missing.success).toBe(false);
+    expect(missing.error?.issues.map((issue) => issue.path)).toEqual([['autoReload', 'state']]);
+
+    const refused = [
+      { path: 'https://evil.example/x', state: 'off' },
+      { path: '//evil.example', state: 'off' },
+      { path, state: 'on', ...amounts, amountMicros: -1 },
+    ];
+    for (const autoReload of refused) {
+      expect(CreditAccountSchema.safeParse({ ...minimal, autoReload }).success, JSON.stringify(autoReload)).toBe(false);
+    }
   });
 });
