@@ -89,9 +89,11 @@ const WHOLE_DOLLARS = /^[1-9]\d{0,5}$/;
  * exponent notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
  */
 export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
-  if (typeof amount !== 'object' || amount === null || Array.isArray(amount)) return null;
+  if (typeof amount !== 'object' || amount === null) return null;
   let micros: number;
   try {
+    // Inside the try: `Array.isArray` throws on a revoked proxy.
+    if (Array.isArray(amount)) return null;
     const hasDollars = Object.hasOwn(amount, 'dollars');
     if (hasDollars === Object.hasOwn(amount, 'micros')) return null;
     const value: unknown = hasDollars ? (amount as { dollars: unknown }).dollars : (amount as { micros: unknown }).micros;

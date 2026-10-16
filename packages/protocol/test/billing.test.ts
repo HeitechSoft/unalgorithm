@@ -713,6 +713,8 @@ describe('credit amounts (any amount from $5 to $500)', () => {
         },
       },
     );
+    const revoked = Proxy.revocable({ dollars: 10 }, {});
+    revoked.revoke();
     const inherited = Object.create({ dollars: 10 });
     const hostile = [
       10,
@@ -729,6 +731,7 @@ describe('credit amounts (any amount from $5 to $500)', () => {
       inherited,
       throwing,
       proxy,
+      revoked.proxy,
       { dollars: { valueOf: () => 10 } },
       { dollars: ['10'] },
     ];
