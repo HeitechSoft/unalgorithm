@@ -24,7 +24,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `sync` | Collection registry, merge strategies, settings items and merge; imported by the server and the extension | Only `protocol`, `core`, zod and the SDK-free `@unalgorithm/ai/presets`; no `chrome.*`, DOM or Node |
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
-| `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
+| `apps/server` | The open-source UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
 | `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui` and `core`'s wording helpers; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
@@ -101,7 +101,7 @@ usage is recorded even when a call fails.
 
 ## Server
 
-`apps/server` is the self-hostable UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
+`apps/server` is the open-source UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
 Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. UnAlgorithm Cloud
 runs this same server; HeitechSoft's private repository adds only a billing module and its own operations
 configuration (ADR 0007).
@@ -263,7 +263,7 @@ the job registry while the server starts. The server's own: `auth.purge-expired`
 tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
 deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
 `ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`); `ops.check-alerts`, every five
-minutes, checks the server's status and opens or closes alerts ([Self-hosting and operations](#self-hosting-and-operations));
+minutes, checks the server's status and opens or closes alerts ([Operations](#operations));
 `factcheck.purge-claim-cache`, hourly, deletes `claim_cache` rows past their expiry (`apps/server/src/ai/claim-cache.ts`).
 The server registers all four on every server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
 gives every space a new epoch, so every device resyncs. graphile-worker creates the
@@ -271,11 +271,11 @@ gives every space a new epoch, so every device resyncs. graphile-worker creates 
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
 
-### Self-hosting and operations
+### Operations
 
-How to run a server is in [self-hosting.md](self-hosting.md); this is how its parts fit. `apps/server/compose.yaml`
-starts three services, `server`, `postgres` and `backup`, and has three profiles: `caddy` (HTTPS in front of the
-server, no access log), `ollama` (a local model on the same machine) and `tools` (the one-off `keygen`).
+How the server's running parts fit. `apps/server/compose.yaml` starts three services, `server`, `postgres` and
+`backup`, and has three profiles: `caddy` (HTTPS in front of the server, no access log), `ollama` (a local model on the
+same machine) and `tools` (the one-off `keygen`).
 
 - **Backups.** The `backup` service runs on the `postgres` image, so its `pg_dump` matches the database. Each night it
   encrypts a dump to the operator's public key (made by `keygen`; the private key belongs off the server) and keeps the
@@ -301,7 +301,7 @@ server, no access log), `ollama` (a local model on the same machine) and `tools`
 |---|---|---|
 | Unit | Vitest projects (jsdom where needed) | Rules, decide, presets, migration, clocks, prompt/fence, adapters on fixtures, the contract check, AI clients against a fake fetch, the feed controller |
 | End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it, and with the test billing module the balance pill, its drop after classifying and the pause at $0 |
-| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh`, `backup-smoke.sh` and `restore-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as self-hosters run them, their encrypted backups, and a wiped stack restored from one |
+| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh`, `backup-smoke.sh` and `restore-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as an operator runs them, their encrypted backups, and a wiped stack restored from one |
 
 ## Decisions
 

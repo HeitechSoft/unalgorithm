@@ -15,8 +15,8 @@ keep you updated, and credit you in the release notes unless you prefer otherwis
 ## Scope
 
 - The UnAlgorithm Feed extension (`apps/extension` and the packages it is built from).
-- The self-hostable UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in the
-  `ghcr.io/heitechsoft/unalgorithm-server` image.
+- The UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, as released in `server-vX.Y.Z` tags
+  (the source of UnAlgorithm Cloud's server).
   This includes:
   - the admin page (`/admin`) and its routes (`/v1/admin/*`);
   - setup links (`setup-link`, `/setup`);

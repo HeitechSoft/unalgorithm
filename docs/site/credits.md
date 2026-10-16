@@ -38,7 +38,6 @@ own key.
 - Rules and keyword filters.
 - On-device AI, where your browser offers it.
 - Your own key from an AI provider: you pay the provider directly, not us.
-- Self-hosted servers: run the open-source UnAlgorithm server yourself.
 
 There are no subscriptions. Your balance shows in the extension's popup and in Settings. When it runs low, a reminder
 shows at most once a day, and never in your feed.

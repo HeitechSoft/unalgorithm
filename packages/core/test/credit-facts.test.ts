@@ -162,7 +162,9 @@ describe('credits page copy', () => {
     expect(text).toContain('UnAlgorithm Cloud');
     expect(page).toContain('(https://cloud.unalgorithm.app)');
     expect(text).toContain('Add credit, or switch to on-device or your own key');
-    for (const free of ['Rules', 'On-device AI', 'Your own key', 'Self-hosted servers']) expect(text).toContain(free);
+    for (const free of ['Rules', 'On-device AI', 'Your own key']) expect(text).toContain(free);
+    // Running the server yourself is not promoted.
+    expect(text).not.toMatch(/self-host/i);
     expect(text).toContain('Always free');
     expect(text).toContain(
       `charged at ${facts.classifyMultiplier} our AI cost, about ${facts.classifyPer1000} per thousand posts on ${facts.referenceModel}.`,

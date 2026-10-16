@@ -1,12 +1,12 @@
-# The UnAlgorithm Feed server with Postgres, for running your own server.
+# The UnAlgorithm Feed server with Postgres: the compose model CI's compose-smoke job runs and UnAlgorithm Cloud
+# extends with its own override.
 #
 # Postgres is never published. The server listens on 127.0.0.1 only. For HTTPS, turn on the caddy profile below
-# (COMPOSE_PROFILES=caddy in .env) or put your own HTTPS proxy in front; docs/self-hosting.md explains both.
+# (COMPOSE_PROFILES=caddy in .env) or put your own HTTPS proxy in front.
 #
 #   cp .env.example .env                  then fill in .env (it documents every setting)
 #   docker compose up -d                  start, from this folder; the server applies database migrations itself
 #   docker compose logs -f server         follow the server's log
-#   docker compose pull && docker compose up -d   upgrade to the release UNALGORITHM_VERSION names
 #   docker compose run --rm -T keygen     make the backup key pair once; save the private key it prints elsewhere
 #
 # The backup service dumps the database every night at BACKUP_TIME (UTC) into ./backups (BACKUP_DIR), encrypted to the
@@ -19,6 +19,7 @@
 
 services:
   server:
+    # The image is private (UnAlgorithm Cloud's, docs/release.md); `build:` makes it from this checkout.
     image: ghcr.io/heitechsoft/unalgorithm-server:${UNALGORITHM_VERSION:-latest}
     build:
       context: ../..

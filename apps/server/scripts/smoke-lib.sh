@@ -6,8 +6,8 @@
 #   port=8788
 #   . apps/server/scripts/smoke-lib.sh
 #
-# It refuses to start when apps/server/.env, apps/server/backups or apps/server/backup-key is already there, so a
-# self-hoster's own files are never touched. On exit it removes the .env it wrote (write_env), the project's containers
+# It refuses to start when apps/server/.env, apps/server/backups or apps/server/backup-key is already there, so
+# an operator's own files are never touched. On exit it removes the .env it wrote (write_env), the project's containers
 # and volumes, the image it built (`image`), the backups and key folders Docker made, and its temporary folder. For CI
 # and development machines only: never run it on a shared host, where removing volumes and images is not allowed.
 

@@ -212,13 +212,7 @@ describe('Other perspectives: where it is offered', () => {
     expect(b.perspectives).not.toHaveBeenCalled();
     vi.useRealTimers();
     // Every offered item rendered: twenty rows, and still no call.
-    render(
-      <>
-        {keys.map((k) => (
-          <Item key={k} c={f.c} e={entryOf(f.c, k)} />
-        ))}
-      </>,
-    );
+    render(keys.map((k) => <Item key={k} c={f.c} e={entryOf(f.c, k)} />));
     await flush();
     const starts = screen.getAllByRole('button', { name: 'Other perspectives' });
     expect(starts).toHaveLength(20);

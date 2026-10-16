@@ -196,7 +196,7 @@ describe('admin schemas', () => {
     expect(long).toHaveLength(255);
     expect(InviteRequestSchema.safeParse({ email: long }).success).toBe(false);
     expect(InviteRequestSchema.safeParse({ email: long.slice(1) }).success).toBe(true);
-    const token = 'A'.repeat(40) + '_-9';
+    const token = `${'A'.repeat(40)}_-9`;
     expect(SetupRequestSchema.safeParse({ token }).success).toBe(true);
     expect(SetupRequestSchema.safeParse({ token: token.slice(1) }).success).toBe(false);
     expect(SetupRequestSchema.safeParse({ token: `${token}A` }).success).toBe(false);
