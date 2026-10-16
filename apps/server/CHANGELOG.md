@@ -1,5 +1,29 @@
 # @unalgorithm/server
 
+## 0.3.0
+
+### Minor Changes
+
+- Fact-check (Labs): a verdict kept from an earlier check of the same claim now shows its short explanation too, not only
+  when it was checked. The explanation is left out when it repeats six or more words in a row of the post or of a claim the
+  check found, and so is a source's title or quote that repeats a claim. Servers keep it in their claim cache (migration
+  0014). The privacy policy says exactly what a kept result holds.
+
+- [#11](https://github.com/HeitechSoft/unalgorithm/pull/11) [`63066b3`](https://github.com/HeitechSoft/unalgorithm/commit/63066b3f0b2687181aea3642ddbbe7fd171964fa) Thanks [@TomHeiber](https://github.com/TomHeiber)! - `SIGNUP=open` lets every address its provider verified create an account, with no allowlist or invite (the default,
+  `SIGNUP=allowlist`, is unchanged). Emailed sign-in codes are now limited to 5 an address at once, then one every 12
+  minutes (was one every 3 minutes), so an open server cannot be used to flood someone's mailbox; a refused request never reaches Better Auth and logs
+  `auth.code_limited` without the address.
+
+### Patch Changes
+
+- Updated dependencies [[`f2c45ea`](https://github.com/HeitechSoft/unalgorithm/commit/f2c45eabc82acd39e8a6b2d600a32a9894a78072), [`f2c45ea`](https://github.com/HeitechSoft/unalgorithm/commit/f2c45eabc82acd39e8a6b2d600a32a9894a78072)]:
+  - @unalgorithm/protocol@0.1.0
+  - @unalgorithm/core@0.1.0
+  - @unalgorithm/ai@0.0.1
+  - @unalgorithm/outlets@0.0.1
+  - @unalgorithm/research@0.0.1
+  - @unalgorithm/sync@0.0.1
+
 ## 0.2.0
 
 ### Minor Changes
