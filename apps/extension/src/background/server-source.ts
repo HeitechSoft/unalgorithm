@@ -34,6 +34,9 @@ type ServerSource = Extract<AISourceConfig, { kind: 'server' }>;
  */
 export const SERVER_USAGE_MODEL = 'server';
 
+/** A server answer's outcome plus what the server charged for it; absent for a server that does not bill, or a failure. */
+export type ServerClassifyOutcome = ClassifyOutcome & { chargedMicros?: number };
+
 /** The most of a classify answer that is read: 12 results come to a few KiB. Anything longer is no answer. */
 export const MAX_CLASSIFY_BODY_BYTES = 256 * 1024;
 
@@ -49,7 +52,7 @@ export async function classifyViaServer(
     noteBalance?: { settlement: typeof noteSettlement; refused: typeof noteRefused };
     rediscover?: typeof refreshServerInfo;
   } = {},
-): Promise<ClassifyOutcome> {
+): Promise<ServerClassifyOutcome> {
   const doFetch = deps.fetch ?? ((input: string | URL, init?: RequestInit) => fetch(input, init));
   const token = deps.getAccessToken ?? getAccessToken;
   const note = deps.noteBalance ?? { settlement: noteSettlement, refused: noteRefused };
@@ -124,7 +127,10 @@ export async function classifyViaServer(
     if (!answer.success) throw new AIError('unknown', describeError('unknown'));
     const { billing } = answer.data;
     if (billing) await recordBalance((id) => note.settlement(base.origin, id, billing));
-    return outcome(resultsByRef(posts, answer.data), answer.data.source.model, false);
+    const done = outcome(resultsByRef(posts, answer.data), answer.data.source.model, false);
+    // What the server wrote to its ledger for this batch (CL6-03); a value that can't be an amount is not kept.
+    const charged = billing?.chargedMicros;
+    return charged !== undefined && Number.isSafeInteger(charged) && charged >= 0 ? { ...done, chargedMicros: charged } : done;
   } catch (err) {
     const e = isAIError(err) ? err : new AIError('unknown', describeError('unknown'), { cause: err });
     return outcome(new Map(posts.map((p) => [p.ref, { ok: false, error: e }])), SERVER_USAGE_MODEL, true);

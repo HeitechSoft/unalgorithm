@@ -3,6 +3,7 @@ import type {
   FilterKey,
   HealthReport,
   PersonRule,
+  PostCharge,
   Preset,
   TabState,
   Topic,
@@ -34,7 +35,7 @@ export interface ClassifyItem {
 }
 
 export type ClassifyItemResult =
-  | { key: PostKey; status: 'ok'; classification: Classification; model: string; cached: boolean }
+  | { key: PostKey; status: 'ok'; classification: Classification; model: string; cached: boolean; charge?: PostCharge }
   | { key: PostKey; status: 'skipped'; reason: 'cap-reached' | 'ai-off' | 'declined' | 'not-public' | 'paused' }
   | { key: PostKey; status: 'failed'; code: AIErrorCode; message: string; retryable: boolean };
 
