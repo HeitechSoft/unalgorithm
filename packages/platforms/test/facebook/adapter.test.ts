@@ -12,6 +12,7 @@ import {
   fbFeed2026,
   JOINED_GROUP_POST,
   ORGANIC_LINK_SHARE,
+  PHOTO_POST_2026,
   PYMK,
   REELS_TRAY,
   SKELETON,
@@ -253,8 +254,48 @@ describe('Facebook adapter (2026 layout, no role="feed")', () => {
     expect(p.author.relationship).toBe('not-followed');
   });
 
+  it('counts the timestamp link (href "/" until hovered, age in an aria-labelledby span) as a timestamp', () => {
+    for (const html of [FRIEND_POST_2026, FOLLOW_PAGE_2026]) {
+      expect(only2026(html).evidence.map((e) => e.detector)).not.toContain('fb.sponsored.no-timestamp');
+    }
+  });
+
+  it('does not hide an organic 2026 post on one medium sponsored signal', () => {
+    // Before, the missing permalink added the weak no-timestamp signal, and medium + weak hid the post.
+    const html = FRIEND_POST_2026.replace(
+      '<span> · </span>',
+      '<span> · </span><span><span>A</span><span data-ua-hidden>x</span><span>d</span></span>',
+    );
+    const p = only2026(html);
+    expect(p.evidence).toContainEqual(expect.objectContaining({ detector: 'fb.sponsored.rendered-label', strength: 'medium' }));
+    expect(p.signals.sponsored).toBe(false);
+    expect(ruleFilter(p, balanced)).toBeNull();
+  });
+
+  it('still notes a 2026 post with no timestamp at all, which never hides it alone', () => {
+    const html = FRIEND_POST_2026.replace(/<a href="https:\/\/www\.facebook\.com\/\?__cft__[^"]*"[^>]*>.*?<\/a>/s, '');
+    const p = only2026(html);
+    expect(p.evidence.map((e) => e.detector)).toContain('fb.sponsored.no-timestamp');
+    expect(p.signals.sponsored).toBe(false);
+  });
+
+  it("takes Facebook's id from a photo link, else a hash that survives a re-render", () => {
+    const photo = only2026(PHOTO_POST_2026);
+    expect(photo.id).toBe('fb:2026101601');
+    expect(photo.permalink).toBe('https://www.facebook.com/photo/?fbid=2026101601&set=a.20261016010');
+    expect(photo.media).toBe('image');
+    // Text posts have no id up front. A re-render brings a new tracking token and slot number; the id stays.
+    const p = only2026(FRIEND_POST_2026);
+    expect(p.id).toMatch(/^fb:h:/);
+    const rerendered = FRIEND_POST_2026.replace(/__cft__\[0\]=AZ/g, '__cft__[0]=AZq9x').replace(
+      /aria-posinset="\d+"/,
+      'aria-posinset="42"',
+    );
+    expect(only2026(rerendered).id).toBe(p.id);
+  });
+
   it('passes the adapter contract', () => {
-    const html = fbFeed2026(FRIEND_POST_2026, AD_2026, FOLLOW_PAGE_2026, VIRTUALIZED_2026);
+    const html = fbFeed2026(FRIEND_POST_2026, AD_2026, FOLLOW_PAGE_2026, PHOTO_POST_2026, VIRTUALIZED_2026);
     expect(checkAdapterContract(facebookAdapter, html)).toEqual([]);
   });
 });

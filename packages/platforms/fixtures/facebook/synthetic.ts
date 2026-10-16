@@ -171,9 +171,16 @@ export const SKELETON = `<div><div aria-busy="true"><div></div></div></div>`;
 
 /**
  * A 2026 feed item: the post sits several wrappers down, its timestamp (or "Ad" label) is an aria-labelledby span in
- * a link that points at "/" until hovered, and the audience is an SVG title.
+ * a link that points at "/" until hovered, and the audience is an SVG title. Photo posts link each photo up front.
  */
-function item2026(o: { author: string; label: 'ad' | 'time'; audience: string; text: string; follow?: boolean }): string {
+function item2026(o: {
+  author: string;
+  label: 'ad' | 'time';
+  audience: string;
+  text: string;
+  follow?: boolean;
+  photo?: string;
+}): string {
   const n = ++seq;
   return `<div><div><span><div><div><div aria-posinset="${n}"><div><div data-virtualized="false"><div>
   <div><a aria-label="${o.author}" href="https://www.facebook.com/${o.author.toLowerCase().replace(/\s+/g, '.')}" role="link"><svg role="img" aria-label="${o.author}"></svg></a></div>
@@ -181,6 +188,7 @@ function item2026(o: { author: string; label: 'ad' | 'time'; audience: string; t
   <div><a href="https://www.facebook.com/?__cft__[0]=AZ&amp;__tn__=%2CO%2CP-R" role="link" target="_blank"><span><span aria-labelledby="lbl-${o.label}"></span></span></a>
   <span> · </span><svg role="img" title="Shared with ${o.audience}"></svg></div>
   <div data-ad-rendering-role="story_message"><div data-ad-comet-preview="message" data-ad-preview="message"><div dir="auto">${o.text}</div></div></div>
+  ${o.photo ? `<div><a href="https://www.facebook.com/photo/?fbid=${o.photo}&amp;set=a.${o.photo}0&amp;__cft__[0]=AZ&amp;__tn__=EH-R" role="link"><img alt="" src="https://scontent.example/p.jpg" width="500"></a></div>` : ''}
   ${actions()}
 </div></div></div></div></div></div></span></div></div>`;
 }
@@ -198,6 +206,13 @@ export const FOLLOW_PAGE_2026 = item2026({
   audience: 'Public',
   text: 'You will not believe what this phone can do.',
   follow: true,
+});
+export const PHOTO_POST_2026 = item2026({
+  author: 'Morgan Lee',
+  label: 'time',
+  audience: 'Public',
+  text: 'First snow on the ridge.',
+  photo: '2026101601',
 });
 /** Scrolled far away: Facebook keeps the slot and the post marker but drops the content. */
 export const VIRTUALIZED_2026 = `<div><div><span><div><div><div aria-posinset="${++seq}"><div><div data-virtualized="true"><div hidden=""></div></div></div></div></div></div></span></div></div>`;

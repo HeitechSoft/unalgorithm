@@ -41,7 +41,7 @@ function feedLists(scope: ParentNode): HTMLElement[] {
  */
 export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
   id: 'facebook',
-  version: 'facebook@2026.10.1',
+  version: 'facebook@2026.10.2',
 
   isFeedPage(url) {
     return url.hostname.endsWith('facebook.com') && (/^\/(home\.php)?$/.test(url.pathname) || url.pathname === '/?sk=h_chr');
