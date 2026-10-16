@@ -1,5 +1,17 @@
 # @unalgorithm/extension
 
+## 0.2.1
+
+### Patch Changes
+
+- When AI on UnAlgorithm Cloud (or another UnAlgorithm server) pauses because the balance ran out, it resumes by itself
+  once credit is added: paused LinkedIn and Facebook tabs pick up again without a reload.
+
+- Fact-check (Labs): a verdict kept from an earlier check of the same claim now shows its short explanation too, not only
+  when it was checked. The explanation is left out when it repeats six or more words in a row of the post or of a claim the
+  check found, and so is a source's title or quote that repeats a claim. Servers keep it in their claim cache (migration
+  0014). The privacy policy says exactly what a kept result holds.
+
 ## 0.2.0
 
 ### Minor Changes
