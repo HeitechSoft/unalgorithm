@@ -21,7 +21,26 @@ export interface DayUsage {
   calls: number;
   failedCalls: number;
   byModel: Record<string, ModelUsage>;
+  /** Sum of the day's batch charges, in micro-dollars; absent on a day without one. */
+  chargedMicros?: number;
+  /** The day's charged batches, newest first, at most `MAX_DAY_BATCHES`; absent on a day without one. */
+  batches?: BatchCharge[];
 }
+
+/** What a billing server charged for the batch a post was classified in (the ledger's amount, to the micro-dollar). */
+export interface PostCharge {
+  batchPosts: number;
+  chargedMicros: number;
+}
+
+/** One charged batch in the day's usage. `at`: ISO time the answer arrived; `posts`: posts the server classified. */
+export interface BatchCharge {
+  at: string;
+  posts: number;
+  chargedMicros: number;
+}
+
+export const MAX_DAY_BATCHES = 50;
 
 /** date (YYYY-MM-DD) → usage. Kept for 30 days. */
 export type UsageLedger = Record<string, DayUsage>;
@@ -38,7 +57,7 @@ export function emptyDay(): DayUsage {
  */
 export function recordUsage(
   ledger: UsageLedger,
-  entry: { model: string; usage: NormalizedUsage; posts: number; failed?: boolean; now?: Date },
+  entry: { model: string; usage: NormalizedUsage; posts: number; failed?: boolean; chargedMicros?: number; now?: Date },
 ): UsageLedger {
   const now = entry.now ?? new Date();
   const date = dateKey(now);
@@ -52,11 +71,34 @@ export function recordUsage(
       calls: day.calls + 1,
       failedCalls: day.failedCalls + (entry.failed ? 1 : 0),
       byModel: { ...day.byModel, [model]: { calls: prev.calls + 1, usage: addUsage(prev.usage, entry.usage) } },
+      ...charges(day, entry.chargedMicros, entry.posts, now),
     },
   };
   const keep = new Set(Array.from({ length: KEEP_DAYS }, (_, i) => dateKey(new Date(now.getTime() - i * 86_400_000))));
   for (const d of Object.keys(next)) if (!keep.has(d)) delete next[d];
   return next;
+}
+
+/**
+ * The day's charge fields after a call: carried over unchanged when the call has no valid charge (a failed or own-key
+ * call keeps the day's batches), and absent on a day that never had one. The server is not trusted: only a safe
+ * integer >= 0 counts.
+ */
+function charges(
+  day: DayUsage,
+  charged: number | undefined,
+  posts: number,
+  now: Date,
+): Pick<DayUsage, 'chargedMicros' | 'batches'> {
+  const kept = {
+    ...(day.chargedMicros !== undefined ? { chargedMicros: day.chargedMicros } : {}),
+    ...(day.batches !== undefined ? { batches: day.batches } : {}),
+  };
+  if (charged === undefined || !Number.isSafeInteger(charged) || charged < 0) return kept;
+  return {
+    chargedMicros: (day.chargedMicros ?? 0) + charged,
+    batches: [{ at: now.toISOString(), posts, chargedMicros: charged }, ...(day.batches ?? [])].slice(0, MAX_DAY_BATCHES),
+  };
 }
 
 export function dayUsage(ledger: UsageLedger, now = new Date()): DayUsage {
@@ -107,6 +149,15 @@ export function formatPrice(micros: number): string {
   if (!(micros > 0)) return '$0.00';
   const cents = wholeCents(Math.floor(micros) + MICROS_PER_CENT / 2);
   return cents === 0 ? '<$0.01' : dollars(cents);
+}
+
+/** A batch's charge: "$0.15" from one cent up; "$0.0018" under a cent; "<$0.0001" above 0 and under 50 micro-dollars; "$0.00" for 0 or less. */
+export function formatCharge(micros: number): string {
+  if (!(micros > 0)) return '$0.00';
+  const r = Math.floor((Math.floor(micros) + 50) / 100);
+  if (r === 0) return '<$0.0001';
+  if (r < 100) return `$0.${String(r).padStart(4, '0')}`;
+  return formatPrice(micros);
 }
 
 /** A history amount, rounded half up to the cent: "+$1.00", "−$0.06", "−<$0.01", "$0.00". */
