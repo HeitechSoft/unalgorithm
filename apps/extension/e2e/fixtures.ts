@@ -114,6 +114,17 @@ export const FLAGGED = [LINKEDIN_FLAGGED, FB_PUBLIC_FLAGGED, FB_FRIENDS_FLAGGED]
 export const linkedinPost = (page: Page) => page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
 
 /**
+ * Waits for the CSS transitions on `el` and inside it to end; call it on a popover before clicking in it. A Why?
+ * popover scales in for about 400 ms, and Playwright retries a click on a button that is still moving, scrolling it
+ * a different way each time: its fourth try calls `scrollIntoView({ block: 'start' })`. The popover is anchored to
+ * its stub, so that scrolls the whole feed (640 px here) and the click point lands on a post further down. On a slow
+ * runner the first three tries all saw the button moving.
+ */
+export async function settled(el: Locator): Promise<void> {
+  await el.evaluate((node) => Promise.allSettled(node.getAnimations({ subtree: true }).map((a) => a.finished)));
+}
+
+/**
  * Opens Settings → Labs (`#/labs`) and saves the AI source `config` (with `apiKey`, if any) from it. With `test`, the
  * source is tested first and saved with the model the test picked, as the AI pane does. Returns the options page.
  */

@@ -7,7 +7,7 @@ import {
   SUGGESTED_PAGE_POST,
   UNJOINED_GROUP_POST,
 } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { expect, test } from './fixtures.ts';
+import { expect, settled, test } from './fixtures.ts';
 
 test('opens onboarding on install', async ({ context, extensionId }) => {
   await expect
@@ -37,8 +37,10 @@ test('LinkedIn: Why? explains, and "Stop hiding" changes the rule live with Undo
     .locator('unalgo-post')
     .getByRole('button', { name: /Why was this hidden/ })
     .click();
-  const pop = promoted.locator('unalgo-post').getByRole('dialog');
+  // By name: the first-fold tip is a dialog on the same stub.
+  const pop = promoted.locator('unalgo-post').getByRole('dialog', { name: 'Promoted post' });
   await expect(pop.getByText('Promoted post')).toBeVisible();
+  await settled(pop);
   await pop.getByRole('button', { name: 'Stop hiding ads' }).click();
   await expect(promoted).not.toHaveAttribute('data-unalgo', /.+/);
   const undo = page.locator('unalgo-layer').getByRole('button', { name: 'Undo' });
