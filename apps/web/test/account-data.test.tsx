@@ -346,7 +346,11 @@ describe('purchased credit warning', () => {
         ++asked === 1
           ? { status: 200, body: credit(0) }
           : { status, body: { code: status === 401 ? 'auth-required' : 'internal', message: 'No.' } };
-      const { server, user } = await openBillingDialog(reply);
+      const { server, user } = openAccount({ info: BILLING, routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply } });
+      const row = await screen.findByRole('button', { name: DELETE_ROW });
+      // Opens the dialog only once the Credits section has asked: on a slow runner the dialog could ask first.
+      await waitFor(() => expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1));
+      await user.click(row);
       expect(await within(dialog()).findByText(CREDIT_UNCHECKED)).toBeTruthy();
       expect(dialog().open).toBe(true);
       await user.type(within(dialog()).getByLabelText(FIELD), TOM);

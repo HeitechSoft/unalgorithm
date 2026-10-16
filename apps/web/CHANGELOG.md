@@ -1,5 +1,16 @@
 # @unalgorithm/web
 
+## 0.0.2
+
+### Patch Changes
+
+- [#19](https://github.com/HeitechSoft/unalgorithm/pull/19) [`cc177d8`](https://github.com/HeitechSoft/unalgorithm/commit/cc177d85def2c43a854e97c4c0b786fab3040237) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The admin page uses the screen's width: up to 1120px, with accounts and invites in one column and usage in the other
+  from 900px wide (one column below that), and the server's status (disk, backups, alerts) above the last 30 days. Sizes
+  under 1 MB now read in KB, so a new server's backup shows "17 KB" rather than "0 MB".
+- Updated dependencies [[`cc177d8`](https://github.com/HeitechSoft/unalgorithm/commit/cc177d85def2c43a854e97c4c0b786fab3040237)]:
+  - @unalgorithm/core@0.1.1
+  - @unalgorithm/ui@0.0.2
+
 ## 0.0.1
 
 ### Patch Changes
