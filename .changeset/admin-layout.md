@@ -1,5 +1,6 @@
 ---
-'@unalgorithm/server': patch
+'@unalgorithm/web': patch
+'@unalgorithm/core': patch
 ---
 
 The admin page uses the screen's width: up to 1120px, with accounts and invites in one column and usage in the other
