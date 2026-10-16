@@ -209,7 +209,7 @@ describe('content', () => {
       ['.ua-row-title', '.web-amount'].map((part) => row.querySelector(part)?.textContent),
     );
     expect(lines).toEqual([
-      ['Credit pack', '+$10.00'],
+      ['Credit purchase', '+$10.00'],
       ['Refund', '−$4.20'],
       ['Chargeback', '−$5.00'],
       ['Chargeback reversed', '+$5.00'],
@@ -295,6 +295,7 @@ describe('content', () => {
     let section = await loadedCredits();
     expect(within(section).getByText("Adding credit isn't available yet.")).toBeTruthy();
     expect(within(section).queryByRole('link', { name: 'Add credit' })).toBeNull();
+    expect(within(section).queryByText('Any amount from $5 to $500.')).toBeNull();
     expect(within(section).queryByRole('link', { name: 'How credits work' })).toBeNull();
     cleanup();
 
@@ -306,6 +307,10 @@ describe('content', () => {
     // A page on this server: it opens in place.
     expect(add.getAttribute('target')).toBeNull();
     expect(within(section).queryByText("Adding credit isn't available yet.")).toBeNull();
+    // Any amount within the rules, no packs.
+    const range = within(section).getByText('Any amount from $5 to $500.');
+    expect(add.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.textContent).not.toMatch(/\bpacks?\b/i);
     const pricing = within(section).getByRole('link', { name: 'How credits work' });
     expect(pricing.getAttribute('href')).toBe(pricingUrl);
     expect(pricing.getAttribute('target')).toBe('_blank');

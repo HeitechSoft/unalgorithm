@@ -3,23 +3,24 @@ import * as protocol from '../src/index.ts';
 import {
   ACCOUNT_PAGE_PATH,
   CREDIT_ACCOUNT_PATH,
+  CREDIT_AMOUNT_MAX_MICROS,
+  CREDIT_AMOUNT_MIN_MICROS,
+  CREDIT_AMOUNT_PRESETS,
+  CREDIT_AMOUNT_STEP_MICROS,
   CREDIT_BALANCE_PATH,
+  CREDIT_CURRENCY,
   CREDIT_ENTRY_KINDS,
   CREDIT_ENTRY_REASONS,
-  CREDIT_PACK_CURRENCY,
-  CREDIT_PACK_IDS,
-  CREDIT_PACKS,
   CREDIT_PRICE_SCHEDULE,
   CREDIT_TASKS,
   CreditAccountSchema,
   CreditBalanceSchema,
   CreditHistoryItemSchema,
-  CreditPackIdSchema,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   checkPriceScheduleChange,
-  creditPack,
-  DEFAULT_CREDIT_PACK,
+  creditAmount,
+  DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
   FACTCHECK_COST_CEILING_MICROS,
   FACTCHECK_TYPICAL_COST_MICROS,
@@ -651,31 +652,88 @@ describe('the fact-check price card (P3-51)', () => {
   });
 });
 
-describe('credit packs (CL5-01)', () => {
-  it('test_packs_buy_their_price_in_credit', () => {
-    expect(CREDIT_PACKS.map((pack) => [pack.id, pack.priceCents])).toEqual([
-      ['pack-5', 500],
-      ['pack-10', 1_000],
-      ['pack-25', 2_500],
-    ]);
-    expect(CREDIT_PACKS.map((pack) => pack.id)).toEqual([...CREDIT_PACK_IDS]);
-    for (const pack of CREDIT_PACKS) {
-      expect(pack.creditMicros).toBe(pack.priceCents * 10_000);
-      expect(Object.isFrozen(pack)).toBe(true);
+describe('credit amounts (any amount from $5 to $500)', () => {
+  it('test_amount_rules_constants', () => {
+    expect(CREDIT_AMOUNT_MIN_MICROS).toBe(5_000_000);
+    expect(CREDIT_AMOUNT_MAX_MICROS).toBe(500_000_000);
+    expect(CREDIT_AMOUNT_STEP_MICROS).toBe(1_000_000);
+    expect(CREDIT_AMOUNT_PRESETS).toEqual([5_000_000, 10_000_000, 25_000_000]);
+    expect(Object.isFrozen(CREDIT_AMOUNT_PRESETS)).toBe(true);
+    expect(DEFAULT_CREDIT_AMOUNT).toBe(10_000_000);
+    expect(CREDIT_AMOUNT_PRESETS).toContain(DEFAULT_CREDIT_AMOUNT);
+    expect(CREDIT_CURRENCY).toBe('usd');
+    // Every quick pick is itself a valid amount, smallest first.
+    for (const micros of CREDIT_AMOUNT_PRESETS) expect(creditAmount({ micros })).not.toBeNull();
+    expect([...CREDIT_AMOUNT_PRESETS].sort((a, b) => a - b)).toEqual([...CREDIT_AMOUNT_PRESETS]);
+    // The packs are gone: no pack list, id or lookup is exported.
+    for (const name of ['CREDIT_PACKS', 'CREDIT_PACK_IDS', 'CreditPackIdSchema', 'creditPack', 'DEFAULT_CREDIT_PACK']) {
+      expect(Object.hasOwn(protocol, name), name).toBe(false);
     }
-    expect(Object.isFrozen(CREDIT_PACKS)).toBe(true);
   });
 
-  it('test_default_pack_and_currency', () => {
-    expect(DEFAULT_CREDIT_PACK).toBe('pack-10');
-    expect(CreditPackIdSchema.parse(DEFAULT_CREDIT_PACK)).toBe('pack-10');
-    expect(CREDIT_PACK_CURRENCY).toBe('usd');
+  it('test_credit_amount_buys_exactly_its_price', () => {
+    expect(creditAmount({ dollars: 10 })).toEqual({ dollars: 10, cents: 1_000, micros: 10_000_000 });
+    expect(Object.isFrozen(creditAmount({ dollars: 10 }))).toBe(true);
+    expect(creditAmount({ dollars: '25' })).toEqual({ dollars: 25, cents: 2_500, micros: 25_000_000 });
+    expect(creditAmount({ micros: 5_000_000 })).toEqual({ dollars: 5, cents: 500, micros: 5_000_000 });
+    expect(creditAmount({ micros: 500_000_000 })).toEqual({ dollars: 500, cents: 50_000, micros: 500_000_000 });
+    for (let dollars = 5; dollars <= 500; dollars++) {
+      const amount = creditAmount({ dollars });
+      expect(amount?.micros).toBe(dollars * 1_000_000);
+      expect(amount?.cents).toBe(dollars * 100);
+      expect(creditAmount({ micros: dollars * 1_000_000 })).toEqual(amount);
+      expect(creditAmount({ dollars: String(dollars) })).toEqual(amount);
+    }
   });
 
-  it('test_credit_pack_lookup_never_throws', () => {
-    expect(creditPack('pack-10')).toEqual({ id: 'pack-10', priceCents: 1_000, creditMicros: 10_000_000 });
-    expect(creditPack('pack-10')).toBe(CREDIT_PACKS[1]);
-    for (const id of ['pack-7', '', undefined, '__proto__', 'constructor', 10, null, {}]) expect(creditPack(id)).toBeNull();
+  it('test_credit_amount_refuses_outside_the_rules', () => {
+    const dollars = [4, 501, 0, -10, 10.5, 12.25, Number.NaN, Infinity, -Infinity, 1e21, Number.MAX_SAFE_INTEGER + 2, -0];
+    const strings = ['', ' 10', '10 ', '4', '501', '010', '10.00', '10.5', '1e1', '+10', '-10', '$10', '0x10', '１０', '10e0'];
+    const micros = [4_999_999, 5_000_001, 10_500_000, 500_000_001, 501_000_000, 0, -5_000_000, 5e6 + 0.5, Number.NaN];
+    for (const value of [...dollars, ...strings, null, undefined, true, [], {}, 10n]) {
+      expect(creditAmount({ dollars: value }), String(value)).toBeNull();
+    }
+    for (const value of [...micros, '10000000', null, undefined, 10_000_000n]) {
+      expect(creditAmount({ micros: value }), String(value)).toBeNull();
+    }
+  });
+
+  it('test_credit_amount_never_throws_on_hostile_input', () => {
+    const throwing = Object.defineProperty({}, 'dollars', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    const proxy = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('boom');
+        },
+      },
+    );
+    const inherited = Object.create({ dollars: 10 });
+    const hostile = [
+      10,
+      '10',
+      10_000_000,
+      null,
+      undefined,
+      [10],
+      () => 10,
+      Symbol('10'),
+      { dollars: 10, micros: 10_000_000 }, // both: which one was meant?
+      { amount: 10 },
+      JSON.parse('{"__proto__": {"dollars": 10}}'),
+      inherited,
+      throwing,
+      proxy,
+      { dollars: { valueOf: () => 10 } },
+      { dollars: ['10'] },
+    ];
+    for (const value of hostile) expect(() => creditAmount(value)).not.toThrow();
+    for (const value of hostile) expect(creditAmount(value)).toBeNull();
   });
 });
 
