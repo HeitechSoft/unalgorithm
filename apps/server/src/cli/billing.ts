@@ -65,11 +65,12 @@ export async function main(argv: readonly string[], deps: BillingCliDeps = {}): 
   try {
     // Errors only: what the command has to say goes to `out`.
     const log = createLogger({ level: 'error' });
-    // Nothing is mailed: the host only needs the auth checks it hands out.
-    const auth = createAuth({ config, db: handle, mailer: smtpMailer(config.smtp, log), log });
+    // One mailer: the module's commands send their account emails through the host's `mail`.
+    const mailer = smtpMailer(config.smtp, log);
+    const auth = createAuth({ config, db: handle, mailer, log });
     // Never started: a command runs once, and the server's own process runs the jobs.
     const jobs = createJobRegistry();
-    const host = createBillingHost({ config, db: handle, log, auth, jobs, env: config.billingEnv });
+    const host = createBillingHost({ config, db: handle, log, auth, jobs, mailer, env: config.billingEnv });
     return await mod.runCli(argv, host, out);
   } catch (err) {
     // By name and code only: the message can name a host.

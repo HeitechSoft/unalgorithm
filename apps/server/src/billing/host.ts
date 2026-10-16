@@ -11,7 +11,8 @@
  * route, the client address (`clientIp`) and raw headers included. What the seam passes: account id, email, verified
  * flag and account creation time (`accounts`); device id, request id, model, token usage, cost and posts counted, and
  * the instant the server checked the request (`checkedAt`) (`BillingProvider`); the signed-in person's id and email on a
- * page request (`auth.webUser`). Pages it renders (`pages.render`) get the server's frame, stylesheet and CSP around
+ * page request (`auth.webUser`); the module's own message text to an account's address, which the host resolves
+ * (`mail`). Pages it renders (`pages.render`) get the server's frame, stylesheet and CSP around
  * HTML escaped by `html`, with no script. What the host does not offer: the
  * server's Drizzle schema, `AppDeps`, the AI clients, the classify request body or any post field. No post text, prompt or interest reaches a module, because the server
  * neither stores nor passes them (ADR 0007). Adding to `BillingHost` is a reviewed public change.
@@ -36,6 +37,7 @@ import { user } from '../db/schema.ts';
 import { type ModulePage, renderModulePage } from '../http/page-frame.ts';
 import type { JobRegistry } from '../jobs/worker.ts';
 import type { Logger } from '../log.ts';
+import type { Mailer } from '../mail/mailer.ts';
 import type { BillingProvider } from './provider.ts';
 
 /** The module's only database access: parameterised SQL on the server's pool. */
@@ -54,6 +56,9 @@ export interface BillingUser {
   emailVerified: boolean;
   createdAt: Date;
 }
+
+/** What `mail.toAccount` did. `no-account`: no such user (deleted meanwhile); nothing was sent. */
+export type AccountMailResult = 'sent' | 'no-account';
 
 export interface BillingHost {
   /**
@@ -114,6 +119,13 @@ export interface BillingHost {
    * total can fall after the day when an account is deleted: compare it with the vendor's report allowing a tolerance.
    */
   readonly usage: Readonly<{ costByDay(from: Date, to: Date): Promise<DayModelCost[]> }>;
+  /**
+   * A transactional, plain-text email to the account's own address: payment and billing notices only, never
+   * marketing (CASL). The module never sees the address. Rejects when the mail server refused it.
+   */
+  readonly mail: Readonly<{
+    toAccount(userId: string, message: { subject: string; text: string }): Promise<AccountMailResult>;
+  }>;
 }
 
 /** What `BILLING_MODULE` exports. */
@@ -129,6 +141,8 @@ export interface BillingHostDeps {
   log: Logger;
   auth: Auth;
   jobs: JobRegistry;
+  /** The process's one mailer (sign-in codes, alerts): `host.mail` sends through it. */
+  mailer: Mailer;
   /** Becomes `host.env`; default `{}`. CL2-05 passes `config.billingEnv`. */
   env?: Readonly<Record<string, string>>;
   /** Becomes `host.priceSchedule`, frozen; default `CREDIT_PRICE_SCHEDULE`. Tests pass one that prices checks. */
@@ -144,8 +158,13 @@ export const BILLING_MIGRATION_LOCK_KEY = 1431191874;
 /** The columns of Better Auth's `user` table that billing sees. */
 const ACCOUNT_COLUMNS = { id: user.id, email: user.email, emailVerified: user.emailVerified, createdAt: user.createdAt };
 
+/** Longest subject and text `mail.toAccount` sends. */
+const MAIL_SUBJECT_MAX = 200;
+const MAIL_TEXT_MAX = 10_000;
+
 export function createBillingHost(deps: BillingHostDeps): BillingHost {
-  const { config, db, log, jobs, env = {} } = deps;
+  const { config, db, log, jobs, mailer, env = {} } = deps;
+  const moduleLog = log.child({ module: 'billing' });
 
   async function findAccount(where: SQL): Promise<BillingUser | null> {
     const [row] = await db.db.select(ACCOUNT_COLUMNS).from(user).where(where).limit(1);
@@ -165,7 +184,7 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
         log: log.child({ migrations: 'billing' }),
       });
     },
-    log: log.child({ module: 'billing' }),
+    log: moduleLog,
     config: Object.freeze({ publicOrigin: config.publicOrigin, instanceName: config.instanceName, version: config.version }),
     env: Object.freeze({ ...env }),
     accounts: Object.freeze({
@@ -188,7 +207,40 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
     pages: Object.freeze({ render: (c: Context, page: ModulePage) => renderModulePage(c, { config, log }, page) }),
     format: Object.freeze({ formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice }),
     usage: Object.freeze({ costByDay: (from: Date, to: Date) => costByDay(db.db, from, to) }),
+    mail: Object.freeze({
+      async toAccount(userId: string, message: { subject: string; text: string }): Promise<AccountMailResult> {
+        const { subject, text } = checkAccountMail(userId, message);
+        const account = await findAccount(eq(user.id, userId));
+        if (!account) {
+          moduleLog.info('billing.mail.no_account');
+          return 'no-account';
+        }
+        const started = performance.now();
+        // A refusal is logged by the mailer (`mail.failed`, error fields only) and rethrown unchanged.
+        await mailer.send({ to: account.email, subject, text });
+        // Never the address, the subject or the text.
+        moduleLog.info('billing.mail.sent', { ms: Math.round(performance.now() - started) });
+        return 'sent';
+      },
+    }),
   });
+}
+
+/**
+ * The message `mail.toAccount` sends, or a `TypeError` naming the rule it breaks (never the value). The subject is a
+ * header line, so a line break in it could add headers after it.
+ */
+function checkAccountMail(userId: unknown, message: { subject: unknown; text: unknown }): { subject: string; text: string } {
+  if (typeof userId !== 'string' || userId === '') throw new TypeError('mail.toAccount: userId must be a non-empty string');
+  const { subject, text } = message;
+  if (typeof subject !== 'string' || subject.length < 1 || subject.length > MAIL_SUBJECT_MAX) {
+    throw new TypeError(`mail.toAccount: subject must be 1 to ${MAIL_SUBJECT_MAX} characters`);
+  }
+  if (/[\r\n]/.test(subject)) throw new TypeError('mail.toAccount: subject must not contain a line break');
+  if (typeof text !== 'string' || text.length < 1 || text.length > MAIL_TEXT_MAX) {
+    throw new TypeError(`mail.toAccount: text must be 1 to ${MAIL_TEXT_MAX} characters`);
+  }
+  return { subject, text };
 }
 
 /** A frozen copy of `schedule`: its entries, their cards and each card. */

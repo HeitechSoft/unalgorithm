@@ -5,10 +5,20 @@ import { fileURLToPath } from 'node:url';
 import { CREDIT_PRICE_SCHEDULE, priceCardsAt } from '@unalgorithm/protocol';
 import { type SQL, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BILLING_MIGRATION_LOCK_KEY, BILLING_SCHEMA, type BillingHost } from '../src/billing/host.ts';
+import { createAuth } from '../src/auth/better-auth.ts';
+import {
+  BILLING_MIGRATION_LOCK_KEY,
+  BILLING_SCHEMA,
+  type BillingHost,
+  type BillingHostDeps,
+  createBillingHost,
+} from '../src/billing/host.ts';
 import { SERVER_VERSION } from '../src/config.ts';
 import { type DbHandle, openPglite, openPostgres } from '../src/db/client.ts';
 import { MIGRATION_LOCK_KEY, MIGRATIONS_FOLDER, runMigrations } from '../src/db/migrate.ts';
+import { user } from '../src/db/schema.ts';
+import { createJobRegistry } from '../src/jobs/worker.ts';
+import type { Mailer } from '../src/mail/mailer.ts';
 import { createTestHost } from './support/billing-host.ts';
 import { queryRows } from './support/db.ts';
 import { captureLog } from './support/log.ts';
@@ -255,6 +265,7 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
       'pages',
       'format',
       'usage',
+      'mail',
     ]);
     expect(Object.keys(host.db)).toEqual(['sql', 'query', 'transaction']);
     expect(host.db.sql).toBe(sql);
@@ -266,6 +277,8 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
     expect(Object.isFrozen(host.format)).toBe(true);
     expect(Object.keys(host.usage)).toEqual(['costByDay']);
     expect(Object.isFrozen(host.usage)).toBe(true);
+    expect(Object.keys(host.mail)).toEqual(['toAccount']);
+    expect(Object.isFrozen(host.mail)).toBe(true);
 
     // The running release's dated price schedule, never a copy, and no undated cards.
     expect(host.protocol.CREDIT_PRICE_SCHEDULE).toBe(CREDIT_PRICE_SCHEDULE);
@@ -286,6 +299,110 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
 
     host.log.info('billing.probe');
     expect(JSON.parse(lines.at(-1) ?? '{}')).toMatchObject({ event: 'billing.probe', module: 'billing' });
+  });
+});
+
+const ANN = 'ann@example.org';
+const MESSAGE = { subject: 'Auto-reload is on', text: 'Line 1\nLine 2' };
+
+/** A test host with Ann's account in its database; `annId` is her user id. */
+async function annHost() {
+  const t = await testHost();
+  const at = new Date();
+  const annId = 'u-ann';
+  await t.db.db.insert(user).values({ id: annId, name: '', email: ANN, emailVerified: true, createdAt: at, updatedAt: at });
+  return { ...t, annId };
+}
+
+/** A host on `db` whose mailer is `mailer`, logging into `lines`. */
+function hostWithMailer(db: DbHandle, mailer: Mailer) {
+  const config = testConfig();
+  const { log, lines } = captureLog();
+  const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: false });
+  return { host: createBillingHost({ config, db, log, auth, jobs: createJobRegistry(), mailer }), lines };
+}
+
+/** The calls `mail.toAccount` refuses (AC 4's six cases, the line break both ways), as [user id, message]. */
+function badMessages(annId: string): [string, { subject: string; text: string }][] {
+  return [
+    [annId, { subject: 'Auto-reload\nBcc: eve@example.org', text: MESSAGE.text }],
+    [annId, { subject: 'Auto-reload\rBcc: eve@example.org', text: MESSAGE.text }],
+    [annId, { subject: '', text: MESSAGE.text }],
+    [annId, { subject: 'S'.repeat(201), text: MESSAGE.text }],
+    [annId, { subject: MESSAGE.subject, text: '' }],
+    [annId, { subject: MESSAGE.subject, text: 'T'.repeat(10_001) }],
+    ['', MESSAGE],
+  ];
+}
+
+async function expectRefused(host: BillingHost, userId: string, message: { subject: string; text: string }) {
+  const err = await host.mail.toAccount(userId, message).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(TypeError);
+  const text = (err as TypeError).message;
+  if (message.subject !== '') expect(text).not.toContain(message.subject);
+  if (message.text !== '') expect(text).not.toContain(message.text);
+}
+
+describe('mail', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_host_mail_to_account_sends_to_its_address', async () => {
+    const { host, outbox, annId } = await annHost();
+    const before = outbox.length;
+    await expect(host.mail.toAccount(annId, MESSAGE)).resolves.toBe('sent');
+    expect(outbox.slice(before)).toStrictEqual([{ to: ANN, subject: MESSAGE.subject, text: MESSAGE.text }]);
+  });
+
+  it('test_host_mail_unknown_account', async () => {
+    const { host, outbox } = await annHost();
+    const before = outbox.length;
+    await expect(host.mail.toAccount('no-such-account', MESSAGE)).resolves.toBe('no-account');
+    expect(outbox).toHaveLength(before);
+  });
+
+  it('test_host_mail_refuses_bad_messages', async () => {
+    const { host, outbox, annId } = await annHost();
+    const before = outbox.length;
+    // Each is refused on its own: the edges just inside the limits are sent.
+    for (const [userId, message] of badMessages(annId)) await expectRefused(host, userId, message);
+    expect(outbox).toHaveLength(before);
+    await expect(host.mail.toAccount(annId, { subject: 'S'.repeat(200), text: 'T'.repeat(10_000) })).resolves.toBe('sent');
+  });
+
+  it('test_host_mail_rejection_propagates', async () => {
+    const { db, annId } = await annHost();
+    const refused = new Error('550 mailbox unavailable');
+    const { host } = hostWithMailer(db, { send: () => Promise.reject(refused) });
+    await expect(host.mail.toAccount(annId, MESSAGE)).rejects.toBe(refused);
+  });
+
+  it('test_host_mail_logs_hold_no_address_or_text', async () => {
+    const { host, db, lines, annId } = await annHost();
+    await host.mail.toAccount(annId, MESSAGE);
+    await host.mail.toAccount('no-such-account', MESSAGE);
+    for (const [userId, message] of badMessages(annId)) await host.mail.toAccount(userId, message).catch(() => {});
+    const failing = hostWithMailer(db, { send: () => Promise.reject(new Error(`refused for ${ANN}`)) });
+    await failing.host.mail.toAccount(annId, MESSAGE).catch(() => {});
+
+    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events).toContainEqual(
+      expect.objectContaining({ event: 'billing.mail.sent', module: 'billing', ms: expect.any(Number) }),
+    );
+    expect(events).toContainEqual(expect.objectContaining({ event: 'billing.mail.no_account', module: 'billing' }));
+    for (const line of [...lines, ...failing.lines]) {
+      expect(line).not.toContain(ANN);
+      expect(line).not.toContain(MESSAGE.subject);
+      expect(line).not.toContain('Line 1');
+    }
+  });
+
+  it('test_host_requires_a_mailer', () => {
+    // Never called: the line is here for `pnpm typecheck`, which fails if `mailer` becomes optional.
+    const withoutMailer = (deps: Omit<BillingHostDeps, 'mailer'>) =>
+      // @ts-expect-error `mailer` is required: every caller passes the one mailer its process has.
+      createBillingHost(deps);
+    expect(typeof withoutMailer).toBe('function');
   });
 });
 
