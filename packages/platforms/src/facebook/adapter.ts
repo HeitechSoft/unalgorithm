@@ -6,18 +6,42 @@ import { FACEBOOK_EN, type FacebookMarkers } from './markers/en.ts';
 
 const MARKERS: Record<string, FacebookMarkers> = { en: FACEBOOK_EN };
 
-function feeds(scope: ParentNode): HTMLElement[] {
-  return Array.from(scope.querySelectorAll<HTMLElement>(FB_SEL.feed));
+/** Within a few siblings after a heading: the 2026 list follows a screen-reader "Feed posts" h3 and a spacer. */
+function afterHeading(el: Element): boolean {
+  let s = el.previousElementSibling;
+  for (let i = 0; s && i < 3; i++, s = s.previousElementSibling) if (s.matches('h2, h3')) return true;
+  return false;
 }
 
 /**
- * Facebook's home feed: `[role="feed"]` inside `[role="main"]`, one direct child per feed item (posts and panels
- * alike). Class names are generated, so everything here keys on roles, aria labels, data-ad-* hooks and links.
- * Unverified against the live site until fixtures are captured (see scripts/capture/facebook.js).
+ * The outermost `[role="feed"]`, or the unlabelled list the 2026 home feed uses instead: a block right after a
+ * heading, not inside a post, holding posts. Checks the cheap sibling walk first so `itemRootOf` stays O(depth).
+ */
+function isFeedList(el: Element): boolean {
+  if (el.matches(FB_SEL.feed)) return !el.parentElement?.closest(FB_SEL.feed);
+  return afterHeading(el) && !el.closest(FB_SEL.post) && !!el.querySelector(FB_SEL.post);
+}
+
+function feedLists(scope: ParentNode): HTMLElement[] {
+  const feeds = Array.from(scope.querySelectorAll<HTMLElement>(FB_SEL.feed)).filter(isFeedList);
+  if (feeds.length) return feeds;
+  // No role="feed": climb from a post to the list that holds it.
+  for (const post of Array.from(scope.querySelectorAll(FB_SEL.post))) {
+    for (let el = post.parentElement; el && el !== scope; el = el.parentElement) if (isFeedList(el)) return [el];
+  }
+  return [];
+}
+
+/**
+ * Facebook's home feed: one list inside `[role="main"]` with a direct child per feed item (posts and panels alike).
+ * Until 2026 the list was `[role="feed"]`; the 2026 layout drops the role and puts the list right after a
+ * screen-reader "Feed posts" heading, every post marked `[aria-posinset]`, items far from the viewport emptied
+ * (virtualized) until they scroll back. Class names are generated, so everything here keys on roles, aria
+ * attributes, data-ad-* hooks and links, never on English heading text.
  */
 export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
   id: 'facebook',
-  version: 'facebook@2026.10.0-preview',
+  version: 'facebook@2026.10.2',
 
   isFeedPage(url) {
     return url.hostname.endsWith('facebook.com') && (/^\/(home\.php)?$/.test(url.pathname) || url.pathname === '/?sk=h_chr');
@@ -25,16 +49,14 @@ export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
 
   feedScope(doc) {
     const main = doc.querySelector<HTMLElement>('[role="main"]');
-    if (main?.querySelector(FB_SEL.feed)) return main;
-    return doc.querySelector(FB_SEL.feed) ? doc.body : null;
+    if (main && feedLists(main).length) return main;
+    return feedLists(doc).length ? doc.body : null;
   },
 
   findItems(scope) {
     const items: HTMLElement[] = [];
-    for (const feed of feeds(scope)) {
-      // Only the outermost feed: nested feeds (comments) are not feed items.
-      if (feed.parentElement?.closest(FB_SEL.feed)) continue;
-      for (const child of Array.from(feed.children) as HTMLElement[]) {
+    for (const list of feedLists(scope)) {
+      for (const child of Array.from(list.children) as HTMLElement[]) {
         if (child.tagName === 'UNALGO-POST') continue;
         items.push(child);
       }
@@ -46,7 +68,7 @@ export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
     let el: Element | null = node instanceof Element ? node : node.parentElement;
     while (el && el !== scope) {
       const parent: HTMLElement | null = el.parentElement;
-      if (parent?.matches(FB_SEL.feed) && !parent.parentElement?.closest(FB_SEL.feed)) return el as HTMLElement;
+      if (parent && isFeedList(parent)) return el as HTMLElement;
       el = parent;
     }
     return null;
@@ -92,6 +114,7 @@ export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
     return {
       main: doc.querySelectorAll('[role="main"]').length,
       feeds: doc.querySelectorAll(FB_SEL.feed).length,
+      lists: feedLists(doc).length,
       items: scope ? this.findItems(scope).length : 0,
       posinset: doc.querySelectorAll('[aria-posinset]').length,
       messages: doc.querySelectorAll(FB_SEL.message).length,

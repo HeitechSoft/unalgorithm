@@ -1,12 +1,18 @@
 import { applyPreset, defaultSettings, ruleFilter, toPostForAI } from '@unalgorithm/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  AD_2026,
+  EMPTIED_2026,
+  FOLLOW_PAGE_2026,
   FRIEND_ACTIVITY,
   FRIEND_POST,
+  FRIEND_POST_2026,
   FRIEND_RESHARE,
   fbFeed,
+  fbFeed2026,
   JOINED_GROUP_POST,
   ORGANIC_LINK_SHARE,
+  PHOTO_POST_2026,
   PYMK,
   REELS_TRAY,
   SKELETON,
@@ -18,6 +24,7 @@ import {
   SUGGESTED_PAGE_POST,
   TRUNCATED_POST,
   UNJOINED_GROUP_POST,
+  VIRTUALIZED_2026,
 } from '../../fixtures/facebook/synthetic.ts';
 import { facebookAdapter } from '../../src/facebook/adapter.ts';
 import { FACEBOOK_EN } from '../../src/facebook/markers/en.ts';
@@ -175,6 +182,120 @@ describe('Facebook adapter (synthetic fixtures)', () => {
 
   it('passes the adapter contract', () => {
     const html = fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST, FRIEND_RESHARE);
+    expect(checkAdapterContract(facebookAdapter, html)).toEqual([]);
+  });
+});
+
+describe('Facebook adapter (2026 layout, no role="feed")', () => {
+  beforeEach(() => {
+    document.documentElement.lang = 'en';
+  });
+
+  function only2026(item: string) {
+    document.body.innerHTML = fbFeed2026(item);
+    const scope = facebookAdapter.feedScope(document) as HTMLElement;
+    const items = facebookAdapter.findItems(scope);
+    expect(items).toHaveLength(1);
+    const r = facebookAdapter.inspect(items[0] as HTMLElement, ctx);
+    if (r.kind !== 'post') throw new Error(`expected a post, got ${r.kind}`);
+    return r.post;
+  }
+
+  it('finds the list after the "Feed posts" heading, one item per slot, and skips the composer and Stories', () => {
+    document.body.innerHTML = fbFeed2026(EMPTIED_2026, FRIEND_POST_2026, AD_2026, VIRTUALIZED_2026);
+    const scope = facebookAdapter.feedScope(document);
+    expect(scope?.getAttribute('role')).toBe('main');
+    const items = facebookAdapter.findItems(scope as HTMLElement);
+    expect(items).toHaveLength(4);
+    expect(items.map((el) => facebookAdapter.inspect(el, ctx).kind)).toEqual(['pending', 'post', 'post', 'pending']);
+    expect(facebookAdapter.probe(document, scope)).toMatchObject({ feeds: 0, lists: 1, items: 4 });
+  });
+
+  it('does not depend on the heading being in English', () => {
+    document.body.innerHTML = fbFeed2026(FRIEND_POST_2026).replace('Feed posts', 'Publications du fil');
+    const scope = facebookAdapter.feedScope(document) as HTMLElement;
+    expect(facebookAdapter.findItems(scope)).toHaveLength(1);
+  });
+
+  it('maps any node in a post back to its item, never to a block inside it', () => {
+    document.body.innerHTML = fbFeed2026(FRIEND_POST_2026, FOLLOW_PAGE_2026);
+    const scope = facebookAdapter.feedScope(document) as HTMLElement;
+    const [first, second] = facebookAdapter.findItems(scope) as [HTMLElement, HTMLElement];
+    // A link preview inside a post: a heading followed by a block, like the feed list itself.
+    const msg = second.querySelector('[data-ad-rendering-role="story_message"]') as HTMLElement;
+    msg.insertAdjacentHTML('afterend', '<div><h3>Preview title</h3><div><span id="deep">example.com</span></div></div>');
+    expect(facebookAdapter.itemRootOf(first.querySelector('[data-ad-rendering-role="profile_name"] b') as Node, scope)).toBe(
+      first,
+    );
+    expect(facebookAdapter.itemRootOf(document.getElementById('deep') as Node, scope)).toBe(second);
+    const composer = document.querySelector('[role="main"] h3') as HTMLElement;
+    expect(facebookAdapter.itemRootOf(composer, scope)).toBeNull();
+  });
+
+  it('reads a friend post: author, text and "Shared with Riley’s friends" from the SVG title', () => {
+    const p = only2026(FRIEND_POST_2026);
+    expect(p.author.name).toBe('Riley Chen');
+    expect(p.text).toBe('Our garden finally produced tomatoes this year.');
+    expect(p.audience).toBe('friends');
+    expect(p.signals.sponsored).toBe(false);
+    expect(ruleFilter(p, calm)).toBeNull();
+  });
+
+  it('hides posts labelled "Ad" (the 2026 wording of "Sponsored")', () => {
+    const p = only2026(AD_2026);
+    expect(p.evidence.map((e) => e.detector)).toContain('fb.sponsored.labelledby');
+    expect(p.signals.sponsored).toBe(true);
+    expect(ruleFilter(p, balanced)?.reason).toBe('sponsored');
+  });
+
+  it('reads the Follow button next to the author as "not followed"', () => {
+    const p = only2026(FOLLOW_PAGE_2026);
+    expect(p.author.name).toBe('Gadget Daily');
+    expect(p.author.relationship).toBe('not-followed');
+  });
+
+  it('counts the timestamp link (href "/" until hovered, age in an aria-labelledby span) as a timestamp', () => {
+    for (const html of [FRIEND_POST_2026, FOLLOW_PAGE_2026]) {
+      expect(only2026(html).evidence.map((e) => e.detector)).not.toContain('fb.sponsored.no-timestamp');
+    }
+  });
+
+  it('does not hide an organic 2026 post on one medium sponsored signal', () => {
+    // Before, the missing permalink added the weak no-timestamp signal, and medium + weak hid the post.
+    const html = FRIEND_POST_2026.replace(
+      '<span> · </span>',
+      '<span> · </span><span><span>A</span><span data-ua-hidden>x</span><span>d</span></span>',
+    );
+    const p = only2026(html);
+    expect(p.evidence).toContainEqual(expect.objectContaining({ detector: 'fb.sponsored.rendered-label', strength: 'medium' }));
+    expect(p.signals.sponsored).toBe(false);
+    expect(ruleFilter(p, balanced)).toBeNull();
+  });
+
+  it('still notes a 2026 post with no timestamp at all, which never hides it alone', () => {
+    const html = FRIEND_POST_2026.replace(/<a href="https:\/\/www\.facebook\.com\/\?__cft__[^"]*"[^>]*>.*?<\/a>/s, '');
+    const p = only2026(html);
+    expect(p.evidence.map((e) => e.detector)).toContain('fb.sponsored.no-timestamp');
+    expect(p.signals.sponsored).toBe(false);
+  });
+
+  it("takes Facebook's id from a photo link, else a hash that survives a re-render", () => {
+    const photo = only2026(PHOTO_POST_2026);
+    expect(photo.id).toBe('fb:2026101601');
+    expect(photo.permalink).toBe('https://www.facebook.com/photo/?fbid=2026101601&set=a.20261016010');
+    expect(photo.media).toBe('image');
+    // Text posts have no id up front. A re-render brings a new tracking token and slot number; the id stays.
+    const p = only2026(FRIEND_POST_2026);
+    expect(p.id).toMatch(/^fb:h:/);
+    const rerendered = FRIEND_POST_2026.replace(/__cft__\[0\]=AZ/g, '__cft__[0]=AZq9x').replace(
+      /aria-posinset="\d+"/,
+      'aria-posinset="42"',
+    );
+    expect(only2026(rerendered).id).toBe(p.id);
+  });
+
+  it('passes the adapter contract', () => {
+    const html = fbFeed2026(FRIEND_POST_2026, AD_2026, FOLLOW_PAGE_2026, PHOTO_POST_2026, VIRTUALIZED_2026);
     expect(checkAdapterContract(facebookAdapter, html)).toEqual([]);
   });
 });

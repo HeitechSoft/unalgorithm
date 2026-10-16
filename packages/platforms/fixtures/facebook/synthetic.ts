@@ -7,12 +7,30 @@
 
 let seq = 0;
 
+const RAIL_AND_LABELS = `<div role="complementary"><div><h3>Sponsored</h3><div><a href="https://l.facebook.com/l.php?u=https%3A%2F%2Fshop.example%2F">Ad</a></div></div><div><h3>Contacts</h3></div></div>
+<div hidden><span id="lbl-sponsored"><span>Spon</span><span data-ua-hidden>q7z</span><span>sored</span></span>
+<span id="lbl-ad">Ad</span><span id="lbl-time">6 hours ago</span>
+<svg><defs><text id="svg-sponsored">Sponsored</text></defs></svg></div>`;
+
 export function fbFeed(...items: string[]): string {
   return `<div role="banner"></div>
 <div role="main"><div><div role="feed">${items.join('\n')}</div></div></div>
-<div role="complementary"><div><h3>Sponsored</h3><div><a href="https://l.facebook.com/l.php?u=https%3A%2F%2Fshop.example%2F">Ad</a></div></div><div><h3>Contacts</h3></div></div>
-<div hidden><span id="lbl-sponsored"><span>Spon</span><span data-ua-hidden>q7z</span><span>sored</span></span>
-<svg><defs><text id="svg-sponsored">Sponsored</text></defs></svg></div>`;
+${RAIL_AND_LABELS}`;
+}
+
+/**
+ * The 2026 home feed as seen on the live site (October 2026): no role="feed". Screen-reader headings label each
+ * section of the main column; the feed list is the unlabelled block after "Feed posts" (and a spacer). Items far
+ * from the viewport are emptied or left as virtualized placeholders until they scroll back.
+ */
+export function fbFeed2026(...items: string[]): string {
+  return `<div role="banner"></div>
+<div role="main"><div><div>
+  <div><h3>Create a post</h3><div><div role="button"><span>What's on your mind?</span></div></div></div>
+  <div><h3>Stories</h3><div><a href="https://www.facebook.com/stories/123/"><span>Story</span></a></div></div>
+  <div><h3>Feed posts</h3><div aria-hidden="true"></div><div>${items.join('\n')}</div></div>
+</div></div></div>
+${RAIL_AND_LABELS}`;
 }
 
 interface HeaderOpts {
@@ -150,3 +168,53 @@ export const TRUNCATED_POST = item(
 export const REELS_TRAY = `<div><div><h3><span>Reels and short videos</span></h3><a href="https://www.facebook.com/reel/111"><span>Reel</span></a><a href="https://www.facebook.com/reel/222"><span>Reel</span></a></div></div>`;
 export const PYMK = `<div><div><h3><span>People you may know</span></h3><div role="button"><span>Add friend</span></div></div></div>`;
 export const SKELETON = `<div><div aria-busy="true"><div></div></div></div>`;
+
+/**
+ * A 2026 feed item: the post sits several wrappers down, its timestamp (or "Ad" label) is an aria-labelledby span in
+ * a link that points at "/" until hovered, and the audience is an SVG title. Photo posts link each photo up front.
+ */
+function item2026(o: {
+  author: string;
+  label: 'ad' | 'time';
+  audience: string;
+  text: string;
+  follow?: boolean;
+  photo?: string;
+}): string {
+  const n = ++seq;
+  return `<div><div><span><div><div><div aria-posinset="${n}"><div><div data-virtualized="false"><div>
+  <div><a aria-label="${o.author}" href="https://www.facebook.com/${o.author.toLowerCase().replace(/\s+/g, '.')}" role="link"><svg role="img" aria-label="${o.author}"></svg></a></div>
+  <div data-ad-rendering-role="profile_name"><h4><span><span><div><a href="https://www.facebook.com/${o.author.toLowerCase().replace(/\s+/g, '.')}?__cft__[0]=AZ" role="link"><b><span>${o.author}</span></b></a></div></span></span>${o.follow ? '<span><span><span></span><span>·</span></span><span><div role="button" tabindex="0"><span>Follow</span></div></span></span>' : ''}</h4></div>
+  <div><a href="https://www.facebook.com/?__cft__[0]=AZ&amp;__tn__=%2CO%2CP-R" role="link" target="_blank"><span><span aria-labelledby="lbl-${o.label}"></span></span></a>
+  <span> · </span><svg role="img" title="Shared with ${o.audience}"></svg></div>
+  <div data-ad-rendering-role="story_message"><div data-ad-comet-preview="message" data-ad-preview="message"><div dir="auto">${o.text}</div></div></div>
+  ${o.photo ? `<div><a href="https://www.facebook.com/photo/?fbid=${o.photo}&amp;set=a.${o.photo}0&amp;__cft__[0]=AZ&amp;__tn__=EH-R" role="link"><img alt="" src="https://scontent.example/p.jpg" width="500"></a></div>` : ''}
+  ${actions()}
+</div></div></div></div></div></div></span></div></div>`;
+}
+
+export const FRIEND_POST_2026 = item2026({
+  author: 'Riley Chen',
+  label: 'time',
+  audience: "Riley's friends",
+  text: 'Our garden finally produced tomatoes this year.',
+});
+export const AD_2026 = item2026({ author: 'Shop Example', label: 'ad', audience: 'Public', text: 'New autumn collection.' });
+export const FOLLOW_PAGE_2026 = item2026({
+  author: 'Gadget Daily',
+  label: 'time',
+  audience: 'Public',
+  text: 'You will not believe what this phone can do.',
+  follow: true,
+});
+export const PHOTO_POST_2026 = item2026({
+  author: 'Morgan Lee',
+  label: 'time',
+  audience: 'Public',
+  text: 'First snow on the ridge.',
+  photo: '2026101601',
+});
+/** Scrolled far away: Facebook keeps the slot and the post marker but drops the content. */
+export const VIRTUALIZED_2026 = `<div><div><span><div><div><div aria-posinset="${++seq}"><div><div data-virtualized="true"><div hidden=""></div></div></div></div></div></div></span></div></div>`;
+/** Scrolled further away: an empty slot. */
+export const EMPTIED_2026 = '<div></div>';
