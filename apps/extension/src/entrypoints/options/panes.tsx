@@ -7,6 +7,7 @@ import {
   FILTER_KEYS,
   type FilterKey,
   formatApproxCost,
+  formatCharge,
   migrateSettings,
   noiseName,
   type PersonRule,
@@ -696,7 +697,11 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
       <ListGroup header="Daily limit" footer="Applies to sources that cost money. Local and on-device AI are unlimited.">
         <ListRow
           title="Posts per day"
-          subtitle={`Today: ${day.posts} posts${cost !== undefined && cost > 0 ? ` · ${formatApproxCost(cost)}` : ''}`}
+          subtitle={
+            day.chargedMicros !== undefined
+              ? `Today: ${day.posts} posts · ${formatCharge(day.chargedMicros)} charged`
+              : `Today: ${day.posts} posts${cost !== undefined && cost > 0 ? ` · ${formatApproxCost(cost)}` : ''}`
+          }
           control={
             <input
               type="number"
@@ -715,9 +720,29 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
           }
         />
       </ListGroup>
+      {day.batches?.length ? (
+        <ListGroup
+          header="Batches today"
+          footer="What the server charged your credit for each batch from this browser, newest first. Your account page adds up the charges of all your devices per day (UTC)."
+        >
+          {day.batches.slice(0, SHOWN_BATCHES).map((b, i) => (
+            <ListRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: two batches can share a time, and the list is display-only
+              key={`${b.at}-${i}`}
+              title={`${b.posts} ${b.posts === 1 ? 'post' : 'posts'}`}
+              subtitle={BATCH_TIME.format(new Date(b.at))}
+              control={<span>{formatCharge(b.chargedMicros)}</span>}
+            />
+          ))}
+        </ListGroup>
+      ) : null}
     </>
   );
 }
+
+/** The newest charged batches the AI pane lists (R35); the day's usage keeps more. */
+const SHOWN_BATCHES = 10;
+const BATCH_TIME = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
 // ---------- Labs ----------
 

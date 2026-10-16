@@ -52,34 +52,69 @@ export type CreditPriceSchedule = readonly Readonly<CreditPriceScheduleEntry>[];
 /** $1 of promotional credit, once per verified account, expiring 90 days after it is granted (R29). */
 export const STARTER_CREDIT = Object.freeze({ amountMicros: 1_000_000, expiresAfterDays: 90 });
 
-export const CREDIT_PACK_IDS = ['pack-5', 'pack-10', 'pack-25'] as const;
-export const CreditPackIdSchema = z.enum(CREDIT_PACK_IDS);
-export type CreditPackId = (typeof CREDIT_PACK_IDS)[number];
-export interface CreditPack {
-  id: CreditPackId;
-  /** What the person pays before tax, in US cents. */
-  priceCents: number;
-  /** The purchased credit it adds: always priceCents × 10,000 micro-dollars (a pack never changes a price). */
-  creditMicros: number;
-}
-/**
- * R32: $5, $10 (the default) and $25, smallest first. Prices change only through CREDIT_PRICE_SCHEDULE: a pack buys
- * exactly its price in credit, and what "about N posts" it buys is `estimatePosts(pack.creditMicros, at)`, never stored.
- * The only pack list: the module, the website and the tests read this one.
- */
-export const CREDIT_PACKS: readonly Readonly<CreditPack>[] = Object.freeze([
-  Object.freeze({ id: 'pack-5', priceCents: 500, creditMicros: 5_000_000 }),
-  Object.freeze({ id: 'pack-10', priceCents: 1_000, creditMicros: 10_000_000 }),
-  Object.freeze({ id: 'pack-25', priceCents: 2_500, creditMicros: 25_000_000 }),
-] as const);
-export const DEFAULT_CREDIT_PACK: CreditPackId = 'pack-10';
-/** Packs are sold in US dollars (spec → Monetization: "Unit = US dollars"). Lowercase, as Stripe writes it. */
-export const CREDIT_PACK_CURRENCY = 'usd';
+const MICROS_PER_DOLLAR = 1_000_000;
+/** The least one purchase of credit adds (and costs before tax): $5 (R32, decided 2026-10-16). */
+export const CREDIT_AMOUNT_MIN_MICROS = 5 * MICROS_PER_DOLLAR;
+/** The most one purchase of credit adds (and costs before tax): $500. */
+export const CREDIT_AMOUNT_MAX_MICROS = 500 * MICROS_PER_DOLLAR;
+/** Amounts are whole US dollars: a purchase of $12.50 is refused. */
+export const CREDIT_AMOUNT_STEP_MICROS = MICROS_PER_DOLLAR;
+/** The quick picks shown beside the amount field, smallest first: $5, $10 and $25. Examples, not the only amounts. */
+export const CREDIT_AMOUNT_PRESETS: readonly number[] = Object.freeze([5, 10, 25].map((d) => d * MICROS_PER_DOLLAR));
+/** The amount preselected in the field: $10. One of CREDIT_AMOUNT_PRESETS. */
+export const DEFAULT_CREDIT_AMOUNT = 10 * MICROS_PER_DOLLAR;
+/** Credit is sold in US dollars (spec → Monetization: "Unit = US dollars"). Lowercase, as Stripe writes it. */
+export const CREDIT_CURRENCY = 'usd';
 
-/** The pack with this id, or null (never throws: callers pass untrusted form values). */
-export function creditPack(id: unknown): Readonly<CreditPack> | null {
-  return CREDIT_PACKS.find((pack) => pack.id === id) ?? null;
+/**
+ * One purchase of credit, valid under the amount rules. The person pays exactly `dollars` before tax and gets exactly
+ * `micros` of purchased credit, which never expires: buying credit never changes a price (prices change only through
+ * CREDIT_PRICE_SCHEDULE), and what "about N posts" it buys is `estimatePosts(micros, at)`, never stored.
+ */
+export interface CreditAmount {
+  /** Whole US dollars, from 5 to 500. */
+  dollars: number;
+  /** The same amount in US cents, as a payment provider charges it (`dollars × 100`). */
+  cents: number;
+  /** The credit it adds, in micro-dollars (`dollars × 1,000,000`). */
+  micros: number;
 }
+
+const WHOLE_DOLLARS = /^[1-9]\d{0,5}$/;
+
+/**
+ * The purchase of `amount` under the amount rules (the purchase page and auto-reload both use them), or null. `amount`
+ * is `{ dollars }`, a whole number or the digits of a form field ("25"), or `{ micros }`, a whole number of
+ * micro-dollars. Null for anything else: under $5, over $500, not a whole dollar, a fraction, NaN, a sign, spaces,
+ * exponent notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
+ */
+export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
+  if (typeof amount !== 'object' || amount === null) return null;
+  let micros: number;
+  try {
+    // Inside the try: `Array.isArray` throws on a revoked proxy.
+    if (Array.isArray(amount)) return null;
+    const hasDollars = Object.hasOwn(amount, 'dollars');
+    if (hasDollars === Object.hasOwn(amount, 'micros')) return null;
+    const value: unknown = hasDollars ? (amount as { dollars: unknown }).dollars : (amount as { micros: unknown }).micros;
+    if (hasDollars) {
+      const digits = typeof value === 'string' && WHOLE_DOLLARS.test(value) ? Number(value) : value;
+      if (typeof digits !== 'number' || !Number.isSafeInteger(digits)) return null;
+      micros = digits * MICROS_PER_DOLLAR;
+    } else {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value)) return null;
+      micros = value;
+    }
+  } catch {
+    return null; // a throwing getter or proxy
+  }
+  if (micros < CREDIT_AMOUNT_MIN_MICROS || micros > CREDIT_AMOUNT_MAX_MICROS || micros % CREDIT_AMOUNT_STEP_MICROS !== 0) {
+    return null;
+  }
+  const dollars = micros / MICROS_PER_DOLLAR;
+  return Object.freeze({ dollars, cents: dollars * 100, micros });
+}
+
 /** Under this (and above 0) a balance is "low": the extension may show its once-a-day banner (R31). */
 export const LOW_BALANCE_MICROS = 200_000;
 export const MAX_CREDIT_HISTORY = 200;
@@ -475,10 +510,12 @@ export type CreditEntryKind = (typeof CREDIT_ENTRY_KINDS)[number];
 /**
  * Why a ledger entry was made; only ever added to, at the end. `starter-credit` the starter credit was granted; a task
  * (`classify`, `factcheck`, `perspectives`) one day's usage of it; `promo-expired` promotional credit expired;
- * `correction` and `goodwill` an adjustment by support. Money entries: `credit-pack` a pack was paid; `refund` credit
+ * `correction` and `goodwill` an adjustment by support. Money entries: `credit-pack` credit was bought (any amount
+ * the rules allow, `creditAmount`; the value keeps the name it had when credit came in packs); `refund` credit
  * removed because money went back to the person; `chargeback` credit removed because the card issuer took the money back
  * (a dispute); `chargeback-reversed` that credit returned because the dispute was won; `test-mode-void` credit removed
- * that a payment provider's test-mode purchase added (no real money was paid), before the server takes live payments.
+ * that a payment provider's test-mode purchase added (no real money was paid), before the server takes live payments;
+ * `auto-reload` credit bought automatically because the balance fell under the threshold the person chose (opt-in).
  * A billing database's reason list must equal this one.
  */
 export const CREDIT_ENTRY_REASONS = [
@@ -494,6 +531,7 @@ export const CREDIT_ENTRY_REASONS = [
   'chargeback',
   'chargeback-reversed',
   'test-mode-void',
+  'auto-reload',
 ] as const;
 export type CreditEntryReason = (typeof CREDIT_ENTRY_REASONS)[number];
 
@@ -501,7 +539,7 @@ const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReas
   grant: ['starter-credit'],
   usage: CREDIT_TASKS,
   adjustment: ['promo-expired', 'correction', 'goodwill'],
-  purchase: ['credit-pack'],
+  purchase: ['credit-pack', 'auto-reload'],
   refund: ['refund', 'test-mode-void'],
   chargeback: ['chargeback', 'chargeback-reversed'],
 };
@@ -512,6 +550,7 @@ const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReas
  */
 const ADDS_CREDIT: Partial<Record<CreditEntryReason, boolean>> = {
   'credit-pack': true,
+  'auto-reload': true,
   'chargeback-reversed': true,
   refund: false,
   chargeback: false,
@@ -543,6 +582,33 @@ export const CreditHistoryItemSchema = z
   .refine(amountFitsReason, { path: ['amountMicros'] });
 export type CreditHistoryItem = z.infer<typeof CreditHistoryItemSchema>;
 
+/** `off` also covers "never set up"; `stopped`: turned off by the server after a payment failed (R34). */
+export const AUTO_RELOAD_STATES = ['off', 'on', 'stopped'] as const;
+/** Whether credit is bought automatically when the balance runs low (opt-in, off by default), as the account page shows it. */
+export const AutoReloadSummarySchema = z
+  .object({
+    /** The server's own auto-reload page. */
+    path: OriginPathSchema,
+    state: z.enum(AUTO_RELOAD_STATES),
+    /**
+     * Credit added per automatic purchase (= its price before tax): an amount `creditAmount` accepts when it is set, the
+     * same rules as a purchase on the page. Not checked here, so an amount set under earlier rules still shows. Present
+     * unless `off`.
+     */
+    amountMicros: Micros.optional(),
+    /** A purchase starts when the balance falls under this. Present unless `off`. */
+    thresholdMicros: Micros.optional(),
+    /** The most charged in one calendar month (UTC), before tax. Present unless `off`. */
+    monthlyLimitMicros: Micros.optional(),
+  })
+  .refine(
+    (s) =>
+      s.state === 'off' ||
+      (s.amountMicros !== undefined && s.thresholdMicros !== undefined && s.monthlyLimitMicros !== undefined),
+    { path: ['state'] },
+  );
+export type AutoReloadSummary = z.infer<typeof AutoReloadSummarySchema>;
+
 /** What the account page shows: the balance and the history, newest first. */
 export const CreditAccountSchema = z.object({
   v: z.literal(1),
@@ -554,5 +620,7 @@ export const CreditAccountSchema = z.object({
   refundPolicyUrl: z.url({ protocol: /^https$/ }).optional(),
   /** A page on this server where credit can be added; absent while adding credit is not offered (all of CL2). */
   addCreditPath: OriginPathSchema.optional(),
+  /** Absent on servers without auto-reload. */
+  autoReload: AutoReloadSummarySchema.optional(),
 });
 export type CreditAccount = z.infer<typeof CreditAccountSchema>;

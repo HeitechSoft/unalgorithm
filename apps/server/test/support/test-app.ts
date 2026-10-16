@@ -130,6 +130,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       log,
       auth,
       jobs,
+      mailer,
       env: overrides.billingEnv ?? {},
       priceSchedule: overrides.priceSchedule,
     });

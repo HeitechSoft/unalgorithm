@@ -5,7 +5,6 @@ import {
   anthropicClient,
   type Capabilities,
   type CapabilityStore,
-  type ClassifyOutcome,
   COMPAT_PREFERENCES,
   COMPAT_PRESET_INFO,
   classifyPosts,
@@ -52,7 +51,7 @@ import { learnedItem, ORIGIN_RULE_ID, readDevice, readSettings, usageItem } from
 import { clearCache, clearClaimChecks, getCached, getSecret, putCached, setSecret } from './idb.ts';
 import { discoverServer, type ServerAccount, serverAccountItem } from './server-auth.ts';
 import { balanceStatus } from './server-balance.ts';
-import { classifyViaServer, SERVER_USAGE_MODEL } from './server-source.ts';
+import { classifyViaServer, SERVER_USAGE_MODEL, type ServerClassifyOutcome } from './server-source.ts';
 
 // ---------- capability learning, persisted across service-worker restarts ----------
 
@@ -190,15 +189,26 @@ export function parsePostInput(input: Omit<PostForAI, 'ref'> | undefined, maxCha
   return parsed.success ? parsed.data : null;
 }
 
-/** Add one model call to the usage ledger. `posts` counts toward the daily post cap. */
+/**
+ * Add one model call to the usage ledger. `posts` counts toward the daily post cap; `chargedMicros` is what a billing
+ * server charged for the batch (CL6-03), recorded as one of the day's batches.
+ */
 export async function recordSpend(
   model: string,
   usage: NormalizedUsage,
-  opts: { posts: number; failed: boolean },
+  opts: { posts: number; failed: boolean; chargedMicros?: number },
 ): Promise<void> {
   await usageLock(async () => {
     const ledger = await usageItem.getValue();
-    await usageItem.setValue(recordUsage(ledger, { model, usage, posts: opts.posts, failed: opts.failed }));
+    await usageItem.setValue(
+      recordUsage(ledger, {
+        model,
+        usage,
+        posts: opts.posts,
+        failed: opts.failed,
+        ...(opts.chargedMicros !== undefined ? { chargedMicros: opts.chargedMicros } : {}),
+      }),
+    );
   });
 }
 
@@ -227,7 +237,7 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const profile = buildInterestProfile(settings, learned, { forServer: cfg.kind === 'server' });
   const pHash = profileHash(profile);
   let model: string;
-  let classify: (posts: PostForAI[]) => Promise<ClassifyOutcome>;
+  let classify: (posts: PostForAI[]) => Promise<ServerClassifyOutcome>;
   try {
     if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission for the AI server.');
     model = modelFor(cfg);
@@ -310,18 +320,21 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
         const sent = group.map((p, i) => ({ p, ref: `p${i + 1}` }));
         const outcome = await classify(sent.map(({ p, ref }) => ({ ...p.input, ref })));
         const fresh = [];
+        const okResults: Extract<ClassifyItemResult, { status: 'ok' }>[] = [];
         let ok = 0;
         for (const { p, ref } of sent) {
           const r = outcome.byRef.get(ref);
           if (r?.ok) {
             ok++;
-            results.push({
+            const result: Extract<ClassifyItemResult, { status: 'ok' }> = {
               key: p.item.key,
               status: 'ok',
               classification: r.classification,
               model: outcome.model,
               cached: false,
-            });
+            };
+            results.push(result);
+            okResults.push(result);
             fresh.push({
               key: p.cacheKey,
               postKey: p.item.key,
@@ -344,10 +357,14 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
             if (BLOCKING_AI_ERRORS.has(e.code) && !pause) pause = toBgError(e, cfg);
           }
         }
+        // What a billing server charged for this batch, which is its ok posts (CL6-03, R35).
+        const { chargedMicros } = outcome;
+        if (chargedMicros !== undefined) for (const r of okResults) r.charge = { batchPosts: ok, chargedMicros };
         await putCached(fresh).catch(() => undefined);
         await recordSpend(cfg.kind === 'server' ? SERVER_USAGE_MODEL : outcome.model, outcome.usage, {
           posts: isLocalSource(cfg) ? 0 : ok,
           failed: outcome.failedCalls > 0,
+          ...(chargedMicros !== undefined ? { chargedMicros } : {}),
         });
       }),
     ),

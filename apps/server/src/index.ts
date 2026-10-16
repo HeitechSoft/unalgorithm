@@ -100,7 +100,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
     await syncRouteFromConfig(db.db, config, log);
     // The rate limit stays at its default (on): only tests turn it off.
-    // One mailer for sign-in codes and alert emails.
+    // One mailer for sign-in codes, alert emails and the billing module's account emails (`host.mail`).
     const mailer = smtpMailer(config.smtp, log);
     const auth = createAuth({ config, db, mailer, log });
     const ai = { clientFor: (route: AiRoute) => clientForRoute(route, config) };
@@ -112,7 +112,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     registerSyncJobs(jobs, { db: db.db });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
-    const host = createBillingHost({ config, db, log, auth, jobs, env: config.billingEnv });
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv });
     const billing = await loadBilling(config, host, log);
     // After loadBilling, so the alert check also asks the module for its alerts; before the jobs start.
     const notifier = createAlertNotifier({ db: db.db, config, log, mailer });

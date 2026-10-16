@@ -16,6 +16,7 @@ import {
   jobPriceLabel,
   type LearnedPrefs,
   type ModuleInfo,
+  type PostCharge,
   type PostData,
   type PostSignals,
   perspectivesOffered,
@@ -135,6 +136,8 @@ export interface Entry {
   near: boolean;
   onScreen: boolean;
   classification?: Classification;
+  /** What a billing server charged for the batch `classification` came from (CL6-03); none for a cached result. */
+  charge?: PostCharge;
   partialText?: boolean;
   aiStatus: 'idle' | 'queued' | 'pending' | 'done' | 'skipped' | 'error';
   aiMessage?: string;
@@ -267,7 +270,10 @@ export class FeedController {
       e.vote = e.post ? rt.votes[e.post.id] : undefined;
       if (sourceChanged || e.aiStatus === 'error' || e.aiStatus === 'skipped') {
         e.aiStatus = 'idle';
-        if (sourceChanged) e.classification = undefined;
+        if (sourceChanged) {
+          e.classification = undefined;
+          e.charge = undefined;
+        }
       }
       this.decideAndApply(e);
       if (e.near) this.maybeQueue(e);
@@ -677,7 +683,7 @@ export class FeedController {
       ...(rt.settings.display.showAuthor ? { who: d?.reason === 'module' ? undefined : e.post?.author.name } : {}),
       showReason: rt.settings.display.showReason,
       ...(e.run && e.run !== 'member' ? { run: e.run } : {}),
-      ...(d ? { why: whyCopy(d, e.post, platform, preset) } : {}),
+      ...(d ? { why: whyCopy(d, e.post, platform, preset, d.source === 'ai' ? e.charge : undefined) } : {}),
       ...(e.decision.highlight ? { highlight: { matched: e.decision.highlight.matched } } : {}),
       forYouStyle: rt.settings.display.forYou,
       ...(e.vote ? { vote: e.vote } : {}),
@@ -961,6 +967,7 @@ export class FeedController {
         }
         if (r.status === 'ok') {
           e.classification = r.classification;
+          e.charge = r.charge; // none for a cached or own-key result: it cost nothing now
           e.aiStatus = 'done';
         } else if (r.status === 'skipped') {
           // Not in the cache while AI is paused: update() queues it again on resume. If AI resumed while this lookup
@@ -1068,6 +1075,7 @@ export class FeedController {
       const after = e.post?.text.length ?? 0;
       if (e.partialText && after >= before * 1.5 && !e.decision.filter) {
         e.classification = undefined;
+        e.charge = undefined;
         e.aiStatus = 'idle';
         this.maybeQueue(e);
       }
