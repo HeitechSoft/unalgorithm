@@ -217,6 +217,16 @@ describe('content', () => {
     ]);
   });
 
+  it('test_credits_auto_reload_history_line', async () => {
+    const item = { kind: 'purchase', reason: 'auto-reload', amountMicros: 10_000_000, at: '2026-11-02T10:00:00.000Z' };
+    openCredits({ status: 200, body: account({}, { history: [item as CreditHistoryItem] }) });
+    const section = await loadedCredits();
+    const lines = [...section.querySelectorAll('.ua-row')].map((row) =>
+      ['.ua-row-title', '.web-amount'].map((part) => row.querySelector(part)?.textContent),
+    );
+    expect(lines).toEqual([['Auto-reload', '+$10.00']]);
+  });
+
   it('test_credits_purchased_line', async () => {
     openCredits({ status: 200, body: account({ balanceMicros: 5_170_000, purchasedMicros: 4_200_000, promoMicros: 970_000 }) });
     let section = await loadedCredits();
@@ -300,6 +310,50 @@ describe('content', () => {
     expect(pricing.getAttribute('href')).toBe(pricingUrl);
     expect(pricing.getAttribute('target')).toBe('_blank');
     expect(pricing.getAttribute('rel')).toBe('noreferrer');
+  });
+});
+
+describe('auto-reload line', () => {
+  const path = '/billing/auto-reload';
+  const amounts = { amountMicros: 10_000_000, thresholdMicros: 1_000_000, monthlyLimitMicros: 25_000_000 };
+
+  it('test_credits_auto_reload_states', async () => {
+    const states = [
+      [{ path, state: 'off' }, 'Auto-reload is off.', 'Set up auto-reload'],
+      [
+        { path, state: 'on', ...amounts },
+        'Auto-reload: $10.00 when the balance is under $1.00, up to $25.00 a month.',
+        'Change auto-reload',
+      ],
+      [
+        { path, state: 'stopped', ...amounts },
+        "Auto-reload is off: the last automatic payment didn't go through.",
+        'Set up auto-reload again',
+      ],
+    ] as const;
+    for (const [autoReload, sentence, label] of states) {
+      openCredits({ status: 200, body: account({}, { addCreditPath: '/account/credit', autoReload }) });
+      const section = await loadedCredits();
+      expect(within(section).getByText(sentence)).toBeTruthy();
+      const link = within(section).getByRole('link', { name: label });
+      expect(link.getAttribute('href')).toBe(path);
+      // A page on this server: it opens in place.
+      expect(link.getAttribute('target')).toBeNull();
+      // After "Add credit".
+      const add = within(section).getByRole('link', { name: 'Add credit' });
+      expect(add.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      for (const [, other, otherLabel] of states) {
+        if (other !== sentence) expect(within(section).queryByText(other)).toBeNull();
+        if (otherLabel !== label) expect(within(section).queryByRole('link', { name: otherLabel })).toBeNull();
+      }
+      cleanup();
+    }
+  });
+
+  it('test_credits_no_auto_reload_without_summary', async () => {
+    openCredits({ status: 200, body: account({}, { addCreditPath: '/account/credit' }) });
+    const section = await loadedCredits();
+    expect(section.textContent).not.toMatch(/auto-reload/i);
   });
 });
 
