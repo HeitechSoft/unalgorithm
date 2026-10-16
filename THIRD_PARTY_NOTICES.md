@@ -18,7 +18,7 @@ The UnAlgorithm extension bundles the following open-source software. This file 
 | standardwebhooks | 1.1.1 | MIT |
 | superlock | 1.3.5 | MIT |
 | wxt | 0.21.4 | MIT |
-| zod | 4.6.6 | MIT |
+| zod | 4.6.7 | MIT |
 
 ## @anthropic-ai/sdk 0.133.0
 
@@ -575,7 +575,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## zod 4.6.6
+## zod 4.6.7
 
 https://zod.dev
 
