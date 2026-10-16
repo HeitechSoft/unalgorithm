@@ -194,7 +194,7 @@ describe('workflow file', () => {
     expect(publish.needs).toBe('verify');
     expect(publish.environment).toBe('release');
     expect(publish.permissions).toEqual({
-      contents: 'write',
+      contents: 'read',
       packages: 'write',
       'id-token': 'write',
       attestations: 'write',
@@ -221,8 +221,7 @@ describe('workflow file', () => {
     const login = at((step) => step.uses?.startsWith('docker/login-action@') === true);
     const build = at((step) => step.uses?.startsWith('docker/build-push-action@') === true);
     const attest = at((step) => step.uses?.startsWith('actions/attest-build-provenance@') === true);
-    const publish = at((step) => step.run?.includes('gh release create') === true);
-    const order = [tagCheck, login, build, attest, publish];
+    const order = [tagCheck, login, build, attest];
     expect(order).toEqual(order.toSorted((a, b) => a - b));
 
     // The tag check compares the tag with the server's package version and fails the job otherwise.
@@ -253,11 +252,8 @@ describe('workflow file', () => {
       'push-to-registry': true,
     });
 
-    // The GitHub Release is titled for the server and never takes "Latest" from the extension.
-    const notes = steps[publish]?.run ?? '';
-    expect(notes).toContain(`node scripts/release-notes.mjs "${shellVar('GITHUB_REF_NAME')}" > release-notes.md`);
-    expect(notes).toContain(`--title "UnAlgorithm Feed server ${shellVar('VERSION')}"`);
-    expect(notes).toContain('--verify-tag');
-    expect(notes).toContain('--latest=false');
+    // No GitHub Release: the image is private, for UnAlgorithm Cloud, so the releases list shows only the extension.
+    expect(steps.some((step) => /\bgh release\b/.test(step.run ?? ''))).toBe(false);
+    expect(attest).toBe(steps.length - 1);
   });
 });

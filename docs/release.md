@@ -8,7 +8,7 @@ other's workflow.
 | Train | Tag | Workflow | What it publishes |
 |---|---|---|---|
 | Extension | `vX.Y.Z` | `.github/workflows/release.yml` | The Chrome zip on a GitHub Release, then the Chrome Web Store (the steps below) |
-| Server | `server-vX.Y.Z` | `.github/workflows/server-release.yml` | The image `ghcr.io/heitechsoft/unalgorithm-server` and a GitHub Release ([Server releases](#server-releases)) |
+| Server | `server-vX.Y.Z` | `.github/workflows/server-release.yml` | The private image `ghcr.io/heitechsoft/unalgorithm-server`, for UnAlgorithm Cloud; no GitHub Release ([Server releases](#server-releases)) |
 
 UnAlgorithm Cloud, HeitechSoft's hosted server, is not released from here: its private repository pins a server
 release and builds the Cloud image from that tag (ADR 0007, [Pinning a release](#pinning-a-release)). Security fixes
@@ -87,8 +87,10 @@ Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the
 
 ## Server releases
 
-The self-hostable server (`apps/server`) has a release train of its own: tags `server-vX.Y.Z`, built by
-`.github/workflows/server-release.yml` into the public image `ghcr.io/heitechsoft/unalgorithm-server`. The extension's
+The server (`apps/server`) has a release train of its own: tags `server-vX.Y.Z`, built by
+`.github/workflows/server-release.yml` into the image `ghcr.io/heitechsoft/unalgorithm-server`. The image is private
+and a server release creates no GitHub Release: the server is for UnAlgorithm Cloud and its billing (Tom, 2026-10-16),
+so the repository's releases list shows only the extension. Its source stays public here. The extension's
 `v*.*.*` tags and the server's `server-v*.*.*` tags never trigger each other's workflow. The steps above are for the
 extension.
 
@@ -96,8 +98,7 @@ extension.
 
 The server version lives in `apps/server/package.json` and follows semver, independently of the extension. A PR that
 changes the server adds a changeset for `@unalgorithm/server` (`pnpm changeset`); the **Version packages** PR bumps the
-version and writes `apps/server/CHANGELOG.md`, whose section for the version becomes the release notes. A release with
-no changelog section gets the heading "UnAlgorithm Feed server X.Y.Z".
+version and writes `apps/server/CHANGELOG.md`, the server's history.
 
 ### Steps
 
@@ -111,8 +112,7 @@ no changelog section gets the heading "UnAlgorithm Feed server X.Y.Z".
 4. Approve the deployment: the `publish` job runs in the protected `release` environment and waits for a reviewer. It
    holds the write, OIDC and attestation rights and runs no pnpm or project dependency on the runner. It checks the tag
    matches the version in `apps/server/package.json` (a mismatch fails the job before anything is pushed), builds and
-   pushes the image, attests its build provenance and creates the GitHub Release.
-5. First server release only: make the image public before announcing it (see *What is published*).
+   pushes the image and attests its build provenance.
 
 ### The `release` environment
 
@@ -134,30 +134,22 @@ gh api repos/HeitechSoft/unalgorithm/environments/release/deployment-branch-poli
 
 - The image `ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z`, and `:latest` moved to it. The image carries an SBOM and
   BuildKit provenance, and its OCI labels name the source repository, the licence (AGPL-3.0-only) and the version.
-- A build provenance attestation for the image digest, stored in the registry and on GitHub. Anyone can check it:
+- A build provenance attestation for the image digest, stored in the registry and on GitHub. With access to the
+  package, check it:
   ```bash
   gh attestation verify oci://ghcr.io/heitechsoft/unalgorithm-server:X.Y.Z --repo HeitechSoft/unalgorithm
   ```
-- A GitHub Release titled "UnAlgorithm Feed server X.Y.Z" with the changelog section and install notes. It is never
-  marked Latest, so the repository's Latest release stays the extension, which is what store users look for.
 
-**After the first release, once:** GHCR creates `ghcr.io/heitechsoft/unalgorithm-server` as a private package on the
-first push, because a package takes its repository's access permissions but not its visibility. The GitHub Release
-from the same run already tells self-hosters to pull the image, so right after the first `server-v0.1.0` run a
-HeitechSoft organization owner makes it public: the organization's Packages tab → `unalgorithm-server` → Package
-settings → Danger Zone → Change visibility (the organization's package creation settings must allow public packages).
-Before announcing the release, check that it pulls without signing in:
-
-```bash
-docker logout ghcr.io && docker pull ghcr.io/heitechsoft/unalgorithm-server:0.1.0
-```
-
-A public package cannot be made private again, and later releases push to the same package, so this is needed once.
+**The package stays private.** GHCR creates it private on the first push. UnAlgorithm Cloud's private repository and
+its server pull it with access granted in the package settings (Package settings → Manage Actions access, for the
+private repository's workflows) or with a token that can read packages. Don't change its visibility: a public package
+can't be made private again.
 
 ### Pinning a release
 
-Self-hosters pin a release with `UNALGORITHM_VERSION=X.Y.Z` in the `.env` next to `apps/server/compose.yaml`
-(unset, compose runs `latest`), and upgrade by changing it and running `docker compose pull && docker compose up -d`.
+A server pins a release with `UNALGORITHM_VERSION=X.Y.Z` in the `.env` next to `apps/server/compose.yaml` (unset,
+compose runs `latest`), and upgrades by changing it and running `docker compose pull && docker compose up -d`, with
+access to the private package.
 A running server reports its release as `version` in `/.well-known/unalgorithm.json`, and `source` links to the
 `server-vX.Y.Z` tree unless `SOURCE_URL` names the source of a modified build.
 

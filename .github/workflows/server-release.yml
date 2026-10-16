@@ -1,14 +1,15 @@
 name: Server release
 
 # Runs when a server version tag is pushed (server-vX.Y.Z, see "Server releases" in docs/release.md). Verifies, builds
-# the server image, pushes it to GHCR as :<version> and :latest with an SBOM and provenance, attests build provenance
-# and creates a GitHub Release that is not marked Latest (the extension release stays Latest). release.yml's v*.*.*
-# filter never matches a server-v tag, and this filter never matches an extension tag.
+# the server image, pushes it to GHCR as :<version> and :latest with an SBOM and provenance, and attests build
+# provenance. It creates no GitHub Release: the image is private, for UnAlgorithm Cloud and its billing, so the
+# repository's releases list shows only the extension. release.yml's v*.*.* filter never matches a server-v tag, and
+# this filter never matches an extension tag.
 #
 # Two jobs, so third-party code never runs next to a write token. `verify` installs the dependencies and runs every
-# check with a read-only token. `publish` holds the write, OIDC and attestation rights and runs no pnpm and no project
-# dependency on the runner: only node on the repository's own scripts, buildx (whose RUN steps get no runner token)
-# and gh. Neither job restores a dependency cache, and neither checkout keeps the token in the git config.
+# check with a read-only token. `publish` holds the package, OIDC and attestation rights and runs no pnpm and no project
+# dependency on the runner: only node on the repository's own scripts and buildx (whose RUN steps get no runner token).
+# Neither job restores a dependency cache, and neither checkout keeps the token in the git config.
 
 on:
   push:
@@ -55,7 +56,7 @@ jobs:
     # Its deployment tag rules must allow server-v*.*.* next to v*.*.*, or the job is rejected before any step runs.
     environment: release
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
       attestations: write
@@ -105,15 +106,3 @@ jobs:
           subject-name: ghcr.io/heitechsoft/unalgorithm-server
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-
-      - name: GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "UnAlgorithm Feed server ${VERSION}" \
-            --notes-file release-notes.md \
-            --verify-tag \
-            --latest=false
