@@ -44,10 +44,11 @@ shows at most once a day, and never in your feed.
 
 ## Buying credit
 
-Buy credit on your account page at [cloud.unalgorithm.app](https://cloud.unalgorithm.app/account). Credit comes in
-these packs:
+Buy credit on your account page at [cloud.unalgorithm.app](https://cloud.unalgorithm.app/account). Load any amount
+from {{amountMin}} to {{amountMax}}, in whole dollars. You pay exactly the amount you pick, plus tax where it applies,
+and get exactly that much credit. Some examples:
 
-{{packs}}
+{{amounts}}
 
 Prices are in US dollars. Purchased credit never expires. Refunds of unused credit on request: see the
 [refund policy](/refunds).

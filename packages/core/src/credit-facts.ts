@@ -1,12 +1,14 @@
 import {
-  CREDIT_PACKS,
+  CREDIT_AMOUNT_MAX_MICROS,
+  CREDIT_AMOUNT_MIN_MICROS,
+  CREDIT_AMOUNT_PRESETS,
   CREDIT_PRICE_SCHEDULE,
   CREDIT_TASKS,
   type CreditPriceCard,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   type CreditTask,
-  DEFAULT_CREDIT_PACK,
+  DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
   jobPriceAt,
   priceCardsAt,
@@ -52,11 +54,16 @@ export const CREDITS_PLACEHOLDERS = [
   'examples',
   'starterAmount',
   'starterDays',
-  'packs',
+  'amountMin',
+  'amountMax',
+  'amounts',
 ] as const;
 export type CreditFacts = Record<(typeof CREDITS_PLACEHOLDERS)[number], string>;
 
-const MICROS_PER_CENT = 10_000;
+const MICROS_PER_DOLLAR = 1_000_000;
+const GROUPED_DOLLARS = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+/** Whole dollars, as the amount rules have them: "$5", "$500". */
+const wholeDollars = (micros: number): string => `$${GROUPED_DOLLARS.format(micros / MICROS_PER_DOLLAR)}`;
 
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 /** "Nov 15, 2026". */
@@ -154,38 +161,44 @@ export function creditFacts(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDUL
     examples: dated(table),
     starterAmount: formatBalance(STARTER_CREDIT.amountMicros),
     starterDays: String(STARTER_CREDIT.expiresAfterDays),
-    packs: dated(packsTable(at, schedule)),
+    amountMin: wholeDollars(CREDIT_AMOUNT_MIN_MICROS),
+    amountMax: wholeDollars(CREDIT_AMOUNT_MAX_MICROS),
+    amounts: dated(amountsTable(at, schedule)),
   };
 }
 
 /**
- * The credit packs (CL5-09, R32), smallest first, at the card in effect at `at`: what each costs, adds and buys. Like the
- * examples, it is dated by the caller when classify's card changes later (one table, never a second column set).
+ * Examples of a purchase (R32): the quick picks (`CREDIT_AMOUNT_PRESETS`), smallest first, at the card in effect at `at`:
+ * what each costs, adds and buys. Any whole-dollar amount within the rules may be bought; these are examples. Like the
+ * examples table, it is dated by the caller when classify's card changes later (one table, never a second column set).
  */
-function packsTable(at: Date, schedule: CreditPriceSchedule): string {
-  const rows = CREDIT_PACKS.map((pack) => {
-    const label = `${formatBalance(pack.creditMicros)}${pack.id === DEFAULT_CREDIT_PACK ? ' (default)' : ''}`;
-    const pay = `${formatBalance(pack.priceCents * MICROS_PER_CENT)} + tax where it applies`;
-    const posts = formatPostsEstimate(estimatePosts(pack.creditMicros, at, 'classify', schedule));
-    return `| ${label} | ${pay} | ${formatBalance(pack.creditMicros)} | ${posts} |`;
+function amountsTable(at: Date, schedule: CreditPriceSchedule): string {
+  const rows = CREDIT_AMOUNT_PRESETS.map((micros) => {
+    const posts = formatPostsEstimate(estimatePosts(micros, at, 'classify', schedule));
+    return `| ${formatBalance(micros)} + tax where it applies | ${formatBalance(micros)} | ${posts} |`;
   });
-  return ['| Pack | You pay | Credit added | About |', '|---|---|---|---|', ...rows].join('\n');
+  return ['| You pay | Credit added | About |', '|---|---|---|', ...rows].join('\n');
 }
 
 /**
- * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: each pack's posts under the
- * classify card in effect at `at`, then under its next change, if any, from that change's `effectiveFrom`.
+ * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: the amount rules in whole
+ * dollars, and the price of 1,000 classified posts under the classify card in effect at `at`, then under its next
+ * change, if any, from that change's `effectiveFrom`.
  */
 export function calculatorData(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE, at: Date = new Date()): CalculatorData {
   const cards = [{ from: priceCardsAt(at, schedule).effectiveFrom, at }];
   const next = nextCardChange(at, 'classify', schedule);
   if (next) cards.push({ from: next.entry.effectiveFrom, at: new Date(next.entry.effectiveFrom) });
   return {
-    packs: CREDIT_PACKS.map((pack) => ({
-      id: pack.id,
-      label: formatBalance(pack.creditMicros),
-      isDefault: pack.id === DEFAULT_CREDIT_PACK,
-      posts: cards.map((card) => ({ from: card.from, posts: estimatePosts(pack.creditMicros, card.at, 'classify', schedule) })),
+    amount: {
+      minDollars: CREDIT_AMOUNT_MIN_MICROS / MICROS_PER_DOLLAR,
+      maxDollars: CREDIT_AMOUNT_MAX_MICROS / MICROS_PER_DOLLAR,
+      presetDollars: CREDIT_AMOUNT_PRESETS.map((micros) => micros / MICROS_PER_DOLLAR),
+      defaultDollars: DEFAULT_CREDIT_AMOUNT / MICROS_PER_DOLLAR,
+    },
+    prices: cards.map((card) => ({
+      from: card.from,
+      microsPer1000Posts: retailMicrosPer1000Posts(card.at, 'classify', schedule),
     })),
   };
 }

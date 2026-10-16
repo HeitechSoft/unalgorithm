@@ -18,7 +18,7 @@ import { testConfig } from './test-app.ts';
  * A host on `opts.db`, or on a fresh migrated PGlite database that `close()` closes. A given database is never closed
  * here: its owner closes it. `opts.env` becomes `host.env` and `opts.priceSchedule` `host.priceSchedule` (default
  * `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks); `lines` holds what the host logged, `outbox` every email its
- * auth sent, and `jobs` is the registry the host hands out.
+ * auth and `host.mail` sent, and `jobs` is the registry the host hands out.
  */
 export async function createTestHost(
   opts: { env?: Record<string, string>; db?: DbHandle; priceSchedule?: CreditPriceSchedule } = {},
@@ -41,7 +41,16 @@ export async function createTestHost(
     // The rate limit off, as in `createTestApp`: without a socket every test request counts as one address.
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: false });
     const jobs = createJobRegistry();
-    const host = createBillingHost({ config, db, log, auth, jobs, env: opts.env, priceSchedule: opts.priceSchedule });
+    const host = createBillingHost({
+      config,
+      db,
+      log,
+      auth,
+      jobs,
+      mailer,
+      env: opts.env,
+      priceSchedule: opts.priceSchedule,
+    });
     return { host, db, jobs, lines, outbox, close };
   } catch (err) {
     await close();

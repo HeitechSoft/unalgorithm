@@ -112,8 +112,10 @@ effect by itself:
 - UnAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
 - The account page and the extension's "about N posts" use the time they show it.
 - The website is built from `main`: its "How credits work" page (`docs/site/credits.md`) is filled at build time by
-  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change. Its credit packs table and the
-  calculator's data (`calculatorData`) come from the same entries and `CREDIT_PACKS`.
+  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change. Its examples of buying
+  credit and the calculator's data (`calculatorData`) come from the same entries and the amount rules
+  (`CREDIT_AMOUNT_MIN_MICROS`, `CREDIT_AMOUNT_MAX_MICROS`, `CREDIT_AMOUNT_PRESETS`, `DEFAULT_CREDIT_AMOUNT` in
+  `packages/protocol/src/billing.ts`, the only place they are stated).
 
 ### The rules
 
