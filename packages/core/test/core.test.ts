@@ -413,7 +413,9 @@ describe('formatBytes', () => {
     expect(formatBytes(48_000_000)).toBe('48 MB');
     expect(formatBytes(null)).toBe('unknown');
     expect(formatBytes(1_000_000_000)).toBe('1.0 GB');
-    expect(formatBytes(0)).toBe('0 MB');
+    expect(formatBytes(0)).toBe('0 KB');
+    expect(formatBytes(17_437)).toBe('17 KB');
+    expect(formatBytes(999_600)).toBe('1 MB');
   });
 });
 

@@ -95,11 +95,14 @@ export function safeExternalUrl(raw: string | null | undefined): string | null {
 const GIGABYTES = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**
- * A size in decimal units: GB with one decimal from 1 GB, else whole MB, so 48,000,000 bytes reads "48 MB" rather than
- * "0.0 GB"; "unknown" when it could not be read. The admin page's status and the server's alert messages use it.
+ * A size in decimal units: GB with one decimal from 1 GB, else whole MB, else whole KB under 1 MB, so 48,000,000 bytes
+ * reads "48 MB" rather than "0.0 GB" and a new server's 17,437-byte backup "17 KB" rather than "0 MB"; "unknown" when it
+ * could not be read. The admin page's status and the server's alert messages use it.
  */
 export function formatBytes(bytes: number | null): string {
   if (bytes === null) return 'unknown';
+  const kilobytes = Math.round(bytes / 1e3);
+  if (kilobytes < 1000) return `${kilobytes} KB`;
   const megabytes = Math.round(bytes / 1e6);
   return megabytes < 1000 ? `${megabytes} MB` : `${GIGABYTES.format(bytes / 1e9)} GB`;
 }

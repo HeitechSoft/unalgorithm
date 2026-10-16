@@ -6,6 +6,26 @@
   margin: 0 auto;
   padding: var(--ua-space-12) var(--ua-space-4);
 }
+/* A page of lists and tables (the signed-in admin page) uses the screen's width instead of a form's. */
+.web-page-wide {
+  width: min(1120px, 100%);
+}
+/* The admin page: accounts and invites, then usage; side by side when there is room, in that order for screen readers. */
+.web-admin {
+  display: grid;
+  gap: var(--ua-space-4) var(--ua-space-8);
+  align-items: start;
+}
+.web-admin-column {
+  display: grid;
+  gap: var(--ua-space-4);
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  .web-admin {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
 .web-main {
   display: grid;
   gap: var(--ua-space-4);

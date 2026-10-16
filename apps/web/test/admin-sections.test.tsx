@@ -269,6 +269,20 @@ describe('usage', () => {
     expect(banner.closest('.ua-banner')?.className).toContain('ua-banner--warning');
   });
 
+  // A page of lists and tables gets the wide frame, accounts and invites in one column and usage in the other, with the
+  // server's status (backups, alerts) above the 30 days.
+  it('test_admin_page_layout', async () => {
+    openAdmin({ adminOverview: { ...BUSY_DAY, ops: OPS } });
+    const server = await screen.findByRole('heading', { name: 'Server' });
+    expect(document.querySelector('.web-page')?.className).toContain('web-page-wide');
+    const columns = [...document.querySelectorAll('.web-admin > .web-admin-column')];
+    expect(columns).toHaveLength(2);
+    expect(columns[0]?.contains(screen.getByRole('region', { name: 'Invites' }))).toBe(true);
+    expect(columns[1]?.contains(section('Usage'))).toBe(true);
+    const table = within(section('Usage')).getByRole('table');
+    expect(server.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('test_admin_usage_ops_block', async () => {
     openAdmin({ adminOverview: { ...BUSY_DAY, ops: OPS } });
     const server = await screen.findByRole('heading', { name: 'Server' });

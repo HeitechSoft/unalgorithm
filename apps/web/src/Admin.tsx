@@ -137,10 +137,16 @@ export function Admin() {
     );
   }
   return (
-    <Page info={info} heading={heading} intro={INTRO}>
-      <AdminUsers data={step.users} email={step.email} reload={reloadUsers} onSignedOut={sessionEnded} />
-      <AdminInvites invites={step.users.invites} reload={reloadUsers} onSignedOut={sessionEnded} />
-      <AdminUsage onSignedOut={sessionEnded} />
+    <Page info={info} heading={heading} intro={INTRO} wide>
+      <div className="web-admin">
+        <div className="web-admin-column">
+          <AdminUsers data={step.users} email={step.email} reload={reloadUsers} onSignedOut={sessionEnded} />
+          <AdminInvites invites={step.users.invites} reload={reloadUsers} onSignedOut={sessionEnded} />
+        </div>
+        <div className="web-admin-column">
+          <AdminUsage onSignedOut={sessionEnded} />
+        </div>
+      </div>
     </Page>
   );
 }
