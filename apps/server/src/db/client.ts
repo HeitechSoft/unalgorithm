@@ -61,15 +61,16 @@ export function openPostgres(databaseUrl: string, log?: Logger, opts: PostgresOp
 }
 
 /**
- * A PGlite database, in memory when `dataDir` is undefined. PGlite is a development dependency, so it is loaded only
+ * A PGlite database, in memory when `dataDir` is undefined. With `loadDataDir` (another database's `dumpDataDir()`) it
+ * starts as a copy of that database instead of an empty one. PGlite is a development dependency, so it is loaded only
  * here and never by a production server.
  */
-export async function openPglite(dataDir?: string): Promise<DbHandle> {
+export async function openPglite(dataDir?: string, loadDataDir?: Blob): Promise<DbHandle> {
   const [{ PGlite }, { drizzle: drizzlePglite }] = await Promise.all([
     import('@electric-sql/pglite'),
     import('drizzle-orm/pglite'),
   ]);
-  const pglite = await PGlite.create(dataDir);
+  const pglite = await PGlite.create(dataDir, { loadDataDir });
   return { kind: 'pglite', db: drizzlePglite({ client: pglite, schema }), pglite, close: once(() => pglite.close()) };
 }
 
