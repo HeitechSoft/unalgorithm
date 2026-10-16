@@ -6,9 +6,11 @@ import {
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
   CREDITS_PAGE,
+  EVALS_PAGE,
   FEATURE_NAMES,
   PRICING_FOOTER_LINK,
   PRICING_REDIRECT,
+  PROMPTS_PAGE,
   STARTER_CREDIT,
   siteUrl,
   WEBSITE_ORIGIN,
@@ -34,6 +36,11 @@ describe('site documents', () => {
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
     expect(read(CREDITS_PAGE.source).split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
+    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`).
+    for (const doc of [PROMPTS_PAGE, EVALS_PAGE]) {
+      expect(existsSync(new URL(doc.source, REPO_ROOT)), doc.source).toBe(true);
+      expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
+    }
   });
 
   it('test_site_urls', () => {
@@ -44,6 +51,11 @@ describe('site documents', () => {
     ]);
     expect(CLOUD_BETA_DOCUMENTS.map((doc) => doc.linkText)).toEqual(['Beta privacy notice', 'Beta terms']);
     expect(siteUrl(CREDITS_PAGE)).toBe('https://unalgorithmfeed.com/credits');
+    // Decision D83: the methodology's published pages.
+    expect([PROMPTS_PAGE, EVALS_PAGE].map((doc) => [siteUrl(doc), doc.title, doc.linkText])).toEqual([
+      ['https://unalgorithmfeed.com/methodology/prompts', 'Published prompts', 'Prompts'],
+      ['https://unalgorithmfeed.com/methodology/evals', 'Evaluations and trust gates', 'Evaluations'],
+    ]);
   });
 
   it('test_footer_links_credits', () => {

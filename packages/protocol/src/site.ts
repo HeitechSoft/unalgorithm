@@ -49,6 +49,34 @@ export const CREDITS_PAGE = {
   linkText: 'How credits work',
 } as const satisfies SiteDocument;
 
+/**
+ * "Published prompts" (F29, P3-65, decision D83): generated, never edited by hand. `pnpm docs:site` writes it from the
+ * prompts, builders, schemas, models and limits in `@unalgorithm/research`, and a test fails when the file differs.
+ */
+export const PROMPTS_PAGE = {
+  source: 'docs/site/prompts.md',
+  path: '/methodology/prompts',
+  title: 'Published prompts',
+  linkText: 'Prompts',
+} as const satisfies SiteDocument;
+
+/** "Evaluations and trust gates" (F29, P3-65): both eval sets in full and the gates, generated as PROMPTS_PAGE is. */
+export const EVALS_PAGE = {
+  source: 'docs/site/evals.md',
+  path: '/methodology/evals',
+  title: 'Evaluations and trust gates',
+  linkText: 'Evaluations',
+} as const satisfies SiteDocument;
+
+/**
+ * Text for one cell of a Markdown table in a generated site page: line breaks become spaces; \ | * _ ` [ ] < > are
+ * escaped. The one escape every generated page uses, so text from a set or a registry can never add a cell, a link, a
+ * tag or emphasis. Not for a code span, where a backslash shows as itself.
+ */
+export function markdownCell(text: string): string {
+  return text.replace(/\r\n|[\r\n]/g, ' ').replace(/[\\|*_`[\]<>]/g, '\\$&');
+}
+
 /** The website footer's Cloud links, in order: the beta notice and terms, then "How credits work". */
 export const CLOUD_FOOTER_LINKS: readonly SiteDocument[] = [...CLOUD_BETA_DOCUMENTS, CREDITS_PAGE];
 
