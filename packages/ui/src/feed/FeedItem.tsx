@@ -167,6 +167,7 @@ function WhyButton({ model, onAction }: { model: FeedItemModel; onAction: (id: W
         </div>
         <p className="ua-pop-body">{why.body}</p>
         {why.saw ? <p className="ua-pop-note">What we saw: {why.saw}</p> : null}
+        {why.cost ? <p className="ua-pop-note">{why.cost}</p> : null}
         <div className="ua-pop-sep" />
         {why.actions.map((a) => {
           const Icon = ACTION_ICON[a.id];
