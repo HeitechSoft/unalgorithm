@@ -11,13 +11,13 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "@unalgorithm/core": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "zod": "^4.6.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
