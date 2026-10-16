@@ -1,10 +1,12 @@
 import {
+  CREDIT_PACKS,
   CREDIT_PRICE_SCHEDULE,
   CREDIT_TASKS,
   type CreditPriceCard,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   type CreditTask,
+  DEFAULT_CREDIT_PACK,
   estimatePosts,
   jobPriceAt,
   priceCardsAt,
@@ -12,6 +14,7 @@ import {
   STARTER_CREDIT,
   TASK_UNITS,
 } from '@unalgorithm/protocol';
+import type { CalculatorData } from './credit-calculator.ts';
 import { formatBalance, formatPostsEstimate, formatPrice } from './usage.ts';
 
 /**
@@ -49,8 +52,11 @@ export const CREDITS_PLACEHOLDERS = [
   'examples',
   'starterAmount',
   'starterDays',
+  'packs',
 ] as const;
 export type CreditFacts = Record<(typeof CREDITS_PLACEHOLDERS)[number], string>;
+
+const MICROS_PER_CENT = 10_000;
 
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 /** "Nov 15, 2026". */
@@ -135,6 +141,8 @@ export function creditFacts(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDUL
     (amount) => `| ${formatBalance(amount)} | ${formatPostsEstimate(estimatePosts(amount, at, 'classify', schedule))} |`,
   );
   const table = ['| Credit | Classifies |', '|---|---|', ...rows].join('\n');
+  /** A table at the card in effect at `at`, dated when classify's card changes later. */
+  const dated = (md: string): string => (next ? `At the price until ${until} (UTC).\n\n${md}` : md);
   return {
     classifyMultiplier: times(card),
     classifyPer1000: per1000(at),
@@ -143,9 +151,42 @@ export function creditFacts(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDUL
       ? `That price applies until ${until} (UTC). From ${until} (UTC): ${times(next.card)} our AI cost, about ${per1000(new Date(next.entry.effectiveFrom))} per thousand posts.`
       : '',
     labsPrices: labsPrices(at, schedule),
-    examples: next ? `At the price until ${until} (UTC).\n\n${table}` : table,
+    examples: dated(table),
     starterAmount: formatBalance(STARTER_CREDIT.amountMicros),
     starterDays: String(STARTER_CREDIT.expiresAfterDays),
+    packs: dated(packsTable(at, schedule)),
+  };
+}
+
+/**
+ * The credit packs (CL5-09, R32), smallest first, at the card in effect at `at`: what each costs, adds and buys. Like the
+ * examples, it is dated by the caller when classify's card changes later (one table, never a second column set).
+ */
+function packsTable(at: Date, schedule: CreditPriceSchedule): string {
+  const rows = CREDIT_PACKS.map((pack) => {
+    const label = `${formatBalance(pack.creditMicros)}${pack.id === DEFAULT_CREDIT_PACK ? ' (default)' : ''}`;
+    const pay = `${formatBalance(pack.priceCents * MICROS_PER_CENT)} + tax where it applies`;
+    const posts = formatPostsEstimate(estimatePosts(pack.creditMicros, at, 'classify', schedule));
+    return `| ${label} | ${pay} | ${formatBalance(pack.creditMicros)} | ${posts} |`;
+  });
+  return ['| Pack | You pay | Credit added | About |', '|---|---|---|---|', ...rows].join('\n');
+}
+
+/**
+ * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: each pack's posts under the
+ * classify card in effect at `at`, then under its next change, if any, from that change's `effectiveFrom`.
+ */
+export function calculatorData(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE, at: Date = new Date()): CalculatorData {
+  const cards = [{ from: priceCardsAt(at, schedule).effectiveFrom, at }];
+  const next = nextCardChange(at, 'classify', schedule);
+  if (next) cards.push({ from: next.entry.effectiveFrom, at: new Date(next.entry.effectiveFrom) });
+  return {
+    packs: CREDIT_PACKS.map((pack) => ({
+      id: pack.id,
+      label: formatBalance(pack.creditMicros),
+      isDefault: pack.id === DEFAULT_CREDIT_PACK,
+      posts: cards.map((card) => ({ from: card.from, posts: estimatePosts(pack.creditMicros, card.at, 'classify', schedule) })),
+    })),
   };
 }
 

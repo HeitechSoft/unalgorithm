@@ -268,6 +268,23 @@ describe('devices', () => {
     expect(await screen.findByLabelText('Email')).toBeTruthy();
     expect(screen.queryByText(SIGNED_OUT)).toBeNull();
   });
+
+  it('test_late_401_after_sign_out_shows_no_banner', async () => {
+    // Every section's first request is still in flight when the person signs out, and answers 401 only afterwards.
+    let answer: (a: { status: number; body: unknown }) => void = () => undefined;
+    const late = new Promise<{ status: number; body: unknown }>((resolve) => {
+      answer = resolve;
+    });
+    const paths = [ACCOUNT_DEVICES_PATH, PASSKEY_LIST_PATH];
+    const { server, user } = openAccount({ routes: Object.fromEntries(paths.map((p) => [`GET ${p}`, () => late])) });
+    await waitFor(() => expect(paths.every((p) => server.calls.some((c) => c.path === p))).toBe(true));
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    answer({ status: 401, body: { code: 'auth-required', message: 'Sign in again.' } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(SIGNED_OUT)).toBeNull();
+    expect(screen.getByLabelText('Email')).toBeTruthy();
+  });
 });
 
 describe('passkeys', () => {

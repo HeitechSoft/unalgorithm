@@ -193,6 +193,61 @@ describe('content', () => {
     ]);
   });
 
+  it('test_credits_money_history_lines', async () => {
+    const line = (kind: CreditHistoryItem['kind'], reason: CreditHistoryItem['reason'], amountMicros: number) =>
+      ({ kind, reason, amountMicros, at: '2026-11-02T10:00:00.000Z' }) as CreditHistoryItem;
+    const history = [
+      line('purchase', 'credit-pack', 10_000_000),
+      line('refund', 'refund', -4_200_000),
+      line('chargeback', 'chargeback', -5_000_000),
+      line('chargeback', 'chargeback-reversed', 5_000_000),
+      line('refund', 'test-mode-void', -5_000_000),
+    ];
+    openCredits({ status: 200, body: account({}, { history }) });
+    const section = await loadedCredits();
+    const lines = [...section.querySelectorAll('.ua-row')].map((row) =>
+      ['.ua-row-title', '.web-amount'].map((part) => row.querySelector(part)?.textContent),
+    );
+    expect(lines).toEqual([
+      ['Credit pack', '+$10.00'],
+      ['Refund', '−$4.20'],
+      ['Chargeback', '−$5.00'],
+      ['Chargeback reversed', '+$5.00'],
+      ['Test credit removed', '−$5.00'],
+    ]);
+  });
+
+  it('test_credits_purchased_line', async () => {
+    openCredits({ status: 200, body: account({ balanceMicros: 5_170_000, purchasedMicros: 4_200_000, promoMicros: 970_000 }) });
+    let section = await loadedCredits();
+    expect(within(section).getByText('Purchased credit: $4.20')).toBeTruthy();
+    // Nothing about expiry: purchased credit never expires in the protocol.
+    expect(within(section).getByText('Purchased credit: $4.20').textContent).not.toMatch(/expir/i);
+    cleanup();
+
+    openCredits({ status: 200, body: account() });
+    section = await loadedCredits();
+    expect(section.textContent).not.toContain('Purchased credit');
+  });
+
+  it('test_credits_refund_policy_link', async () => {
+    openCredits({ status: 200, body: account() });
+    let section = await loadedCredits();
+    expect(within(section).queryByRole('link', { name: 'Refund policy' })).toBeNull();
+    cleanup();
+
+    const refundPolicyUrl = 'https://example.org/refunds';
+    openCredits({ status: 200, body: account({}, { pricingUrl: 'https://example.org/credits', refundPolicyUrl }) });
+    section = await loadedCredits();
+    const refund = within(section).getByRole('link', { name: 'Refund policy' });
+    expect(refund.getAttribute('href')).toBe(refundPolicyUrl);
+    expect(refund.getAttribute('target')).toBe('_blank');
+    expect(refund.getAttribute('rel')).toBe('noreferrer');
+    // After "How credits work".
+    const pricing = within(section).getByRole('link', { name: 'How credits work' });
+    expect(pricing.compareDocumentPosition(refund) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('test_credits_empty_balance', async () => {
     openCredits({ status: 200, body: account({ balanceMicros: 0, promoMicros: 0, promoExpiresAt: null, starter: 'spent' }) });
     const section = await loadedCredits();

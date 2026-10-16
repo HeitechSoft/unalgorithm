@@ -588,6 +588,7 @@ describe('claim cache', () => {
     await seed(inner, 'It cost $10 million.', {
       ...CACHED,
       verdict: 'supported',
+      explanation: 'Two archives agree on the cost.',
       citations: [cite('archive.net', 'b', 'quote b2'), cite('third.org', 'c', 'quote c')],
     });
     const out = await run({ claims: ['The bridge opened in 1932.', 'It cost $10 million.'] }, SOURCES, { claimCache: cache });
@@ -599,7 +600,7 @@ describe('claim cache', () => {
     expect(FactcheckResultSchema.safeParse(out.result).success).toBe(true);
     expect(out.result.claims.map((c) => [c.id, c.verdict, c.explanation, c.cachedAt])).toEqual([
       ['c1', 'disputed', '', CACHED.checkedAt],
-      ['c2', 'supported', '', CACHED.checkedAt],
+      ['c2', 'supported', 'Two archives agree on the cost.', CACHED.checkedAt],
     ]);
     expect(out.result.sources.map((s) => [s.id, s.url, s.pageAge])).toEqual([
       ['s1', 'https://cached.com/a', null],
@@ -662,6 +663,42 @@ describe('claim cache', () => {
     expect(entries[0]?.key).toBe(await cache.key('The bridge opened in 1932.'));
     expect(entries[0]?.entry.citations.map((c) => c.url)).toEqual(['https://www.example.com/s1', 'https://news.other.org/s2']);
     expect(entries[0]?.entry.checkedAt).toBe(NOW.toISOString());
+    expect(entries[0]?.entry.explanation).toBe('Agree.');
+  });
+
+  it('test_factcheck_entry_explanation_echoing_any_claim_of_the_check_not_stored', async () => {
+    const { cache, calls } = spyCache();
+    const [first, second] = SUPPORTED.verdicts[0]?.citations ?? [];
+    if (!first || !second) throw new Error('fixture');
+    // Four claims: only three are checked, but text repeating the fourth must not be stored either.
+    const claims = [
+      'The bridge opened in 1932.',
+      'It cost $10 million.',
+      'It is 2 km long.',
+      'The mayor said the bridge was a triumph of engineering.',
+    ];
+    const verdicts: Verdicts = {
+      verdicts: [
+        {
+          claimId: 'c1',
+          verdict: 'supported',
+          explanation: 'Outlets add that the mayor said the bridge was a triumph.',
+          citations: [first, second],
+        },
+        { claimId: 'c2', verdict: 'supported', explanation: 'Records show it is 2 km long too.', citations: [first, second] },
+        { claimId: 'c3', verdict: 'supported', explanation: 'Two surveys give the same length.', citations: [first, second] },
+      ],
+    };
+    const out = await run({ claims, verdicts }, SOURCES, { claimCache: cache });
+    // The person who asked still sees every explanation.
+    expect(out.result.claims.map((c) => c.explanation)).toEqual(verdicts.verdicts.map((v) => v.explanation));
+    const entries = calls.put[0] ?? [];
+    expect(entries.map((e) => e.entry.explanation)).toEqual([undefined, undefined, 'Two surveys give the same length.']);
+    expect(JSON.stringify(entries)).not.toMatch(/mayor|2 km/);
+    // A later check of the same claims replays the dropped explanations as ''.
+    const again = await run({ claims, verdicts }, SOURCES, { claimCache: cache });
+    expect(again.cached).toBe(3);
+    expect(again.result.claims.map((c) => c.explanation)).toEqual(['', '', 'Two surveys give the same length.']);
   });
 
   it('test_factcheck_cache_unused_for_non_public_post', async () => {

@@ -142,7 +142,7 @@ function pickClaims(raw: readonly { claim: string }[]): { id: string; text: stri
 }
 
 /**
- * Claims in their order c1…c3, cached ones from `hits` (explanation '', `cachedAt`), fresh ones from `fresh`; sources
+ * Claims in their order c1…c3, cached ones from `hits` (their explanation or '', `cachedAt`), fresh ones from `fresh`; sources
  * de-duplicated by URL in first-citation order and renumbered s1…sN, citations rewritten to match.
  */
 function mergeClaims(
@@ -172,7 +172,7 @@ function mergeClaims(
         id,
         claim: text,
         verdict: hit.verdict,
-        explanation: '',
+        explanation: hit.explanation ?? '',
         citations: hit.citations.map((c) => ({
           sourceId: idFor({ url: c.url, domain: c.domain, title: c.title, pageAge: null }),
           quote: c.quote,
@@ -345,9 +345,11 @@ export async function runFactcheck(post: PostForAI, deps: FactcheckDeps, opts: F
     if (cache && keys && !signal.aborted) {
       // One entry per key: two claims can normalize alike ("X." and "X"); the first wins.
       const entries: { key: string; entry: CachedClaim }[] = [];
+      // Every claim the claims step produced: text repeating any of them never enters an entry.
+      const claimTexts = claimsRes.data.claims.map((c) => canonicalText(c.claim));
       for (const claim of validated.claims) {
         const key = keys[claims.findIndex((c) => c.id === claim.id)];
-        const entry = cacheEntryFor(claim, validated.sources, post, base.checkedAt);
+        const entry = cacheEntryFor(claim, validated.sources, post, base.checkedAt, claimTexts);
         if (key !== undefined && entry && !entries.some((e) => e.key === key)) entries.push({ key, entry });
       }
       // A failed write never fails a check.

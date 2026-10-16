@@ -251,11 +251,21 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
       'accounts',
       'auth',
       'jobs',
+      'html',
+      'pages',
+      'format',
+      'usage',
     ]);
     expect(Object.keys(host.db)).toEqual(['sql', 'query', 'transaction']);
     expect(host.db.sql).toBe(sql);
     expect(Object.keys(host.accounts)).toEqual(['get', 'findByEmail']);
-    expect(Object.keys(host.auth)).toEqual(['device', 'webSession']);
+    expect(Object.keys(host.auth)).toEqual(['device', 'webSession', 'webUser', 'ownPage']);
+    expect(Object.keys(host.pages)).toEqual(['render']);
+    expect(Object.isFrozen(host.pages)).toBe(true);
+    expect(Object.keys(host.format)).toEqual(['formatBalance', 'formatCreditAmount', 'formatPostsEstimate', 'formatPrice']);
+    expect(Object.isFrozen(host.format)).toBe(true);
+    expect(Object.keys(host.usage)).toEqual(['costByDay']);
+    expect(Object.isFrozen(host.usage)).toBe(true);
 
     // The running release's dated price schedule, never a copy, and no undated cards.
     expect(host.protocol.CREDIT_PRICE_SCHEDULE).toBe(CREDIT_PRICE_SCHEDULE);

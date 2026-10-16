@@ -4,6 +4,7 @@ import {
   type FactcheckSource,
   type FactcheckVerdict,
   MAX_CITATIONS_PER_CLAIM,
+  MAX_EXPLANATION_CHARS,
   MAX_QUOTE_WORDS,
   MIN_INDEPENDENT_DOMAINS,
   type RetrievedSource,
@@ -38,7 +39,6 @@ export interface ValidationStats {
 
 const MAX_QUOTE_CHARS = 300;
 const MAX_CLAIM_CHARS = 300;
-const MAX_EXPLANATION_CHARS = 280;
 const NO_VERDICT = 'No verdict was returned for this claim.';
 const TOO_FEW_DOMAINS = "Fewer than two independent sources back this up, so it can't be verified here.";
 

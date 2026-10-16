@@ -306,8 +306,9 @@ export const opsAlerts = pgTable('ops_alerts', {
 /**
  * The shared claim cache (F27, decisions D59–D61): one row per checked public claim, found by key only. `key` is the hex
  * HMAC-SHA-256 of the normalized claim under a key derived from BETTER_AUTH_SECRET (`claimCacheSecret`). No column holds
- * a claim, post text, an explanation, or any user, device or post id, and both times are whole UTC hours, so no row can
- * be joined to the `usage_events` row of the check that wrote it. Served until `expires_at`; deleted hourly after it.
+ * a claim, post text, or any user, device or post id; the explanation is kept only when it repeats no run of the post's
+ * words (P3-57's echo rule), and both times are whole UTC hours, so no row can be joined to the `usage_events` row of the
+ * check that wrote it. Served until `expires_at`; deleted hourly after it.
  */
 export const claimCache = pgTable(
   'claim_cache',
@@ -315,6 +316,8 @@ export const claimCache = pgTable(
     key: text('key').primaryKey(),
     /** A CACHEABLE_VERDICTS member. */
     verdict: text('verdict').notNull(),
+    /** The verdict's explanation (≤ 280 characters); null when it was empty or repeated the post's words. */
+    explanation: text('explanation'),
     /** 2–4 validated citations: [{ url, domain, title, quote }] (`CachedCitationSchema`). */
     citations: jsonb('citations').notNull(),
     /** When the check that stored it ran, floored to the hour (P3-57). */

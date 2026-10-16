@@ -220,6 +220,19 @@ describe('validation', () => {
     expect(config.signupAllowlist).toEqual(['tom@example.com', '@heitechsoft.com']);
   });
 
+  it('test_signup_mode_default_open_and_invalid', () => {
+    expect(loadConfig(minimalEnv()).signup).toBe('allowlist');
+    expect(loadConfig({ ...minimalEnv(), SIGNUP: 'open' }).signup).toBe('open');
+    // Open needs no allowlist.
+    expect(loadConfig({ ...minimalEnv(), SIGNUP: 'open', SIGNUP_ALLOWLIST: '' }).signupAllowlist).toEqual([]);
+
+    const err = configError({ ...minimalEnv(), SIGNUP: 'public' });
+    expect(err.invalid.map((i) => i.name)).toEqual(['SIGNUP']);
+    expect(err.message).toContain('invalid: SIGNUP (must be one of allowlist, open)');
+    expect(err.message).not.toContain('public');
+    expect(CONFIG_VARIABLES.indexOf('SIGNUP')).toBe(CONFIG_VARIABLES.indexOf('SIGNUP_ALLOWLIST') - 1);
+  });
+
   it('test_config_errors_never_echo_secrets', () => {
     // Every secret is set but something is wrong with it, or with a variable beside it.
     const err = configError({

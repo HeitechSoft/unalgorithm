@@ -9,7 +9,7 @@
 | **UnAlgo** | Informal short form | Social posts, hashtags, tight headlines, conversation |
 | **by HeitechSoft** | Byline | Store listing, website header and footer, README, onboarding footer, About in Settings |
 | **UnAlgorithm Cloud** | HeitechSoft's hosted service at `cloud.unalgorithm.app` only. Never for anyone else's copy of the server; the extension shows other servers by their address | Hosted AI (later accounts, sync and credits) and the website; in the extension, only for that address |
-| **UnAlgorithm server** | The open-source server (`apps/server`), which runs UnAlgorithm Cloud. It has no releases of its own. Someone else's running copy is "their server", never "UnAlgorithm Cloud" | Docs, server release titles and the image's title, the extension's server card |
+| **UnAlgorithm server** | The open-source server (`apps/server`), which runs UnAlgorithm Cloud. It has no releases of its own. Someone else's running copy is "their server", never "UnAlgorithm Cloud" | Docs, the extension's server card |
 
 ## Writing the name
 

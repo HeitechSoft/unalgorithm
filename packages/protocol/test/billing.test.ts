@@ -4,14 +4,22 @@ import {
   ACCOUNT_PAGE_PATH,
   CREDIT_ACCOUNT_PATH,
   CREDIT_BALANCE_PATH,
+  CREDIT_ENTRY_KINDS,
+  CREDIT_ENTRY_REASONS,
+  CREDIT_PACK_CURRENCY,
+  CREDIT_PACK_IDS,
+  CREDIT_PACKS,
   CREDIT_PRICE_SCHEDULE,
   CREDIT_TASKS,
   CreditAccountSchema,
   CreditBalanceSchema,
   CreditHistoryItemSchema,
+  CreditPackIdSchema,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   checkPriceScheduleChange,
+  creditPack,
+  DEFAULT_CREDIT_PACK,
   estimatePosts,
   FACTCHECK_COST_CEILING_MICROS,
   FACTCHECK_TYPICAL_COST_MICROS,
@@ -640,5 +648,96 @@ describe('the fact-check price card (P3-51)', () => {
     // Moving it later before its date also passes.
     const moved = [...TWO_ENTRIES, { ...D, effectiveFrom: '2026-12-15T00:00:00Z' }];
     expect(checkPriceScheduleChange(CREDIT_PRICE_SCHEDULE, moved, at('2026-11-20T00:00:00Z'))).toEqual([]);
+  });
+});
+
+describe('credit packs (CL5-01)', () => {
+  it('test_packs_buy_their_price_in_credit', () => {
+    expect(CREDIT_PACKS.map((pack) => [pack.id, pack.priceCents])).toEqual([
+      ['pack-5', 500],
+      ['pack-10', 1_000],
+      ['pack-25', 2_500],
+    ]);
+    expect(CREDIT_PACKS.map((pack) => pack.id)).toEqual([...CREDIT_PACK_IDS]);
+    for (const pack of CREDIT_PACKS) {
+      expect(pack.creditMicros).toBe(pack.priceCents * 10_000);
+      expect(Object.isFrozen(pack)).toBe(true);
+    }
+    expect(Object.isFrozen(CREDIT_PACKS)).toBe(true);
+  });
+
+  it('test_default_pack_and_currency', () => {
+    expect(DEFAULT_CREDIT_PACK).toBe('pack-10');
+    expect(CreditPackIdSchema.parse(DEFAULT_CREDIT_PACK)).toBe('pack-10');
+    expect(CREDIT_PACK_CURRENCY).toBe('usd');
+  });
+
+  it('test_credit_pack_lookup_never_throws', () => {
+    expect(creditPack('pack-10')).toEqual({ id: 'pack-10', priceCents: 1_000, creditMicros: 10_000_000 });
+    expect(creditPack('pack-10')).toBe(CREDIT_PACKS[1]);
+    for (const id of ['pack-7', '', undefined, '__proto__', 'constructor', 10, null, {}]) expect(creditPack(id)).toBeNull();
+  });
+});
+
+describe('money entries (CL5-01)', () => {
+  const AT = '2026-11-02T10:00:00Z';
+  const line = (kind: string, reason: string, amountMicros: number) => ({ kind, reason, amountMicros, at: AT });
+
+  it('test_money_entries_fit_their_kind', () => {
+    const accepted = [
+      line('purchase', 'credit-pack', 10_000_000),
+      line('refund', 'refund', -4_200_000),
+      line('refund', 'refund', 0),
+      line('chargeback', 'chargeback', -5_000_000),
+      line('chargeback', 'chargeback-reversed', 5_000_000),
+      line('refund', 'test-mode-void', -5_000_000),
+    ];
+    for (const item of accepted) expect(CreditHistoryItemSchema.parse(item)).toEqual(item);
+  });
+
+  it('test_money_entries_refuse_wrong_kind_or_sign', () => {
+    const refused = [
+      line('purchase', 'refund', -1_000_000),
+      line('refund', 'credit-pack', 1_000_000),
+      line('purchase', 'credit-pack', 0),
+      line('purchase', 'credit-pack', -10_000_000),
+      line('refund', 'refund', 1),
+      line('chargeback', 'chargeback-reversed', 0),
+      line('chargeback', 'chargeback-reversed', -5_000_000),
+      line('purchase', 'test-mode-void', -5_000_000),
+      line('refund', 'test-mode-void', 1),
+    ];
+    for (const item of refused) expect(CreditHistoryItemSchema.safeParse(item).success, JSON.stringify(item)).toBe(false);
+    expect(CreditHistoryItemSchema.safeParse(line('adjustment', 'correction', -500)).success).toBe(true);
+  });
+
+  it('test_existing_kinds_and_reasons_keep_their_order', () => {
+    expect(CREDIT_ENTRY_KINDS.slice(0, 3)).toEqual(['grant', 'usage', 'adjustment']);
+    // CL2-01's five reasons with P3-51's factcheck and perspectives in the place they were added.
+    expect(CREDIT_ENTRY_REASONS.slice(0, 7)).toEqual([
+      'starter-credit',
+      'classify',
+      'factcheck',
+      'perspectives',
+      'promo-expired',
+      'correction',
+      'goodwill',
+    ]);
+    expect(CREDIT_ENTRY_KINDS.slice(3)).toEqual(['purchase', 'refund', 'chargeback']);
+    expect(CREDIT_ENTRY_REASONS.slice(7)).toEqual([
+      'credit-pack',
+      'refund',
+      'chargeback',
+      'chargeback-reversed',
+      'test-mode-void',
+    ]);
+  });
+
+  it('test_credit_account_refund_policy_url', () => {
+    const minimal = { v: 1, balance, history: [] };
+    expect(CreditAccountSchema.safeParse(minimal).success).toBe(true);
+    const withPolicy = { ...minimal, refundPolicyUrl: 'https://unalgorithm.app/refunds' };
+    expect(CreditAccountSchema.parse(withPolicy)).toEqual(withPolicy);
+    expect(CreditAccountSchema.safeParse({ ...minimal, refundPolicyUrl: 'http://unalgorithm.app/refunds' }).success).toBe(false);
   });
 });

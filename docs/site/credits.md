@@ -38,11 +38,16 @@ own key.
 - Rules and keyword filters.
 - On-device AI, where your browser offers it.
 - Your own key from an AI provider: you pay the provider directly, not us.
-- Self-hosted servers: run the open-source UnAlgorithm server yourself.
 
 There are no subscriptions. Your balance shows in the extension's popup and in Settings. When it runs low, a reminder
 shows at most once a day, and never in your feed.
 
 ## Buying credit
 
-You can't buy credit during the beta. Credit packs arrive with the public launch.
+Buy credit on your account page at [cloud.unalgorithm.app](https://cloud.unalgorithm.app/account). Credit comes in
+these packs:
+
+{{packs}}
+
+Prices are in US dollars. Purchased credit never expires. Refunds of unused credit on request: see the
+[refund policy](/refunds).

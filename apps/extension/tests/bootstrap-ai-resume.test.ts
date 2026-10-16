@@ -17,6 +17,9 @@ import type { BgRequest, BgResponses } from '../src/lib/messages.ts';
 import { deviceItem } from '../src/lib/storage.ts';
 
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to ai.example.org again.' } as const;
+const NO_CREDIT = { code: 'insufficient-credits', message: 'ai.example.org has no credit left.' } as const;
+const CAP_REACHED = { code: 'cap-reached', message: "Today's AI limit is reached." } as const;
+type Pause = typeof AUTH_REQUIRED | typeof NO_CREDIT | typeof CAP_REACHED;
 
 // jsdom has no IntersectionObserver: report every item as near and on screen.
 class FakeIO {
@@ -34,8 +37,8 @@ class FakeIO {
 
 type ClassifyRequest = Extract<BgRequest, { type: 'classify' }>;
 
-/** The background: refuses every post until `signedIn`, then classifies it. Its cache knows no post. */
-function background() {
+/** The background: refuses every post with `pause` until `signedIn`, then classifies it. Its cache knows no post. */
+function background(pause: Pause = AUTH_REQUIRED) {
   const state = { signedIn: false };
   const classify = vi.fn(({ items, cacheOnly }: ClassifyRequest): BgResponses['classify'] => {
     if (cacheOnly) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'paused' })) };
@@ -50,8 +53,8 @@ function background() {
           })),
         }
       : {
-          results: items.map((i) => ({ key: i.key, status: 'failed', retryable: false, ...AUTH_REQUIRED })),
-          pause: AUTH_REQUIRED,
+          results: items.map((i) => ({ key: i.key, status: 'failed', retryable: false, ...pause })),
+          pause,
         };
   });
   vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((async (msg: BgRequest) =>
@@ -71,6 +74,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   ctx.notifyInvalidated();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -127,3 +131,82 @@ it('test_paused_tab_asks_the_cache_only', async () => {
   expect(resumed?.items.map((i) => i.key).sort()).toStrictEqual(['li:ck:EEEkeyFirstDegree5', 'li:ck:SSSkeyNeverSeen004']);
   await vi.waitFor(() => expect(controller.buildState().ai).toStrictEqual({ state: 'ready' }));
 }, 15_000);
+
+let visibility: DocumentVisibilityState = 'visible';
+/** The person switches to another tab ('hidden') or back ('visible'). */
+function show(state: DocumentVisibilityState) {
+  visibility = state;
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+const balanceChecks = () =>
+  vi.mocked(fakeBrowser.runtime.sendMessage).mock.calls.filter(([msg]) => (msg as unknown as BgRequest).type === 'balanceCheck');
+
+async function bootPausedOn(pause: Pause | undefined) {
+  visibility = 'visible';
+  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+  const bg = background(pause);
+  bg.state.signedIn = pause === undefined;
+  const start = vi.spyOn(FeedController.prototype, 'start');
+  await bootContentScript(linkedinAdapter, ctx);
+  const controller = start.mock.contexts[0] as FeedController;
+  await vi.waitFor(() =>
+    expect(controller.buildState().ai).toStrictEqual(pause ? { state: 'paused', ...pause } : { state: 'ready' }),
+  );
+  return controller;
+}
+
+it('test_visible_tab_paused_for_credit_asks_once_per_30s', async () => {
+  const controller = await bootPausedOn(NO_CREDIT);
+  expect(controller.pausedFor()).toBe('insufficient-credits');
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 9, 15, 9) });
+
+  // Back from the tab where credit was added: one check, which carries nothing.
+  show('hidden');
+  show('visible');
+  expect(balanceChecks()).toStrictEqual([[{ type: 'balanceCheck' }]]);
+
+  // Back and forth within 30 s: no second check.
+  vi.advanceTimersByTime(29_000);
+  show('hidden');
+  show('visible');
+  expect(balanceChecks()).toHaveLength(1);
+
+  // 30 s on: another.
+  vi.advanceTimersByTime(1_000);
+  show('hidden');
+  show('visible');
+  expect(balanceChecks()).toHaveLength(2);
+
+  // Gone with the content script: nothing more.
+  ctx.notifyInvalidated();
+  vi.advanceTimersByTime(60_000);
+  show('visible');
+  expect(balanceChecks()).toHaveLength(2);
+});
+
+it('test_other_pauses_and_hidden_tabs_do_not_ask', async () => {
+  // Credit lifts no daily cap.
+  const capped = await bootPausedOn(CAP_REACHED);
+  expect(capped.pausedFor()).toBe('cap-reached');
+  show('hidden');
+  show('visible');
+  expect(balanceChecks()).toHaveLength(0);
+  ctx.notifyInvalidated();
+  vi.restoreAllMocks();
+
+  // Not paused.
+  ctx = new ContentScriptContext('linkedin');
+  const running = await bootPausedOn(undefined);
+  expect(running.pausedFor()).toBeUndefined();
+  show('hidden');
+  show('visible');
+  expect(balanceChecks()).toHaveLength(0);
+  ctx.notifyInvalidated();
+  vi.restoreAllMocks();
+
+  // Paused for credit, but the tab is going to the background.
+  ctx = new ContentScriptContext('linkedin');
+  await bootPausedOn(NO_CREDIT);
+  show('hidden');
+  expect(balanceChecks()).toHaveLength(0);
+});

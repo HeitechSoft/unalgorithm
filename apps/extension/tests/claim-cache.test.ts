@@ -16,6 +16,7 @@ const CLAIM = 'The bridge opened in 1932.';
 const entry = (checkedAt = CHECKED_AT): CachedClaim => ({
   v: 1,
   verdict: 'supported',
+  explanation: 'Two records give the same opening year.',
   citations: [
     {
       url: 'https://news.example.org/a',

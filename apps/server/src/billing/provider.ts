@@ -81,6 +81,18 @@ export interface ReleaseInput {
   holdId?: string;
 }
 
+/**
+ * An alert a module raises through the server's own alerts (CL4-15) and notifier (CL4-16), which titles it by its key.
+ * Content-free: the key and value are the only module text that can reach an email or a webhook.
+ */
+export interface BillingAlert {
+  /** `billing-` and a fixed code chosen by the module: /^billing-[a-z0-9-]{1,40}$/. Never an id, amount or address. */
+  key: string;
+  level: 'warning' | 'critical';
+  /** A count or amount for the message (CL4-16 prints it), or null. */
+  value: number | null;
+}
+
 export interface BillingProvider {
   /** `off` for the no-op provider. */
   readonly id: string;
@@ -110,6 +122,12 @@ export interface BillingProvider {
    * userId (for example, a fixed ledger idempotency key `account-delete:<userId>`).
    */
   deleteAccount?(userId: string): Promise<void>;
+  /**
+   * The module's alerts open now, asked every time the server checks its own (CL4-15, every 5 minutes). An alert not
+   * answered closes; invalid ones are dropped, at most 20 are kept, and a rejection or an answer later than 5 s keeps
+   * the module's open alerts as they are and opens `billing-alerts-failed` (`moduleFindings`).
+   */
+  alerts?(now: Date): Promise<BillingAlert[]>;
 }
 
 /**
@@ -169,8 +187,8 @@ export async function loadBilling(config: Config, host: BillingHost, log: Logger
 }
 
 /**
- * A module's provider: an id of its own (`off` is the no-op's), the flag, the four calls, and `mount`, `exportAccount`
- * and `deleteAccount` if any.
+ * A module's provider: an id of its own (`off` is the no-op's), the flag, the four calls, and `mount`, `exportAccount`,
+ * `deleteAccount` and `alerts` if any.
  */
 function isProvider(value: unknown): value is BillingProvider {
   if (typeof value !== 'object' || value === null) return false;
@@ -181,7 +199,7 @@ function isProvider(value: unknown): value is BillingProvider {
     p.id !== noopBilling.id &&
     typeof p.advertised === 'boolean' &&
     [p.check, p.settle, p.release, p.balance].every((fn) => typeof fn === 'function') &&
-    [p.mount, p.exportAccount, p.deleteAccount].every((fn) => fn === undefined || typeof fn === 'function')
+    [p.mount, p.exportAccount, p.deleteAccount, p.alerts].every((fn) => fn === undefined || typeof fn === 'function')
   );
 }
 

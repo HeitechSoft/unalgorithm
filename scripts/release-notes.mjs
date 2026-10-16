@@ -1,4 +1,5 @@
-// Prints the GitHub Release notes for a version tag: the CHANGELOG section for that version and the install text.
+// Prints the GitHub Release notes for a version tag: the CHANGELOG section for that version, then the extension's
+// install text or the server's source line.
 // Extension tags (v0.1.0) read apps/extension/CHANGELOG.md; server tags (server-v0.1.0) read apps/server/CHANGELOG.md.
 // Usage: node scripts/release-notes.mjs v0.1.0
 //        node scripts/release-notes.mjs server-v0.1.0
@@ -35,9 +36,8 @@ function serverNotes(version, readFile) {
   const notes = changelogSection(readFile('apps/server/CHANGELOG.md'), version);
   return `${notes || `UnAlgorithm Feed server ${version}`}
 
-**Install:** pull \`${SERVER_IMAGE}:${version}\`, or set \`UNALGORITHM_VERSION=${version}\` in the \`.env\` next to
-\`apps/server/compose.yaml\` and run \`docker compose pull && docker compose up -d\`. Verify the image against its build
-provenance attestation (\`gh attestation verify oci://${SERVER_IMAGE}:${version} --repo HeitechSoft/unalgorithm\`).`;
+**Source:** [server-v${version}](https://github.com/HeitechSoft/unalgorithm/tree/server-v${version}), under
+AGPL-3.0-only. The server image (\`${SERVER_IMAGE}\`) is private: HeitechSoft builds it for UnAlgorithm Cloud.`;
 }
 
 /**

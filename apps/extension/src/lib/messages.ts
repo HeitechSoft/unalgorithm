@@ -140,6 +140,11 @@ export type BgRequest =
   /** Opens the side panel for the sending feed tab, where the newest check shows. */
   | { type: 'openFactcheck' }
   /**
+   * A feed tab paused for want of credit became visible: the background refreshes an empty balance at most every 30 s,
+   * and a restored one reaches every feed tab as `aiResume`. The reply carries no balance.
+   */
+  | { type: 'balanceCheck' }
+  /**
    * "Other perspectives" for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
    * browser, never post text. Opens the side panel for the tab.
    */
@@ -181,6 +186,7 @@ export interface BgResponses {
   factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
   /** False when Chrome refused to open the side panel (no user gesture reached it). */
   openFactcheck: { ok: boolean };
+  balanceCheck: { ok: true };
   perspectives: { ok: true; result: PerspectivesResult; costMicros?: number } | { ok: false; error: BgError };
 }
 

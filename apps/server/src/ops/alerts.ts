@@ -9,13 +9,14 @@
  */
 import type { StatsFs } from 'node:fs';
 import type { ALERT_LEVELS, OpenAlert, OpsStatus } from '@unalgorithm/protocol';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, like } from 'drizzle-orm';
 import { spendBreakerTripped } from '../ai/limits.ts';
+import type { BillingProvider } from '../billing/provider.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
 import { opsAlerts } from '../db/schema.ts';
 import type { JobRegistry } from '../jobs/worker.ts';
-import type { Logger } from '../log.ts';
+import { errorFields, type Logger } from '../log.ts';
 import type { ErrorWindow } from './error-window.ts';
 import { readOpsStatus } from './status.ts';
 
@@ -152,6 +153,82 @@ export async function listOpenAlerts(db: Db): Promise<OpenAlert[]> {
   return rows.map((r) => ({ key: r.key, level: r.level, openedAt: r.openedAt.toISOString() }));
 }
 
+/** A billing module's keys: `billing-` and a code; no server rule key starts with it. */
+const MODULE_KEY = /^billing-[a-z0-9-]{1,40}$/;
+const MODULE_KEY_PREFIX = 'billing-';
+/** Opened for a run in which the module's `alerts` failed or did not answer in time. */
+export const MODULE_FAILED_KEY = 'billing-alerts-failed';
+/** At most this many module alerts a run, so a faulty module cannot fill the 50 open alerts the admin page lists. */
+const MAX_MODULE_ALERTS = 20;
+const MODULE_ALERTS_TIMEOUT_MS = 5_000;
+
+const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+/** An open row, as `moduleFindings` carries it over when the module fails. */
+export interface OpenAlertRow {
+  key: string;
+  level: AlertLevel;
+  lastValue: number | null;
+}
+
+function isModuleAlert(a: unknown): a is Finding {
+  if (typeof a !== 'object' || a === null) return false;
+  const { key, level, value } = a as Record<string, unknown>;
+  return (
+    typeof key === 'string' &&
+    MODULE_KEY.test(key) &&
+    (level === 'warning' || level === 'critical') &&
+    (value === null || (typeof value === 'number' && Number.isFinite(value)))
+  );
+}
+
+/**
+ * The billing module's findings for this run (CL5-04), sorted by key. No module, or one without `alerts`: none. Its
+ * answer is checked: an alert with a key outside `billing-<code>`, another level or a value that is not a finite number
+ * or null (or a repeated key) is dropped, and one `alerts.module_invalid` line counts them, never their text; at most 20
+ * are kept. A rejection or no answer within 5 s is logged as `alerts.module_failed`; then every open `billing-*` row
+ * (`open()` reads them) is carried over as it is, so one failed call neither closes the module's alerts nor reopens and
+ * re-notifies them later, and `billing-alerts-failed` is added for the run.
+ */
+export async function moduleFindings(
+  billing: BillingProvider | undefined,
+  open: () => Promise<OpenAlertRow[]>,
+  now: number,
+  log: Logger,
+): Promise<Finding[]> {
+  if (!billing?.alerts) return [];
+  let answer: unknown;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error('the billing module did not answer in time');
+        err.name = 'TimeoutError';
+        reject(err);
+      }, MODULE_ALERTS_TIMEOUT_MS);
+    });
+    answer = await Promise.race([billing.alerts(new Date(now)), timeout]);
+    if (!Array.isArray(answer)) throw new TypeError('the billing module answered alerts with something else');
+  } catch (err) {
+    log.warn('alerts.module_failed', { billing: billing.id, ...errorFields(err) });
+    const carried = (await open())
+      .filter((r) => r.key.startsWith(MODULE_KEY_PREFIX) && r.key !== MODULE_FAILED_KEY)
+      .map((r): Finding => ({ key: r.key, level: r.level, value: r.lastValue }));
+    return [{ key: MODULE_FAILED_KEY, level: 'warning' as const, value: null }, ...carried].sort(byKey);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const kept = new Map<string, Finding>();
+  let invalid = 0;
+  for (const a of answer as unknown[]) {
+    if (!isModuleAlert(a) || kept.has(a.key)) invalid += 1;
+    else kept.set(a.key, { key: a.key, level: a.level, value: a.value });
+  }
+  if (invalid > 0) log.warn('alerts.module_invalid', { billing: billing.id, count: invalid });
+  return [...kept.values()].sort(byKey).slice(0, MAX_MODULE_ALERTS);
+}
+
 export interface AlertDeps {
   db: Db;
   config: Config;
@@ -161,16 +238,28 @@ export interface AlertDeps {
   notify?: (t: AlertTransitions, now: number) => Promise<void>;
   /** Tests only, passed through to `readOpsStatus` (`OpsDeps.statfs`). Default: `fs.promises.statfs`. */
   statfs?: (path: string) => Promise<StatsFs>;
+  /** The server's billing provider: a module's `alerts` add its findings (`moduleFindings`). Default: none. */
+  billing?: BillingProvider;
 }
 
-/** One check: measure (`readOpsStatus` and the spend breaker, at once), evaluate, apply, then notify. */
+/**
+ * One check: measure (`readOpsStatus` and the spend breaker, at once), evaluate, add the billing module's findings,
+ * apply, then notify.
+ */
 export async function checkAlerts(deps: AlertDeps, now: number = Date.now()): Promise<AlertTransitions> {
-  const { db, config, log, errors, statfs } = deps;
+  const { db, config, log, errors, statfs, billing } = deps;
   const [status, breakerTripped] = await Promise.all([
     readOpsStatus({ db, config, log, errors, statfs, now }),
     spendBreakerTripped(db, config, new Date(now)),
   ]);
-  const transitions = await applyAlerts(db, evaluateAlerts({ status, breakerTripped, now }, config.alerts), now, log);
+  const own = evaluateAlerts({ status, breakerTripped, now }, config.alerts);
+  const openModuleRows = () =>
+    db
+      .select({ key: opsAlerts.key, level: opsAlerts.level, lastValue: opsAlerts.lastValue })
+      .from(opsAlerts)
+      .where(like(opsAlerts.key, `${MODULE_KEY_PREFIX}%`));
+  const module = await moduleFindings(billing, openModuleRows, now, log);
+  const transitions = await applyAlerts(db, [...own, ...module].sort(byKey), now, log);
   await deps.notify?.(transitions, now);
   return transitions;
 }

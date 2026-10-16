@@ -4,8 +4,6 @@
  * `describeError` text: never a zod issue, an input value or an error message, any of which can hold post text.
  */
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
@@ -69,6 +67,7 @@ import {
   nonErrorsAsErrors,
   requestLog,
 } from './middleware.ts';
+import { MAX_PAGE_BODY_BYTES, pageCsp, readWebIndex, webMissing } from './page-frame.ts';
 
 export type { AppEnv } from './middleware.ts';
 
@@ -134,17 +133,8 @@ const NOT_VALID: WireError = { code: 'bad-request', message: 'The request was no
 const TOO_LARGE: WireError = { code: 'bad-request', message: 'The request was too large.' };
 const UNKNOWN: WireError = { code: 'unknown', message: 'Something went wrong on the server.' };
 
-/** The sign-in page's CSP: scripts, styles and requests from this origin only, nothing inline, never in a frame. */
-const PAGE_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data:",
-  "connect-src 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-  "form-action 'self'",
-].join('; ');
+/** The server's pages' CSP (`pageCsp`): scripts, styles and requests from this origin only, nothing inline, never in a frame. */
+const PAGE_CSP = pageCsp();
 
 /** The HTTP status for an error code; the body carries the code itself. */
 export function httpStatusFor(code: AIErrorCode): ContentfulStatusCode {
@@ -189,6 +179,10 @@ export function createApp(deps: AppDeps): App {
   // CORS before the body limit, so the extension can read a 413 too.
   app.use('/v1/*', extensionCors(config.extensionIds));
   app.use('/v1/*', bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
+  // Everything outside `/v1` and `/api/auth` (which has its own below): the server's pages take no body, and a route a
+  // billing module mounts reads none larger.
+  const pageBodyLimit = bodyLimit({ maxSize: MAX_PAGE_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) });
+  app.use((c, next) => (c.req.path.startsWith('/v1/') || c.req.path.startsWith('/api/auth/') ? next() : pageBodyLimit(c, next)));
   // Last: everything registered after it (every route, and middleware added later) is inside it.
   app.use(nonErrorsAsErrors());
 
@@ -241,7 +235,7 @@ export function createApp(deps: AppDeps): App {
 
   // Better Auth reads a body of any size, and these routes take requests from anyone.
   app.use('/api/auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
-  mountAuth(app, auth, config);
+  mountAuth(app, auth, config, log);
   authRoutes(app, deps);
   accountRoutes(app, deps);
   // One per app, shared by classify, fact-check and perspectives: one rate bucket per user, and the breaker's log state and the
@@ -305,19 +299,9 @@ export function createApp(deps: AppDeps): App {
  * 503 and the log says so once. The build is looked up per request, so one made after the server started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
-  const indexHtml = join(config.webDist, 'index.html');
-  let missingLogged = false;
   const page = async (c: Context<AppEnv>) => {
-    let html: string;
-    try {
-      html = await readFile(indexHtml, 'utf8');
-    } catch (err) {
-      const code = (err as { code?: unknown }).code;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err;
-      if (!missingLogged) log.warn('web.missing', { web_dist: config.webDist });
-      missingLogged = true;
-      return c.text('Build apps/web first', 503);
-    }
+    const html = await readWebIndex(config.webDist);
+    if (html === null) return webMissing(c, { config, log });
     c.header('Content-Security-Policy', PAGE_CSP);
     c.header('Cache-Control', 'no-store');
     return c.html(html);

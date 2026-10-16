@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The compose smoke test (CL1-25): builds the server image with apps/server/compose.yaml, starts it with Postgres under
-# a throwaway project name, and checks what self-hosters rely on. Run it from the repository root, with Docker:
+# a throwaway project name, and checks what an operator relies on. Run it from the repository root, with Docker:
 #
 #   bash apps/server/scripts/compose-smoke.sh
 #

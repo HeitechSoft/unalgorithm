@@ -16,16 +16,23 @@
  * from `host.priceSchedule` and holds `min(maxChargeMicros, balance)`; its settlement charges `retailMicros(costMicros,
  * multiplier)`, never more than the hold or the balance; a release lets the hold go and charges nothing. Holding at most
  * the balance is this double's choice, not policy.
+ *
+ * One module page (CL5-03): `GET /billing/fixture-form` renders a script-free form through `host.pages.render`, and its
+ * POST, behind `host.auth.ownPage`, answers "Form received.", so a real browser proves a module's form passes the Origin
+ * check under the server's no-referrer header.
  */
 import type { CreditAccount, CreditBalance } from '@unalgorithm/protocol';
 import type { Hono } from 'hono';
 import type { BillingHost } from '../../../src/billing/host.ts';
 import type { BillingDecision, BillingProvider, Settlement } from '../../../src/billing/provider.ts';
 import type { AppEnv } from '../../../src/http/app.ts';
+import type { ModulePage } from '../../../src/http/page-frame.ts';
 
 const MICROS_PER_POST = 100;
 const DEFAULT_START_MICROS = 1_000_000;
 const USAGE = 'usage: balance --user <id>';
+/** The module's own page: a form that posts to itself. */
+const FORM_PATH = '/billing/fixture-form';
 
 /**
  * What each account has left, by user id: shared by every provider this module makes in a process and by `runCli`. A
@@ -145,6 +152,18 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
         });
         return c.json(account);
       });
+      const formPage = (main: ModulePage['main']): ModulePage => ({
+        title: 'Fixture form',
+        intro: 'A page the test module renders.',
+        main,
+      });
+      app.get(FORM_PATH, (c) =>
+        host.pages.render(
+          c,
+          formPage(host.html`<form method="post" action="${FORM_PATH}"><button type="submit">Send</button></form>`),
+        ),
+      );
+      app.post(FORM_PATH, host.auth.ownPage, (c) => host.pages.render(c, formPage(host.html`<p>Form received.</p>`)));
     },
   };
 }

@@ -159,6 +159,17 @@ describe('FactcheckSheet', () => {
     expect(container.querySelectorAll('.ua-factcheck-explanation')).toHaveLength(1);
   });
 
+  it('test_sheet_shows_cached_explanation_with_earlier_check_note', () => {
+    const CACHED_AT = '2026-10-14T09:00:00.000Z';
+    const r = result();
+    r.claims = [{ ...r.claims[0]!, explanation: 'Two outlets report the same year.', cachedAt: CACHED_AT }];
+    render(<FactcheckSheet label="A post" status="done" result={r} onBack={() => {}} />);
+    const [cached] = screen.getAllByRole('listitem') as HTMLElement[];
+    const day = new Date(CACHED_AT).toLocaleDateString(undefined, { dateStyle: 'medium' });
+    expect(within(cached!).getByText(`From an earlier check on ${day}.`).className).toBe('ua-factcheck-note');
+    expect(within(cached!).getByText('Two outlets report the same year.').className).toBe('ua-factcheck-explanation');
+  });
+
   it('test_sheet_shows_downgrade_note', () => {
     const r = result();
     r.claims = [

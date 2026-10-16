@@ -99,7 +99,9 @@ not updated.
 
 ### After restoring a database
 
-Restoring a database, and starting a new sync epoch after it, follows [Restore after losing the server](self-hosting.md#11-restore-after-losing-the-server) in the self-hosting guide.
+A database is restored with the backup's private key through `apps/server/backup/restore.sh` (`--check`, then `--yes`
+with the server stopped), into the same server release or a newer one, never an older one. Then
+`apps/server/src/cli/sync-new-epoch.ts` starts a new sync epoch, so every browser syncs again from the restored copy.
 
 ## Changing a price card
 
@@ -110,7 +112,8 @@ effect by itself:
 - UnAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
 - The account page and the extension's "about N posts" use the time they show it.
 - The website is built from `main`: its "How credits work" page (`docs/site/credits.md`) is filled at build time by
-  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change.
+  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change. Its credit packs table and the
+  calculator's data (`calculatorData`) come from the same entries and `CREDIT_PACKS`.
 
 ### The rules
 

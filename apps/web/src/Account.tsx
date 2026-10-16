@@ -9,7 +9,7 @@
  */
 import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccountData } from './AccountData.tsx';
 import { getSession, serverInfo, signOut } from './api.ts';
 import { Credits } from './Credits.tsx';
@@ -62,8 +62,19 @@ export function Account() {
     setGoogleFailed(false);
     setStep({ name: 'signed-out', notice });
   }, []);
-  /** A section's request found the session gone (401): the one-day session ended, or it was signed out elsewhere. */
-  const sessionEnded = useCallback(() => toSignedOut(SIGNED_OUT), [toSignedOut]);
+  /** Set while "Sign out" runs: a section request still in flight then answers 401, which is no surprise. */
+  const signingOut = useRef(false);
+  /**
+   * A section's request found the session gone (401): the one-day session ended, or it was signed out elsewhere. Only
+   * while signed in: a request that was in flight when the person signed out on purpose answers late, and must not show
+   * "You were signed out" on the sign-in step.
+   */
+  const sessionEnded = useCallback(() => {
+    if (signingOut.current) return;
+    setError(null);
+    setGoogleFailed(false);
+    setStep((s) => (s.name === 'signed-in' ? { name: 'signed-out', notice: SIGNED_OUT } : s));
+  }, []);
 
   /**
    * Deleting found the session too old: it is ended here, so signing in again starts a fresh one. A sign-out that fails
@@ -77,12 +88,14 @@ export function Account() {
   async function onSignOut() {
     setBusy(true);
     setError(null);
+    signingOut.current = true;
     try {
       await signOut();
       toSignedOut();
     } catch (err) {
       setError(failureMessage(err));
     } finally {
+      signingOut.current = false;
       setBusy(false);
     }
   }

@@ -94,10 +94,10 @@ The repo is a pnpm workspace:
 | `packages/ai` | AI clients (Anthropic, OpenAI, OpenAI-compatible, Chrome built-in) and the classify orchestrator |
 | `packages/ui` | The design system: tokens, components, in-feed UI |
 | `packages/protocol` | Wire contracts shared with the UnAlgorithm server |
-| `apps/server` | The self-hostable server (Node, Hono, Postgres, Docker Compose): sign-in, AI labels, invites, caps, backups |
+| `apps/server` | The UnAlgorithm server that runs UnAlgorithm Cloud (Node, Hono, Postgres, Docker Compose): sign-in, AI labels, invites, caps, backups |
 
-The extension can sign in to an UnAlgorithm server that you run for yourself, your family or your organization. To run
-your own server, follow [docs/self-hosting.md](docs/self-hosting.md).
+The server's source is public under AGPL-3.0 ([LICENSE](LICENSE)); its billing module and HeitechSoft's operations
+are private ([ADR 0007](docs/adr/0007-open-server-private-billing.md)).
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first, then [CONTRIBUTING.md](CONTRIBUTING.md).
 When a site changes its layout, [docs/adding-a-platform.md](docs/adding-a-platform.md) and

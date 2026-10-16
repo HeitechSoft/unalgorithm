@@ -24,7 +24,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `sync` | Collection registry, merge strategies, settings items and merge; imported by the server and the extension | Only `protocol`, `core`, zod and the SDK-free `@unalgorithm/ai/presets`; no `chrome.*`, DOM or Node |
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
-| `apps/server` | The self-hostable UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
+| `apps/server` | The open-source UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
 | `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui` and `core`'s wording helpers; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
@@ -101,7 +101,7 @@ usage is recorded even when a call fails.
 
 ## Server
 
-`apps/server` is the self-hostable UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
+`apps/server` is the open-source UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
 Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. UnAlgorithm Cloud
 runs this same server; HeitechSoft's private repository adds only a billing module and its own operations
 configuration (ADR 0007).
@@ -128,8 +128,9 @@ repository builds it from a pinned commit ([release.md](release.md#the-server)).
    the device with `POST /v1/auth/revoke`.
 
 Emailed codes are limited per email address as well as per client address (Better Auth's own limits): 5 codes an
-address in 15 minutes (past that the server answers as before but makes and mails no code) and 10 wrong codes an
-address an hour (then 429 with `Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
+address an hour, refilled over the hour (past that the server answers as before without calling Better Auth, so it
+makes and mails no code and the last one emailed still works) and 10 wrong codes an address an hour (then 429 with
+`Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
 by a SHA-256 hash of the lowercased address, and a send Better Auth refuses is given back
 (`apps/server/src/auth/better-auth.ts`).
 
@@ -202,7 +203,7 @@ always show or hide (`sync_items`).
 | `sync_items` | Each person's synced settings, one row per collection and key, with the seq, clock and device of its last write; a deleted key stays as a tombstone without a value |
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 | `ops_alerts` | Alerts open now: key, level, times, one number |
-| `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text, explanation or any user, device or post id; deleted hourly once past its 24 hours |
+| `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, its explanation (≤ 280 characters, null when it repeats 6 consecutive words of the post), 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text or any user, device or post id; deleted hourly once past its 24 hours |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
@@ -228,6 +229,10 @@ three optional ones:
   does not implement it).
 - `deleteAccount?(userId)`: called before the account is deleted; a rejection stops the deletion. It may be called
   again for the same account, so it is idempotent per userId.
+- `alerts?(now)`: asked at each alert check (`ops.check-alerts`), the module's alerts open now, each a `billing-<code>`
+  key, a level and one number, which open, close and notify as the server's own do. Invalid ones are dropped and at
+  most 20 kept; a rejection, or no answer within 5 s, keeps the module's open alerts as they are and opens
+  `billing-alerts-failed`.
 
 A module's rows are keyed by user id with no foreign key, so a module that implements neither keeps them after the
 account is deleted.
@@ -242,7 +247,8 @@ The host (`BillingHost`, `apps/server/src/billing/host.ts`) is all a module is o
 for the module's own `billing` schema; its own migrations, under a lock of their own; an account's id, email address,
 verified flag and creation time; the two auth checks for its routes (the extension's bearer token and the server
 pages' session); the job registry; the logger; the server's origin, name and version; and the running release's
-`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
+`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`); and the server's metered
+AI cost per UTC day and model (`usage.costByDay`: summed cost and request counts, no user or request id). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
 reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
 (its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests
 as any server route does. Adding to `BillingHost` is a reviewed public change. UnAlgorithm Cloud's billing module lives
@@ -257,7 +263,7 @@ the job registry while the server starts. The server's own: `auth.purge-expired`
 tokens, extension codes and `verification` rows (`apps/server/src/auth/purge.ts`); `sync.gc`, every 6 hours,
 deletes sync tombstones after 90 days (raising the space's floor, so older cursors get `410 resync-required`), lapsed
 `ttl-cache` items and push records after 24 hours (`apps/server/src/sync/gc.ts`); `ops.check-alerts`, every five
-minutes, checks the server's status and opens or closes alerts ([Self-hosting and operations](#self-hosting-and-operations));
+minutes, checks the server's status and opens or closes alerts ([Operations](#operations));
 `factcheck.purge-claim-cache`, hourly, deletes `claim_cache` rows past their expiry (`apps/server/src/ai/claim-cache.ts`).
 The server registers all four on every server backed by Postgres, so graphile-worker runs on each of them. After a database restore, `pnpm sync:new-epoch`
 gives every space a new epoch, so every device resyncs. graphile-worker creates the
@@ -265,11 +271,11 @@ gives every space a new epoch, so every device resyncs. graphile-worker creates 
 time and attempts, and after a failure the error's name and code, never its message. Payloads hold ids and numbers
 only. A job's row is deleted once it succeeds; one that fails every attempt stays. PGlite, in tests, runs no worker.
 
-### Self-hosting and operations
+### Operations
 
-How to run a server is in [self-hosting.md](self-hosting.md); this is how its parts fit. `apps/server/compose.yaml`
-starts three services, `server`, `postgres` and `backup`, and has three profiles: `caddy` (HTTPS in front of the
-server, no access log), `ollama` (a local model on the same machine) and `tools` (the one-off `keygen`).
+How the server's running parts fit. `apps/server/compose.yaml` starts three services, `server`, `postgres` and
+`backup`, and has three profiles: `caddy` (HTTPS in front of the server, no access log), `ollama` (a local model on the
+same machine) and `tools` (the one-off `keygen`).
 
 - **Backups.** The `backup` service runs on the `postgres` image, so its `pg_dump` matches the database. Each night it
   encrypts a dump to the operator's public key (made by `keygen`; the private key belongs off the server) and keeps the
@@ -295,7 +301,7 @@ server, no access log), `ollama` (a local model on the same machine) and `tools`
 |---|---|---|
 | Unit | Vitest projects (jsdom where needed) | Rules, decide, presets, migration, clocks, prompt/fence, adapters on fixtures, the contract check, AI clients against a fake fetch, the feed controller |
 | End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it, and with the test billing module the balance pill, its drop after classifying and the pause at $0 |
-| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh`, `backup-smoke.sh` and `restore-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as self-hosters run them, their encrypted backups, and a wiped stack restored from one |
+| Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh`, `backup-smoke.sh` and `restore-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as an operator runs them, their encrypted backups, and a wiped stack restored from one |
 
 ## Decisions
 

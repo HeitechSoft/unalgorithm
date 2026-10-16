@@ -25,6 +25,7 @@ import {
   signOut,
   syncServerOffer,
 } from '../background/server-auth.ts';
+import { checkBalanceSoon, onBalanceRestored } from '../background/server-balance.ts';
 import { listDevices, revokeDevice } from '../background/server-devices.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
@@ -98,6 +99,9 @@ async function resumeFeedTabs(): Promise<void> {
   const tabs = await browser.tabs.query({ url: FEED_TAB_URLS }).catch(() => []);
   await Promise.all(tabs.map((tab) => (tab.id === undefined ? undefined : sendToTab(tab.id, { type: 'aiResume' }))));
 }
+
+// Credit came back (CL5): feed tabs paused for `insufficient-credits` pick up again without a reload.
+onBalanceRestored(() => void resumeFeedTabs());
 
 /**
  * Signs this computer out of the account's server: AI turns off rather than staying on a source that can only fail with
@@ -292,6 +296,13 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     if (tabId === undefined || !fromFeedTab(sender)) deny('openFactcheck');
     // When Chrome refuses, the in-feed item points to the toolbar button, whose popup opens the side panel.
     return { ok: await openFactcheckPanel(tabId) };
+  },
+  balanceCheck: async (_msg, sender) => {
+    if (!fromFeedTab(sender)) deny('balanceCheck');
+    // A restored balance resumes the tabs through `onBalanceRestored` above; the reply tells the tab nothing.
+    const [device, account] = await Promise.all([readDevice(), serverAccountItem.getValue()]);
+    await checkBalanceSoon(device.aiSource, account);
+    return { ok: true };
   },
   perspectives: async (msg, sender) => {
     const tabId = sender.tab?.id;

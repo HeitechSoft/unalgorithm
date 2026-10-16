@@ -6,7 +6,7 @@ import { CONFIG_VARIABLES, ConfigError, loadConfig } from '../src/config.ts';
 import { testConfig } from './support/test-app.ts';
 
 /**
- * `apps/server/.env.example` is the self-hoster's copy of the configuration (CL1-25): every variable `loadConfig` reads
+ * `apps/server/.env.example` is the operator's copy of the configuration (CL1-25): every variable `loadConfig` reads
  * is in it with a comment, and it holds placeholders only.
  */
 const ENV_EXAMPLE = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
@@ -275,7 +275,7 @@ describe('configuration parity', () => {
     expect(comment('AI_BASE_URL')).toContain(`with the ollama profile, ${OLLAMA_BASE_URL}.`);
     expect(comment('AI_MODEL')).toContain(`with the ollama profile, a model you pulled, such as ${OLLAMA_MODEL}.`);
     expect(comment('AI_DATA_POLICY')).toMatch(/self-hosted for openai-compatible: .*\(the ollama profile\)/);
-    // The values stay commented: a self-hoster with Anthropic changes nothing.
+    // The values stay commented: an operator with Anthropic changes nothing.
     for (const name of ['COMPOSE_PROFILES', 'AI_MODEL', 'AI_BASE_URL', 'AI_DATA_POLICY']) {
       expect(parseEnvExample(ENV_EXAMPLE).find((e) => e.name === name)?.commented, name).toBe(true);
     }

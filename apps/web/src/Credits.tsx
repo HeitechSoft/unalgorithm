@@ -1,10 +1,10 @@
 /**
  * The account page's Credits section, on a server that advertises billing: the balance and about how many posts it
- * classifies, the promotional credit with the starter credit's state, the history newest first, and the links the server
- * gives (adding credit, how credits work), and the price in effect with the next scheduled change. Every figure on the
- * account is the server's answer (`CreditAccountSchema`); the wording is the extension's (`@unalgorithm/core`), so both
- * say the same thing, and the page names no product; its price line is the published schedule of the release this
- * server runs.
+ * classifies, the promotional credit with the starter credit's state, the purchased credit, the history newest first,
+ * the links the server gives (adding credit, how credits work, the refund policy), and the price in effect with the next
+ * scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
+ * extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product; its price line is the
+ * published schedule of the release this server runs.
  */
 import { formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice } from '@unalgorithm/core';
 import {
@@ -35,6 +35,11 @@ const HISTORY: Record<Exclude<CreditHistoryItem['reason'], CreditTask>, string> 
   'promo-expired': 'Promotional credit expired',
   correction: 'Correction',
   goodwill: 'Credit from support',
+  'credit-pack': 'Credit pack',
+  refund: 'Refund',
+  chargeback: 'Chargeback',
+  'chargeback-reversed': 'Chargeback reversed',
+  'test-mode-void': 'Test credit removed',
 };
 /** Dates in UTC, as the server keeps them: "Jan 11, 2027". */
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
@@ -94,7 +99,7 @@ function nextClassifyPriceChange(at: Date, schedule: CreditPriceSchedule) {
 }
 
 function CreditDetails({
-  account: { balance, history, addCreditPath, pricingUrl },
+  account: { balance, history, addCreditPath, pricingUrl, refundPolicyUrl },
   at,
   schedule,
 }: {
@@ -114,6 +119,10 @@ function CreditDetails({
             : PAUSED}
         </p>
         {promotional ? <p className="ua-footnote">{promotional}</p> : null}
+        {balance.purchasedMicros > 0 ? (
+          // No expiry: the protocol has none for purchased credit.
+          <p className="ua-footnote">Purchased credit: {formatBalance(balance.purchasedMicros)}</p>
+        ) : null}
         {balance.starter === 'active' ? null : <p className="ua-footnote">{STARTER[balance.starter]}</p>}
         <p className="ua-footnote">AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</p>
         {next ? (
@@ -151,6 +160,11 @@ function CreditDetails({
         {pricingUrl ? (
           <a href={pricingUrl} target="_blank" rel="noreferrer">
             How credits work
+          </a>
+        ) : null}
+        {refundPolicyUrl ? (
+          <a href={refundPolicyUrl} target="_blank" rel="noreferrer">
+            Refund policy
           </a>
         ) : null}
       </div>

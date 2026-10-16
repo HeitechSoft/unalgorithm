@@ -51,6 +51,35 @@ export type CreditPriceSchedule = readonly Readonly<CreditPriceScheduleEntry>[];
 
 /** $1 of promotional credit, once per verified account, expiring 90 days after it is granted (R29). */
 export const STARTER_CREDIT = Object.freeze({ amountMicros: 1_000_000, expiresAfterDays: 90 });
+
+export const CREDIT_PACK_IDS = ['pack-5', 'pack-10', 'pack-25'] as const;
+export const CreditPackIdSchema = z.enum(CREDIT_PACK_IDS);
+export type CreditPackId = (typeof CREDIT_PACK_IDS)[number];
+export interface CreditPack {
+  id: CreditPackId;
+  /** What the person pays before tax, in US cents. */
+  priceCents: number;
+  /** The purchased credit it adds: always priceCents × 10,000 micro-dollars (a pack never changes a price). */
+  creditMicros: number;
+}
+/**
+ * R32: $5, $10 (the default) and $25, smallest first. Prices change only through CREDIT_PRICE_SCHEDULE: a pack buys
+ * exactly its price in credit, and what "about N posts" it buys is `estimatePosts(pack.creditMicros, at)`, never stored.
+ * The only pack list: the module, the website and the tests read this one.
+ */
+export const CREDIT_PACKS: readonly Readonly<CreditPack>[] = Object.freeze([
+  Object.freeze({ id: 'pack-5', priceCents: 500, creditMicros: 5_000_000 }),
+  Object.freeze({ id: 'pack-10', priceCents: 1_000, creditMicros: 10_000_000 }),
+  Object.freeze({ id: 'pack-25', priceCents: 2_500, creditMicros: 25_000_000 }),
+] as const);
+export const DEFAULT_CREDIT_PACK: CreditPackId = 'pack-10';
+/** Packs are sold in US dollars (spec → Monetization: "Unit = US dollars"). Lowercase, as Stripe writes it. */
+export const CREDIT_PACK_CURRENCY = 'usd';
+
+/** The pack with this id, or null (never throws: callers pass untrusted form values). */
+export function creditPack(id: unknown): Readonly<CreditPack> | null {
+  return CREDIT_PACKS.find((pack) => pack.id === id) ?? null;
+}
 /** Under this (and above 0) a balance is "low": the extension may show its once-a-day banner (R31). */
 export const LOW_BALANCE_MICROS = 200_000;
 export const MAX_CREDIT_HISTORY = 200;
@@ -440,8 +469,18 @@ export const CreditBalanceSchema = z
   .refine((b) => b.balanceMicros === b.promoMicros + b.purchasedMicros, { path: ['balanceMicros'] });
 export type CreditBalance = z.infer<typeof CreditBalanceSchema>;
 
-export const CREDIT_ENTRY_KINDS = ['grant', 'usage', 'adjustment'] as const;
+/** Only ever added to, at the end: the existing values keep their positions. */
+export const CREDIT_ENTRY_KINDS = ['grant', 'usage', 'adjustment', 'purchase', 'refund', 'chargeback'] as const;
 export type CreditEntryKind = (typeof CREDIT_ENTRY_KINDS)[number];
+/**
+ * Why a ledger entry was made; only ever added to, at the end. `starter-credit` the starter credit was granted; a task
+ * (`classify`, `factcheck`, `perspectives`) one day's usage of it; `promo-expired` promotional credit expired;
+ * `correction` and `goodwill` an adjustment by support. Money entries: `credit-pack` a pack was paid; `refund` credit
+ * removed because money went back to the person; `chargeback` credit removed because the card issuer took the money back
+ * (a dispute); `chargeback-reversed` that credit returned because the dispute was won; `test-mode-void` credit removed
+ * that a payment provider's test-mode purchase added (no real money was paid), before the server takes live payments.
+ * A billing database's reason list must equal this one.
+ */
 export const CREDIT_ENTRY_REASONS = [
   'starter-credit',
   'classify',
@@ -450,6 +489,11 @@ export const CREDIT_ENTRY_REASONS = [
   'promo-expired',
   'correction',
   'goodwill',
+  'credit-pack',
+  'refund',
+  'chargeback',
+  'chargeback-reversed',
+  'test-mode-void',
 ] as const;
 export type CreditEntryReason = (typeof CREDIT_ENTRY_REASONS)[number];
 
@@ -457,13 +501,33 @@ const REASONS_BY_KIND: Readonly<Record<CreditEntryKind, readonly CreditEntryReas
   grant: ['starter-credit'],
   usage: CREDIT_TASKS,
   adjustment: ['promo-expired', 'correction', 'goodwill'],
+  purchase: ['credit-pack'],
+  refund: ['refund', 'test-mode-void'],
+  chargeback: ['chargeback', 'chargeback-reversed'],
 };
+
+/**
+ * The sign each money reason's amount must have: credit added is above 0; credit removed is 0 or less (a refund or
+ * chargeback that found no credit left records 0). The other reasons accept any sign.
+ */
+const ADDS_CREDIT: Partial<Record<CreditEntryReason, boolean>> = {
+  'credit-pack': true,
+  'chargeback-reversed': true,
+  refund: false,
+  chargeback: false,
+  'test-mode-void': false,
+};
+
+function amountFitsReason({ reason, amountMicros }: { reason: CreditEntryReason; amountMicros: number }): boolean {
+  const adds = ADDS_CREDIT[reason];
+  return adds === undefined || (adds ? amountMicros > 0 : amountMicros <= 0);
+}
 
 function reasonFitsKind(item: { kind: CreditEntryKind; reason: CreditEntryReason }): boolean {
   return REASONS_BY_KIND[item.kind].includes(item.reason);
 }
 
-/** One line of the account page's history: a grant, an adjustment, or one day's usage of a task. */
+/** One line of the account page's history: a grant, an adjustment, a money entry, or one day's usage of a task. */
 export const CreditHistoryItemSchema = z
   .object({
     kind: z.enum(CREDIT_ENTRY_KINDS),
@@ -475,7 +539,8 @@ export const CreditHistoryItemSchema = z
     posts: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .refine(reasonFitsKind, { path: ['reason'] })
-  .refine((item) => item.kind !== 'usage' || item.posts !== undefined, { path: ['posts'] });
+  .refine((item) => item.kind !== 'usage' || item.posts !== undefined, { path: ['posts'] })
+  .refine(amountFitsReason, { path: ['amountMicros'] });
 export type CreditHistoryItem = z.infer<typeof CreditHistoryItemSchema>;
 
 /** What the account page shows: the balance and the history, newest first. */
@@ -485,6 +550,8 @@ export const CreditAccountSchema = z.object({
   history: z.array(CreditHistoryItemSchema).max(MAX_CREDIT_HISTORY),
   /** Where the server explains its prices; https only. */
   pricingUrl: z.url({ protocol: /^https$/ }).optional(),
+  /** Where the server's refund policy is published; https only. Absent on servers without purchases. */
+  refundPolicyUrl: z.url({ protocol: /^https$/ }).optional(),
   /** A page on this server where credit can be added; absent while adding credit is not offered (all of CL2). */
   addCreditPath: OriginPathSchema.optional(),
 });
