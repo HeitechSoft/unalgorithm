@@ -1,5 +1,16 @@
 # @unalgorithm/extension
 
+## 0.2.3
+
+### Patch Changes
+
+- [#22](https://github.com/HeitechSoft/unalgorithm/pull/22) [`681d1b5`](https://github.com/HeitechSoft/unalgorithm/commit/681d1b52131985580ce6cdbd715837ffb860712c) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Facebook filtering works again. Facebook's home feed no longer marks its post list with `role="feed"`, so UnAlgorithm
+  found no feed, paused itself on every page and showed "Facebook's layout looks different". It now also finds the list
+  the 2026 layout uses (the block after the screen-reader "Feed posts" heading, without reading that English text), hides
+  ads labelled "Ad" as well as "Sponsored", and reads "Shared with …'s friends" as a friends-only post.
+- Updated dependencies [[`681d1b5`](https://github.com/HeitechSoft/unalgorithm/commit/681d1b52131985580ce6cdbd715837ffb860712c)]:
+  - @unalgorithm/platforms@0.0.3
+
 ## 0.2.2
 
 ### Patch Changes
