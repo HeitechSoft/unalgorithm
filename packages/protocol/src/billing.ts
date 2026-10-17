@@ -319,6 +319,8 @@ export const PRICE_ISSUE_CODES = [
   'purchase-range',
   'auto-reload-per-day',
   'auto-reload-monthly',
+  'schedule-full',
+  'starter-full',
 ] as const;
 export type PriceIssueCode = (typeof PRICE_ISSUE_CODES)[number];
 

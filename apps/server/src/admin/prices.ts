@@ -4,13 +4,15 @@
  * Until an admin first saves, the server uses its code defaults (the store's `seed`) and writes nothing; the first save
  * stores them as a `seed` row, then the change, so the history shows what the defaults were.
  *
- * `PriceStore` keeps the book in memory, so every reader gets it without awaiting: loaded at start, and again after
- * each save this process makes. The server is one process by design (its jobs and limits already live in its memory),
- * so there is no timer; another process (the billing CLI) reads the book at its own start.
+ * `PriceStore` keeps the book in memory, so every reader gets it without awaiting: loaded at start, and taken from
+ * each save this process commits (the book it wrote, never a second read that could fail after the commit). The
+ * server is one process by design (its jobs and limits already live in its memory), so there is no timer; another
+ * process (the billing CLI) reads the book at its own start.
  *
  * Every save is one transaction that first takes the book's advisory lock, so the version check and the rules see the
  * book the save changes. The edits are PA-01's and the rules PA-02's `priceBookChangeIssues`, refused in PA-01's plain
- * words: no rule is written here. Rows are only ever inserted. Nothing here logs: the route writes the ids-only line.
+ * words: no rule is written here. The book a save writes is first read as the store loads one, so nothing is stored
+ * that the server cannot start on. Rows are only ever inserted. Nothing here logs: the route writes the ids-only line.
  */
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -67,7 +69,19 @@ export interface PriceStore {
   published(): { body: PublishedPrices; etag: string };
   /** Reads the newest row again. Rejects (and keeps the copy it had) when the read fails or the book is not sound. */
   refresh(): Promise<void>;
+  /**
+   * Takes a stored row (its seq, book and time) without reading the database: the one a save committed, or the newest
+   * one a save read. Throws PriceBookError (and keeps the copy it had) when the book is not sound.
+   */
+  adopt(row: StoredRow): void;
   readonly seed: PriceBook;
+}
+
+/** A `price_changes` row as the store reads it. */
+export interface StoredRow {
+  seq: number;
+  book: unknown;
+  changedAt: Date;
 }
 
 /** `value`, with every object and array in it frozen. */
@@ -97,7 +111,7 @@ function soundBook(value: unknown, what: string): PriceBook {
 }
 
 /** The newest row: its seq, book and time, or undefined while none is stored. */
-async function newestRow(db: Db) {
+async function newestRow(db: Db): Promise<StoredRow | undefined> {
   const [row] = await db
     .select({ seq: priceChanges.seq, book: priceChanges.book, changedAt: priceChanges.changedAt })
     .from(priceChanges)
@@ -121,10 +135,11 @@ function copyOf(book: PriceBook, version: string, updatedAt: string | null): Cop
   return { book, published: Object.freeze({ body, etag: `"prices-${hash}"` }) };
 }
 
+const copyOfRow = (row: StoredRow): Copy => copyOf(soundBook(row.book, STORED), String(row.seq), row.changedAt.toISOString());
+
 async function load(db: Db, seed: PriceBook): Promise<Copy> {
   const row = await newestRow(db);
-  if (!row) return copyOf(seed, '0', null);
-  return copyOf(soundBook(row.book, STORED), String(row.seq), row.changedAt.toISOString());
+  return row ? copyOfRow(row) : copyOf(seed, '0', null);
 }
 
 /**
@@ -134,14 +149,19 @@ async function load(db: Db, seed: PriceBook): Promise<Copy> {
 export async function openPriceStore(db: Db, opts: { seed: PriceBook }): Promise<PriceStore> {
   const seed = soundBook(opts.seed, 'The default price book');
   let copy = await load(db, seed);
+  /** Two saves can end out of order: the copy never goes back to an older version. */
+  const take = (next: Copy) => {
+    if (Number(next.published.body.version) > Number(copy.published.body.version)) copy = next;
+  };
   return Object.freeze({
     seed,
     current: () => copy.book,
     published: () => copy.published,
     async refresh() {
-      const next = await load(db, seed);
-      // Two saves' refreshes can end out of order: the copy never goes back to an older version.
-      if (Number(next.published.body.version) > Number(copy.published.body.version)) copy = next;
+      take(await load(db, seed));
+    },
+    adopt(row: StoredRow) {
+      take(copyOfRow(row));
     },
   });
 }
@@ -152,6 +172,8 @@ export type PriceChangeOutcome =
   | { ok: false; status: 400 | 404 | 409; error: WireError };
 
 const refused = (status: 400 | 404 | 409, error: WireError): PriceChangeOutcome => ({ ok: false, status, error });
+/** What a save's transaction answers: the outcome, and the newest row for the store to take (none while none is stored). */
+type Answer = { outcome: PriceChangeOutcome; newest: StoredRow | undefined };
 
 /** The book a change makes from `base`, and what it changed (the history's `before` and `after`). */
 interface Edit {
@@ -200,8 +222,12 @@ function editOf(base: PriceBook, req: PriceChangeRequest, now: Date): Edit | nul
 /**
  * One admin's change, in one transaction. In order: the lock; 409 when the book changed since `baseVersion`; 404 for a
  * cancel or a move of a change that is not scheduled; 400 with the rules' plain words (`priceBookChangeIssues`); a
- * change that leaves the book as it is writes nothing; else, the first time, a `seed` row with the defaults, then the
- * change's row with the whole book after it. The store's copy is refreshed after the commit.
+ * change that leaves the book as it is writes nothing; else the book after it, read as the store loads one (a
+ * PriceBookError rolls the save back, so a book the rules missed is never stored), then, the first time, a `seed` row
+ * with the defaults, then the change's row with that book.
+ *
+ * After the transaction the store takes the newest row without reading it again: the one this save committed, or the
+ * one it read, so a copy that fell behind catches up on the save it refuses and the admin's reload shows the version.
  */
 export async function applyPriceChange(
   db: Db,
@@ -210,19 +236,22 @@ export async function applyPriceChange(
   req: PriceChangeRequest,
   now: Date = new Date(),
 ): Promise<PriceChangeOutcome> {
-  const outcome = await db.transaction(async (tx): Promise<PriceChangeOutcome> => {
+  const { outcome, newest } = await db.transaction(async (tx): Promise<Answer> => {
     await tx.execute(sql`select pg_advisory_xact_lock(${PRICES_LOCK_KEY})`);
     const row = await newestRow(tx);
     const version = String(row?.seq ?? 0);
-    if (req.baseVersion !== version) return refused(409, PRICES_CHANGED);
+    /** An answer that writes nothing: the store still takes the row read, in case its copy fell behind. */
+    const answer = (result: PriceChangeOutcome) => ({ outcome: result, newest: row });
+    if (req.baseVersion !== version) return answer(refused(409, PRICES_CHANGED));
 
     const base = row ? soundBook(row.book, STORED) : store.seed;
     const edit = editOf(base, req, now);
-    if (!edit) return refused(404, NO_SUCH_CHANGE);
+    if (!edit) return answer(refused(404, NO_SUCH_CHANGE));
     const issues = priceBookChangeIssues(base, edit.head, now);
-    if (issues.length > 0) return refused(400, { code: 'bad-request', message: priceIssuesText(issues) });
-    if (isDeepStrictEqual(edit.head, base)) return { ok: true, version, changed: false };
+    if (issues.length > 0) return answer(refused(400, { code: 'bad-request', message: priceIssuesText(issues) }));
+    if (isDeepStrictEqual(edit.head, base)) return answer({ ok: true, version, changed: false });
 
+    const head = soundBook(edit.head, 'The changed price book');
     if (!row) await tx.insert(priceChanges).values({ action: 'seed', book: store.seed, changedBy: adminId, changedAt: now });
     const scheduled = req.action === 'schedule' || req.action === 'cancel' || req.action === 'move';
     const [saved] = await tx
@@ -234,15 +263,18 @@ export async function applyPriceChange(
         movedTo: edit.movedTo,
         before: edit.before,
         after: edit.after,
-        book: edit.head,
+        book: head,
         changedBy: adminId,
         changedAt: now,
       })
       .returning({ seq: priceChanges.seq });
     if (!saved) throw new Error('The change was not recorded.');
-    return { ok: true, version: String(saved.seq), changed: true };
+    return {
+      outcome: { ok: true, version: String(saved.seq), changed: true },
+      newest: { seq: saved.seq, book: head, changedAt: now },
+    };
   });
-  if (outcome.ok && outcome.changed) await store.refresh();
+  if (newest) store.adopt(newest);
   return outcome;
 }
 

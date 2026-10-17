@@ -2,6 +2,7 @@ import {
   CREDIT_TASKS,
   type CreditTask,
   FEATURE_NAMES,
+  MAX_PRICE_BOOK_ENTRIES,
   PRICE_BOUNDS,
   PRICE_NOTICE_DAYS,
   type PriceIssue,
@@ -91,6 +92,9 @@ const SENTENCES: Readonly<Record<PriceIssueCode, (issue: PriceIssue, n: number) 
   'auto-reload-per-day': () => `Automatic top-ups a day must be from ${perDay.min} to ${perDay.max}.`,
   'auto-reload-monthly': () =>
     `The monthly limit must be whole dollars from the least amount people can buy to ${usd(monthlyLimitMaxMicros.max)}.`,
+  // The most the server keeps (PriceBookSchema's limits): years of changes before either is reached.
+  'schedule-full': () => `The price list is full: it holds at most ${MAX_PRICE_BOOK_ENTRIES} dates.`,
+  'starter-full': () => `The starter credit can't change again: it keeps at most ${MAX_PRICE_BOOK_ENTRIES} amounts.`,
 };
 
 /** Why the rules refuse a price change, in plain words. `noticeDays` is the notice a raise needs (`{n}`). */

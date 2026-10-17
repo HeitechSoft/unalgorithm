@@ -16,6 +16,7 @@ import {
   DEFAULT_CREDIT_AMOUNT,
   DEFAULT_PRICE_BOOK,
   MAX_LISTED_PRICE_CHANGES,
+  MAX_PRICE_BOOK_ENTRIES,
   PRICE_BOUNDS,
   PRICE_CHANGE_ACTIONS,
   PRICES_JSON_PATH,
@@ -252,6 +253,51 @@ describe('change rules', () => {
     // withStarterCredit reads the same step.
     expect(withStarterCredit(book, $(2), NOW)).toBe(book);
     expect(withStarterCredit(book, $(1), NOW)).not.toBe(book);
+  });
+
+  it('test_full_lists_refused_at_schema_limits', () => {
+    const M = MAX_PRICE_BOOK_ENTRIES;
+    expect(M).toBe(500);
+    /** `n` entries a day apart from 2020-01-01, all in effect at NOW, each with the 2026-10-18 cards. */
+    const days = (n: number): CreditPriceSchedule =>
+      Array.from({ length: n }, (_, i) => ({
+        effectiveFrom: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().replace('.000Z', 'Z'),
+        cards: OCT_18_ENTRY.cards,
+      }));
+    /** `n` starter steps an hour apart from 2020-01-01, $1 and $2 in turn. */
+    const steps = (n: number): PriceBook['starterCredit'] =>
+      Array.from({ length: n }, (_, i) => ({
+        from: new Date(Date.UTC(2020, 0, 1, i)).toISOString(),
+        amountMicros: $(1 + (i % 2)),
+      }));
+    const scheduleOf = (n: number): PriceBook => ({ ...D, schedule: days(n) });
+    const starterOf = (n: number): PriceBook => ({ ...D, starterCredit: steps(n) });
+
+    // At the limit: sound, and the schema parses it. One more: not sound, as the schema refuses it.
+    for (const book of [scheduleOf(M), starterOf(M)]) {
+      expect(priceBookIssues(book)).toEqual([]);
+      expect(PriceBookSchema.safeParse(book).success).toBe(true);
+    }
+    expect(codes(priceBookIssues(scheduleOf(M + 1)))).toEqual(['schedule-full']);
+    expect(codes(priceBookIssues(starterOf(M + 1)))).toEqual(['starter-full']);
+    expect(PriceBookSchema.safeParse(scheduleOf(M + 1)).success).toBe(false);
+    expect(PriceBookSchema.safeParse(starterOf(M + 1)).success).toBe(false);
+    expect(priceBookIssues(scheduleOf(M + 1))[0]?.text).toBe('schedule: at most 500 entries');
+    expect(priceBookIssues(starterOf(M + 1))[0]?.text).toBe('starterCredit: at most 500 steps');
+
+    // A save that would add the one more is refused, so no save stores a book the server cannot load again.
+    const cut = { ...FC, maxChargeMicros: 300_000 };
+    const scheduled = (base: PriceBook): PriceBook => ({
+      ...base,
+      schedule: withTaskCard(base.schedule, 'factcheck', NOV_3, cut),
+    });
+    expect(changeCodes(scheduled(scheduleOf(M - 1)), scheduleOf(M - 1))).toEqual([]);
+    expect(changeCodes(scheduled(scheduleOf(M)), scheduleOf(M))).toEqual(['schedule-full']);
+    expect(changeCodes(withStarterCredit(starterOf(M - 1), $(3), NOW), starterOf(M - 1))).toEqual([]);
+    expect(changeCodes(withStarterCredit(starterOf(M), $(3), NOW), starterOf(M))).toEqual(['starter-full']);
+    // A full list does not stop a change to another part.
+    const full = starterOf(M);
+    expect(changeCodes({ ...full, autoReload: { monthlyLimitMaxMicros: $(500), perDay: 1 } }, full)).toEqual([]);
   });
 
   it('test_purchase_and_auto_reload_bounds', () => {

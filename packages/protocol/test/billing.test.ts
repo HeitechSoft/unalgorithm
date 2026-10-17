@@ -1181,6 +1181,8 @@ describe('price issues', () => {
       'purchase-range',
       'auto-reload-per-day',
       'auto-reload-monthly',
+      'schedule-full',
+      'starter-full',
     ]);
     const NOV_2 = at('2026-11-02T12:00:00Z');
     const NOV_3 = '2026-11-03T00:00:00Z';

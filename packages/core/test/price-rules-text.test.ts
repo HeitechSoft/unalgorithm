@@ -171,6 +171,8 @@ describe('the price rules in plain words', () => {
     expect(text({ code: 'auto-reload-monthly' })).toBe(
       'The monthly limit must be whole dollars from the least amount people can buy to $5,000.',
     );
+    expect(text({ code: 'schedule-full' })).toBe('The price list is full: it holds at most 500 dates.');
+    expect(text({ code: 'starter-full' })).toBe("The starter credit can't change again: it keeps at most 500 amounts.");
     // Every code has its words.
     for (const code of PRICE_ISSUE_CODES) expect(text({ code, ...card }), code).toMatch(/^[A-Z].+\.$/);
 

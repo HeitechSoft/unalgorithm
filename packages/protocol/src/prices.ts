@@ -60,6 +60,12 @@ export const PRICE_BOUNDS = deepFreeze({
   monthlyLimitMaxMicros: { max: 5_000_000_000, step: CREDIT_AMOUNT_STEP_MICROS },
 } as const);
 
+/**
+ * The most entries a book's schedule holds, and the most starter credit steps (PriceBookSchema's limits). A save that
+ * would pass them is refused (`schedule-full`, `starter-full`), so no save stores a book the server cannot load again.
+ */
+export const MAX_PRICE_BOOK_ENTRIES = 500;
+
 const Micros = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 /** `YYYY-MM-DDT00:00:00Z` on a real calendar day. */
 const PriceDate = z.string().refine(isPriceDate, { message: 'Expected YYYY-MM-DDT00:00:00Z on a real calendar day' });
@@ -82,7 +88,7 @@ export const CreditPriceScheduleEntrySchema = z.strictObject({
   }),
 });
 /** Read-only, so a parsed schedule is a `CreditPriceSchedule` every schedule helper takes as it is. */
-export const CreditPriceScheduleSchema = z.array(CreditPriceScheduleEntrySchema).min(1).max(500).readonly();
+export const CreditPriceScheduleSchema = z.array(CreditPriceScheduleEntrySchema).min(1).max(MAX_PRICE_BOOK_ENTRIES).readonly();
 /** Oldest first. A grant uses the step in effect when the account was created (`starterCreditAt`, decision PD4). */
 export const StarterCreditStepSchema = z.strictObject({ from: z.iso.datetime(), amountMicros: Micros });
 /** The amounts one purchase may add (`creditAmount`'s limits), the quick picks beside the field and the one preselected. */
@@ -96,7 +102,7 @@ export const PurchaseRulesSchema = z.strictObject({
 export const AutoReloadCapsSchema = z.strictObject({ monthlyLimitMaxMicros: Micros, perDay: z.number().int().min(1).max(100) });
 export const PriceBookSchema = z.strictObject({
   schedule: CreditPriceScheduleSchema,
-  starterCredit: z.array(StarterCreditStepSchema).min(1).max(500).readonly(),
+  starterCredit: z.array(StarterCreditStepSchema).min(1).max(MAX_PRICE_BOOK_ENTRIES).readonly(),
   purchase: PurchaseRulesSchema,
   autoReload: AutoReloadCapsSchema,
 });
@@ -183,9 +189,21 @@ function partIssues(book: PriceBook): PriceIssue[] {
   return issues;
 }
 
+/** The schedule and the starter credit within PriceBookSchema's limits (`MAX_PRICE_BOOK_ENTRIES`). */
+function sizeIssues(book: PriceBook): PriceIssue[] {
+  const issues: PriceIssue[] = [];
+  if (book.schedule.length > MAX_PRICE_BOOK_ENTRIES) {
+    issues.push({ code: 'schedule-full', text: `schedule: at most ${MAX_PRICE_BOOK_ENTRIES} entries` });
+  }
+  if (book.starterCredit.length > MAX_PRICE_BOOK_ENTRIES) {
+    issues.push({ code: 'starter-full', text: `starterCredit: at most ${MAX_PRICE_BOOK_ENTRIES} steps` });
+  }
+  return issues;
+}
+
 /** Every problem with the book on its own, as issues; `[]` when it is sound. Soundness only, never the bounds. */
 export function priceBookIssues(book: PriceBook): PriceIssue[] {
-  return [...priceScheduleIssues(book.schedule), ...partIssues(book)];
+  return [...priceScheduleIssues(book.schedule), ...partIssues(book), ...sizeIssues(book)];
 }
 
 /** The bounds on every card of every head entry after `t`: a card in effect is never re-checked. */
@@ -289,7 +307,7 @@ export function priceBookChangeIssues(
     throw new RangeError('The notice must be a whole number of days, 0 or more.');
   }
   const shape = priceScheduleIssues(head.schedule);
-  const issues = [...shape, ...partIssues(head)];
+  const issues = [...shape, ...partIssues(head), ...sizeIssues(head)];
   if (shape.length === 0) issues.push(...priceScheduleChangeIssues(base.schedule, head.schedule, now, noticeDays));
   issues.push(...cardBoundIssues(head.schedule, t), ...starterIssues(base, head, t));
   issues.push(...purchaseAndAutoReloadIssues(base, head));

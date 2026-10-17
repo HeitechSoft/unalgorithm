@@ -13,6 +13,7 @@ import {
   type CreditPriceCard,
   DEFAULT_PRICE_BOOK,
   earliestRaise,
+  MAX_PRICE_BOOK_ENTRIES,
   type PriceBook,
   type PriceChangeRequest,
 } from '@unalgorithm/protocol';
@@ -328,6 +329,69 @@ describe('store and saves', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await rows()).toBe(2);
     expect(t.prices.published().etag).toBe(etag);
     expect((await page()).prices.version).toBe('2');
+  });
+
+  it('test_full_list_refused_and_nothing_written', async () => {
+    const { t, db, apply, rows } = await priceApp();
+    // A book whose starter credit holds the most steps PriceBookSchema allows: an hour apart, $1 and $2 in turn.
+    const steps = Array.from({ length: MAX_PRICE_BOOK_ENTRIES }, (_, i) => ({
+      from: new Date(Date.UTC(2020, 0, 1, i)).toISOString(),
+      amountMicros: (1 + (i % 2)) * 1_000_000,
+    }));
+    await db.insert(priceChanges).values({ action: 'starter', book: { ...DEFAULT_PRICE_BOOK, starterCredit: steps } });
+    await t.prices.refresh();
+    expect(t.prices.published().body.version).toBe('1');
+
+    // One step more would make a book the server cannot load again: refused in plain words, nothing written.
+    expect(await apply(starter('1', 3_000_000))).toEqual({
+      ok: false,
+      status: 400,
+      error: refusal("The starter credit can't change again: it keeps at most 500 amounts."),
+    });
+    expect(await rows()).toBe(1);
+
+    // The other parts still change, and the server still opens on what it stored.
+    expect(await apply({ action: 'auto-reload', baseVersion: '1', autoReload: AUTO_RELOAD })).toEqual({
+      ok: true,
+      version: '2',
+      changed: true,
+    });
+    const again = await openPriceStore(db, { seed: DEFAULT_PRICE_BOOK });
+    expect(again.published()).toEqual(t.prices.published());
+    expect(again.current().starterCredit).toHaveLength(MAX_PRICE_BOOK_ENTRIES);
+  });
+
+  it('test_copy_follows_save_without_reading_again', async () => {
+    const { t, db, adaId, apply } = await priceApp();
+    const behind = await openPriceStore(db, { seed: DEFAULT_PRICE_BOOK });
+
+    // The copy is the book the save committed: it follows even when the database cannot be read again after the commit.
+    const noRead = { ...t.prices, refresh: () => Promise.reject(new Error('The database is not answering.')) };
+    expect(await applyPriceChange(db, noRead, adaId, starter('0', 2_000_000), NOW)).toEqual({
+      ok: true,
+      version: '2',
+      changed: true,
+    });
+    expect(t.prices.published().body).toMatchObject({ version: '2', updatedAt: NOW.toISOString() });
+    expect(t.prices.current().starterCredit.at(-1)).toEqual({ from: NOW.toISOString(), amountMicros: 2_000_000 });
+    // The same copy, tag and all, as the server loads at its next start.
+    const reopened = await openPriceStore(db, { seed: DEFAULT_PRICE_BOOK });
+    expect(t.prices.published()).toEqual(reopened.published());
+    expect(Object.isFrozen(t.prices.current().starterCredit.at(-1))).toBe(true);
+
+    // A copy that fell behind (here, another store on the same database) catches up on the save the 409 refuses,
+    // so the page the admin reloads shows the version to change.
+    expect(behind.published().body.version).toBe('0');
+    expect(await applyPriceChange(db, behind, adaId, starter('0', 3_000_000), NOW)).toEqual({
+      ok: false,
+      status: 409,
+      error: PRICES_CHANGED,
+    });
+    expect(behind.published()).toEqual(t.prices.published());
+    const purchase = { action: 'purchase', baseVersion: behind.published().body.version, purchase: PURCHASE } as const;
+    expect(await applyPriceChange(db, behind, adaId, purchase, NOW)).toMatchObject({ ok: true, version: '3' });
+    expect(await apply({ action: 'auto-reload', baseVersion: '3', autoReload: AUTO_RELOAD })).toMatchObject({ version: '4' });
+    expect(t.prices.published().body.version).toBe('4');
   });
 
   it('test_store_reopens_and_refuses_broken_book', async () => {
