@@ -13,6 +13,7 @@
   "dependencies": {
     "@simplewebauthn/browser": "^14.0.0",
     "@unalgorithm/core": "workspace:*",
+    "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
     "react": "^19.3.0",

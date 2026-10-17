@@ -1,5 +1,5 @@
 import { outletForHost } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import { LEAN_BUCKETS, type LeanBucket, type LinkStatus, type PerspectivesResult } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
@@ -21,7 +21,7 @@ import { runPerspectives } from '../src/perspectives.ts';
 const SET = PERSPECTIVES_EVAL_SET;
 const byId = new Map(SET.map((i) => [i.id, i]));
 
-const bucketOfUrl = (url: string) => outletForHost(FIXTURE_REGISTRY, new URL(url).hostname)?.lean?.bucket;
+const bucketOfUrl = (url: string) => outletForHost(FIXTURE_LIST, new URL(url).hostname)?.lean?.bucket;
 
 /** One item through the mock deps, with a clone of every hit the searcher returned. */
 async function mockRun(item: PerspectivesEvalItem, opts: Parameters<typeof mockPerspectivesDepsFor>[1] = {}) {
@@ -100,7 +100,7 @@ describe('perspectives eval report', () => {
   it('test_perspectives_eval_provenance_and_lean_integrity', async () => {
     const item = SET[0] as PerspectivesEvalItem;
     const { result, hits } = await mockRun(item);
-    const trace = tracePerspectives(result, hits, FIXTURE_REGISTRY);
+    const trace = tracePerspectives(result, hits, FIXTURE_LIST);
     expect(trace.shown).toBeGreaterThan(0);
     expect(trace).toEqual({
       shown: trace.shown,
@@ -115,7 +115,7 @@ describe('perspectives eval report', () => {
     const target = doctoredHits.find((h) => h.url === cited?.url);
     if (!target) throw new Error('expected the cited hit');
     target.snippets = ['Something else entirely.'];
-    const untraced = tracePerspectives(result, doctoredHits, FIXTURE_REGISTRY);
+    const untraced = tracePerspectives(result, doctoredHits, FIXTURE_LIST);
     expect(untraced.traced).toBeLessThan(untraced.shown);
 
     // A shown source whose bucket is not its outlet's.
@@ -123,7 +123,7 @@ describe('perspectives eval report', () => {
     const source = doctored.sources[0];
     if (!source) throw new Error('expected a source');
     source.bucket = LEAN_BUCKETS.find((b) => b !== source.bucket) as LeanBucket;
-    const lean = tracePerspectives(doctored, hits, FIXTURE_REGISTRY);
+    const lean = tracePerspectives(doctored, hits, FIXTURE_LIST);
     expect(lean.leanOk).toBeLessThan(lean.sources);
   });
 

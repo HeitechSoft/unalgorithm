@@ -10,6 +10,7 @@ import {
   type CreditTask,
   DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
+  FEATURE_NAMES,
   jobPriceAt,
   priceCardsAt,
   retailMicrosPer1000Posts,
@@ -38,12 +39,6 @@ export const REFERENCE_MODEL_LABELS: Readonly<Record<string, string>> = Object.f
   'claude-haiku-5-5': 'Claude Haiku 5.5',
   'claude-sonnet-5-5': 'Claude Sonnet 5.5',
 });
-
-/** The names of the Labs tasks as the extension shows them. */
-const LABS_TASK_LABELS: Readonly<Record<Exclude<CreditTask, 'classify'>, string>> = {
-  factcheck: 'Fact-check',
-  perspectives: 'Other perspectives',
-};
 
 export const CREDITS_PLACEHOLDERS = [
   'classifyMultiplier',
@@ -110,12 +105,15 @@ function jobPriceText(
   return `${times(card)} our AI cost, typically about ${formatPrice(price.typicalMicros)} per ${unit}${model}, and never more than ${formatPrice(price.maxMicros)} for one ${unit}.`;
 }
 
-/** One bullet per Labs task priced at `at` or by a later entry; each dated where it is not yet in effect. */
+/**
+ * One bullet per job task (Fact-check, UnEcho Chamber) priced at `at` or by a later entry; each dated where it is not
+ * yet in effect. The name `labsPrices` is kept from when both were Labs features (it is the page's placeholder).
+ */
 function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
   const lines: string[] = [];
   for (const task of CREDIT_TASKS) {
     if (task === 'classify') continue;
-    const label = `- **${LABS_TASK_LABELS[task]}**:`;
+    const label = `- **${FEATURE_NAMES[task]}**:`;
     const next = nextCardChange(at, task, schedule);
     if (!priceCardsAt(at, schedule).cards[task]) {
       if (next) {
@@ -132,7 +130,9 @@ function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
     }
     lines.push(line);
   }
-  return lines.length > 0 ? lines.join('\n') : 'Labs features are not offered on UnAlgorithm Cloud yet.';
+  return lines.length > 0
+    ? lines.join('\n')
+    : `${FEATURE_NAMES.factcheck} and ${FEATURE_NAMES.perspectives} are not offered on UnAlgorithm Cloud yet.`;
 }
 
 /**

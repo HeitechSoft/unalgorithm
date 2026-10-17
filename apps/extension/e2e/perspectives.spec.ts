@@ -9,9 +9,10 @@ import {
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_MARKER } from '@unalgorithm/outlets/testing';
 import { LEAN_BUCKETS } from '@unalgorithm/protocol';
 import {
+  answerAnthropicModels,
   CORS,
   EXTENSION_PATH,
   expect,
@@ -37,15 +38,16 @@ import {
   LINK_TITLE,
   LINK_URL,
   PERSPECTIVES,
+  PERSPECTIVES_START,
   perspectivesButton,
   today,
 } from './perspectives-fixtures.ts';
 
 /**
- * Other perspectives end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built
- * in e2e mode (so `perspectivesRegistry()` is the fictional fixture registry), goes from the public Facebook link share
- * to the comparison in the side panel, with nothing but a mocked api.anthropic.com answered through `context.route`.
- * Every other request is aborted by the fixtures. No server, no Docker.
+ * UnEcho Chamber end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built in
+ * e2e mode (so UnAlgorithm Cloud's list, the default choice, is the fictional fixture), goes from the public Facebook
+ * link share to the comparison in the side panel, with nothing but a mocked api.anthropic.com answered through
+ * `context.route`. Every other request is aborted by the fixtures. No server, no Docker.
  */
 
 /** An Anthropic-shaped key: only the mock ever sees it. */
@@ -96,6 +98,7 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   await context.route('https://api.anthropic.com/**', (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+    if (answerAnthropicModels(route)) return;
     const parsed: unknown = request.postDataJSON();
     const body = isRecord(parsed) ? parsed : {};
     const kind = requestKind(body);
@@ -164,14 +167,14 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   return mock;
 }
 
-/** Save the Anthropic source from an extension page; with `labs`, turn Labs → Other perspectives on. */
+/** Save the Anthropic source from an extension page; with `labs`, turn UnEcho Chamber on. */
 async function setUp(context: BrowserContext, extensionId: string, opts: { labs: boolean }): Promise<Page> {
   const options = await saveSource(context, extensionId, { kind: 'anthropic', model: null }, API_KEY);
   if (opts.labs) await turnOnLabs(options, PERSPECTIVES);
   return options;
 }
 
-/** Other perspectives on the link share: the price, then Compare, then "See result". */
+/** UnEcho Chamber on the link share: the price, then Compare, then "See result". */
 const compare = (share: Locator) => compareAt(share, PRICE);
 
 test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, extensionId, feed }) => {
@@ -181,18 +184,18 @@ test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, 
   const facebook = await facebookFeed(context);
   const { friends, share } = facebookPosts(facebook);
 
-  // Labs off: both feeds classified (their picks marked), and no post offers Other perspectives.
+  // UnEcho Chamber off: both feeds classified (their picks marked), and no post offers UnEcho Chamber.
   await expect(linkedinPost(linkedin)).toHaveAttribute('data-unalgo-pick', '');
   await expect(share).toHaveAttribute('data-unalgo-pick', '');
   for (const page of [linkedin, facebook])
-    await expect(page.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(0);
+    await expect(page.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(0);
 
-  // Labs on: only the public link share the mock called news gets it.
+  // UnEcho Chamber on: only the public link share the mock called news gets it.
   await turnOnLabs(options, PERSPECTIVES);
   await expect(perspectivesButton(share)).toBeVisible();
   await expect(perspectivesButton(friends)).toHaveCount(0);
-  await expect(facebook.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(1);
-  await expect(linkedin.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES })).toHaveCount(0);
+  await expect(facebook.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(1);
+  await expect(linkedin.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START })).toHaveCount(0);
   // Offered, never started: nothing but classification reached the model.
   expect(mock.comparison()).toEqual([]);
 });
@@ -249,13 +252,9 @@ test('test_e2e_perspectives_only_link_leaves', async ({ context, extensionId }) 
 
 test('test_e2e_store_build_has_no_fixture_registry', () => {
   test.skip(!existsSync(STORE_BUILD), 'no store build in .output/chrome-mv3 (CI builds it with `pnpm zip`)');
-  // The fixture's domains are built at run time, so its version and notice mark it in a bundle; the e2e build, which
-  // holds the fixture, shows the markers find it.
-  const markers = [
-    FIXTURE_REGISTRY.meta.version,
-    FIXTURE_REGISTRY.meta.notice,
-    ...FIXTURE_REGISTRY.outlets.flatMap((o) => [o.name, ...o.domains]),
-  ];
+  // The fixture's names and domains are built at run time, so the marker in its evidence notes marks it in a bundle;
+  // the e2e build, which holds the fixture, shows the marker finds it.
+  const markers = [FIXTURE_MARKER];
   const holding = (dir: string) => files(dir).filter((file) => markers.some((m) => readFileSync(file, 'latin1').includes(m)));
   expect(holding(EXTENSION_PATH).length).toBeGreaterThan(0);
   expect(holding(STORE_BUILD)).toEqual([]);

@@ -211,6 +211,28 @@ describe('validation', () => {
     expect(validateSettingsItem(item)).toBe(ok);
   });
 
+  it('test_own_source_list_items_validate', () => {
+    // P3-76 (D100): one item per outlet of the person's own UnEcho Chamber list, and the list choice.
+    const outlet = { name: 'FX News', domains: ['fx-news.example'], bucket: 'center', addedAt: 1 };
+    expect(isSettingsEntryKey('perspectives.outlets.fx-news')).toBe(true);
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', outlet))).toBe(true);
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', { ...outlet, bucket: null }))).toBe(true);
+    expect(validateSettingsItem(tombstone('perspectives.outlets.fx-news'))).toBe(true);
+    expect(validateSettingsItem(live('perspectives.list', 'own'))).toBe(true);
+    expect(validateSettingsItem(live('perspectives.list', 'cloud'))).toBe(true);
+
+    expect(validateSettingsItem(live('perspectives.list', 'friends'))).toBe(false);
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', { ...outlet, domains: ['www.fx-news.example'] }))).toBe(
+      false,
+    );
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', { ...outlet, bucket: 'far-left' }))).toBe(false);
+    const { name: _name, ...nameless } = outlet;
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', nameless))).toBe(false);
+    expect(validateSettingsItem(live('perspectives.outlets.fx-news', { ...outlet, name: ' ' }))).toBe(false);
+    // The map itself never syncs as one item.
+    expect(validateSettingsItem(live('perspectives.outlets', { 'fx-news': outlet }))).toBe(false);
+  });
+
   it('test_validate_settings_item_edges', () => {
     // 8,192 bytes is the limit itself.
     expect(validateSettingsItem(live('display.newField', 'a'.repeat(8_190)))).toBe(true);

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FEATURE_NAMES } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestFor } from '../wxt.config.ts';
 
@@ -12,6 +13,7 @@ import { manifestFor } from '../wxt.config.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const STORE = join(REPO_ROOT, 'docs/store');
+const read = (file: string) => readFileSync(join(REPO_ROOT, file), 'utf8');
 const listing = () => readFileSync(join(REPO_ROOT, 'docs/store-listing.md'), 'utf8').replace(/\r\n/g, '\n');
 const messages = () =>
   JSON.parse(readFileSync(join(REPO_ROOT, 'apps/extension/public/_locales/en/messages.json'), 'utf8')) as Record<
@@ -85,5 +87,69 @@ describe('Chrome Web Store material', () => {
     }
     // The store build has no Cloud card, so nothing about the permissions it would add.
     for (const cloudOnly of ['identity', 'alarms']) expect(headings.join(' ')).not.toContain(cloudOnly);
+  });
+
+  it('test_store_listing_without_labs', () => {
+    // P3-64: Fact-check and UnEcho Chamber left Labs, so no disclosure or doc page names it.
+    const docs = [
+      'PRIVACY.md',
+      'CLOUD-BETA-NOTICE.md',
+      'docs/store-listing.md',
+      'docs/ai-sources.md',
+      'docs/privacy-model.md',
+      'docs/site/credits.md',
+    ];
+    for (const file of docs) expect(read(file), file).not.toMatch(/\bLabs\b/);
+  });
+
+  it('test_store_listing_describes_unecho_chamber', () => {
+    // D103 (reverses D79): every build shows UnEcho Chamber, so the listing describes it, with what it sends.
+    const oneLine = (text: string) => text.replace(/\s+/g, ' ');
+    const md = listing();
+    const description = section(md, 'Description');
+    expect(description).toContain('FACT-CHECK AND UNECHO CHAMBER (OFF BY DEFAULT)');
+    expect(description).not.toContain('FACT-CHECK (OFF BY DEFAULT)');
+    expect(description).toContain(
+      `• ${FEATURE_NAMES.perspectives}: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by UnAlgorithm Cloud's source list or your own.`,
+    );
+    expect(oneLine(section(md, 'Data usage'))).toContain(
+      "the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber)",
+    );
+
+    // PRIVACY.md says what a comparison sends a server, that it is never kept, and where leans come from.
+    const privacy = read('PRIVACY.md').replace(/\r\n/g, '\n');
+    const paragraph = (start: string) => oneLine(privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '');
+    const ownKey = paragraph('**UnEcho Chamber (off by default');
+    const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
+    expect(ownKey).toContain("the outlets your chosen source list gives a lean (UnAlgorithm Cloud's list or your own)");
+    expect(ownKey).toContain(
+      "Lean labels come only from UnAlgorithm Cloud's source list, set by its admins with evidence, or from your own list, never from the AI.",
+    );
+    expect(server).toContain("your chosen list's outlets with a lean, as web addresses and leans without names");
+    expect(server).toContain('never stored or logged');
+    expect(server).toContain('This browser shows a result only when every lean in it matches the list it sent.');
+    expect(oneLine(privacy)).toContain('your own list, never from the AI');
+    expect(privacy).not.toMatch(/reviewed outlet list|our outlet list/);
+  });
+
+  it('test_privacy_and_listing_describe_source_list_fetch', () => {
+    // P3-75 (D98): the one request every extension makes while UnEcho Chamber is on, disclosed in the same change.
+    const oneLine = (text: string) => text.replace(/\s+/g, ' ');
+    const privacy = oneLine(read('PRIVACY.md'));
+    for (const phrase of [
+      'at most once a day',
+      'cloud.unalgorithm.app',
+      'no account, cookie or sign-in',
+      'never your IP address',
+    ]) {
+      expect(privacy, phrase).toContain(phrase);
+    }
+    const md = listing();
+    expect(oneLine(section(md, 'Remote code'))).toContain(
+      "UnAlgorithm Cloud's published source list is JSON data, never run as code.",
+    );
+    expect(oneLine(section(md, 'Data usage'))).toContain(
+      "downloads UnAlgorithm Cloud's public source list at most once a day; the request carries no user data.",
+    );
   });
 });

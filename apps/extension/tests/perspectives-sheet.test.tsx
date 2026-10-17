@@ -1,11 +1,12 @@
 /**
- * The side-panel "Other perspectives" sheet (P3-39): coverage by lean bucket with every gap named, agreed facts,
- * differences and one-side claims with their quoted sources, the AI and registry labels, all as plain text; the side
- * panel picks it for a `task: 'perspectives'` entry. Outlets are fictional fixtures.
+ * The side-panel UnEcho Chamber sheet (P3-39, P3-77): coverage by lean bucket with every gap named, agreed facts,
+ * differences and one-side claims with their quoted sources, the AI label, which source list the leans came from and its
+ * balance warnings, all as plain text; the side panel picks it for a `task: 'perspectives'` entry. Outlets are
+ * fictional fixtures.
  */
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { emptyTabState } from '@unalgorithm/core';
-import type { FactcheckResult, LeanBucket, PerspectivesResult } from '@unalgorithm/protocol';
+import { type FactcheckResult, type LeanBucket, type PerspectivesResult, SOURCE_LIST_PAGE_URL } from '@unalgorithm/protocol';
 import { PerspectivesSheet, type PerspectivesSheetProps } from '@unalgorithm/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -39,6 +40,7 @@ function result(overrides: Partial<PerspectivesResult> = {}): PerspectivesResult
     model: 'claude-sonnet-5-5',
     promptVersion: 1,
     registryVersion: 'fixture-1',
+    list: 'cloud',
     story: {
       url: 'https://story.example/harbour-bridge',
       query: 'Harbour bridge reopens after repairs',
@@ -182,13 +184,136 @@ describe('PerspectivesSheet', () => {
 
   it('test_perspectives_sheet_footer_labels', () => {
     sheet();
+    const region = screen.getByRole('region', { name: 'UnEcho Chamber' });
+    expect(within(region).getByRole('heading', { level: 2 }).textContent).toBe('UnEcho Chamber');
     expect(screen.getByText('AI-generated')).toBeTruthy();
     const when = new Date(CHECKED_AT).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     expect(screen.getByText(`Compared ${when}`)).toBeTruthy();
-    expect(
-      screen.getByText('Leans come from the UnAlgorithm outlet registry (fixture-1), reviewed by people, never from AI.'),
-    ).toBeTruthy();
     expect(screen.getByText('AI can be wrong, so open the sources.')).toBeTruthy();
+  });
+
+  it('test_perspectives_sheet_footer_by_list', async () => {
+    // UnAlgorithm Cloud's list: its version, set by people with evidence. Balanced: no notice.
+    sheet({ result: result({ registryVersion: '57' }), listWarnings: [] });
+    expect(
+      screen.getByText("Leans come from UnAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/your own source list/)).toBeNull();
+    expect(screen.queryByText(/isn't balanced/)).toBeNull();
+    cleanup();
+
+    // Your own list: unreviewed, and its warnings as they were when the run started, above the footer.
+    sheet({ result: result({ list: 'own', registryVersion: '' }), listWarnings: ['No outlets in Right.'] });
+    const footer = screen.getByText('Leans come from your own source list, which no one has reviewed. Never from AI.');
+    expect(screen.queryByText(/UnAlgorithm Cloud's source list/)).toBeNull();
+    const notice = screen.getByRole('status');
+    expect(within(notice).getByText("Your list isn't balanced")).toBeTruthy();
+    expect(within(notice).getByText('No outlets in Right.')).toBeTruthy();
+    expect(notice.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+
+    // The Cloud's list with warnings: named as the Cloud's.
+    sheet({ result: result(), listWarnings: ['Only 1 outlet in Center.'] });
+    expect(within(screen.getByRole('status')).getByText("UnAlgorithm Cloud's list isn't balanced")).toBeTruthy();
+    cleanup();
+
+    // The side panel passes the entry's warnings.
+    fakeBrowser.reset();
+    const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
+    await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
+    const entry: FactcheckEntry = {
+      key: 'li:1' as FactcheckEntry['key'],
+      task: 'perspectives',
+      label: 'Harbour bridge reopens',
+      startedAt: Date.now(),
+      status: 'done',
+      perspectives: result({ list: 'own', registryVersion: '' }),
+      listWarnings: ['No outlets in Right.'],
+    };
+    await factcheckItem(TAB.id).setValue({ entries: [entry] });
+    render(<SidePanel />);
+    expect(await screen.findByText("Your list isn't balanced")).toBeTruthy();
+    expect(screen.getByText('No outlets in Right.')).toBeTruthy();
+    expect(screen.getByText('Leans come from your own source list, which no one has reviewed. Never from AI.')).toBeTruthy();
+  });
+
+  it('test_perspectives_sheet_source_list_link_for_cloud_only', async () => {
+    const CLOUD_LINE = "Leans come from UnAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI.";
+    const OWN_LINE = 'Leans come from your own source list, which no one has reviewed. Never from AI.';
+    const leansLine = (container: HTMLElement) =>
+      [...(container.querySelector('.ua-factcheck-foot') as HTMLElement).children].find((c) =>
+        c.textContent?.startsWith('Leans come from'),
+      ) as HTMLElement;
+
+    // A Cloud result with `listHref`: the list's name in the footer sentence is the link, the sentence unchanged.
+    const cloud = sheet({ result: result({ registryVersion: '57' }), listHref: SOURCE_LIST_PAGE_URL });
+    const link = screen.getByRole('link', { name: "UnAlgorithm Cloud's source list" });
+    expect(link.getAttribute('href')).toBe('https://cloud.unalgorithm.app/outlets');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    const line = leansLine(cloud.container);
+    expect(link.parentElement).toBe(line);
+    expect(line.textContent).toBe(CLOUD_LINE);
+    cleanup();
+
+    // An own-list result never links: it is the person's list.
+    const own = sheet({ result: result({ list: 'own', registryVersion: '' }), listHref: SOURCE_LIST_PAGE_URL });
+    expect(leansLine(own.container).textContent).toBe(OWN_LINE);
+    expect(leansLine(own.container).querySelector('a')).toBeNull();
+    expect(screen.queryByRole('link', { name: /source list/ })).toBeNull();
+    cleanup();
+
+    // Without `listHref` the Cloud's sentence is plain text.
+    const plain = sheet({ result: result({ registryVersion: '57' }) });
+    expect(screen.getByText(CLOUD_LINE)).toBe(leansLine(plain.container));
+    expect(screen.queryByRole('link', { name: /source list/ })).toBeNull();
+    cleanup();
+
+    // The footer's links follow the existing lines, in one line of their own.
+    const links = [
+      { text: 'How UnEcho Chamber works', href: 'https://unalgorithmfeed.com/methodology' },
+      { text: 'Report a mistake', href: 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml' },
+    ];
+    const linked = sheet({ links });
+    const foot = linked.container.querySelector('.ua-factcheck-foot') as HTMLElement;
+    expect(foot.lastElementChild?.textContent).toBe('How UnEcho Chamber works · Report a mistake');
+    for (const { text, href } of links) {
+      const a = within(foot).getByRole('link', { name: text });
+      expect(a.getAttribute('href')).toBe(href);
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    }
+    cleanup();
+
+    // The side panel passes the Cloud list's page and the links for a Cloud comparison.
+    fakeBrowser.reset();
+    const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
+    await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
+    await factcheckItem(TAB.id).setValue({
+      entries: [
+        {
+          key: 'li:1' as FactcheckEntry['key'],
+          task: 'perspectives',
+          label: 'Harbour bridge reopens',
+          startedAt: Date.now(),
+          status: 'done',
+          perspectives: result({ registryVersion: '57' }),
+          listWarnings: [],
+        },
+      ],
+    });
+    render(<SidePanel />);
+    const panelLink = await screen.findByRole('link', { name: "UnAlgorithm Cloud's source list" });
+    expect(panelLink.getAttribute('href')).toBe(SOURCE_LIST_PAGE_URL);
+    const report = new URL(screen.getByRole('link', { name: 'Report a mistake' }).getAttribute('href') as string);
+    expect(report.searchParams.get('feature')).toBe('UnEcho Chamber');
+    expect(report.searchParams.get('list')).toBe("UnAlgorithm Cloud's list");
+    expect(report.searchParams.get('version')).toBe('9.8.7');
+    expect(screen.getByRole('link', { name: 'How UnEcho Chamber works' })).toBeTruthy();
   });
 
   it('test_perspectives_sheet_text_only', () => {
@@ -229,6 +354,7 @@ describe('side panel', () => {
   beforeEach(async () => {
     fakeBrowser.reset();
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
   });
 
@@ -242,7 +368,7 @@ describe('side panel', () => {
     });
     await factcheckItem(TAB.id).setValue({ entries: [comparison, older] });
     render(<SidePanel />);
-    expect(await screen.findByRole('heading', { name: 'Other perspectives' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'UnEcho Chamber' })).toBeTruthy();
     expect(screen.getByText('The bridge reopened on Monday.')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Fact-check' })).toBeNull();
     cleanup();
@@ -251,6 +377,6 @@ describe('side panel', () => {
     render(<SidePanel />);
     expect(await screen.findByRole('heading', { name: 'Fact-check' })).toBeTruthy();
     expect(screen.getByText('The bridge opened in 1932.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Other perspectives: Harbour bridge reopens' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'UnEcho Chamber: Harbour bridge reopens' })).toBeTruthy();
   });
 });

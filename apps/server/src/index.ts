@@ -9,7 +9,6 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { AIError } from '@unalgorithm/ai';
-import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
 import { FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
 import { logSetupNeeded } from './admin/setup.ts';
 import { registerClaimCacheJobs } from './ai/claim-cache.ts';
@@ -60,11 +59,6 @@ export interface StartOptions {
    * window, which the default logger does not feed.
    */
   errors?: ErrorWindow;
-  /**
-   * The outlet registry perspectives compares across; null: not offered. Default: `usableRegistry(bundledRegistry())`.
-   * Only the test entry (`test/support/fixture-outlets-entry.ts`) passes the fixture registry.
-   */
-  outlets?: Registry | null;
 }
 
 export interface RunningServer {
@@ -93,7 +87,6 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     maxRunning: 4,
     maxKeptPerUser: 5,
   });
-  const outlets = opts.outlets === undefined ? usableRegistry(bundledRegistry()) : opts.outlets;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     await logSetupNeeded(db.db, log);
@@ -135,7 +128,6 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       priceSchedule: host.priceSchedule,
       factcheckJobs,
       perspectivesJobs,
-      outlets,
     });
     running = await startJobs(db, jobs, log);
     server = await listen(app, config.host, opts.port ?? config.port);
@@ -253,8 +245,8 @@ export function startFailureMessage(err: unknown): string | undefined {
   return undefined;
 }
 
-/** Runs the server from the environment until SIGTERM or SIGINT. `opts.outlets`: see `StartOptions` (the test entry). */
-export async function main(opts: Pick<StartOptions, 'outlets'> = {}): Promise<void> {
+/** Runs the server from the environment until SIGTERM or SIGINT. */
+export async function main(): Promise<void> {
   let config: Config;
   try {
     config = loadConfig(process.env);
@@ -270,7 +262,7 @@ export async function main(opts: Pick<StartOptions, 'outlets'> = {}): Promise<vo
   const log = createLogger({ level: config.logLevel, onError: () => errors.record() });
   let server: RunningServer;
   try {
-    server = await startServer(config, { ...opts, log, errors });
+    server = await startServer(config, { log, errors });
   } catch (err) {
     const message = startFailureMessage(err);
     if (message !== undefined) console.error(message);

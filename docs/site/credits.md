@@ -11,7 +11,7 @@ thousand posts on {{referenceModel}}. {{priceChange}}
 
 Failed AI requests are never charged.
 
-### Labs features
+### Fact-check and UnEcho Chamber
 
 {{labsPrices}}
 

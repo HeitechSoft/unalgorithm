@@ -6,6 +6,7 @@ import {
   type FactcheckJob,
   FactcheckJobSchema,
   type FactcheckResult,
+  FEATURE_NAMES,
   factcheckJobCancelPath,
   factcheckJobPath,
   PERSPECTIVES_JOBS_PATH,
@@ -78,9 +79,10 @@ export function runFactcheckViaServer(account: ServerAccount, post: PostForAI, o
 }
 
 /**
- * Other perspectives on the server: only the shared link (URL and link-card title), the platform and, on Facebook, the
- * audience leave the browser. The body is built field by field, `link` too, so nothing else on the caller's objects
- * (post text included) can ride along.
+ * UnEcho Chamber on the server: only the shared link (URL and link-card title), the platform, on Facebook the audience,
+ * and the chosen source list as web addresses and buckets (`wireList`, decision D102) leave the browser. The body is
+ * built field by field, `link` and `list` too, so nothing else on the caller's objects (post text, an outlet's name or
+ * id) can ride along.
  */
 export function runPerspectivesViaServer(
   account: ServerAccount,
@@ -92,6 +94,11 @@ export function runPerspectivesViaServer(
     link: { url: req.link.url, ...(req.link.title !== undefined ? { title: req.link.title } : {}) },
     platform: req.platform,
     ...(req.audience ? { audience: req.audience } : {}),
+    list: {
+      kind: req.list.kind,
+      version: req.list.version,
+      outlets: req.list.outlets.map((o) => ({ bucket: o.bucket, domains: [...o.domains] })),
+    },
   };
   return runJobViaServer(account, PERSPECTIVES_TASK, body, opts);
 }
@@ -203,7 +210,9 @@ export function jobServerMessage(task: JobTaskId, code: AIErrorCode, title: stri
       // The server's cost ceiling and a model answer cut off at its token limit share this code (P3-11).
       return `This ${fc ? 'check' : 'comparison'} stopped before it finished, so nothing was charged.`;
     case 'not-available':
-      return fc ? "This server doesn't offer fact-check right now." : "This server doesn't offer Other perspectives right now.";
+      return fc
+        ? "This server doesn't offer fact-check right now."
+        : `This server doesn't offer ${FEATURE_NAMES.perspectives} right now.`;
     default:
       return describeError(code, title);
   }

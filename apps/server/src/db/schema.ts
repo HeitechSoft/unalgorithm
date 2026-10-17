@@ -3,7 +3,8 @@
  * client and drizzle-kit see one schema.
  *
  * No table holds post text or prompts. The server keeps accounts, devices, tokens, AI routes, usage counts and each
- * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3).
+ * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3)
+ * and the outlet names of their own UnEcho Chamber source list (P3-76).
  * Post content passes through classification and is never written down (ADR 0007).
  *
  * Adding a table: define it here (or in a module re-exported from here), run
@@ -12,7 +13,7 @@
  * committed migration. A branch that rebases onto someone else's migration deletes its own generated files and runs
  * `db:generate` again.
  */
-import { HLC_ZERO } from '@unalgorithm/protocol';
+import { HLC_ZERO, type LeanBucket, type OfficialOutlet, type OutletChangeAction } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -326,4 +327,41 @@ export const claimCache = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
   (table) => [index('claim_cache_expires_at_idx').on(table.expiresAt)],
+);
+
+/*
+ * The server's source list for UnEcho Chamber (P3-73, decisions D92–D95): an editorial list, published whole, with an
+ * append-only history of every change. No personal data except which admin made each change.
+ */
+
+/** The list as published now: one row per outlet. Written only by `admin/outlets.ts`, under its advisory lock. */
+export const outlets = pgTable('outlets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  domains: jsonb('domains').$type<string[]>().notNull(),
+  country: text('country').$type<OfficialOutlet['country']>().notNull(),
+  /** A LEAN_BUCKETS member, or null: no lean. */
+  bucket: text('bucket').$type<LeanBucket>(),
+  /** [{ url, note }], at least one when `bucket` is set (OutletInputSchema). */
+  evidence: jsonb('evidence').$type<{ url: string; note: string }[]>().notNull().default([]),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull(),
+});
+
+/** Every change to the list, never updated or deleted, except that `changed_by` empties when that account is deleted. */
+export const outletChanges = pgTable(
+  'outlet_changes',
+  {
+    /** The list's version after this change. */
+    seq: bigint('seq', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** An OUTLET_CHANGE_ACTIONS member. */
+    action: text('action').$type<OutletChangeAction>().notNull(),
+    outletId: text('outlet_id').notNull(),
+    /** The outlet as published before and after (OfficialOutletSchema); null before an add or import, after a remove. */
+    before: jsonb('before'),
+    after: jsonb('after'),
+    /** The admin; null for a deleted account. Never published (decision D94). */
+    changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('outlet_changes_at').on(table.changedAt)],
 );

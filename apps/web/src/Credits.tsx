@@ -18,6 +18,7 @@ import {
   type CreditPriceSchedule,
   type CreditTask,
   estimatePosts,
+  FEATURE_NAMES,
   nextPriceChange,
   retailMicrosPer1000Posts,
 } from '@unalgorithm/protocol';
@@ -227,8 +228,8 @@ function promotionalLine({ starter, promoMicros, promoExpiresAt }: CreditBalance
 /** Usage lines say how many units the day used: posts classified, checks or comparisons. Draft copy (D21). */
 const USAGE: Record<CreditTask, (n: string, one: boolean) => string> = {
   classify: (n, one) => `AI for ${n} ${one ? 'post' : 'posts'}`,
-  factcheck: (n, one) => `Fact-check, ${n} ${one ? 'check' : 'checks'}`,
-  perspectives: (n, one) => `Other perspectives, ${n} ${one ? 'comparison' : 'comparisons'}`,
+  factcheck: (n, one) => `${FEATURE_NAMES.factcheck}, ${n} ${one ? 'check' : 'checks'}`,
+  perspectives: (n, one) => `${FEATURE_NAMES.perspectives}, ${n} ${one ? 'comparison' : 'comparisons'}`,
 };
 
 function historyTitle(item: CreditHistoryItem): string {

@@ -1,6 +1,6 @@
 import { type MockOpenAI, type MockOpenAIOptions, startMockOpenAI } from '@unalgorithm/ai/testing';
 import { expect, test } from './fixtures.ts';
-import { databaseExists, type LocalServer, type ServerEntry, startLocalServer } from './server-harness.ts';
+import { databaseExists, type LocalServer, startLocalServer } from './server-harness.ts';
 
 /** A running server and the mock AI provider it classifies through. */
 export interface StartedServer {
@@ -14,12 +14,11 @@ export interface StartedServer {
  * the cleanup (`test_harness_cleans_up`, `test_credits_harness_cleans_up`): the process exited and the run's own
  * `ua_e2e_*` database is gone. Returns the running pair for the group's tests; `route-eval` has already used the mock.
  * `env` may be a function, read in `beforeAll`, for values an earlier `beforeAll` sets (a mock search provider's
- * address); `ai` configures the mock provider (its verdicts); `entry` the server's entry point (`startLocalServer`).
+ * address); `ai` configures the mock provider (its verdicts).
  */
 export function useLocalServer(
   env?: Readonly<Record<string, string>> | (() => Readonly<Record<string, string>>),
   ai?: MockOpenAIOptions,
-  opts: { entry?: ServerEntry } = {},
 ): () => StartedServer {
   let mock: MockOpenAI | undefined;
   let server: LocalServer | undefined;
@@ -30,7 +29,6 @@ export function useLocalServer(
     server = await startLocalServer({
       aiBaseUrl: mock.baseUrl,
       env: typeof env === 'function' ? env() : env,
-      ...(opts.entry ? { entry: opts.entry } : {}),
     });
   });
 

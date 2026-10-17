@@ -1,12 +1,20 @@
 import { Lockup, Search } from '@unalgorithm/ui';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { SourceListEditor } from '../../components/SourceListEditor.tsx';
 import { useDevice, useSettings } from '../../lib/hooks.ts';
 import { NAV, type PaneId } from './nav.ts';
-import { AboutPane, AiPane, DisplayPane, InterestsPane, LabsPane, PlatformPane, PrivacyPane } from './panes.tsx';
+import { AboutPane, AiPane, DisplayPane, InterestsPane, PlatformPane, PrivacyPane } from './panes.tsx';
 
 function paneFromHash(): PaneId {
-  const id = location.hash.replace(/^#\/?/, '').split('/')[0] as PaneId;
+  const read = location.hash.replace(/^#\/?/, '').split('/')[0];
+  // The Labs pane's switches moved to the end of AI (P3-64): old links in docs, issues and bookmarks open AI.
+  const id = (read === 'labs' ? 'ai' : read) as PaneId;
   return NAV.some((n) => n.id === id) ? id : 'linkedin';
+}
+
+/** A page inside a pane: `#/ai/sources` is the AI pane's source list editor (P3-76). */
+function subFromHash(): string | null {
+  return location.hash.replace(/^#\/?/, '').split('/')[1] ?? null;
 }
 
 /** UnAlgorithm Settings, laid out like macOS System Settings. Every change applies instantly. */
@@ -14,19 +22,24 @@ export function App() {
   const [settings, save] = useSettings();
   const [device, saveDevice] = useDevice();
   const [pane, setPane] = useState<PaneId>(paneFromHash());
+  const [sub, setSub] = useState<string | null>(subFromHash());
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    const onHash = () => setPane(paneFromHash());
+    const onHash = () => {
+      setPane(paneFromHash());
+      setSub(subFromHash());
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   useEffect(() => {
     const item = NAV.find((n) => n.id === pane);
-    document.title = `${item?.label ?? 'Settings'} · UnAlgorithm`;
+    const title = pane === 'ai' && sub === 'sources' ? 'Your source list' : (item?.label ?? 'Settings');
+    document.title = `${title} · UnAlgorithm`;
     document.querySelector<HTMLElement>('.pane h1')?.focus();
-  }, [pane]);
+  }, [pane, sub]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -39,6 +52,7 @@ export function App() {
   const go = (id: PaneId) => {
     location.hash = `#/${id}`;
     setPane(id);
+    setSub(null);
   };
 
   let content: ReactNode;
@@ -54,10 +68,12 @@ export function App() {
       content = <InterestsPane settings={settings} save={save} />;
       break;
     case 'ai':
-      content = <AiPane settings={settings} save={save} device={device} />;
-      break;
-    case 'labs':
-      content = <LabsPane device={device} saveDevice={saveDevice} />;
+      content =
+        sub === 'sources' ? (
+          <SourceListEditor settings={settings} save={save} />
+        ) : (
+          <AiPane settings={settings} save={save} device={device} saveDevice={saveDevice} />
+        );
       break;
     case 'privacy':
       content = <PrivacyPane settings={settings} device={device} />;

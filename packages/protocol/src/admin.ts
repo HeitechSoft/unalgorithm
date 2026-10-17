@@ -9,6 +9,8 @@ import { z } from 'zod';
 /** Pages the server serves from apps/web (CL4-07, CL4-08). */
 export const SETUP_PAGE_PATH = '/setup';
 export const ADMIN_PAGE_PATH = '/admin';
+/** The source control page (P3-74): admins edit the server's source list through `ADMIN_OUTLETS_PATH`'s routes. */
+export const ADMIN_SOURCES_PAGE_PATH = '/admin/sources';
 
 /** Routes; all behind a web session (CL2-02). The setup route needs no admin; every other one needs the admin role. */
 export const ADMIN_SETUP_PATH = '/v1/admin/setup';

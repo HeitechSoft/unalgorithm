@@ -12,7 +12,7 @@ apps/extension ──► packages/platforms ──► packages/core ──► pa
        └──────────► packages/ui (React components, tokens, in-feed parts)
 
 apps/server ─────► packages/ai, packages/core, packages/protocol, packages/sync   (never ui, platforms or wxt)
-apps/web ────────► packages/ui, packages/core, packages/protocol   (the server's sign-in and account pages)
+apps/web ────────► packages/ui, packages/core, packages/protocol, packages/outlets   (the server's own pages)
 ```
 
 | Package | Responsibility | Rules |
@@ -25,7 +25,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
 | `apps/server` | The open-source UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
-| `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui` and `core`'s wording helpers; never `platforms` or `wxt` |
+| `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), and its public source list (`/outlets`, read from `/outlets.json`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui`, `core`'s wording helpers and `outlets`' balance rule; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
 are consumed as TypeScript source (`exports` points at `src/index.ts`); there is no separate build step for them.
@@ -77,6 +77,7 @@ that page (fail open). The toolbar icon says so, and the popup shows a banner wi
 | `storage.local` `serverAccount` | The UnAlgorithm server the user signed in to: its origin and discovery answer, the email address, the device id, when it signed in, and whether it needs a new sign-in. No tokens. Removed on sign-out and on Erase everything | Never |
 | `storage.session` `serverAccess` | That server's 15-minute access token. Memory only, closed to content scripts | Never |
 | `storage.session` `serverBalance` | The signed-in account's latest credit balance, from a classify answer, a 402 or the balance endpoint, with the server's origin and the device id it belongs to. Only for a server that advertises billing. Memory only, closed to content scripts, cleared on Erase everything | Never |
+| `storage.local` `officialList` | UnAlgorithm Cloud's published source list (outlets, web addresses, leans, evidence) and when it was last asked for | Never |
 | IndexedDB `secrets` | API keys, and the server's refresh token under `server-refresh:<origin>` | **Never**; not exported, not in diagnostics |
 | IndexedDB `classifications` | Cached verdicts keyed by post + input hash + profile hash + source:model + prompt version; no text, no names | Never |
 
@@ -204,6 +205,8 @@ always show or hide (`sync_items`).
 | `sync_pushes` | One record per sync push, by push id, with the statuses, seqs and reasons the server answered and the keys it did not refuse; never a value or a refused key |
 | `ops_alerts` | Alerts open now: key, level, times, one number |
 | `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, its explanation (≤ 280 characters, null when it repeats 6 consecutive words of the post), 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text or any user, device or post id; deleted hourly once past its 24 hours |
+| `outlets` | The server's published source list for UnEcho Chamber: each outlet's name, web addresses, country, lean bucket and evidence |
+| `outlet_changes` | Every change to it: what changed, when, and which admin; the admin is never published and is cleared when that account is deleted |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).
@@ -292,8 +295,9 @@ same machine) and `tools` (the one-off `keygen`).
 - **Admins.** The `setup-link` command prints a one-time link to `/setup`, its secret in the URL fragment and only its
   hash stored (`setup_tokens`); signing in there with the address it was made for makes that account an admin (Better
   Auth's admin plugin's `role` column; none of the plugin's own routes is mounted). Admins use `/admin` and the
-  `/v1/admin/*` routes to invite people (`signup_invites`), set caps and roles, and remove access. `--recover` makes a
-  link that works although the server already has an admin.
+  `/v1/admin/*` routes to invite people (`signup_invites`), set caps and roles, and remove access, and `/admin/sources`
+  to keep the server's source list (`outlets`): add, edit and remove outlets, each lean with evidence, or import the
+  candidate list into an empty list. `--recover` makes a link that works although the server already has an admin.
 
 ## Testing
 

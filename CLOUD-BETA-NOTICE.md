@@ -1,6 +1,6 @@
 # UnAlgorithm Cloud beta privacy notice
 
-Last updated: 15 October 2026
+Last updated: 17 October 2026
 
 UnAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. This notice covers only UnAlgorithm
 Cloud, HeitechSoft's hosted AI service at `cloud.unalgorithm.app`, during its beta. The extension itself is covered by
@@ -30,9 +30,11 @@ The Cloud handles these fields in memory to classify the posts, answers, and dis
 interest profiles, classification results, prompts and AI answers are never logged or stored. An automated test runs
 the server with marker text in every field and fails if the marker shows up in any log or database table.
 
-If you use Fact-check or Other perspectives (Labs) through the Cloud, the one post you chose is sent the same way,
-without your interests. The Cloud asks Anthropic to search the web for the claims in the post, or for the story's
-search words. The job is kept in memory only, and is gone at most 10 minutes after it ends.
+If you use Fact-check through the Cloud, the one post you chose is sent the same way, without your interests. If you
+use UnEcho Chamber, the post's text is not sent: only the link it shares and that link's title, the platform (and, on
+Facebook, who can see the post), and the web addresses and leans of the source list you chose. The Cloud asks Anthropic
+to search the web for the claims in the post, or for the story's search words. The job, with the source list it
+carries, is kept in memory only, and is gone at most 10 minutes after it ends.
 
 ## 3. What the Cloud stores
 
@@ -43,15 +45,17 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
 - If you sign in with Google: Google's id for your Google account and the verified address Google gave. Never a Google
   access, refresh or ID token.
 - Usage counts and costs: one row per AI request, with the time, the device, the number of posts, token counts, the
-  model and the cost. No post content.
+  model and the cost. No post content. Each quarter we publish totals of fact-checks and UnEcho Chamber comparisons
+  across all accounts, never costs; totals under 10 are shown as 'fewer than 10', and nothing in them identifies an
+  account.
 - A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount
   charged; never the posts. To give the starter credit once per person we keep a keyed hash of your normalised email
   address (not the address), also after the account is deleted, so the same mailbox cannot claim it again. Ledger
   entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash
   of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the
   beta; how records of purchases are kept will be stated here before it is.
-- Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions. Never API keys or
-  post text.
+- Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions, and your own
+  UnEcho Chamber source list (outlet names, web addresses and the leans you gave them). Never API keys or post text.
 - For fact-checks of public posts: a 24-hour shared cache of verdicts and their short explanations, keyed by a hash of
   each claim, with the public sources found. Never the claim, the post, or who checked it.
 - A nightly encrypted backup of the database, kept for 14 nights.
@@ -67,7 +71,8 @@ You sign in with a code we email you, with Google, or with a passkey you added. 
 Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy.
 
 Sync is off until you turn it on in the extension. Then the Cloud stores your settings, interests and exceptions (the
-names and profile identifiers you chose to always show or hide), one item per setting with the time it was changed.
+names and profile identifiers you chose to always show or hide), and your own UnEcho Chamber source list (outlet names,
+web addresses and the leans you gave them), one item per setting or outlet with the time it was changed.
 Deleted entries are kept as markers for 90 days, then removed. A record of each sync request (which items, never their
 values) is kept for 24 hours. Sync never carries API keys, endpoint tokens, refresh tokens, AI source settings, learned
 topics, votes, statistics, cached results or post text, and the Cloud refuses items that look like API keys.
@@ -81,7 +86,7 @@ These companies process data for UnAlgorithm Cloud:
 
 | Subprocessor | What for | Where |
 |---|---|---|
-| Anthropic | Classification, and the searches for Fact-check and Other perspectives | United States |
+| Anthropic | Classification, and the searches for Fact-check and UnEcho Chamber | United States |
 | SMTP2GO | Delivering sign-in emails (your email address and the code) | |
 | OVHcloud | Hosting the server and its database | Beauharnois, Quebec, Canada |
 

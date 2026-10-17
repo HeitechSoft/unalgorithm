@@ -168,3 +168,41 @@
 .web-table thead th {
   color: var(--ua-text-secondary);
 }
+/* The source list's table (the public page, P3-67, and the source control page, P3-74): it scrolls inside its own box
+   on a narrow screen, every cell reads from the start, and its links sit in text, so they are underlined (WCAG 1.4.1). */
+.web-table-scroll {
+  overflow-x: auto;
+}
+/* Wide enough that a web address keeps its line; on a phone the box scrolls instead. */
+.web-outlets {
+  min-width: 720px;
+}
+.web-outlets th,
+.web-outlets td {
+  text-align: start;
+  vertical-align: top;
+}
+.web-outlets a {
+  text-decoration: underline;
+}
+.web-outlet-id {
+  display: block;
+  font-weight: normal;
+  color: var(--ua-text-secondary);
+}
+.web-evidence {
+  display: grid;
+  gap: var(--ua-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* The source list's change history: one line per change, newest first. */
+.web-changes {
+  display: grid;
+  gap: var(--ua-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}

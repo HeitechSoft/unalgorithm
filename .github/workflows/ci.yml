@@ -70,10 +70,6 @@ jobs:
         # only after legal review (ADR 0007). Reviewed exceptions are in scripts/license-review.json.
         run: pnpm licenses:server
 
-      - name: Outlet registry gate
-        # No unreviewed lean label, no fixture and no unsigned reviewed registry ships (packages/outlets).
-        run: pnpm outlets:check
-
       - name: Build
         run: pnpm zip
 
@@ -121,8 +117,8 @@ jobs:
   server:
     # The server against real Postgres 17 and Mailpit, and the extension signing in to it end to end (e2e/cloud.spec.ts),
     # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts),
-    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and Other perspectives through
-    # the server with the fixture outlet registry (e2e/perspectives-server.spec.ts).
+    # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and UnEcho Chamber through
+    # the server with the fixture source list (e2e/perspectives-server.spec.ts).
     runs-on: ubuntu-latest
     services:
       postgres:

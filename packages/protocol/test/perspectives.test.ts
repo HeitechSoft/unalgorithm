@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   FactcheckJobSchema,
   LEAN_BUCKETS,
+  type LeanBucket,
+  MAX_LIST_DOMAINS,
+  MAX_LIST_OUTLETS,
   PERSPECTIVES_COST_CEILING_MICROS,
   PERSPECTIVES_JOBS_PATH,
   PerspectivesJobRequestSchema,
   PerspectivesJobSchema,
+  type PerspectivesList,
+  PerspectivesListSchema,
   type PerspectivesResult,
   PerspectivesResultSchema,
   perspectivesJobCancelPath,
@@ -33,6 +38,7 @@ const RESULT: PerspectivesResult = {
   model: 'claude-sonnet-5-5',
   promptVersion: 1,
   registryVersion: 'fixture-1',
+  list: 'cloud',
   story: { url: 'https://news.example.com/a', query: 'Fixture story', from: '2026-10-12T12:00:00Z', to: AT },
   coverage: LEAN_BUCKETS.map((bucket, i) => ({ bucket, sourceIds: i === 4 ? [] : [`s${i + 1}`] })),
   agreed: [point('All outlets report the vote.')],
@@ -41,6 +47,36 @@ const RESULT: PerspectivesResult = {
   sources: [source(1, 'left'), source(2, 'lean-left'), source(3, 'center'), source(4, 'lean-right')],
 };
 const ok = (r: unknown) => PerspectivesResultSchema.safeParse(r).success;
+
+/** A list as a request carries it: fictional `.example` outlets, web addresses and buckets only. */
+const LIST: PerspectivesList = {
+  kind: 'cloud',
+  version: '57',
+  outlets: [
+    { bucket: 'left', domains: ['left-a.example'] },
+    { bucket: 'center', domains: ['center-a.example', 'center-a-news.example'] },
+  ],
+};
+
+/**
+ * `outlets` outlets and `domains` web addresses in all (the first outlets get two each), every address `length`
+ * characters long (at least 20), unique.
+ */
+function sizedList(outlets: number, domains: number, length = 20): PerspectivesList {
+  const domain = (i: number) => {
+    const head = `d${i}-`;
+    return `${head}${'a'.repeat(length - head.length - '.example'.length)}.example`;
+  };
+  let n = 0;
+  return {
+    kind: 'cloud',
+    version: '1',
+    outlets: Array.from({ length: outlets }, (_, i) => ({
+      bucket: LEAN_BUCKETS[i % LEAN_BUCKETS.length] as LeanBucket,
+      domains: Array.from({ length: i < domains - outlets ? 2 : 1 }, () => domain(n++)),
+    })),
+  };
+}
 
 describe('contract', () => {
   it('test_perspectives_result_schema_buckets_and_points', () => {
@@ -53,7 +89,7 @@ describe('contract', () => {
   });
 
   it('test_perspectives_request_link_only', () => {
-    const body = { v: 1, link: { url: 'https://news.example.com/a', title: 'T' }, platform: 'linkedin' };
+    const body = { v: 1, link: { url: 'https://news.example.com/a', title: 'T' }, platform: 'linkedin', list: LIST };
     const accepts = (b: unknown) => PerspectivesJobRequestSchema.safeParse(b).success;
     expect(PerspectivesJobRequestSchema.parse(body)).toEqual(body);
     expect(accepts({ ...body, link: { url: body.link.url } })).toBe(true);
@@ -65,6 +101,42 @@ describe('contract', () => {
     expect(PERSPECTIVES_JOBS_PATH).toBe('/v1/jobs/perspectives');
     expect(perspectivesJobPath('j')).toBe('/v1/jobs/perspectives/j');
     expect(perspectivesJobCancelPath('j')).toBe('/v1/jobs/perspectives/j/cancel');
+  });
+
+  it('test_perspectives_request_carries_capped_list', () => {
+    // P3-77 (D102): the chosen list travels with the request, as web addresses and buckets only, capped.
+    const body = { v: 1, link: { url: 'https://news.example.com/a', title: 'T' }, platform: 'linkedin', list: LIST };
+    const accepts = (b: unknown) => PerspectivesJobRequestSchema.safeParse(b).success;
+    const withList = (list: unknown) => ({ ...body, list });
+    expect(PerspectivesJobRequestSchema.parse(body)).toEqual(body);
+    expect(PerspectivesListSchema.parse(LIST)).toEqual(LIST);
+    expect(accepts({ v: 1, link: body.link, platform: 'linkedin' })).toBe(false);
+
+    // The caps: 300 outlets, 400 web addresses in all, 10 per outlet, and at least one outlet.
+    expect(accepts(withList(sizedList(MAX_LIST_OUTLETS, MAX_LIST_DOMAINS)))).toBe(true);
+    expect(accepts(withList(sizedList(MAX_LIST_OUTLETS + 1, MAX_LIST_OUTLETS + 1)))).toBe(false);
+    expect(accepts(withList(sizedList(MAX_LIST_OUTLETS, MAX_LIST_DOMAINS + 1)))).toBe(false);
+    const eleven = { bucket: 'left', domains: Array.from({ length: 11 }, (_, i) => `d${i}.example`) };
+    expect(accepts(withList({ ...LIST, outlets: [eleven] }))).toBe(false);
+    expect(accepts(withList({ ...LIST, outlets: [] }))).toBe(false);
+    // Never a name, an id, evidence or an outlet without a lean; only the two kinds.
+    const [first] = LIST.outlets;
+    expect(accepts(withList({ ...LIST, outlets: [{ ...first, name: 'Fixture Left A' }] }))).toBe(false);
+    expect(accepts(withList({ ...LIST, outlets: [{ ...first, id: 'fx-left-a' }] }))).toBe(false);
+    expect(accepts(withList({ ...LIST, outlets: [{ ...first, evidence: [] }] }))).toBe(false);
+    expect(accepts(withList({ ...LIST, outlets: [{ ...first, bucket: null }] }))).toBe(false);
+    expect(accepts(withList({ ...LIST, kind: 'panel' }))).toBe(false);
+    expect(accepts(withList({ ...LIST, kind: 'own', version: '' }))).toBe(true);
+    expect(accepts(withList({ ...LIST, outlets: [{ ...first, domains: ['www.left-a.example'] }] }))).toBe(false);
+
+    // The largest list fits the server's 128 KB `/v1` body limit (raising a cap fails here first).
+    const largest = sizedList(MAX_LIST_OUTLETS, MAX_LIST_DOMAINS, 253);
+    const request = withList(largest);
+    expect(largest.outlets).toHaveLength(300);
+    expect(largest.outlets.flatMap((o) => o.domains)).toHaveLength(400);
+    expect(largest.outlets.every((o) => o.domains.every((d) => d.length === 253))).toBe(true);
+    expect(accepts(request)).toBe(true);
+    expect(new TextEncoder().encode(JSON.stringify(request)).length).toBeLessThan(128 * 1024);
   });
 
   it('test_job_schema_for_both_tasks', () => {

@@ -174,7 +174,7 @@ describe('gates', () => {
     await setup({ labs: false });
     expect(await factcheck()).toStrictEqual({
       ok: false,
-      error: { code: 'not-available', message: 'Turn on Fact-check in Settings → Labs.' },
+      error: { code: 'not-available', message: 'Turn on Fact-check in Settings → AI.' },
     });
 
     await setup({ source: { kind: 'on-device' } });
@@ -593,7 +593,7 @@ describe('own-key modes', () => {
     await setup({ source: COMPAT, webSearch: { provider: 'tavily' } });
     expect(await factcheck()).toStrictEqual({
       ok: false,
-      error: { code: 'no-key', message: 'Add a web search key in Settings → Labs.' },
+      error: { code: 'no-key', message: 'Add a web search key in Settings → AI.' },
     });
 
     await setup({ source: { ...COMPAT, model: null } as AISourceConfig, webSearch: BRAVE });
@@ -614,7 +614,7 @@ describe('own-key modes', () => {
       ok: false,
       error: {
         code: 'host-permission',
-        message: 'UnAlgorithm needs permission to reach Brave. Save your web search key again in Settings → Labs.',
+        message: 'UnAlgorithm needs permission to reach Brave. Save your web search key again in Settings → AI.',
       },
     });
     expect(fakeBrowser.permissions.contains).toHaveBeenCalledWith({ origins: [BRAVE_PATTERN] });
@@ -635,7 +635,7 @@ describe('own-key modes', () => {
   it('test_factcheck_provider_error_texts', async () => {
     await setup({ source: COMPAT, webSearch: BRAVE });
     useOwnKeyNetwork({ brave: () => jsonResponse(401, { error: 'unauthorized' }) });
-    const braveError = { code: 'not-available', message: 'Your Brave key was refused. Check it in Settings → Labs.' };
+    const braveError = { code: 'not-available', message: 'Your Brave key was refused. Check it in Settings → AI.' };
     expect(await factcheck(POST_2)).toStrictEqual({ ok: false, error: braveError });
     expect((await entries())[0]).toMatchObject({ status: 'failed', error: braveError });
 

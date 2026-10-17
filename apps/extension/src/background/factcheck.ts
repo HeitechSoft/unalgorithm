@@ -10,9 +10,10 @@ import {
   webSearchName,
   webSearchOrigin,
 } from '@unalgorithm/core';
-import type { Registry } from '@unalgorithm/outlets';
+import { listBalance, type SourceList, wireList } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
+  FEATURE_NAMES,
   type PerspectivesJobRequest,
   PerspectivesJobRequestSchema,
   type PostForAI,
@@ -32,8 +33,8 @@ import {
 } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
 import type { BgError, BgResponses } from '../lib/messages.ts';
-import { leansMatchRegistry, perspectivesRegistry } from '../lib/outlets.ts';
-import { type FactcheckEntry, factcheckItem, readDevice } from '../lib/storage.ts';
+import { chosenList, listReady, matchLeans, namedListProblems, storedOfficialList } from '../lib/outlets.ts';
+import { type FactcheckEntry, factcheckItem, officialListItem, readDevice, readSettings } from '../lib/storage.ts';
 import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
 import { deviceClaimCache } from './claim-cache.ts';
 import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
@@ -55,7 +56,7 @@ const running = new Map<number, AbortController>();
 
 type FactcheckResponse = BgResponses['factcheck'];
 type PerspectivesResponse = BgResponses['perspectives'];
-/** A tab's task: a fact-check, or an "Other perspectives" comparison. */
+/** A tab's task: a fact-check, or an UnEcho Chamber comparison. */
 type Task = 'factcheck' | 'perspectives';
 type Refusal = { ok: false; error: BgError };
 /** `costMicros`: an own-key run's cost; `chargedMicros`: what the server charged. */
@@ -70,11 +71,9 @@ const BUSY: Record<Task, string> = {
   perspectives: 'A check or comparison is already running on this page.',
 };
 
-const NEEDS: Record<Task, string> = {
-  factcheck: 'Fact-check needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
-  perspectives:
-    'Other perspectives needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.',
-};
+const needs = (task: Task) =>
+  `${FEATURE_NAMES[task]} needs your own Anthropic or OpenAI key, an AI server with a web search key, or a server that offers it.`;
+const NEEDS: Record<Task, string> = { factcheck: needs('factcheck'), perspectives: needs('perspectives') };
 
 /**
  * Opens the side panel for a tab. Called before any `await` in the handler, so Chrome still sees the click's user
@@ -121,7 +120,7 @@ async function ownKeyMode(cfg: OwnKey, device: Device): Promise<OwnKeyMode | Ref
   if (cfg.kind !== 'openai-compatible') return { kind: cfg.kind };
   if (!cfg.model) return refuse('no-model', 'Choose a model in Settings → AI.');
   const search = await deviceSearchProvider(device);
-  if (!search) return refuse('no-key', 'Add a web search key in Settings → Labs.');
+  if (!search) return refuse('no-key', 'Add a web search key in Settings → AI.');
   return { kind: cfg.kind, model: cfg.model, search };
 }
 
@@ -135,8 +134,7 @@ function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
   const e = err instanceof AIError ? err : new AIError('unknown', String(err));
   if (e instanceof WebSearchFailure) {
     const name = e.provider === 'searxng' ? 'the search service' : webSearchName(e.provider);
-    if (e.code === 'not-available')
-      return { code: e.code, message: `Your ${name} key was refused. Check it in Settings → Labs.` };
+    if (e.code === 'not-available') return { code: e.code, message: `Your ${name} key was refused. Check it in Settings → AI.` };
     if (e.code === 'rate-limit')
       return { code: e.code, message: `${name} is limiting searches right now. Try again in a minute.` };
     return { code: e.code, message: `Couldn't reach ${name}.` };
@@ -161,7 +159,7 @@ function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
  */
 export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<FactcheckResponse> {
   const device = await readDevice();
-  if (!device.labs.factcheck) return refuse('not-available', 'Turn on Fact-check in Settings → Labs.');
+  if (!device.labs.factcheck) return refuse('not-available', 'Turn on Fact-check in Settings → AI.');
   const cfg = device.aiSource;
   if (cfg?.kind === 'server') return runOnServer(tabId, key, input, cfg);
   const own = capableOwnKey(cfg, device, 'factcheck');
@@ -246,7 +244,7 @@ async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | 
   const name = webSearchName(webSearch.provider);
   return refuse(
     'host-permission',
-    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → Labs.`,
+    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → AI.`,
   );
 }
 
@@ -262,6 +260,8 @@ async function track<A extends TaskAnswer<unknown>>(
   cfg: AISourceConfig,
   run: () => Promise<A>,
   webSearch: WebSearchKey | null = null,
+  /** Kept on the entry from the start: a comparison's list warnings. */
+  start: Pick<FactcheckEntry, 'listWarnings'> = {},
 ): Promise<A | Refusal> {
   if (inFlight.has(tabId)) return refuse('rate-limit', BUSY[task]);
   inFlight.add(tabId);
@@ -276,7 +276,7 @@ async function track<A extends TaskAnswer<unknown>>(
     // Another `running` entry can only be left by a worker that died mid-check: this tab is in `inFlight` now.
     const stale: Partial<FactcheckEntry> = { status: 'failed', error: { code: 'timeout', message: describeError('timeout') } };
     await updateEntries(tabId, (entries) => [
-      { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running' },
+      { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running', ...start },
       ...entries.map((e) => (e.status === 'running' ? { ...e, ...stale } : e)),
     ]);
 
@@ -306,13 +306,29 @@ export interface PerspectivesTabRequest {
 
 const NOT_COMPARABLE = "This link can't be compared.";
 const PLACE = PerspectivesJobRequestSchema.pick({ platform: true, audience: true });
-const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
+const LEANS_MISMATCH = "This result doesn't match your source list, so it isn't shown.";
+/** Drafts (D110). */
+const OWN_LIST_EMPTY = 'Your source list has no outlets with a lean yet. Add some in Settings → AI.';
+const CLOUD_LIST_EMPTY =
+  "UnAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
 
 /**
- * "Other perspectives" for one shared link in a feed tab, on the person's own key (as fact-check) or on their
- * UnAlgorithm server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link
- * leaves the browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when
- * every lean in it is this build's own registry's (`leansMatchRegistry`).
+ * Why UnEcho Chamber can't run on `list`, one that isn't `listReady` (decision D103): its first problem (an own list's:
+ * the Cloud's stored copy passed the list rules), naming the outlet by its name (an own list's ids are uuidv7s), else
+ * that it has no outlet with a lean. No list at all is the Cloud's, not downloaded yet.
+ */
+function listRefusal(list: SourceList | null): Refusal {
+  const [problem] = list ? namedListProblems(list) : [];
+  if (problem) return refuse('not-available', `Your source list needs fixing in Settings → AI: ${problem.text}`);
+  return refuse('not-available', list?.kind === 'own' ? OWN_LIST_EMPTY : CLOUD_LIST_EMPTY);
+}
+
+/**
+ * UnEcho Chamber for one shared link in a feed tab, on the person's own key (as fact-check) or on their
+ * UnAlgorithm server, on the source list they chose (`chosenList`). Every gate is checked again here, and each refusal
+ * returns before anything is sent. Only the link leaves the browser, canonicalised first (tracking and per-click ids
+ * removed, decision D35), with, to a server, the list's outlets with a lean as web addresses and buckets (`wireList`); a
+ * result is kept only when every lean in it is that list's, and then shows the list's own outlet names (`matchLeans`).
  */
 export async function runPerspectivesForTab(
   tabId: number,
@@ -320,9 +336,10 @@ export async function runPerspectivesForTab(
   req: PerspectivesTabRequest,
 ): Promise<PerspectivesResponse> {
   const device = await readDevice();
-  if (!device.labs.perspectives) return refuse('not-available', 'Turn on Other perspectives in Settings → Labs.');
-  const registry = perspectivesRegistry();
-  if (!registry) return refuse('not-available', "Other perspectives isn't available yet.");
+  if (!device.labs.perspectives) return refuse('not-available', `Turn on ${FEATURE_NAMES.perspectives} in Settings → AI.`);
+  // No fetch here: the Cloud's list updates at every service-worker start (`official-list.ts`), at most once a day.
+  const list = chosenList(await readSettings(), storedOfficialList(await officialListItem.getValue()));
+  if (!listReady(list)) return listRefusal(list);
   const parsed = SharedLinkSchema.safeParse(req.link);
   const url = parsed.success ? canonicalLink(parsed.data.url) : null;
   if (!parsed.success || !url) return refuse('bad-request', NOT_COMPARABLE);
@@ -334,31 +351,46 @@ export async function runPerspectivesForTab(
   const where = place.success
     ? { platform: place.data.platform, ...(place.data.audience ? { audience: place.data.audience } : {}) }
     : null;
-  if (!where || !serverMayReceive(where)) return refuse('not-available', 'Other perspectives works only on public posts.');
+  if (!where || !serverMayReceive(where))
+    return refuse('not-available', `${FEATURE_NAMES.perspectives} works only on public posts.`);
 
   const label = title?.trim() ? title.trim().slice(0, LABEL_CHARS) : new URL(url).hostname;
-  const checked = (answer: PerspectivesResponse): PerspectivesResponse =>
-    answer.ok && !leansMatchRegistry(answer.result, registry) ? refuse('not-available', LEANS_MISMATCH) : answer;
+  const checked = (answer: PerspectivesResponse): PerspectivesResponse => {
+    if (!answer.ok) return answer;
+    const result = matchLeans(answer.result, list);
+    return result ? { ...answer, result } : refuse('not-available', LEANS_MISMATCH);
+  };
+  // The list's balance as the run starts, kept for the sheet (D104).
+  const start = { listWarnings: listBalance(list).warnings };
 
   const cfg = device.aiSource;
   if (cfg?.kind === 'server') {
     const account = await serverAccountItem.getValue();
     if (!account || !sourceCapabilities(cfg, serverOfferFrom(account)).perspectives)
-      return refuse('unsupported', "This server doesn't offer Other perspectives.");
-    return track(tabId, key, label, 'perspectives', cfg, async () =>
-      checked(await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where }, { signal }))),
-    );
+      return refuse('unsupported', `This server doesn't offer ${FEATURE_NAMES.perspectives}.`);
+    // Ready, so within the caps.
+    const wire = wireList(list) as NonNullable<ReturnType<typeof wireList>>;
+    const compare = async () =>
+      checked(
+        await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where, list: wire }, { signal })),
+      );
+    return track(tabId, key, label, 'perspectives', cfg, compare, null, start);
   }
   const own = capableOwnKey(cfg, device, 'perspectives');
   if (!own) return refuse('unsupported', NEEDS.perspectives);
   const mode = await ownKeyMode(own, device);
   if (isRefusal(mode)) return mode;
-  const compare = async () => checked(await compareOwnKey(link, registry, own, mode));
-  return track(tabId, key, label, 'perspectives', own, compare, device.webSearch);
+  const compare = async () => checked(await compareOwnKey(link, list, own, mode));
+  return track(tabId, key, label, 'perspectives', own, compare, device.webSearch, start);
 }
 
 /** The pipeline on the person's key: no `resolveLink` (the extension never fetches a link), no ceiling (own key). */
-async function compareOwnKey(link: SharedLink, registry: Registry, cfg: OwnKey, mode: OwnKeyMode): Promise<PerspectivesResponse> {
+async function compareOwnKey(
+  link: SharedLink,
+  registry: SourceList,
+  cfg: OwnKey,
+  mode: OwnKeyMode,
+): Promise<PerspectivesResponse> {
   // Every call's spend is in the ledger before the answer goes back, as fact-check's.
   const spends: Promise<void>[] = [];
   try {

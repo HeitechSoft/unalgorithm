@@ -1,14 +1,14 @@
 /**
  * Scores `runPerspectives` on the perspectives eval set (RM4, F20, F25): citation provenance against the hits the
- * searcher returned in that run, lean integrity (every lean shown is the registry's, never a model's), live cited links,
+ * searcher returned in that run, lean integrity (every lean shown is the source list's, never a model's), live cited links,
  * coverage gaps and mirror-pair consistency. Items run one at a time. A failure is reported by item id and short codes,
  * never by link text or a provider's message; a provider error (busy, unreachable, a refused key) is listed in
  * `providerErrors` and its item is left out of every ratio. Pair consistency is reported, not gated, in v0 (D51).
  */
 import { AIError, anthropicClient, memoryCapabilities } from '@unalgorithm/ai';
 import { type AnthropicRequestKind, mockAnthropicFetch, structuredMessage } from '@unalgorithm/ai/testing/anthropic';
-import { outletForHost, type Registry } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { outletForHost, type SourceList } from '@unalgorithm/outlets';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   type AIErrorCode,
   costMicros,
@@ -33,7 +33,7 @@ export interface PerspectivesEvalReport {
    *  citationProblem against that hit's cleaned snippets / shown citations (1 when none). */
   provenance: number;
   citationsShown: number;
-  /** Result sources whose bucket and outletId equal outletForHost(registry, host) / result sources (1 when none). */
+  /** Result sources whose bucket and outletId equal outletForHost(list, host) / result sources (1 when none). */
   leanIntegrity: number;
   sourcesShown: number;
   /** Items whose covered buckets equal expectCovered / items scored (diagnostic). */
@@ -77,13 +77,13 @@ const listed = (s: ReadonlySet<string> | null) => (s?.size ? [...s].join(',') : 
 
 /**
  * Pure: the shown citations and sources of `result`, how many trace to `hits` (what the searcher returned in that run)
- * and how many carry the registry's own outlet and bucket. An independent re-check of `searchBuckets` and
+ * and how many carry the source list's own outlet and bucket. An independent re-check of `searchBuckets` and
  * `validateComparison`.
  */
 export function tracePerspectives(
   result: PerspectivesResult,
   hits: readonly BucketHit[],
-  registry: Registry,
+  registry: SourceList,
 ): { shown: number; traced: number; sources: number; leanOk: number } {
   const shownSources = new Map(result.sources.map((s) => [s.id, s]));
   let shown = 0;
@@ -237,7 +237,7 @@ export function perspectivesTrustGates(r: PerspectivesEvalReport): {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Fakes: a mock Anthropic client and a bucket searcher on the fixture registry (shared with perspectives.test.ts).
+// Fakes: a mock Anthropic client and a bucket searcher on the fixture list (shared with perspectives.test.ts).
 
 export const MOCK_NONCE = 'abc12345';
 export const MOCK_NOW = new Date('2026-10-15T12:00:00.000Z');
@@ -273,7 +273,7 @@ export interface MockClientOptions {
   log?: string[];
   /** Delay before every answer, in ms. */
   delayMs?: number;
-  /** The comparison writes a lean word into its point, to show leans still come from the registry. */
+  /** The comparison writes a lean word into its point, to show leans still come from the source list. */
   leanWord?: boolean;
 }
 
@@ -359,7 +359,7 @@ export function fakeSearcher(opts: FakeSearcherOptions = {}): BucketSearcher & {
 const PATH_DAY = /\/(\d{4}\/\d{2}\/\d{2})\//;
 
 /**
- * Deterministic deps for `items` on FIXTURE_REGISTRY at a fixed now: the story query names the item, and each bucket in
+ * Deterministic deps for `items` on FIXTURE_LIST at a fixed now: the story query names the item, and each bucket in
  * `expectCovered` (but `uncoverBucket`) answers two hits on its `a` and `b` outlets, dated on the link's own day.
  */
 export function mockPerspectivesDepsFor(
@@ -384,5 +384,5 @@ export function mockPerspectivesDepsFor(
       return [hit(bucket, 1, { outlet: 'a', day, slug: item.id }), hit(bucket, 2, { outlet: 'b', day, slug: item.id })];
     },
   });
-  return { client, searcher, registry: FIXTURE_REGISTRY, now: () => MOCK_NOW, nonce: MOCK_NONCE };
+  return { client, searcher, registry: FIXTURE_LIST, now: () => MOCK_NOW, nonce: MOCK_NONCE };
 }

@@ -16,6 +16,7 @@ import {
 import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
+import { startOfficialListUpdates } from '../background/official-list.ts';
 import { forgetSearchKey, saveSearchKey } from '../background/search-key.ts';
 import {
   discoverServer,
@@ -337,6 +338,8 @@ async function injectIntoOpenTabs(): Promise<void> {
 export default defineBackground(() => {
   initSync();
   syncServerOffer();
+  // UnAlgorithm Cloud's source list, while UnEcho Chamber is on: at most daily, anonymous (D98).
+  startOfficialListUpdates();
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
     const handler = handlers[msg?.type] as unknown as ((m: BgRequest, s: Sender) => Promise<unknown>) | undefined;
     if (!handler) return false;

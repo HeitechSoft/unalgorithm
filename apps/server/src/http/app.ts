@@ -7,10 +7,10 @@ import { existsSync } from 'node:fs';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
-import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
   CREDIT_PRICE_SCHEDULE,
@@ -20,6 +20,7 @@ import {
   type FactcheckResult,
   GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
+  OUTLETS_PAGE_PATH,
   PASSKEY_METHOD,
   type PerspectivesResult,
   SERVER_INFO_PATH,
@@ -54,6 +55,7 @@ import { classifyRoutes } from '../routes/classify.ts';
 import { factcheckOffer, factcheckRoutes } from '../routes/factcheck.ts';
 import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
+import { outletAdminRoutes, outletPublicRoutes } from '../routes/outlets.ts';
 import { perspectivesRoutes } from '../routes/perspectives.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
@@ -103,11 +105,6 @@ export interface AppDeps {
   priceSchedule?: CreditPriceSchedule;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }). */
   factcheckJobs?: JobStore<FactcheckResult>;
-  /**
-   * The outlet registry perspectives compares across; null: perspectives is not offered. Default:
-   * `usableRegistry(bundledRegistry())`, null while the bundled registry is a draft. Tests pass `FIXTURE_REGISTRY`.
-   */
-  outlets?: Registry | null;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }). */
   perspectivesJobs?: JobStore<PerspectivesResult>;
   /** The egress fetcher's resolution of a shared link to its canonical URL (P3-32); default: none (the link as shared). */
@@ -197,7 +194,6 @@ export function createApp(deps: AppDeps): App {
   });
 
   const priceSchedule = deps.priceSchedule ?? CREDIT_PRICE_SCHEDULE;
-  const outlets = deps.outlets === undefined ? usableRegistry(bundledRegistry()) : deps.outlets;
   const serverInfo: ServerInfo = {
     v: 1,
     name: config.instanceName,
@@ -219,7 +215,7 @@ export function createApp(deps: AppDeps): App {
     c.header('Access-Control-Allow-Origin', '*');
     // Per request: whether checks are offered, and their price, follow the schedule entry in effect now.
     const offer = factcheckOffer(config, priceSchedule);
-    const compare = perspectivesOffer(config, priceSchedule, outlets);
+    const compare = perspectivesOffer(config, priceSchedule);
     const billed = config.billing === 'module';
     const jobPrices = {
       ...(offer.offered && offer.price && billed ? { factcheck: offer.price } : {}),
@@ -264,13 +260,14 @@ export function createApp(deps: AppDeps): App {
       ...deps,
       search,
       priceSchedule,
-      outlets,
       perspectivesJobs:
         deps.perspectivesJobs ?? createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }),
     },
     limits,
   );
   adminRoutes(app, deps);
+  outletPublicRoutes(app, deps);
+  outletAdminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);
 
@@ -294,9 +291,10 @@ export function createApp(deps: AppDeps): App {
 }
 
 /**
- * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account` and `/setup` answer its
- * `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build those pages answer
- * 503 and the log says so once. The build is looked up per request, so one made after the server started is served.
+ * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account`, `/setup`, `/admin`,
+ * `/admin/sources` and `/outlets` answer its `index.html`, and `/assets/*` the files Vite built, named by their content
+ * hash. Without a build those pages answer 503 and the log says so once. The build is looked up per request, so one made
+ * after the server started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
   const page = async (c: Context<AppEnv>) => {
@@ -311,6 +309,10 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get(ACCOUNT_PAGE_PATH, page);
   app.get(SETUP_PAGE_PATH, page);
   app.get(ADMIN_PAGE_PATH, page);
+  // The source control page (P3-74): public as `/admin`; its admin routes check the origin, the session and the role.
+  app.get(ADMIN_SOURCES_PAGE_PATH, page);
+  // Public: the source list as published, read from `/outlets.json` (P3-67).
+  app.get(OUTLETS_PAGE_PATH, page);
 
   // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
   let assets: MiddlewareHandler | undefined;

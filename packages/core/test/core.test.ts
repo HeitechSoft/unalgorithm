@@ -183,6 +183,33 @@ describe('settings migration', () => {
     expect(migrateSettings('garbage')).toEqual(defaultSettings());
   });
 
+  it('test_settings_perspectives_defaults_and_migration', () => {
+    // The own UnEcho Chamber list (P3-76, D100): the Cloud's list by default, no outlets of one's own.
+    expect(defaultSettings().perspectives).toStrictEqual({ list: 'cloud', outlets: {} });
+
+    // Settings saved before the section existed gain it, and keep every other field.
+    const old: Record<string, unknown> = structuredClone(defaultSettings());
+    delete old.perspectives;
+    (old.display as { mode: string }).mode = 'dim';
+    (old.interests as { about: string }).about = 'Local news';
+    const s = migrateSettings(old);
+    expect(s.perspectives).toStrictEqual({ list: 'cloud', outlets: {} });
+    expect(s.display.mode).toBe('dim');
+    expect(s.interests.about).toBe('Local news');
+
+    // A bucket outside LEAN_BUCKETS breaks only that section; the rest is kept.
+    const outlet = { name: 'FX News', domains: ['fx-news.example'], bucket: 'center', addedAt: 1 };
+    const kept = migrateSettings({ ...old, perspectives: { list: 'own', outlets: { 'fx-news': outlet } } });
+    expect(kept.perspectives).toStrictEqual({ list: 'own', outlets: { 'fx-news': outlet } });
+    const broken = migrateSettings({
+      ...old,
+      perspectives: { list: 'own', outlets: { 'fx-news': outlet, 'fx-far': { ...outlet, bucket: 'far-left' } } },
+    });
+    expect(broken.perspectives.outlets).toStrictEqual({});
+    expect(broken.display.mode).toBe('dim');
+    expect(broken.interests.about).toBe('Local news');
+  });
+
   it('stamps per-field clocks for changed leaves', () => {
     const a = defaultSettings();
     const b = { ...a, display: { ...a.display, mode: 'dim' as const } };

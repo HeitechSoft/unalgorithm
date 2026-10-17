@@ -25,6 +25,27 @@
   and Facebook", always with the non-affiliation line: *UnAlgorithm Feed is not affiliated with, endorsed by, or
   sponsored by LinkedIn or Meta.*
 
+## Feature names
+
+| Name | What it does | Code |
+|---|---|---|
+| **UnEcho Chamber** | Shows how outlets across the spectrum covered the story behind a shared news link | `perspectives` |
+| **Fact-check** | Checks the claims in a public post against sources on the web. Its button says "Check facts" | `factcheck` |
+
+Writing them:
+
+- Exactly **UnEcho Chamber**: capital U, E and C, with "UnEcho" one word. Never "Unecho", "Un-Echo", "UnEcho chamber",
+  "Unecho Chamber", "UEC" or "UnEcho" on its own.
+- UnEcho Chamber is a feature of UnAlgorithm Feed, never a separate product: it has no logo, icon, store listing,
+  domain, social account or byline of its own. Store and website copy introduce it as part of UnAlgorithm Feed.
+- The name is never shortened. The in-feed button says the full name; its accessible name adds what it does
+  ("UnEcho Chamber: see how outlets across the spectrum covered this story").
+- Code stays `perspectives`, as code stays `unalgorithm`: the credit task (`CREDIT_TASKS`) and the price schedule's
+  entries, the server's `PERSPECTIVES=on`, the `labs.perspectives` setting, routes, message types, storage keys, and file
+  and test names.
+- Each name has one source in the code, `FEATURE_NAMES` in `@unalgorithm/protocol`; every string people read takes it
+  from there.
+
 ## Domains
 
 | Domain | Role |

@@ -1,11 +1,8 @@
 {
   "meta": {
-    "version": "0.0.0-draft",
-    "status": "draft",
     "license": "CC-BY-4.0",
     "updatedOn": "2026-10-15",
-    "panel": [],
-    "notice": "DRAFT. Not reviewed. No outlet has a lean label. Not for use."
+    "notice": "Candidate outlets for a source list: name, web addresses and country only. No leans: only people set leans."
   },
   "outlets": [
     {
@@ -13,8 +10,6 @@
       "name": "ABC News",
       "domains": ["abcnews.go.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -22,8 +17,6 @@
       "name": "APTN News",
       "domains": ["aptnnews.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -31,8 +24,6 @@
       "name": "Associated Press",
       "domains": ["apnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -40,8 +31,6 @@
       "name": "Atlanta Journal-Constitution",
       "domains": ["ajc.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -49,8 +38,6 @@
       "name": "Axios",
       "domains": ["axios.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -58,8 +45,6 @@
       "name": "Bloomberg",
       "domains": ["bloomberg.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -67,8 +52,6 @@
       "name": "BNN Bloomberg",
       "domains": ["bnnbloomberg.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -76,8 +59,6 @@
       "name": "Boston Herald",
       "domains": ["bostonherald.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -85,8 +66,6 @@
       "name": "Breitbart",
       "domains": ["breitbart.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -94,8 +73,6 @@
       "name": "Business Insider",
       "domains": ["businessinsider.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -103,8 +80,6 @@
       "name": "Calgary Herald",
       "domains": ["calgaryherald.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -112,8 +87,6 @@
       "name": "Calgary Sun",
       "domains": ["calgarysun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -121,8 +94,6 @@
       "name": "CalMatters",
       "domains": ["calmatters.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -130,8 +101,6 @@
       "name": "Canada's National Observer",
       "domains": ["nationalobserver.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -139,8 +108,6 @@
       "name": "CBC News",
       "domains": ["cbc.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -148,8 +115,6 @@
       "name": "CBS News",
       "domains": ["cbsnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -157,8 +122,6 @@
       "name": "Chicago Sun-Times",
       "domains": ["suntimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -166,8 +129,6 @@
       "name": "Chicago Tribune",
       "domains": ["chicagotribune.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -175,8 +136,6 @@
       "name": "CityNews",
       "domains": ["citynews.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -184,8 +143,6 @@
       "name": "CNBC",
       "domains": ["cnbc.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -193,8 +150,6 @@
       "name": "CNN",
       "domains": ["cnn.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -202,8 +157,6 @@
       "name": "Common Dreams",
       "domains": ["commondreams.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -211,8 +164,6 @@
       "name": "CTV News",
       "domains": ["ctvnews.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -220,8 +171,6 @@
       "name": "Daily Hive",
       "domains": ["dailyhive.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -229,8 +178,6 @@
       "name": "Detroit Free Press",
       "domains": ["freep.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -238,8 +185,6 @@
       "name": "Edmonton Journal",
       "domains": ["edmontonjournal.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -247,8 +192,6 @@
       "name": "Edmonton Sun",
       "domains": ["edmontonsun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -256,8 +199,6 @@
       "name": "El Nuevo Herald",
       "domains": ["elnuevoherald.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -265,8 +206,6 @@
       "name": "Forbes",
       "domains": ["forbes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -274,8 +213,6 @@
       "name": "Fox Business",
       "domains": ["foxbusiness.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -283,8 +220,6 @@
       "name": "Fox News",
       "domains": ["foxnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -292,8 +227,6 @@
       "name": "Global News",
       "domains": ["globalnews.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -301,8 +234,6 @@
       "name": "Houston Chronicle",
       "domains": ["houstonchronicle.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -310,8 +241,6 @@
       "name": "HuffPost",
       "domains": ["huffpost.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -319,8 +248,6 @@
       "name": "iPolitics",
       "domains": ["ipolitics.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -328,8 +255,6 @@
       "name": "Just the News",
       "domains": ["justthenews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -337,8 +262,6 @@
       "name": "La Opinión",
       "domains": ["laopinion.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -346,8 +269,6 @@
       "name": "La Presse",
       "domains": ["lapresse.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -355,8 +276,6 @@
       "name": "La Tribune",
       "domains": ["latribune.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -364,8 +283,6 @@
       "name": "Las Vegas Review-Journal",
       "domains": ["reviewjournal.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -373,8 +290,6 @@
       "name": "Le Devoir",
       "domains": ["ledevoir.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -382,8 +297,6 @@
       "name": "Le Droit",
       "domains": ["ledroit.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -391,8 +304,6 @@
       "name": "Le Journal de Montréal",
       "domains": ["journaldemontreal.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -400,8 +311,6 @@
       "name": "Le Journal de Québec",
       "domains": ["journaldequebec.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -409,8 +318,6 @@
       "name": "Le Nouvelliste",
       "domains": ["lenouvelliste.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -418,8 +325,6 @@
       "name": "Le Soleil",
       "domains": ["lesoleil.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -427,8 +332,6 @@
       "name": "London Free Press",
       "domains": ["lfpress.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -436,8 +339,6 @@
       "name": "Los Angeles Times",
       "domains": ["latimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -445,8 +346,6 @@
       "name": "Maclean's",
       "domains": ["macleans.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -454,8 +353,6 @@
       "name": "Miami Herald",
       "domains": ["miamiherald.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -463,8 +360,6 @@
       "name": "Milwaukee Journal Sentinel",
       "domains": ["jsonline.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -472,8 +367,6 @@
       "name": "Montreal Gazette",
       "domains": ["montrealgazette.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -481,8 +374,6 @@
       "name": "Mother Jones",
       "domains": ["motherjones.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -490,8 +381,6 @@
       "name": "MS NOW",
       "domains": ["ms.now", "msnbc.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -499,8 +388,6 @@
       "name": "National Post",
       "domains": ["nationalpost.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -508,8 +395,6 @@
       "name": "National Review",
       "domains": ["nationalreview.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -517,8 +402,6 @@
       "name": "NBC News",
       "domains": ["nbcnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -526,8 +409,6 @@
       "name": "New York Daily News",
       "domains": ["nydailynews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -535,8 +416,6 @@
       "name": "New York Post",
       "domains": ["nypost.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -544,8 +423,6 @@
       "name": "Newsday",
       "domains": ["newsday.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -553,8 +430,6 @@
       "name": "Newsmax",
       "domains": ["newsmax.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -562,8 +437,6 @@
       "name": "NewsNation",
       "domains": ["newsnationnow.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -571,8 +444,6 @@
       "name": "Newsweek",
       "domains": ["newsweek.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -580,8 +451,6 @@
       "name": "NJ.com",
       "domains": ["nj.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -589,8 +458,6 @@
       "name": "Noovo Info",
       "domains": ["noovo.info"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -598,8 +465,6 @@
       "name": "NOTUS",
       "domains": ["notus.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -607,8 +472,6 @@
       "name": "NPR",
       "domains": ["npr.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -616,8 +479,6 @@
       "name": "One America News",
       "domains": ["oann.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -625,8 +486,6 @@
       "name": "Orange County Register",
       "domains": ["ocregister.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -634,8 +493,6 @@
       "name": "Orlando Sentinel",
       "domains": ["orlandosentinel.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -643,8 +500,6 @@
       "name": "Ottawa Citizen",
       "domains": ["ottawacitizen.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -652,8 +507,6 @@
       "name": "Ottawa Sun",
       "domains": ["ottawasun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -661,8 +514,6 @@
       "name": "PBS News",
       "domains": ["pbs.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -670,8 +521,6 @@
       "name": "Pittsburgh Post-Gazette",
       "domains": ["post-gazette.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -679,8 +528,6 @@
       "name": "Politico",
       "domains": ["politico.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -688,8 +535,6 @@
       "name": "ProPublica",
       "domains": ["propublica.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -697,8 +542,6 @@
       "name": "Punchbowl News",
       "domains": ["punchbowl.news"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -706,8 +549,6 @@
       "name": "Radio-Canada Info",
       "domains": ["radio-canada.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -715,8 +556,6 @@
       "name": "Raw Story",
       "domains": ["rawstory.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -724,8 +563,6 @@
       "name": "Reason",
       "domains": ["reason.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -733,8 +570,6 @@
       "name": "Rebel News",
       "domains": ["rebelnews.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -742,8 +577,6 @@
       "name": "Regina Leader-Post",
       "domains": ["leaderpost.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -751,8 +584,6 @@
       "name": "Salon",
       "domains": ["salon.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -760,8 +591,6 @@
       "name": "SaltWire",
       "domains": ["saltwire.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -769,8 +598,6 @@
       "name": "San Antonio Express-News",
       "domains": ["expressnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -778,8 +605,6 @@
       "name": "San Diego Union-Tribune",
       "domains": ["sandiegouniontribune.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -787,8 +612,6 @@
       "name": "San Francisco Chronicle",
       "domains": ["sfchronicle.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -796,8 +619,6 @@
       "name": "Saskatoon StarPhoenix",
       "domains": ["thestarphoenix.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -805,8 +626,6 @@
       "name": "Scripps News",
       "domains": ["scrippsnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -814,8 +633,6 @@
       "name": "Semafor",
       "domains": ["semafor.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -823,8 +640,6 @@
       "name": "Slate",
       "domains": ["slate.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -832,8 +647,6 @@
       "name": "South Florida Sun Sentinel",
       "domains": ["sun-sentinel.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -841,8 +654,6 @@
       "name": "St. Louis Post-Dispatch",
       "domains": ["stltoday.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -850,8 +661,6 @@
       "name": "Star Tribune",
       "domains": ["startribune.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -859,8 +668,6 @@
       "name": "Straight Arrow News",
       "domains": ["san.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -868,8 +675,6 @@
       "name": "Tampa Bay Times",
       "domains": ["tampabay.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -877,8 +682,6 @@
       "name": "Telegraph-Journal",
       "domains": ["telegraphjournal.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -886,8 +689,6 @@
       "name": "Telemundo",
       "domains": ["telemundo.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -895,8 +696,6 @@
       "name": "Texas Tribune",
       "domains": ["texastribune.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -904,8 +703,6 @@
       "name": "The 19th",
       "domains": ["19thnews.org"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -913,8 +710,6 @@
       "name": "The Arizona Republic",
       "domains": ["azcentral.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -922,8 +717,6 @@
       "name": "The Atlantic",
       "domains": ["theatlantic.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -931,8 +724,6 @@
       "name": "The Baltimore Sun",
       "domains": ["baltimoresun.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -940,8 +731,6 @@
       "name": "The Blaze",
       "domains": ["theblaze.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -949,8 +738,6 @@
       "name": "The Boston Globe",
       "domains": ["bostonglobe.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -958,8 +745,6 @@
       "name": "The Bulwark",
       "domains": ["thebulwark.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -967,8 +752,6 @@
       "name": "The Canadian Press",
       "domains": ["thecanadianpress.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -976,8 +759,6 @@
       "name": "The Center Square",
       "domains": ["thecentersquare.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -985,8 +766,6 @@
       "name": "The Charlotte Observer",
       "domains": ["charlotteobserver.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -994,8 +773,6 @@
       "name": "The Christian Science Monitor",
       "domains": ["csmonitor.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1003,8 +780,6 @@
       "name": "The Chronicle Herald",
       "domains": ["thechronicleherald.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1012,8 +787,6 @@
       "name": "The Cincinnati Enquirer",
       "domains": ["cincinnati.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1021,8 +794,6 @@
       "name": "The Columbus Dispatch",
       "domains": ["dispatch.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1030,8 +801,6 @@
       "name": "The Daily Beast",
       "domains": ["thedailybeast.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1039,8 +808,6 @@
       "name": "The Daily Caller",
       "domains": ["dailycaller.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1048,8 +815,6 @@
       "name": "The Daily Signal",
       "domains": ["dailysignal.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1057,8 +822,6 @@
       "name": "The Daily Wire",
       "domains": ["dailywire.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1066,8 +829,6 @@
       "name": "The Dallas Morning News",
       "domains": ["dallasnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1075,8 +836,6 @@
       "name": "The Denver Post",
       "domains": ["denverpost.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1084,8 +843,6 @@
       "name": "The Detroit News",
       "domains": ["detroitnews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1093,8 +850,6 @@
       "name": "The Dispatch",
       "domains": ["thedispatch.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1102,8 +857,6 @@
       "name": "The Epoch Times",
       "domains": ["theepochtimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1111,8 +864,6 @@
       "name": "The Federalist",
       "domains": ["thefederalist.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1120,8 +871,6 @@
       "name": "The Free Press",
       "domains": ["thefp.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1129,8 +878,6 @@
       "name": "The Globe and Mail",
       "domains": ["theglobeandmail.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1138,8 +885,6 @@
       "name": "The Hamilton Spectator",
       "domains": ["thespec.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1147,8 +892,6 @@
       "name": "The Hill",
       "domains": ["thehill.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1156,8 +899,6 @@
       "name": "The Hill Times",
       "domains": ["hilltimes.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1165,8 +906,6 @@
       "name": "The Hub",
       "domains": ["thehub.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1174,8 +913,6 @@
       "name": "The Indianapolis Star",
       "domains": ["indystar.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1183,8 +920,6 @@
       "name": "The Intercept",
       "domains": ["theintercept.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1192,8 +927,6 @@
       "name": "The Kansas City Star",
       "domains": ["kansascity.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1201,8 +934,6 @@
       "name": "The Logic",
       "domains": ["thelogic.co"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1210,8 +941,6 @@
       "name": "The Mercury News",
       "domains": ["mercurynews.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1219,8 +948,6 @@
       "name": "The Narwhal",
       "domains": ["thenarwhal.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1228,8 +955,6 @@
       "name": "The Nation",
       "domains": ["thenation.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1237,8 +962,6 @@
       "name": "The New York Times",
       "domains": ["nytimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1246,8 +969,6 @@
       "name": "The New Yorker",
       "domains": ["newyorker.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1255,8 +976,6 @@
       "name": "The Oregonian",
       "domains": ["oregonlive.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1264,8 +983,6 @@
       "name": "The Philadelphia Inquirer",
       "domains": ["inquirer.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1273,8 +990,6 @@
       "name": "The Plain Dealer",
       "domains": ["cleveland.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1282,8 +997,6 @@
       "name": "The Province",
       "domains": ["theprovince.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1291,8 +1004,6 @@
       "name": "The Sacramento Bee",
       "domains": ["sacbee.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1300,8 +1011,6 @@
       "name": "The Seattle Times",
       "domains": ["seattletimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1309,8 +1018,6 @@
       "name": "The Tennessean",
       "domains": ["tennessean.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1318,8 +1025,6 @@
       "name": "The Times-Picayune",
       "domains": ["nola.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1327,8 +1032,6 @@
       "name": "The Tyee",
       "domains": ["thetyee.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1336,8 +1039,6 @@
       "name": "The Wall Street Journal",
       "domains": ["wsj.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1345,8 +1046,6 @@
       "name": "The Washington Post",
       "domains": ["washingtonpost.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1354,8 +1053,6 @@
       "name": "The Washington Times",
       "domains": ["washingtontimes.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1363,8 +1060,6 @@
       "name": "Time",
       "domains": ["time.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1372,8 +1067,6 @@
       "name": "Times Colonist",
       "domains": ["timescolonist.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1381,8 +1074,6 @@
       "name": "Toronto Star",
       "domains": ["thestar.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1390,8 +1081,6 @@
       "name": "Toronto Sun",
       "domains": ["torontosun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1399,8 +1088,6 @@
       "name": "Townhall",
       "domains": ["townhall.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1408,8 +1095,6 @@
       "name": "True North",
       "domains": ["tnc.news"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1417,8 +1102,6 @@
       "name": "TVA Nouvelles",
       "domains": ["tvanouvelles.ca"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1426,8 +1109,6 @@
       "name": "Univision",
       "domains": ["univision.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1435,8 +1116,6 @@
       "name": "UPI",
       "domains": ["upi.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1444,8 +1123,6 @@
       "name": "USA Today",
       "domains": ["usatoday.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1453,8 +1130,6 @@
       "name": "Vancouver Sun",
       "domains": ["vancouversun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1462,8 +1137,6 @@
       "name": "Vox",
       "domains": ["vox.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1471,8 +1144,6 @@
       "name": "Washington Examiner",
       "domains": ["washingtonexaminer.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1480,8 +1151,6 @@
       "name": "Washington Free Beacon",
       "domains": ["freebeacon.com"],
       "country": "US",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1489,8 +1158,6 @@
       "name": "Waterloo Region Record",
       "domains": ["therecord.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1498,8 +1165,6 @@
       "name": "Western Standard",
       "domains": ["westernstandard.news"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1507,8 +1172,6 @@
       "name": "Windsor Star",
       "domains": ["windsorstar.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1516,8 +1179,6 @@
       "name": "Winnipeg Free Press",
       "domains": ["winnipegfreepress.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     },
     {
@@ -1525,8 +1186,6 @@
       "name": "Winnipeg Sun",
       "domains": ["winnipegsun.com"],
       "country": "CA",
-      "verified": false,
-      "facts": [],
       "lean": null
     }
   ]

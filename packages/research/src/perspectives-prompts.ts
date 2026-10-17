@@ -3,7 +3,7 @@ import { DIFFERENCE_KINDS, type RetrievedCoverageSource } from '@unalgorithm/pro
 import { z } from 'zod';
 
 /**
- * The perspectives prompts (RM3 "Other perspectives"): the story query, the bucket search and the comparison. No model
+ * The perspectives prompts (RM3, UnEcho Chamber): the story query, the bucket search and the comparison. No model
  * is ever told about sides: no prompt, and no text outside the source tags, names a bucket or a lean. The link, the
  * story query and every source reach a model only inside tags carrying a per-request nonce, escaped by `neutralize`.
  *

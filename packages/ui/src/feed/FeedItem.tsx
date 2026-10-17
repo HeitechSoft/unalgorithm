@@ -1,8 +1,7 @@
 import type { FilterReason } from '@unalgorithm/core';
-import type { PlatformId } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, type PlatformId } from '@unalgorithm/protocol';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../components/controls.tsx';
-import { Badge } from '../components/feedback.tsx';
 import {
   CircleSlash2,
   Clapperboard,
@@ -33,13 +32,18 @@ import type { WhyActionId, WhyModel } from './why.ts';
 export type FeedItemState = 'collapsed' | 'dimmed' | 'revealed' | 'shown';
 
 /**
- * A Labs job on a public post ("Check facts", "Other perspectives"): offered, then the price, then running, then the
+ * A job on a public post ("Check facts", "UnEcho Chamber"): offered, then the price, then running, then the
  * outcome.
  */
 export interface FactcheckItemModel {
   state: 'offered' | 'confirming' | 'running' | 'done' | 'failed';
   /** factcheckPriceLabel(...), e.g. 'About $0.12 on your Anthropic account'. */
   price: string;
+  /**
+   * Shown beside the price while confirming: UnEcho Chamber's chosen list isn't balanced, e.g. "Your list isn't balanced:
+   * No outlets in Right." It warns and never blocks.
+   */
+  notice?: string;
   /** failed: the error; done: the toolbar hint when the panel could not open. */
   message?: string;
 }
@@ -65,7 +69,7 @@ export interface FeedItemModel {
   vote?: 'more' | 'less';
   coach?: boolean;
   factcheck?: FactcheckItemModel;
-  /** "Other perspectives" on a public news post that shares a link (Labs); same states as fact-check. */
+  /** UnEcho Chamber on a public news post that shares a link; same states as fact-check. */
   perspectives?: FactcheckItemModel;
 }
 
@@ -261,11 +265,14 @@ function Row({ children, bar, label }: { children: ReactNode; bar?: boolean; lab
   );
 }
 
-/** Per-feature words of a job row. Copy is a draft (D37). */
+/** Per-feature words of a job row. Copy is a draft (D37, D74). */
 interface JobWords {
-  /** The row's group label. */
-  label: 'Fact-check' | 'Other perspectives';
-  start: 'Check facts' | 'Other perspectives';
+  /** The row's group label: the feature's name (`FEATURE_NAMES`). */
+  label: string;
+  /** The start button's visible text. */
+  start: string;
+  /** The start button's accessible name when its text alone doesn't say what it does; it starts with `start`. */
+  startLabel?: string;
   confirm: 'Check' | 'Compare';
   running: 'Checking facts…' | 'Comparing coverage…';
   done: 'Checked.' | 'Compared.';
@@ -273,7 +280,7 @@ interface JobWords {
 }
 
 const FACTCHECK_WORDS: JobWords = {
-  label: 'Fact-check',
+  label: FEATURE_NAMES.factcheck,
   start: 'Check facts',
   confirm: 'Check',
   running: 'Checking facts…',
@@ -282,15 +289,17 @@ const FACTCHECK_WORDS: JobWords = {
 };
 
 const PERSPECTIVES_WORDS: JobWords = {
-  label: 'Other perspectives',
-  start: 'Other perspectives',
+  label: FEATURE_NAMES.perspectives,
+  start: FEATURE_NAMES.perspectives,
+  // The visible name first (WCAG 2.5.3, label in name), then what the button does.
+  startLabel: `${FEATURE_NAMES.perspectives}: see how outlets across the spectrum covered this story`,
   confirm: 'Compare',
   running: 'Comparing coverage…',
   done: 'Compared.',
   icon: Newspaper,
 };
 
-/** The quiet row of a Labs job. A job never starts without the price shown and a second click to confirm it. */
+/** The quiet row of a fact-check or UnEcho Chamber job. A job never starts without the price shown and a second click to confirm it. */
 function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: FactcheckAction) => void; words: JobWords }) {
   const checkRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -298,7 +307,9 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
   }, [model.state]);
   const text =
     model.state === 'confirming'
-      ? model.price
+      ? model.notice
+        ? `${model.price} · ${model.notice}`
+        : model.price
       : model.state === 'running'
         ? words.running
         : model.state === 'done'
@@ -309,12 +320,16 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
   return (
     <div className="ua-row ua-row--bar ua-fc" role="group" aria-label={words.label}>
       {model.state === 'offered' ? (
-        <>
-          <Button size="sm" variant="tinted" className="ua-btn ua-btn--tint" icon={words.icon} onClick={() => on('start')}>
-            {words.start}
-          </Button>
-          <Badge tone="ai">Labs</Badge>
-        </>
+        <Button
+          size="sm"
+          variant="tinted"
+          className="ua-btn ua-btn--tint"
+          icon={words.icon}
+          aria-label={words.startLabel}
+          onClick={() => on('start')}
+        >
+          {words.start}
+        </Button>
       ) : null}
       <span className="ua-fc-status" aria-live="polite">
         {model.state === 'running' ? <LoaderCircle className="ua-glyph ua-spin" aria-hidden="true" /> : null}

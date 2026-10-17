@@ -1,7 +1,8 @@
 /**
  * The perspectives job endpoints (P3-35): start, poll and cancel on the job kit, link only. Runs on the mock
- * OpenAI-compatible provider and a mock SearXNG answering dated hits on the fictional fixture registry's domains; the
- * registry reaches the app only as `outlets: FIXTURE_REGISTRY`. Nothing here calls a real model or search service.
+ * OpenAI-compatible provider and a mock SearXNG answering dated hits on the fictional fixture list's domains; the list
+ * reaches the server only in each request (`list`, P3-77), never as a list of its own. Nothing here calls a real model
+ * or search service.
  */
 
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,8 @@ import {
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { wireList } from '@unalgorithm/outlets';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   FACTCHECK_JOB_TTL_MS,
   FACTCHECK_JOBS_PATH,
@@ -23,6 +25,7 @@ import {
   PERSPECTIVES_JOBS_PATH,
   type PerspectivesJob,
   PerspectivesJobSchema,
+  type PerspectivesList,
   type PerspectivesResult,
   PerspectivesResultSchema,
   perspectivesJobCancelPath,
@@ -97,13 +100,13 @@ interface AppOptions extends TestAppOptions {
 
 type TestApp = Pick<Awaited<ReturnType<typeof perspectivesApp>>, 'app' | 'deps' | 'token' | 'provider' | 'outbox'>;
 
-/** Perspectives on, the fixture registry, a mock SearXNG, the fact-check routes past their eval. */
+/** Perspectives on, no list of its own, a mock SearXNG, the fact-check routes past their eval. */
 async function perspectivesApp(opts: AppOptions = {}) {
   const { env, ...options } = opts;
   const searx = await startMockSearxng({ hits: fixtureHits });
   cleanup.push(() => searx.close());
   const config = testConfig({ ...ON, SEARCH_PROVIDER: 'searxng', SEARCH_URL: searx.url, ...env });
-  const t = await createTestApp({ config, outlets: FIXTURE_REGISTRY, ...options });
+  const t = await createTestApp({ config, ...options });
   cleanup.push(t.close);
   await seedPassingRoute(t.deps.db.db, {
     task: 'synthesis',
@@ -169,7 +172,7 @@ const authError: Reply = {
   body: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } },
 };
 
-/** A billing server on `mockAnthropicFetch`, with the fact-check routes past their eval and the fixture registry. */
+/** A billing server on `mockAnthropicFetch`, with the fact-check routes past their eval. */
 async function billedApp(reply: Responder = happy, opts: AppOptions = {}) {
   const { env, ...options } = opts;
   const config = testConfig({ ...BILLED_ENV, ...env });
@@ -178,7 +181,6 @@ async function billedApp(reply: Responder = happy, opts: AppOptions = {}) {
   const t = await createTestApp({
     config,
     ai,
-    outlets: FIXTURE_REGISTRY,
     billingModule: fixtureModule,
     priceSchedule: TEST_PRICE_SCHEDULE,
     ...options,
@@ -212,7 +214,15 @@ function startCompare(t: TestApp, body: unknown, token = t.token): Promise<Respo
   return postJson(t.app, PERSPECTIVES_JOBS_PATH, body, headers(token));
 }
 
-const request = (over: Record<string, unknown> = {}) => ({ v: 1, link: LINK, platform: 'linkedin', ...over });
+/** The fixture list as the extension sends it. */
+const FIXTURE_WIRE = wireList(FIXTURE_LIST) as PerspectivesList;
+const request = (over: Record<string, unknown> = {}) => ({
+  v: 1,
+  link: LINK,
+  platform: 'linkedin',
+  list: FIXTURE_WIRE,
+  ...over,
+});
 
 function poll(t: TestApp, id: string, token = t.token): Promise<Response> {
   return Promise.resolve(t.app.request(`${perspectivesJobPath(id)}?wait=1`, { headers: headers(token) }));
@@ -256,22 +266,15 @@ function blockingResolve() {
 }
 
 describe('perspectives jobs: gates', { timeout: PGLITE_TIMEOUT }, () => {
-  it('test_perspectives_not_offered_without_setting_or_registry', async () => {
-    const cases: AppOptions[] = [
-      { env: { PERSPECTIVES: 'off' } },
-      { outlets: null },
-      // The bundled registry is a draft: the default never offers perspectives.
-      { outlets: undefined },
-    ];
-    for (const opts of cases) {
-      const t = await perspectivesApp(opts);
-      const res = await startCompare(t, request());
-      expect(res.status).toBe(503);
-      expect(await errorOf(res)).toBe('not-available');
-      expect((await discovery(t)).capabilities.perspectives).toBe(false);
-      expect(t.mock.bodies).toEqual([]);
-      expect(t.searx.queries).toEqual([]);
-    }
+  it('test_perspectives_not_offered_without_setting', async () => {
+    const t = await perspectivesApp({ env: { PERSPECTIVES: 'off' } });
+    const res = await startCompare(t, request());
+    expect(res.status).toBe(503);
+    expect(await errorOf(res)).toBe('not-available');
+    expect((await discovery(t)).capabilities.perspectives).toBe(false);
+    expect(t.mock.bodies).toEqual([]);
+    expect(t.searx.queries).toEqual([]);
+    // On, with no list of its own: every request brings one (D102).
     const on = await perspectivesApp();
     const info = await discovery(on);
     expect(info.capabilities.perspectives).toBe(true);
@@ -311,6 +314,39 @@ describe('perspectives jobs: gates', { timeout: PGLITE_TIMEOUT }, () => {
     // A public Facebook post's link is compared.
     expect((await ended(t, await started(t, request({ platform: 'facebook', audience: 'public' })))).status).toBe('done');
   });
+
+  it('test_perspectives_refuses_unsound_list_before_metering', async () => {
+    const jobs = createJobStore<PerspectivesResult>({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 });
+    const t = await perspectivesApp({ perspectivesJobs: jobs });
+    const list = (outlets: PerspectivesList['outlets']): PerspectivesList => ({ kind: 'own', version: '', outlets });
+    const unsound = [
+      // A web address in two outlets.
+      list([
+        { bucket: 'left', domains: ['left-a.example'] },
+        { bucket: 'right', domains: ['right-a.example', 'left-a.example'] },
+      ]),
+      // One outlet's address inside another's.
+      list([
+        { bucket: 'left', domains: ['left-a.example'] },
+        { bucket: 'right', domains: ['news.left-a.example'] },
+      ]),
+    ];
+    for (const body of unsound) {
+      const res = await startCompare(t, request({ list: body }));
+      expect(res.status).toBe(400);
+      expect(await errorOf(res)).toBe('bad-request');
+    }
+    // What the schema refuses: a name on an outlet, no list.
+    const named = { ...FIXTURE_WIRE, outlets: [{ ...FIXTURE_WIRE.outlets[0], name: 'Fixture Center A' }] };
+    for (const body of [request({ list: named }), request({ list: undefined })]) {
+      expect((await startCompare(t, body)).status).toBe(400);
+    }
+    expect(t.mock.bodies).toEqual([]);
+    expect(t.searx.queries).toEqual([]);
+    expect(jobs.size).toBe(0);
+    expect(await t.deps.db.db.select().from(usageEvents)).toEqual([]);
+    expect(t.lines.join('\n')).not.toContain('left-a.example');
+  });
 });
 
 describe('perspectives jobs: run', { timeout: PGLITE_TIMEOUT }, () => {
@@ -322,12 +358,12 @@ describe('perspectives jobs: run', { timeout: PGLITE_TIMEOUT }, () => {
     expect(job.billing).toBeUndefined();
     const result = PerspectivesResultSchema.parse(job.result);
     expect(result.story.url).toBe(LINK.url);
-    expect(result.registryVersion).toBe(FIXTURE_REGISTRY.meta.version);
+    expect(result.registryVersion).toBe(FIXTURE_LIST.version);
 
     // One search per bucket, each limited to that bucket's fixture domains.
     expect(t.searx.queries).toHaveLength(LEAN_BUCKETS.length);
     for (const bucket of LEAN_BUCKETS) {
-      const domains = FIXTURE_REGISTRY.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
+      const domains = FIXTURE_LIST.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
       const query = t.searx.queries.find((q) => q.includes(`site:${domains[0]}`)) ?? '';
       const sites = [...query.matchAll(/site:([a-z0-9.-]+)/g)].map((m) => m[1]);
       expect(sites.sort(), bucket).toEqual([...domains].sort());
@@ -340,6 +376,43 @@ describe('perspectives jobs: run', { timeout: PGLITE_TIMEOUT }, () => {
     const done = t.events().filter((e) => e.event === 'perspectives.done');
     expect(done).toMatchObject([{ rid: id, outcome: 'done', sources: result.sources.length }]);
     expect(t.lines.join('\n')).not.toContain('news.example.com');
+  });
+
+  it('test_perspectives_job_searches_only_the_sent_list', async () => {
+    const t = await perspectivesApp();
+    const list: PerspectivesList = {
+      kind: 'own',
+      version: '',
+      outlets: [
+        { bucket: 'left', domains: ['left-a.example'] },
+        { bucket: 'center', domains: ['center-a.example'] },
+      ],
+    };
+    const job = await ended(t, await started(t, request({ list })));
+    expect(job.status, JSON.stringify(job.error)).toBe('done');
+    const result = PerspectivesResultSchema.parse(job.result);
+
+    // One search per bucket that has an outlet, on that outlet's address only.
+    expect(t.searx.queries).toHaveLength(2);
+    const sites = t.searx.queries.map((q) => [...q.matchAll(/site:([a-z0-9.-]+)/g)].map((m) => m[1]));
+    expect(sites.sort()).toEqual([['center-a.example'], ['left-a.example']]);
+    expect(t.searx.queries.join(' ')).not.toMatch(/right-|lean-|left-b|center-b/);
+
+    // The other three buckets are gaps; the run names the list it used and its outlets by web address.
+    expect(result.list).toBe('own');
+    expect(result.registryVersion).toBe('');
+    expect(result.coverage.filter((c) => c.sourceIds.length > 0).map((c) => c.bucket)).toEqual(['left', 'center']);
+    expect(result.coverage.filter((c) => c.sourceIds.length === 0).map((c) => c.bucket)).toEqual([
+      'lean-left',
+      'lean-right',
+      'right',
+    ]);
+    expect(result.sources.map((s) => [s.outletId, s.outlet, s.bucket]).sort()).toEqual([
+      ['o1', 'left-a.example', 'left'],
+      ['o2', 'center-a.example', 'center'],
+    ]);
+    // The list is in no log line.
+    expect(t.lines.join('\n')).not.toMatch(/left-a\.example|center-a\.example/);
   });
 
   it('test_perspectives_resolves_canonical_url', async () => {
@@ -483,15 +556,13 @@ describe('perspectives jobs: lifecycle', { timeout: PGLITE_TIMEOUT }, () => {
     // Only the perspectives routes, as the fact-check paths are compared (job-routes.test.ts).
     const app = new OpenAPIHono<AppEnv>();
     const jobs = createJobStore<never>({ ttlMs: 1, maxRunning: 1, maxKeptPerUser: 1 });
-    perspectivesRoutes(
-      app,
-      { ...t.deps, priceSchedule: TEST_PRICE_SCHEDULE, perspectivesJobs: jobs, outlets: FIXTURE_REGISTRY },
-      {} as LimitDeps,
-    );
+    perspectivesRoutes(app, { ...t.deps, priceSchedule: TEST_PRICE_SCHEDULE, perspectivesJobs: jobs }, {} as LimitDeps);
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'test', version: '1' } });
     const paths = doc.paths ?? {};
     const codes = (op: { responses?: object } | undefined) => Object.keys(op?.responses ?? {}).sort();
     expect(codes(paths[PERSPECTIVES_JOBS_PATH]?.post)).toEqual(['202', '400', '401', '402', '429', '500', '503']);
+    const unavailable = paths[PERSPECTIVES_JOBS_PATH]?.post?.responses?.['503'] as { description?: string } | undefined;
+    expect(unavailable?.description?.startsWith('UnEcho Chamber is not offered')).toBe(true);
     expect(codes(paths[perspectivesJobPath('{id}')]?.get)).toEqual(['200', '401', '404']);
     expect(codes(paths[perspectivesJobCancelPath('{id}')]?.post)).toEqual(['202', '401', '404']);
   });
