@@ -42,3 +42,46 @@ export type OfficialOutlet = z.infer<typeof OfficialOutletSchema>;
 export const OUTLETS_JSON_PATH = '/outlets.json';
 export const OUTLET_CHANGES_JSON_PATH = '/outlets/changes.json';
 export const OUTLETS_PAGE_PATH = '/outlets';
+
+/**
+ * The admin contract (P3-73, decisions D93–D95): admins of a server add, edit and remove its outlets, one change at a
+ * time and published at once, or import the candidate list into an empty list. Every change is kept in its history.
+ */
+export const ADMIN_OUTLETS_PATH = '/v1/admin/outlets';
+export const ADMIN_OUTLETS_IMPORT_PATH = '/v1/admin/outlets/import';
+export const OUTLET_CHANGE_ACTIONS = ['import', 'add', 'edit', 'remove'] as const;
+/** Newest first; the admin page and the public history show at most this many. */
+export const MAX_LISTED_CHANGES = 500;
+const ListVersion = z.string().regex(/^\d{1,15}$/);
+/** An outlet as an admin sends it: the server sets `changedOn`. */
+export const OutletInputSchema = OfficialOutletSchema.omit({ changedOn: true }).strict();
+/** One change. `baseVersion`: the list version the admin's page showed (409 when the list changed since). */
+export const OutletChangeRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('add'), baseVersion: ListVersion, outlet: OutletInputSchema }),
+  z.strictObject({ action: z.literal('edit'), baseVersion: ListVersion, outlet: OutletInputSchema }),
+  z.strictObject({ action: z.literal('remove'), baseVersion: ListVersion, id: OutletIdSchema }),
+]);
+/** One entry of the change history: the outlet as published before and after (null before an add, after a remove). */
+export const OutletChangeSchema = z.object({
+  seq: z.number().int().min(1),
+  at: z.iso.datetime(),
+  action: z.enum(OUTLET_CHANGE_ACTIONS),
+  outletId: OutletIdSchema,
+  before: OfficialOutletSchema.nullable(),
+  after: OfficialOutletSchema.nullable(),
+});
+/** The admin page's view: who made each change (their address; null once that account is deleted). */
+export const AdminOutletChangeSchema = OutletChangeSchema.extend({ by: z.string().max(254).nullable() });
+export const AdminOutletsSchema = z.object({
+  list: OfficialListSchema,
+  changes: z.array(AdminOutletChangeSchema).max(MAX_LISTED_CHANGES),
+});
+/** The answer to a change or an import: the list's version now. */
+export const OutletChangedSchema = z.object({ ok: z.literal(true), version: ListVersion });
+export type OutletChangeAction = (typeof OUTLET_CHANGE_ACTIONS)[number];
+export type OutletInput = z.infer<typeof OutletInputSchema>;
+export type OutletChangeRequest = z.infer<typeof OutletChangeRequestSchema>;
+export type OutletChange = z.infer<typeof OutletChangeSchema>;
+export type AdminOutletChange = z.infer<typeof AdminOutletChangeSchema>;
+export type AdminOutlets = z.infer<typeof AdminOutletsSchema>;
+export type OutletChanged = z.infer<typeof OutletChangedSchema>;

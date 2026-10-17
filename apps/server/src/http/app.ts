@@ -54,6 +54,7 @@ import { classifyRoutes } from '../routes/classify.ts';
 import { factcheckOffer, factcheckRoutes } from '../routes/factcheck.ts';
 import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
+import { outletAdminRoutes } from '../routes/outlets.ts';
 import { perspectivesRoutes } from '../routes/perspectives.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
@@ -271,6 +272,7 @@ export function createApp(deps: AppDeps): App {
     limits,
   );
   adminRoutes(app, deps);
+  outletAdminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);
 

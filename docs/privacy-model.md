@@ -178,6 +178,12 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   another server, and a different server's key finds nothing in it; a new `BETTER_AUTH_SECRET` makes every row
   unreachable. A hit tells the next person on this server who checks the same claim that someone here checked that same
   public claim that day, never who.
+- **Source list for UnEcho Chamber:** the server's published list of news outlets: each outlet's name, web addresses,
+  country, lean bucket and the evidence for its lean (`outlets`), and every change to it, kept as long as the server
+  runs: what changed, when, and which admin made the change (`outlet_changes`). Only the server's admins change the
+  list. The history keeps the admin's account id for audits and appeals: the server's admins see that admin's address
+  beside each change, it is never published, and it is cleared when that account is deleted, while the change itself
+  stays. An account's export does not list its admin's changes: they are edits to a public list. No other user data.
 - **Background jobs:** the hourly purge of expired sign-in rows above, the hourly purge of expired claim cache rows
   (`factcheck.purge-claim-cache`), the sync cleanup every 6 hours (`sync.gc`, which
   removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers

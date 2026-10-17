@@ -4,6 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ADMIN_OUTLETS_IMPORT_PATH,
+  ADMIN_OUTLETS_PATH,
+  AdminOutletsSchema,
   BUCKET_LABELS,
   CLOUD_ORIGIN,
   LEAN_BUCKETS,
@@ -12,11 +15,15 @@ import {
   type OfficialList,
   OfficialListSchema,
   type OfficialOutlet,
+  OUTLET_CHANGE_ACTIONS,
   OUTLET_CHANGES_JSON_PATH,
   OUTLETS_JSON_PATH,
   OUTLETS_PAGE_PATH,
+  OutletChangedSchema,
+  OutletChangeRequestSchema,
   OutletDomainSchema,
   OutletIdSchema,
+  OutletInputSchema,
   SOURCE_LIST_PAGE_URL,
 } from '../src/index.ts';
 
@@ -89,5 +96,51 @@ describe('official list', () => {
     ]);
     expect(CLOUD_ORIGIN).toBe('https://cloud.unalgorithm.app');
     expect(SOURCE_LIST_PAGE_URL).toBe('https://cloud.unalgorithm.app/outlets');
+  });
+});
+
+describe('admin contract', () => {
+  const { changedOn: _changedOn, ...input } = outlet(1);
+
+  it('test_outlet_change_request_shapes', () => {
+    expect(ADMIN_OUTLETS_PATH).toBe('/v1/admin/outlets');
+    expect(ADMIN_OUTLETS_IMPORT_PATH).toBe('/v1/admin/outlets/import');
+    expect(OUTLET_CHANGE_ACTIONS).toEqual(['import', 'add', 'edit', 'remove']);
+    const parses = (req: unknown) => OutletChangeRequestSchema.safeParse(req).success;
+
+    // The three actions an admin sends.
+    expect(OutletChangeRequestSchema.parse({ action: 'add', baseVersion: '0', outlet: input })).toEqual({
+      action: 'add',
+      baseVersion: '0',
+      outlet: input,
+    });
+    expect(parses({ action: 'edit', baseVersion: '12', outlet: { ...input, lean: null } })).toBe(true);
+    expect(parses({ action: 'remove', baseVersion: '13', id: 'fx-outlet-1' })).toBe(true);
+
+    // An import is the server's own action, never a request; an unknown one is refused too.
+    expect(parses({ action: 'import', baseVersion: '0', outlet: input })).toBe(false);
+    expect(parses({ action: 'rename', baseVersion: '0', outlet: input })).toBe(false);
+    // Every change names the version the admin's page showed.
+    expect(parses({ action: 'add', outlet: input })).toBe(false);
+    expect(parses({ action: 'remove', id: 'fx-outlet-1' })).toBe(false);
+    expect(parses({ action: 'add', baseVersion: 'v1', outlet: input })).toBe(false);
+    // The server sets `changedOn`; other extra fields are refused as well.
+    expect(parses({ action: 'add', baseVersion: '0', outlet: { ...input, changedOn: '2026-01-15' } })).toBe(false);
+    expect(OutletInputSchema.safeParse({ ...input, changedOn: '2026-01-15' }).success).toBe(false);
+    expect(parses({ action: 'add', baseVersion: '0', outlet: input, note: 'Extra.' })).toBe(false);
+    expect(parses({ action: 'remove', baseVersion: '0', id: 'fx-outlet-1', outlet: input })).toBe(false);
+    // The input's own rules: a lean only with evidence, over HTTPS.
+    expect(parses({ action: 'add', baseVersion: '0', outlet: { ...input, lean: { bucket: 'left', evidence: [] } } })).toBe(false);
+
+    // What the admin page reads, and the answer to a change.
+    const change = { seq: 1, at: '2026-01-15T10:00:00.000Z', action: 'add', outletId: 'fx-outlet-1', before: null };
+    const page = { list: LIST, changes: [{ ...change, after: outlet(1), by: 'ada@example.com' }] };
+    expect(AdminOutletsSchema.parse(page)).toEqual(page);
+    expect(AdminOutletsSchema.safeParse({ list: LIST, changes: [{ ...change, after: outlet(1), by: null }] }).success).toBe(true);
+    expect(
+      AdminOutletsSchema.safeParse({ list: LIST, changes: [{ ...change, action: 'rename', after: null, by: null }] }).success,
+    ).toBe(false);
+    expect(OutletChangedSchema.parse({ ok: true, version: '3' })).toEqual({ ok: true, version: '3' });
+    expect(OutletChangedSchema.safeParse({ ok: true, version: 3 }).success).toBe(false);
   });
 });
