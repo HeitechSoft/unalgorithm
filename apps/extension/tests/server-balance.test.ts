@@ -291,6 +291,7 @@ describe('refresh', () => {
       low: false,
       empty: false,
       accountUrl: 'https://cloud.unalgorithm.app/account',
+      microsPer1000Posts: null,
       updatedAt: NOW,
     });
     expect(s.calls).toHaveLength(1);
@@ -666,6 +667,37 @@ describe('status', () => {
     expect(await urlFor('http://[::1]:8787')).toBe('http://[::1]:8787/account');
     // Discovery never accepts this address, so only tampered storage gets here: no link.
     expect(await urlFor('http://ai.example.org')).toBeNull();
+    expect(s.calls).toHaveLength(0);
+  });
+
+  it('test_public_balance_carries_server_classify_price', async () => {
+    await serverBalanceItem.setValue(stored({ balanceMicros: 970_000 }));
+    const s = fakeServer();
+    const priceOf = async (info: unknown) =>
+      (await balanceStatus(CFG, account({ info: info as ServerInfo }), { fetch: s.fetch }))?.microsPer1000Posts;
+
+    // The price discovery gave when the extension last read it.
+    const priced: ServerInfo = { ...INFO, classifyPrice: { microsPer1000Posts: 182_500 } };
+    expect(await priceOf(priced)).toBe(182_500);
+    expect(await balanceStatus(CFG, account({ info: priced }), { fetch: s.fetch })).toStrictEqual({
+      balanceMicros: 970_000,
+      low: false,
+      empty: false,
+      accountUrl: 'https://cloud.unalgorithm.app/account',
+      microsPer1000Posts: 182_500,
+      updatedAt: NOW,
+    });
+    // A server that sends none: null, so the line estimates at the bundled schedule.
+    expect(await priceOf(INFO)).toBeNull();
+    // A stored document that doesn't parse (storage.local is writable by content scripts): null, never its price.
+    expect(await priceOf({ ...priced, v: 2 })).toBeNull();
+    expect(await priceOf({ ...INFO, classifyPrice: { microsPer1000Posts: 'lots' } })).toBeNull();
+    expect(await priceOf({ ...INFO, classifyPrice: { microsPer1000Posts: -1 } })).toBeNull();
+
+    // Through `aiStatus`, from the stored account, with no request of its own.
+    await serverAccountItem.setValue(account({ info: priced }));
+    vi.stubGlobal('fetch', s.fetch);
+    expect((await aiStatus()).balance).toMatchObject({ balanceMicros: 970_000, microsPer1000Posts: 182_500 });
     expect(s.calls).toHaveLength(0);
   });
 

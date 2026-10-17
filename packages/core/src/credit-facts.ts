@@ -1,20 +1,17 @@
 import {
-  CREDIT_AMOUNT_MAX_MICROS,
-  CREDIT_AMOUNT_MIN_MICROS,
-  CREDIT_AMOUNT_PRESETS,
-  CREDIT_PRICE_SCHEDULE,
   CREDIT_TASKS,
   type CreditPriceCard,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   type CreditTask,
-  DEFAULT_CREDIT_AMOUNT,
+  DEFAULT_PRICE_BOOK,
   estimatePosts,
   FEATURE_NAMES,
   jobPriceAt,
+  type PriceBook,
   priceCardsAt,
   retailMicrosPer1000Posts,
-  STARTER_CREDIT,
+  starterCreditAt,
   TASK_UNITS,
   taskPriceAt,
 } from '@unalgorithm/protocol';
@@ -24,9 +21,10 @@ import { balanceLine, formatBalance, formatPostsEstimate, formatPrice } from './
 
 /**
  * "How credits work" on the website (R30, CL2-14): the figures its Markdown (`CREDITS_PAGE.source`) leaves as
- * `{{name}}` placeholders, computed from the dated price schedule so the page can only show what the Cloud charges.
- * The site is static: every sentence about a scheduled price is dated, so it stays true before and after the date
- * (docs/release.md → Prices has the site redeployed around a change).
+ * `{{name}}` placeholders, computed from a price book (the Cloud's `/prices.json`, PA-10; `DEFAULT_PRICE_BOOK` when none
+ * is given) so the page can only show what the Cloud charges. The site is static: every sentence about a scheduled
+ * price is dated, so it stays true before and after the date (docs/release.md → Prices has the site redeployed around a
+ * change).
  */
 
 /** The credit amounts of the examples table, in micro-dollars. */
@@ -165,10 +163,14 @@ function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
 }
 
 /**
- * The page's figures at `at` (the build time) from `schedule`: all computed, none typed by hand. Only the next change of
- * a card is shown, dated; an entry that only adds a task leaves classify's sentence and the examples undated.
+ * The page's figures at `at` (the build time) from `prices`: all computed, none typed by hand. The task prices come from
+ * its schedule, where only the next change of a card is shown, dated (an entry that only adds a task leaves classify's
+ * sentence and the examples undated); the starter credit is the one an account created at `at` gets; the amounts are
+ * its buying credit rules.
  */
-export function creditFacts(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE, at: Date = new Date()): CreditFacts {
+export function creditFacts(prices: PriceBook = DEFAULT_PRICE_BOOK, at: Date = new Date()): CreditFacts {
+  const { schedule, purchase } = prices;
+  const starter = starterCreditAt(at, prices);
   const card = priceCardsAt(at, schedule).cards.classify;
   const next = nextCardChange(at, 'classify', schedule);
   const until = next ? day(next.entry.effectiveFrom) : '';
@@ -188,21 +190,21 @@ export function creditFacts(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDUL
       : '',
     labsPrices: labsPrices(at, schedule),
     examples: dated(table),
-    starterAmount: formatBalance(STARTER_CREDIT.amountMicros),
-    starterDays: String(STARTER_CREDIT.expiresAfterDays),
-    amountMin: wholeDollars(CREDIT_AMOUNT_MIN_MICROS),
-    amountMax: wholeDollars(CREDIT_AMOUNT_MAX_MICROS),
-    amounts: dated(amountsTable(at, schedule)),
+    starterAmount: formatBalance(starter.amountMicros),
+    starterDays: String(starter.expiresAfterDays),
+    amountMin: wholeDollars(purchase.minMicros),
+    amountMax: wholeDollars(purchase.maxMicros),
+    amounts: dated(amountsTable(at, schedule, purchase.presetsMicros)),
   };
 }
 
 /**
- * Examples of a purchase (R32): the quick picks (`CREDIT_AMOUNT_PRESETS`), smallest first, at the card in effect at `at`:
- * what each costs, adds and buys. Any whole-dollar amount within the rules may be bought; these are examples. Like the
+ * Examples of a purchase (R32): the quick picks (`presetsMicros`), smallest first, at the card in effect at `at`: what
+ * each costs, adds and buys. Any whole-dollar amount within the rules may be bought; these are examples. Like the
  * examples table, it is dated by the caller when classify's card changes later (one table, never a second column set).
  */
-function amountsTable(at: Date, schedule: CreditPriceSchedule): string {
-  const rows = CREDIT_AMOUNT_PRESETS.map((micros) => {
+function amountsTable(at: Date, schedule: CreditPriceSchedule, presetsMicros: readonly number[]): string {
+  const rows = presetsMicros.map((micros) => {
     const posts = formatPostsEstimate(estimatePosts(micros, at, 'classify', schedule));
     return `| ${formatBalance(micros)} + tax where it applies | ${formatBalance(micros)} | ${posts} |`;
   });
@@ -210,20 +212,21 @@ function amountsTable(at: Date, schedule: CreditPriceSchedule): string {
 }
 
 /**
- * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: the amount rules in whole
- * dollars, and the price of 1,000 classified posts under the classify card in effect at `at`, then under its next
- * change, if any, from that change's `effectiveFrom`.
+ * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: `prices`' buying credit
+ * rules in whole dollars, and the price of 1,000 classified posts under the classify card in effect at `at`, then under
+ * its next change, if any, from that change's `effectiveFrom`.
  */
-export function calculatorData(schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE, at: Date = new Date()): CalculatorData {
+export function calculatorData(prices: PriceBook = DEFAULT_PRICE_BOOK, at: Date = new Date()): CalculatorData {
+  const { schedule, purchase } = prices;
   const cards = [{ from: priceCardsAt(at, schedule).effectiveFrom, at }];
   const next = nextCardChange(at, 'classify', schedule);
   if (next) cards.push({ from: next.entry.effectiveFrom, at: new Date(next.entry.effectiveFrom) });
   return {
     amount: {
-      minDollars: CREDIT_AMOUNT_MIN_MICROS / MICROS_PER_DOLLAR,
-      maxDollars: CREDIT_AMOUNT_MAX_MICROS / MICROS_PER_DOLLAR,
-      presetDollars: CREDIT_AMOUNT_PRESETS.map((micros) => micros / MICROS_PER_DOLLAR),
-      defaultDollars: DEFAULT_CREDIT_AMOUNT / MICROS_PER_DOLLAR,
+      minDollars: purchase.minMicros / MICROS_PER_DOLLAR,
+      maxDollars: purchase.maxMicros / MICROS_PER_DOLLAR,
+      presetDollars: purchase.presetsMicros.map((micros) => micros / MICROS_PER_DOLLAR),
+      defaultDollars: purchase.defaultMicros / MICROS_PER_DOLLAR,
     },
     prices: cards.map((card) => ({
       from: card.from,
@@ -245,11 +248,7 @@ export function fillPlaceholders(template: string, values: Readonly<Record<strin
   return template.replace(PLACEHOLDER, (_, name: string) => values[name] ?? '');
 }
 
-/** The "How credits work" Markdown (`CREDITS_PAGE.source`) filled with `creditFacts(schedule, at)`. */
-export function creditsMarkdown(
-  template: string,
-  schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
-  at: Date = new Date(),
-): string {
-  return fillPlaceholders(template, creditFacts(schedule, at));
+/** The "How credits work" Markdown (`CREDITS_PAGE.source`) filled with `creditFacts(prices, at)`. */
+export function creditsMarkdown(template: string, prices: PriceBook = DEFAULT_PRICE_BOOK, at: Date = new Date()): string {
+  return fillPlaceholders(template, creditFacts(prices, at));
 }

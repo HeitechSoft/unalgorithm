@@ -4,6 +4,7 @@ import {
   type CreditPriceSchedule,
   costMicros,
   estimatePosts,
+  estimatePostsAtPrice,
   MAX_MODEL_CHARS,
   type NormalizedUsage,
   ZERO_USAGE,
@@ -175,10 +176,20 @@ export function formatPostsEstimate(posts: number): string {
 }
 
 /**
- * The balance wording every surface shows: "$0.97 left · about 6,600 posts", or "$0.00 left". The estimate uses the
- * price card in effect at `at` (the surface passes the time it shows the line).
+ * The balance wording every surface shows: "$0.97 left · about 6,600 posts", or "$0.00 left". The estimate is at
+ * `microsPer1000Posts`, the server's price of 1,000 posts (discovery's `classifyPrice`), when it gives one above 0;
+ * otherwise at the price card of `schedule` in effect at `at` (the surface passes the time it shows the line).
  */
-export function balanceLine(balanceMicros: number, at: Date, schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE): string {
+export function balanceLine(
+  balanceMicros: number,
+  at: Date,
+  schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
+  microsPer1000Posts: number | null = null,
+): string {
   if (!(balanceMicros > 0)) return '$0.00 left';
-  return `${formatBalance(balanceMicros)} left · ${formatPostsEstimate(estimatePosts(balanceMicros, at, 'classify', schedule))}`;
+  const posts =
+    microsPer1000Posts !== null && microsPer1000Posts > 0
+      ? estimatePostsAtPrice(balanceMicros, microsPer1000Posts)
+      : estimatePosts(balanceMicros, at, 'classify', schedule);
+  return `${formatBalance(balanceMicros)} left · ${formatPostsEstimate(posts)}`;
 }

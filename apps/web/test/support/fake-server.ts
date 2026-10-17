@@ -26,6 +26,10 @@
  * (409), PA-01's edits (404 for a cancel or a move of a change that isn't scheduled) and PA-02's
  * `priceBookChangeIssues` at `PRICES_NOW` (400 with `priceIssuesText`). An accepted change replaces the book and adds a
  * history line by the signed-in address, after a `seed` line the first time, as the server's `price_changes` does.
+ *
+ * The public `/prices.json` (PA-04) is answered as given (`prices`), with or without a session: by default `PRICES`, the
+ * code defaults never saved. It is a separate value from the Pricing routes' book, as a test sets what the account page
+ * reads.
  */
 import { priceIssuesText } from '@unalgorithm/core';
 import { type CandidateOutlet, listProblems, listProblemText } from '@unalgorithm/outlets';
@@ -60,11 +64,13 @@ import {
   type OutletChangeAction,
   OutletChangeRequestSchema,
   type OutletChanges,
+  PRICES_JSON_PATH,
   type PriceBook,
   type PriceChange,
   type PriceChangeRequest,
   PriceChangeRequestSchema,
   type PriceChangeValue,
+  type PublishedPrices,
   priceBookChangeIssues,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -245,6 +251,9 @@ export const PRICE_CHANGE_GONE = {
   body: { code: 'bad-request', message: 'That scheduled change is no longer on the list.' },
 };
 
+/** What `/prices.json` answers unless a test passes its own: the code defaults, never saved (version '0'). */
+export const PRICES: PublishedPrices = { v: 1, version: '0', updatedAt: null, ...DEFAULT_PRICE_BOOK };
+
 /** The book a price change makes, and what it changed (the history's `before` and `after`). */
 interface PriceEdit {
   head: PriceBook;
@@ -349,6 +358,7 @@ export function fakeServer({
   priceBook = DEFAULT_PRICE_BOOK,
   priceVersion = '0',
   priceChanges = [],
+  prices = PRICES,
   info = INFO,
   devices = [],
   passkeys = [],
@@ -365,6 +375,8 @@ export function fakeServer({
   priceBook?: PriceBook;
   priceVersion?: string;
   priceChanges?: readonly PriceChange[];
+  /** What the public `/prices.json` answers (the account page's prices). */
+  prices?: PublishedPrices;
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -427,6 +439,7 @@ export function fakeServer({
     [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: info },
     [`GET ${OUTLETS_JSON_PATH}`]: { status: 200, body: sourceList },
     [`GET ${OUTLET_CHANGES_JSON_PATH}`]: { status: 200, body: outletChanges },
+    [`GET ${PRICES_JSON_PATH}`]: { status: 200, body: prices },
     [`GET ${SESSION_PATH}`]: () => ({
       status: 200,
       body: current ? { session: { userId: 'u1' }, user: { email: current, role } } : null,

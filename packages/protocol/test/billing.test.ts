@@ -24,6 +24,7 @@ import {
   DEFAULT_CREDIT_AMOUNT,
   earliestRaise,
   estimatePosts,
+  estimatePostsAtPrice,
   FACTCHECK_COST_CEILING_MICROS,
   FACTCHECK_TYPICAL_COST_MICROS,
   isPriceDate,
@@ -150,6 +151,22 @@ describe('price schedule', () => {
     expect(estimatePosts(1_000_000, at('2026-11-14T23:59:59.999Z'), 'classify', S)).toBe(6_800);
     // $0 reads neither the instant nor the schedule.
     expect(estimatePosts(0, new Date(Number.NaN))).toBe(0);
+  });
+
+  it('test_estimate_posts_at_price_matches', () => {
+    // One rounding: a server's price per 1,000 posts gives what the schedule gives at the instant that price is in effect.
+    const nov15 = at('2026-11-15T00:00:00Z');
+    for (const balance of [1_000_000, 970_000, 4_820_000, 200_000, 25_000_000, 10_000, 146, 145, 0, -5, Number.NaN]) {
+      expect(estimatePostsAtPrice(balance, 146_000), `${balance}`).toBe(estimatePosts(balance, NOW));
+      expect(estimatePostsAtPrice(balance, 182_500), `${balance}`).toBe(estimatePosts(balance, nov15, 'classify', S));
+    }
+    expect(estimatePostsAtPrice(970_000, 182_500)).toBe(5_300);
+    expect(estimatePostsAtPrice(1_000_000, 182_500)).toBe(5_400);
+    // A price that can't estimate anything is refused, except for $0, which reads no price.
+    for (const price of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => estimatePostsAtPrice(970_000, price), `${price}`).toThrow(RangeError);
+      expect(estimatePostsAtPrice(0, price)).toBe(0);
+    }
   });
 
   it('test_price_schedule_problems', () => {

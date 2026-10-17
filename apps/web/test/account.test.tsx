@@ -4,7 +4,13 @@
  * does: an accepted code starts it and signing out ends it. The Credits section has its own tests (credits.test.tsx).
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { ACCOUNT_DEVICES_PATH, ACCOUNT_PAGE_PATH, CREDIT_ACCOUNT_PATH, SERVER_INFO_PATH } from '@unalgorithm/protocol';
+import {
+  ACCOUNT_DEVICES_PATH,
+  ACCOUNT_PAGE_PATH,
+  CREDIT_ACCOUNT_PATH,
+  PRICES_JSON_PATH,
+  SERVER_INFO_PATH,
+} from '@unalgorithm/protocol';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
@@ -165,7 +171,7 @@ describe('signed out and errors', () => {
       pages.push(container.innerHTML);
       expect(server.calls.map((c) => c.path)).toEqual(
         billing
-          ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH, ...SECTIONS]
+          ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH, PRICES_JSON_PATH, ...SECTIONS]
           : [SERVER_INFO_PATH, SESSION_PATH, ...SECTIONS],
       );
       cleanup();

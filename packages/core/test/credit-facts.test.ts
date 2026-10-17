@@ -8,10 +8,12 @@ import {
   type CreditPriceSchedule,
   creditAmount,
   DEFAULT_CREDIT_AMOUNT,
+  DEFAULT_PRICE_BOOK,
   estimatePosts,
   FEATURE_NAMES,
   jobPriceAt,
   PRICE_CARDS,
+  type PriceBook,
   priceCardsAt,
   REFERENCE_MODELS,
   retailMicrosPer1000Posts,
@@ -48,6 +50,8 @@ const at25 = (effectiveFrom: string) =>
   Object.freeze({ effectiveFrom, cards: { classify: { ...LAUNCH_CLASSIFY, multiplier: 2.5 } } });
 /** The ticket's stub `S`: the launch entry, plus 2.5× from 2026-11-15. */
 const S: CreditPriceSchedule = [LAUNCH, at25('2026-11-15T00:00:00Z')];
+/** `schedule` in today's book: the starter credit, buying credit and caps of `DEFAULT_PRICE_BOOK`. */
+const book = (schedule: CreditPriceSchedule): PriceBook => ({ ...DEFAULT_PRICE_BOOK, schedule });
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
 const template = readFileSync(new URL(CREDITS_PAGE.source, REPO_ROOT), 'utf8').replace(/\r\n/g, '\n');
@@ -56,7 +60,7 @@ const EXAMPLE_LINES = ['about 6,800 posts', 'about 34,000 posts', 'about 68,000 
 
 describe('credit facts', () => {
   it('test_credit_facts_from_protocol', () => {
-    const facts = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    const facts = creditFacts(DEFAULT_PRICE_BOOK, OCT_14);
     expect(facts.classifyMultiplier).toBe('2×');
     expect(facts.classifyPer1000).toBe('$0.15');
     expect(facts.referenceModel).toBe('Claude Haiku 5.5');
@@ -74,7 +78,7 @@ describe('credit facts', () => {
   });
 
   it('test_credit_facts_follow_price_card', () => {
-    const facts = creditFacts([at25('2026-10-01T00:00:00Z')], OCT_14);
+    const facts = creditFacts(book([at25('2026-10-01T00:00:00Z')]), OCT_14);
     expect(facts.classifyMultiplier).toBe('2.5×');
     expect(facts.classifyPer1000).toBe('$0.18');
     expect(facts.examples).toContain('| $1.00 | about 5,400 posts |');
@@ -82,7 +86,7 @@ describe('credit facts', () => {
   });
 
   it('test_credit_facts_scheduled_change', () => {
-    const before = creditFacts(S, OCT_14);
+    const before = creditFacts(book(S), OCT_14);
     expect(before.classifyMultiplier).toBe('2×');
     expect(before.classifyPer1000).toBe('$0.15');
     expect(before.priceChange).toBe(
@@ -90,7 +94,7 @@ describe('credit facts', () => {
     );
     expect(before.examples.split('\n')[0]).toBe('At the price until Nov 15, 2026 (UTC).');
 
-    const after = creditFacts(S, NOV_15);
+    const after = creditFacts(book(S), NOV_15);
     expect(after.classifyMultiplier).toBe('2.5×');
     expect(after.classifyPer1000).toBe('$0.18');
     expect(after.priceChange).toBe('');
@@ -106,18 +110,18 @@ describe('credit facts', () => {
         c.referenceCostMicrosPer1000 !== now.referenceCostMicrosPer1000 ||
         c.referenceModel !== now.referenceModel,
     );
-    expect(creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14).priceChange === '').toBe(!classifyChanges);
+    expect(creditFacts(DEFAULT_PRICE_BOOK, OCT_14).priceChange === '').toBe(!classifyChanges);
   });
 
   it('test_credit_facts_labs_prices', () => {
     // Before perspectives (UnEcho Chamber) and fact-check take effect (both 2026-10-18): dated, at cost × 2 with their
     // hold caps.
-    expect(creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14).labsPrices.split('\n')).toEqual([
+    expect(creditFacts(DEFAULT_PRICE_BOOK, OCT_14).labsPrices.split('\n')).toEqual([
       '- **Fact-check**: from Oct 18, 2026 (UTC), 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check.',
       '- **UnEcho Chamber**: from Oct 18, 2026 (UTC), 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
     ]);
     // Once in effect, the same lines without their date.
-    expect(creditFacts(CREDIT_PRICE_SCHEDULE, new Date('2026-10-18T00:00:00Z')).labsPrices.split('\n')).toEqual([
+    expect(creditFacts(DEFAULT_PRICE_BOOK, new Date('2026-10-18T00:00:00Z')).labsPrices.split('\n')).toEqual([
       '- **Fact-check**: 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check.',
       '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
     ]);
@@ -128,12 +132,12 @@ describe('credit facts', () => {
       pv,
       { effectiveFrom: '2027-01-01T00:00:00Z', cards: { ...pv.cards, perspectives: cut } },
     ];
-    expect(creditFacts(changed, NOV_15).labsPrices.split('\n')).toEqual([
+    expect(creditFacts(book(changed), NOV_15).labsPrices.split('\n')).toEqual([
       '- **Fact-check**: 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check.',
       '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison. That price applies until Jan 1, 2027 (UTC). From Jan 1, 2027 (UTC): 1.5× our AI cost, typically about $0.20 per comparison, and never more than $0.50 for one comparison.',
     ]);
     // Only classify priced, now and later.
-    expect(creditFacts([LAUNCH], OCT_14).labsPrices).toBe(
+    expect(creditFacts(book([LAUNCH]), OCT_14).labsPrices).toBe(
       'Fact-check and UnEcho Chamber are not offered on unAlgorithm Cloud yet.',
     );
   });
@@ -154,8 +158,55 @@ describe('credit facts', () => {
   });
 
   it('test_starter_facts_follow_protocol', () => {
-    const facts = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    const facts = creditFacts(DEFAULT_PRICE_BOOK, OCT_14);
     expect(facts.starterDays).toBe(String(STARTER_CREDIT.expiresAfterDays));
+  });
+
+  it('test_credit_facts_from_price_book', () => {
+    // The defaults are today's figures: the code schedule, $1 of starter credit, and $5 to $500 with $5, $10 and $25.
+    const today = creditFacts(DEFAULT_PRICE_BOOK, OCT_14);
+    expect(creditFacts(undefined, OCT_14)).toEqual(today);
+    expect(today).toEqual(creditFacts(book(CREDIT_PRICE_SCHEDULE), OCT_14));
+    expect([today.starterAmount, today.starterDays, today.amountMin, today.amountMax]).toEqual(['$1.00', '90', '$5', '$500']);
+    expect(amountRows(today.amounts)).toHaveLength(3);
+    expect(calculatorData(undefined, OCT_14)).toEqual(calculatorData(DEFAULT_PRICE_BOOK, OCT_14));
+
+    // The starter credit an account created at `at` gets: $2 from a step before it, never a later step's.
+    const starter = (from: string) =>
+      creditFacts(
+        { ...DEFAULT_PRICE_BOOK, starterCredit: [...DEFAULT_PRICE_BOOK.starterCredit, { from, amountMicros: 2_000_000 }] },
+        OCT_14,
+      );
+    expect(starter('2026-10-01T09:30:00.000Z').starterAmount).toBe('$2.00');
+    expect(starter('2026-10-01T09:30:00.000Z').starterDays).toBe('90');
+    expect(starter('2026-10-20T00:00:00.000Z').starterAmount).toBe('$1.00');
+
+    // Buying credit from $10 to $1,000, with quick picks $10, $25 and $100.
+    const purchase = {
+      minMicros: 10_000_000,
+      maxMicros: 1_000_000_000,
+      presetsMicros: [10_000_000, 25_000_000, 100_000_000],
+      defaultMicros: 25_000_000,
+    };
+    const bought: PriceBook = { ...DEFAULT_PRICE_BOOK, purchase };
+    const facts = creditFacts(bought, OCT_14);
+    expect(facts.amountMin).toBe('$10');
+    expect(facts.amountMax).toBe('$1,000');
+    expect(amountRows(facts.amounts)).toEqual([
+      '| $10.00 + tax where it applies | $10.00 | about 68,000 posts |',
+      '| $25.00 + tax where it applies | $25.00 | about 170,000 posts |',
+      '| $100.00 + tax where it applies | $100.00 | about 680,000 posts |',
+    ]);
+    expect(flat(creditsMarkdown(template, bought, OCT_14))).toContain('Load any amount from $10 to $1,000, in whole dollars.');
+    expect(calculatorData(bought, OCT_14).amount).toEqual({
+      minDollars: 10,
+      maxDollars: 1_000,
+      presetDollars: [10, 25, 100],
+      defaultDollars: 25,
+    });
+    // Every other figure is the schedule's and the starter credit's, unchanged.
+    const without = ({ amountMin, amountMax, amounts, ...rest }: typeof facts) => rest;
+    expect(without(facts)).toEqual(without(today));
   });
 });
 
@@ -182,7 +233,7 @@ describe('credits page copy', () => {
 
   it('test_unknown_placeholder_fails', () => {
     expect(() => fillPlaceholders('Price: {{nope}}', { a: 'x' })).toThrow(/nope/);
-    expect(() => creditsMarkdown(`${template}\n{{nope}}`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/nope/);
+    expect(() => creditsMarkdown(`${template}\n{{nope}}`, DEFAULT_PRICE_BOOK, OCT_14)).toThrow(/nope/);
     // A malformed placeholder is left over, never shown.
     expect(() => fillPlaceholders('Price: {{a}} {{a', { a: 'x' })).toThrow(/left over/);
     // A value is inserted as written, even with `$` in it.
@@ -190,8 +241,8 @@ describe('credits page copy', () => {
   });
 
   it('test_credits_page_content', () => {
-    const page = creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14);
-    const facts = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    const page = creditsMarkdown(template, DEFAULT_PRICE_BOOK, OCT_14);
+    const facts = creditFacts(DEFAULT_PRICE_BOOK, OCT_14);
     const text = flat(page);
     expect(page.split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
     expect(page).not.toMatch(/\{\{|\}\}/);
@@ -210,8 +261,8 @@ describe('credits page copy', () => {
     for (const line of EXAMPLE_LINES) expect(page).toContain(line);
     expect(page).toContain(facts.labsPrices);
     // The scheduled change follows the price sentence.
-    const changed = flat(creditsMarkdown(template, S, OCT_14));
-    expect(changed).toContain(`per thousand posts on Claude Haiku 5.5. ${creditFacts(S, OCT_14).priceChange}`);
+    const changed = flat(creditsMarkdown(template, book(S), OCT_14));
+    expect(changed).toContain(`per thousand posts on Claude Haiku 5.5. ${creditFacts(book(S), OCT_14).priceChange}`);
   });
 });
 
@@ -228,7 +279,7 @@ const amountRows = (amounts: string): string[] => amounts.split('\n').filter((li
 
 describe('pricing: buying credit, any amount (CL5-09)', () => {
   it('test_pricing_amounts_table_at_fixed_date', () => {
-    const facts = creditFacts(CREDIT_PRICE_SCHEDULE, OCT_14);
+    const facts = creditFacts(DEFAULT_PRICE_BOOK, OCT_14);
     expect(facts.amountMin).toBe('$5');
     expect(facts.amountMax).toBe('$500');
     const { amounts } = facts;
@@ -246,7 +297,7 @@ describe('pricing: buying credit, any amount (CL5-09)', () => {
     expect(amountRows(amounts)).toHaveLength(CREDIT_AMOUNT_PRESETS.length);
     expect(amounts).not.toMatch(/pack|default/i);
     // In the page, the range and the examples follow the section's words.
-    const page = creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14);
+    const page = creditsMarkdown(template, DEFAULT_PRICE_BOOK, OCT_14);
     const buying = page.slice(page.indexOf('## Buying credit'));
     expect(flat(buying)).toContain('Load any amount from $5 to $500, in whole dollars.');
     expect(flat(buying)).toContain('You pay exactly the amount you pick, plus tax where it applies');
@@ -257,11 +308,11 @@ describe('pricing: buying credit, any amount (CL5-09)', () => {
   });
 
   it('test_pricing_amounts_table_dated_caption', () => {
-    const dated = creditFacts(DOUBLED, OCT_14).amounts;
+    const dated = creditFacts(book(DOUBLED), OCT_14).amounts;
     expect(dated.split('\n')[0]).toBe('At the price until Nov 3, 2026 (UTC).');
     expect(amountRows(dated)).toHaveLength(CREDIT_AMOUNT_PRESETS.length); // one table, dated: no second column set
     expect(dated.split('\n')[2]).toBe('| You pay | Credit added | About |');
-    const undated = creditFacts([LAUNCH], OCT_14).amounts;
+    const undated = creditFacts(book([LAUNCH]), OCT_14).amounts;
     expect(undated.startsWith('|')).toBe(true);
     expect(undated).not.toContain('At the price until');
   });
@@ -272,15 +323,15 @@ describe('pricing: buying credit, any amount (CL5-09)', () => {
     expect(template).not.toMatch(/\d[\d,.]*\s+posts/);
     expect(template).not.toMatch(/^\|/m);
     for (const name of ['{{amountMin}}', '{{amountMax}}', '{{amounts}}']) expect(template).toContain(name);
-    expect(() => creditsMarkdown(`${template}\n{{amountz}}`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/amountz/);
-    expect(() => creditsMarkdown(`${template}\n{{amounts`, CREDIT_PRICE_SCHEDULE, OCT_14)).toThrow(/left over/);
-    expect(creditsMarkdown(template, CREDIT_PRICE_SCHEDULE, OCT_14)).not.toMatch(/\{\{|\}\}/);
+    expect(() => creditsMarkdown(`${template}\n{{amountz}}`, DEFAULT_PRICE_BOOK, OCT_14)).toThrow(/amountz/);
+    expect(() => creditsMarkdown(`${template}\n{{amounts`, DEFAULT_PRICE_BOOK, OCT_14)).toThrow(/left over/);
+    expect(creditsMarkdown(template, DEFAULT_PRICE_BOOK, OCT_14)).not.toMatch(/\{\{|\}\}/);
   });
 });
 
 describe('pricing: credit calculator (CL5-09)', () => {
   it('test_calculator_data_covers_next_change', () => {
-    const data = calculatorData(DOUBLED, OCT_14);
+    const data = calculatorData(book(DOUBLED), OCT_14);
     expect(data.amount).toEqual({ minDollars: 5, maxDollars: 500, presetDollars: [5, 10, 25], defaultDollars: 10 });
     expect(data.amount.minDollars * 1_000_000).toBe(CREDIT_AMOUNT_MIN_MICROS);
     expect(data.amount.maxDollars * 1_000_000).toBe(CREDIT_AMOUNT_MAX_MICROS);
@@ -294,11 +345,11 @@ describe('pricing: credit calculator (CL5-09)', () => {
     expect(next!.microsPer1000Posts / now!.microsPer1000Posts).toBeGreaterThan(1.9);
     expect(next!.microsPer1000Posts / now!.microsPer1000Posts).toBeLessThan(2.1);
     // No later change: one price.
-    expect(calculatorData([LAUNCH], OCT_14).prices).toHaveLength(1);
+    expect(calculatorData(book([LAUNCH]), OCT_14).prices).toHaveLength(1);
   });
 
   it('test_calculator_posts_match_estimate_for_every_amount', () => {
-    const data = calculatorData(CREDIT_PRICE_SCHEDULE, OCT_14);
+    const data = calculatorData(DEFAULT_PRICE_BOOK, OCT_14);
     for (let dollars = data.amount.minDollars; dollars <= data.amount.maxDollars; dollars++) {
       const result = calculatorResult(data, String(dollars), '1', OCT_14);
       const micros = creditAmount({ dollars })?.micros ?? 0;
@@ -307,7 +358,7 @@ describe('pricing: credit calculator (CL5-09)', () => {
   });
 
   it('test_calculator_days_and_input_errors', () => {
-    const data = calculatorData([LAUNCH], OCT_14);
+    const data = calculatorData(book([LAUNCH]), OCT_14);
     const now = OCT_14;
     expect(calculatorResult(data, '10', '150', now)).toEqual({
       ok: true,
@@ -367,7 +418,7 @@ describe('pricing: credit calculator (CL5-09)', () => {
   });
 
   it('test_calculator_switches_card_after_change_date', () => {
-    const data = calculatorData(DOUBLED, OCT_14);
+    const data = calculatorData(book(DOUBLED), OCT_14);
     const before = calculatorResult(data, '10', '150', new Date('2026-11-02T23:59:59Z'));
     const after = calculatorResult(data, '10', '150', new Date(NOV_3));
     const postsAt = (at: Date) => estimatePosts(10_000_000, at, 'classify', DOUBLED);

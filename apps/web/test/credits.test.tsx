@@ -1,7 +1,8 @@
 /**
  * The account page's Credits section, shown only when the server advertises billing: the balance and what it buys, the
  * promotional credit, the history in the server's order, and the links the server gives. Every figure comes from the
- * server's answer to `GET /v1/billing/account`; `fetch` is a fake server per test (support/fake-server.ts).
+ * server's answer to `GET /v1/billing/account`, and every price from its `GET /prices.json` (PA-07); `fetch` is a fake
+ * server per test (support/fake-server.ts).
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import {
@@ -13,6 +14,9 @@ import {
   type CreditHistoryItem,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
+  PRICES_JSON_PATH,
+  type PriceBook,
+  type PublishedPrices,
   retailMicrosPer1000Posts,
   SERVER_INFO_PATH,
 } from '@unalgorithm/protocol';
@@ -21,7 +25,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Account } from '../src/Account.tsx';
 import { PASSKEY_LIST_PATH, SESSION_PATH } from '../src/api.ts';
 import { Credits } from '../src/Credits.tsx';
-import { type Answer, fakeServer, INFO, type Reply, SIGNED_IN, TOM } from './support/fake-server.ts';
+import { type Answer, fakeServer, INFO, PRICES, type Reply, SIGNED_IN, TOM } from './support/fake-server.ts';
 
 const PAUSED = 'AI is paused while the balance is empty. Filters and results already saved keep working.';
 const LOAD_FAILED = "Couldn't load your credits.";
@@ -36,6 +40,9 @@ const S: CreditPriceSchedule = [
   { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
   { effectiveFrom: '2026-11-15T00:00:00Z', cards: { classify: card(2.5) } },
 ];
+
+/** What `/prices.json` answers: today's book (`PRICES`) with `book`'s parts instead. */
+const published = (book: Partial<PriceBook>): Answer => ({ status: 200, body: { ...PRICES, ...book } satisfies PublishedPrices });
 
 /** Fakes `Date` (only) at `instant` for the rest of the test; `afterEach` restores the real clock. */
 function clockAt(instant: Date) {
@@ -57,12 +64,15 @@ function account(balance: Partial<CreditBalance> = {}, rest: Partial<Omit<Credit
   return { v: 1, balance: { ...BALANCE, ...balance }, history: [], ...rest };
 }
 
-/** Opens the account page signed in on a server that advertises billing, with `reply` for the credits request. */
-function openCredits(reply: Reply, { billing = true }: { billing?: boolean } = {}) {
+/**
+ * Opens the account page signed in on a server that advertises billing, with `reply` for the credits request and
+ * `prices` for `/prices.json` (by default, today's book).
+ */
+function openCredits(reply: Reply, { billing = true, prices }: { billing?: boolean; prices?: Reply } = {}) {
   const server = fakeServer({
     session: TOM,
     info: { ...INFO, billing },
-    routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply },
+    routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply, ...(prices ? { [`GET ${PRICES_JSON_PATH}`]: prices } : {}) },
   });
   const user = setupUser();
   const view = render(<Account />);
@@ -107,6 +117,7 @@ describe('visibility', () => {
     const section = await loadedCredits();
     expect(within(section).getByRole('heading', { level: 2, name: 'Credits' })).toBeTruthy();
     expect(billed.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1);
+    expect(billed.count('GET', PRICES_JSON_PATH)).toBe(1);
     const row = screen.getByText(SIGNED_IN);
     expect(row.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -371,7 +382,7 @@ describe('price', () => {
     openCredits({ status: 200, body: account() });
     const section = await loadedCredits();
     expect(within(section).getByText(PRICE_NOW)).toBeTruthy();
-    // From the real schedule, a From line exactly when a later entry changes the classify price per 1,000 posts.
+    // From the server's book (today's), a From line exactly when a later entry changes the classify price per 1,000 posts.
     const nowPrice = retailMicrosPer1000Posts(NOW);
     const changes = CREDIT_PRICE_SCHEDULE.some(
       (e) => Date.parse(e.effectiveFrom) > NOW.getTime() && retailMicrosPer1000Posts(new Date(e.effectiveFrom)) !== nowPrice,
@@ -395,10 +406,15 @@ describe('price', () => {
     expect(screen.queryByText(/AI costs/)).toBeNull();
   });
 
+  /** The Credits section alone, with `/prices.json` holding `schedule` (by default, today's book). */
+  const renderCredits = (schedule: CreditPriceSchedule = PRICES.schedule) => {
+    fakeServer({ session: TOM, info: { ...INFO, billing: true }, routes, prices: { ...PRICES, schedule } });
+    render(<Credits onSignedOut={signedOut} />);
+  };
+
   it('test_credits_scheduled_change', async () => {
     clockAt(NOW);
-    fakeServer({ session: TOM, info: { ...INFO, billing: true }, routes });
-    render(<Credits schedule={S} onSignedOut={signedOut} />);
+    renderCredits(S);
     let section = await loadedCredits();
     expect(within(section).getByText(PRICE_NOW)).toBeTruthy();
     expect(within(section).getByText('From Nov 15, 2026 (UTC): about $0.18 per 1,000 posts.')).toBeTruthy();
@@ -407,7 +423,7 @@ describe('price', () => {
 
     // On the date the new card is the price in effect, and nothing further is scheduled.
     vi.setSystemTime(new Date('2026-11-15T00:00:00Z'));
-    render(<Credits schedule={S} onSignedOut={signedOut} />);
+    renderCredits(S);
     section = await loadedCredits();
     expect(within(section).getByText('AI costs about $0.18 per 1,000 posts.')).toBeTruthy();
     expect(within(section).getByText('about 5,300 posts')).toBeTruthy();
@@ -418,12 +434,11 @@ describe('price', () => {
     const shows = async (schedule: CreditPriceSchedule | undefined, at: Date) => {
       cleanup();
       clockAt(at);
-      fakeServer({ session: TOM, info: { ...INFO, billing: true }, routes });
-      render(<Credits schedule={schedule} onSignedOut={signedOut} />);
+      renderCredits(schedule);
       return within(await loadedCredits()).queryByText(/^From /)?.textContent ?? null;
     };
     const OCT_20 = new Date('2026-10-20T12:00:00Z');
-    // The real schedule: the 2026-10-18 entry only adds perspectives and factcheck, so the account page names no change
+    // Today's book: the 2026-10-18 entry only adds perspectives and factcheck, so the account page names no change
     // before it (and after it nothing further is scheduled).
     expect(await shows(undefined, new Date('2026-10-17T12:00:00Z'))).toBeNull();
     expect(await shows(undefined, OCT_20)).toBeNull();
@@ -443,6 +458,44 @@ describe('price', () => {
       { effectiveFrom: '2026-12-01T00:00:00Z', cards: { classify: card(2.5), perspectives } },
     ];
     expect(await shows(added, OCT_20)).toBe('From Dec 1, 2026 (UTC): about $0.18 per 1,000 posts.');
+  });
+
+  it('test_credits_price_from_server_prices', async () => {
+    clockAt(NOW);
+    // The server's book prices classify at 2.5× since before the account's answer (73,000 × 2.5 = 182,500): its price,
+    // never the bundled schedule's $0.15.
+    const raised = { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2.5) } };
+    let view = openCredits({ status: 200, body: account() }, { prices: published({ schedule: [raised] }) });
+    let section = await loadedCredits();
+    expect(within(section).getByText('AI costs about $0.18 per 1,000 posts.')).toBeTruthy();
+    expect(within(section).getByText('about 5,300 posts')).toBeTruthy();
+    expect(within(section).queryByText(PRICE_NOW)).toBeNull();
+    expect(within(section).queryByText(/^From /)).toBeNull();
+    expect(view.server.count('GET', PRICES_JSON_PATH)).toBe(1);
+    cleanup();
+
+    // A change the server's book schedules: its From line (73,000 × 3 = 219,000).
+    const later = { effectiveFrom: '2026-12-01T00:00:00Z', cards: { classify: card(3) } };
+    view = openCredits({ status: 200, body: account() }, { prices: published({ schedule: [raised, later] }) });
+    section = await loadedCredits();
+    expect(within(section).getByText('AI costs about $0.18 per 1,000 posts.')).toBeTruthy();
+    expect(within(section).getByText('From Dec 1, 2026 (UTC): about $0.22 per 1,000 posts.')).toBeTruthy();
+    expect(within(section).getByText('about 5,300 posts')).toBeTruthy();
+  });
+
+  it('test_credits_amount_range_from_server_prices', async () => {
+    const purchase = {
+      minMicros: 10_000_000,
+      maxMicros: 1_000_000_000,
+      presetsMicros: [10_000_000, 25_000_000, 100_000_000],
+      defaultMicros: 25_000_000,
+    };
+    openCredits({ status: 200, body: account({}, { addCreditPath: '/account/credit' }) }, { prices: published({ purchase }) });
+    const section = await loadedCredits();
+    const add = within(section).getByRole('link', { name: 'Add credit' });
+    const range = within(section).getByText('Any amount from $10 to $1,000.');
+    expect(add.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(section).queryByText('Any amount from $5 to $500.')).toBeNull();
   });
 });
 
@@ -517,6 +570,53 @@ describe('errors', () => {
       expect(figure(section)).toBeNull();
       expect(section.textContent).not.toMatch(/\$\d/);
       expect(within(section).queryByRole('link')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('test_credits_prices_load_failure_and_retry', async () => {
+    // `/prices.json` fails, or answers what isn't a price book (an unknown version, a book that isn't sound): no figure,
+    // and "Try again" asks for both again.
+    const unsound = { ...PRICES.purchase, minMicros: 600_000_000 }; // more than the most one purchase may add
+    const failures: Reply[] = [
+      { status: 500, body: { code: 'unknown', message: 'Something went wrong.' } },
+      'offline',
+      { status: 200, body: { ...PRICES, v: 2 } },
+      { status: 200, body: { ...PRICES, schedule: [] } },
+      published({ purchase: unsound }),
+    ];
+    for (const failure of failures) {
+      let tries = 0;
+      const view = openCredits(
+        { status: 200, body: account() },
+        {
+          prices: (call) => {
+            tries += 1;
+            if (tries > 1) return { status: 200, body: PRICES };
+            if (failure === 'offline') throw new TypeError('Failed to fetch');
+            return typeof failure === 'function' ? failure(call) : failure;
+          },
+        },
+      );
+      const section = await screen.findByRole('region', { name: 'Credits' });
+      expect((await within(section).findByRole('alert')).textContent).toContain(LOAD_FAILED);
+      expect(figure(section)).toBeNull();
+      expect(section.textContent).not.toMatch(/\$\d/);
+      expect(screen.getByText(SIGNED_IN)).toBeTruthy();
+      await view.user.click(within(section).getByRole('button', { name: 'Try again' }));
+      expect(figure(await loadedCredits())).toBe('$0.97');
+      expect(screen.queryByText(LOAD_FAILED)).toBeNull();
+      expect(view.server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(2);
+      expect(view.server.count('GET', PRICES_JSON_PATH)).toBe(2);
+      cleanup();
+    }
+
+    // A 401 from the account still returns to sign-in, whatever `/prices.json` answered.
+    for (const prices of ['offline', { status: 500, body: { code: 'unknown', message: 'No.' } }, published({})] as Reply[]) {
+      openCredits({ status: 401, body: { code: 'auth-required', message: 'Sign in again.' } }, { prices });
+      expect(await screen.findByLabelText('Email')).toBeTruthy();
+      expect(screen.queryByRole('region', { name: 'Credits' })).toBeNull();
+      expect(screen.queryByText(LOAD_FAILED)).toBeNull();
       cleanup();
     }
   });

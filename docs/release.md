@@ -128,7 +128,7 @@ restart:
 
 - The server's offers and discovery (`jobPrices` and `classifyPrice` in `/.well-known/unalgorithm.json`), and so the
   extension's price lines and its "about N posts", at the time they show them.
-- The account page, at the time it shows it.
+- The account page, from the server's `/prices.json`, read with the account, at the time it shows it.
 - The billing module, through the billing host (`host.prices`): it prices each request at the instant the server
   checks it (`checkedAt`), grants the starter credit, and checks purchases and automatic purchases from the same book.
   It keeps no copy.

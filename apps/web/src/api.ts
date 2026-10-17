@@ -61,9 +61,13 @@ import {
   type OutletChangeRequest,
   type OutletChanges,
   OutletChangesSchema,
+  PRICES_JSON_PATH,
   type PriceChanged,
   PriceChangedSchema,
   type PriceChangeRequest,
+  type PublishedPrices,
+  PublishedPricesSchema,
+  priceBookIssues,
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
@@ -264,6 +268,17 @@ export async function authorize(req: AuthorizeRequest): Promise<string> {
 /** The signed-in person's balance and credit history; only a server that advertises billing answers it. */
 export async function creditAccount(): Promise<CreditAccount> {
   return request(CREDIT_ACCOUNT_PATH, CreditAccountSchema);
+}
+
+/** A published book the page can price with: one the server could have saved (`priceBookIssues`). */
+const SoundPricesSchema = PublishedPricesSchema.refine((prices) => priceBookIssues(prices).length === 0);
+
+/**
+ * This server's prices as published (PA-04): public, the same for everyone. Only a server that advertises billing
+ * publishes them. A book that isn't sound is an answer that can't be used.
+ */
+export async function publicPrices(): Promise<PublishedPrices> {
+  return request(PRICES_JSON_PATH, SoundPricesSchema);
 }
 
 /** The devices signed in to the account now, most recently used first. */

@@ -1,5 +1,11 @@
 import { type AISourceConfig, createLock } from '@unalgorithm/core';
-import { type ClassifyResponse, CREDIT_BALANCE_PATH, CreditBalanceSchema, LOW_BALANCE_MICROS } from '@unalgorithm/protocol';
+import {
+  type ClassifyResponse,
+  CREDIT_BALANCE_PATH,
+  CreditBalanceSchema,
+  LOW_BALANCE_MICROS,
+  ServerInfoSchema,
+} from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
 import { accountPageUrl, isServerAt } from '../lib/server-label.ts';
 import { getAccessToken, type ServerAccount } from './server-auth.ts';
@@ -33,6 +39,11 @@ export interface PublicBalance {
   empty: boolean;
   /** `${origin}/account` for an https origin or a loopback http origin; otherwise null (no link is offered). */
   accountUrl: string | null;
+  /**
+   * The server's price of 1,000 classified posts, from its discovery document when the extension last read it
+   * (`classifyPrice`, PA-04); null when it sends none or the stored document doesn't parse. "About N posts" uses it.
+   */
+  microsPer1000Posts: number | null;
   updatedAt: number;
 }
 
@@ -204,7 +215,7 @@ export async function balanceStatus(
     let value = await storedFor(account);
     if (!value) value = await within(refreshBalance(account, d), BALANCE_WAIT_MS);
     else if (d.now() - value.updatedAt >= maxAge(value)) void refreshBalance(account, d);
-    return value && toPublic(value, account.origin);
+    return value && toPublic(value, account);
   } catch {
     return undefined;
   }
@@ -243,12 +254,16 @@ export async function checkBalanceSoon(
   }
 }
 
-function toPublic({ balanceMicros, updatedAt }: StoredBalance, origin: string): PublicBalance {
+function toPublic({ balanceMicros, updatedAt }: StoredBalance, account: ServerAccount): PublicBalance {
+  // Parsed again: storage.local is writable by content scripts (ADR 0005), so a stored price is used only when the
+  // whole document is one the extension accepts.
+  const info = ServerInfoSchema.safeParse(account.info);
   return {
     balanceMicros,
     low: balanceMicros > 0 && balanceMicros < LOW_BALANCE_MICROS,
     empty: balanceMicros <= 0,
-    accountUrl: accountPageUrl(origin),
+    accountUrl: accountPageUrl(account.origin),
+    microsPer1000Posts: (info.success ? info.data.classifyPrice?.microsPer1000Posts : undefined) ?? null,
     updatedAt,
   };
 }

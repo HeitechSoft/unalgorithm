@@ -262,7 +262,19 @@ export function estimatePosts(
   schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
 ): number {
   if (!Number.isFinite(balanceMicros) || balanceMicros <= 0) return 0;
-  let n = Math.floor((balanceMicros * 1000) / retailMicrosPer1000Posts(at, task, schedule));
+  return estimatePostsAtPrice(balanceMicros, retailMicrosPer1000Posts(at, task, schedule));
+}
+
+/**
+ * `estimatePosts` at a price already known, such as a server's price of 1,000 posts now (discovery's `classifyPrice`):
+ * the same rounding, in one place. $0 reads no price; a price that isn't a positive finite number is a `RangeError`.
+ */
+export function estimatePostsAtPrice(balanceMicros: number, microsPer1000Posts: number): number {
+  if (!Number.isFinite(balanceMicros) || balanceMicros <= 0) return 0;
+  if (!(Number.isFinite(microsPer1000Posts) && microsPer1000Posts > 0)) {
+    throw new RangeError('The price of 1,000 posts must be a positive number.');
+  }
+  let n = Math.floor((balanceMicros * 1000) / microsPer1000Posts);
   if (n >= 100) {
     const p = 10 ** (String(n).length - 2);
     n = Math.floor(n / p) * p;
