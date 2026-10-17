@@ -97,8 +97,25 @@ export const CORRECTIONS_PAGE = {
   linkText: 'Corrections and appeals',
 } as const satisfies SiteDocument;
 
-/** The website footer's "How checks work" links, in order (P3-70 appends the transparency reports). */
-export const METHODOLOGY_DOCUMENTS: readonly SiteDocument[] = [METHODOLOGY_PAGE, PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE];
+/**
+ * "Transparency reports" (F29, P3-70, decisions D89, D90): what each quarterly report counts and can't, how it is made,
+ * and the reports themselves, each added as the server's `transparency` command printed it.
+ */
+export const TRANSPARENCY_PAGE = {
+  source: 'docs/site/transparency.md',
+  path: '/transparency',
+  title: 'Transparency reports',
+  linkText: 'Transparency reports',
+} as const satisfies SiteDocument;
+
+/** The website footer's "How checks work" links, in order (decision D109). */
+export const METHODOLOGY_DOCUMENTS: readonly SiteDocument[] = [
+  METHODOLOGY_PAGE,
+  PROMPTS_PAGE,
+  EVALS_PAGE,
+  CORRECTIONS_PAGE,
+  TRANSPARENCY_PAGE,
+];
 
 /**
  * Text for one cell of a Markdown table in a generated site page: line breaks become spaces; \ | * _ ` [ ] < > are

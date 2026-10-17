@@ -43,7 +43,9 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
 - If you sign in with Google: Google's id for your Google account and the verified address Google gave. Never a Google
   access, refresh or ID token.
 - Usage counts and costs: one row per AI request, with the time, the device, the number of posts, token counts, the
-  model and the cost. No post content.
+  model and the cost. No post content. Each quarter we publish totals of fact-checks and UnEcho Chamber comparisons
+  across all accounts, never costs; totals under 10 are shown as 'fewer than 10', and nothing in them identifies an
+  account.
 - A credit ledger: each grant, each adjustment and, for each AI request, the number of posts, the model and the amount
   charged; never the posts. To give the starter credit once per person we keep a keyed hash of your normalised email
   address (not the address), also after the account is deleted, so the same mailbox cannot claim it again. Ledger

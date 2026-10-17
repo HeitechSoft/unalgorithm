@@ -1,6 +1,6 @@
 /**
  * What the admin page reads (R38): every account with its caps and usage, and the server's own usage against the daily
- * spend limit. Built on the rows metering already writes (`usage_events`, CL1-13) and the caps CL1-21 stores; there is no
+ * spend limit; and the transparency report's counts (`checkCounts`, P3-70). Built on the rows metering already writes (`usage_events`, CL1-13) and the caps CL1-21 stores; there is no
  * second usage table and no cache. Days are UTC, as in metering. Costs are the operator's AI cost (`cost_micros`, failed
  * calls included), the number the spend breaker sums: on a self-hosted server, the admin's own bill.
  *
@@ -9,7 +9,7 @@
  * `new Date` would be read as local time. Days are selected as `to_char` text and never parsed.
  */
 import { type AdminOverview, type AdminUsers, MAX_ADMIN_USERS, USAGE_DAYS, type UsageDay } from '@unalgorithm/protocol';
-import { asc, count, eq, gte, type SQL, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, inArray, lt, type SQL, sql } from 'drizzle-orm';
 import { spendBreakerTripped } from '../ai/limits.ts';
 import { utcDayStart } from '../ai/metering.ts';
 import type { Config } from '../config.ts';
@@ -138,6 +138,54 @@ export async function adminOverview(db: Db, config: QueryConfig, now: Date = new
     defaultDailyPostCap: config.userDailyPostCap,
     ops: null,
   };
+}
+
+/** One on-demand feature's counts for a period (P3-70's transparency report): numbers only, never who or what. */
+export interface CheckCounts {
+  task: 'factcheck' | 'perspectives';
+  /** Jobs that answered (`outcome = 'ok'`). */
+  finished: number;
+  /** Jobs that failed, were cancelled or were abandoned (`outcome = 'failed'`; jobs never write `partial`). */
+  unfinished: number;
+  /** Requests refused before any AI call (`refused-before-call`: cap, not offered, rate limit). */
+  refused: number;
+  webSearches: number;
+  /** Accounts with at least one finished or unfinished job. */
+  people: number;
+}
+
+const CHECK_TASKS = ['factcheck', 'perspectives'] as const satisfies readonly CheckCounts['task'][];
+
+/**
+ * Fact-check's and UnEcho Chamber's counts from `usage_events` (one row per job or refusal), `from` inclusive, `to`
+ * exclusive: both tasks, always in this order, zeros when there are no rows. One grouped select; no row is written.
+ */
+export async function checkCounts(db: Db, from: Date, to: Date): Promise<CheckCounts[]> {
+  const { outcome } = usageEvents;
+  const counted = (filter: SQL) => sql`count(*) filter (where ${filter})`.mapWith(Number);
+  const rows = await db
+    .select({
+      task: usageEvents.task,
+      finished: counted(sql`${outcome} = 'ok'`),
+      unfinished: counted(sql`${outcome} = 'failed'`),
+      refused: counted(sql`${outcome} = 'refused-before-call'`),
+      webSearches: sql`coalesce(sum(${usageEvents.webSearches}), 0)`.mapWith(Number),
+      people: sql`count(distinct ${usageEvents.userId}) filter (where ${outcome} <> 'refused-before-call')`.mapWith(Number),
+    })
+    .from(usageEvents)
+    .where(and(gte(usageEvents.createdAt, from), lt(usageEvents.createdAt, to), inArray(usageEvents.task, [...CHECK_TASKS])))
+    .groupBy(usageEvents.task);
+  return CHECK_TASKS.map((task) => {
+    const r = rows.find((row) => row.task === task);
+    return {
+      task,
+      finished: r?.finished ?? 0,
+      unfinished: r?.unfinished ?? 0,
+      refused: r?.refused ?? 0,
+      webSearches: r?.webSearches ?? 0,
+      people: r?.people ?? 0,
+    };
+  });
 }
 
 /**

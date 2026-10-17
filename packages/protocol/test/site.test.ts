@@ -16,6 +16,7 @@ import {
   PROMPTS_PAGE,
   STARTER_CREDIT,
   siteUrl,
+  TRANSPARENCY_PAGE,
   WEBSITE_ORIGIN,
 } from '../src/index.ts';
 
@@ -44,14 +45,51 @@ describe('site documents', () => {
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
     expect(read(CREDITS_PAGE.source).split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
-    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`); P3-68: the methodology and corrections.
-    for (const doc of [PROMPTS_PAGE, EVALS_PAGE, METHODOLOGY_PAGE, CORRECTIONS_PAGE]) {
+    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`); P3-68: the methodology and corrections;
+    // P3-70: the transparency reports.
+    for (const doc of [PROMPTS_PAGE, EVALS_PAGE, METHODOLOGY_PAGE, CORRECTIONS_PAGE, TRANSPARENCY_PAGE]) {
       expect(existsSync(new URL(doc.source, REPO_ROOT)), doc.source).toBe(true);
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
     for (const name of Object.values(FEATURE_NAMES)) expect(METHODOLOGY_PAGE.title).toContain(name);
-    // Decision D109: the website footer's "How checks work" column (P3-70 appends the transparency reports).
-    expect(METHODOLOGY_DOCUMENTS).toStrictEqual([METHODOLOGY_PAGE, PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE]);
+    // Decision D109: the website footer's "How checks work" column, the transparency reports last (P3-70).
+    expect(TRANSPARENCY_PAGE).toStrictEqual({
+      source: 'docs/site/transparency.md',
+      path: '/transparency',
+      title: 'Transparency reports',
+      linkText: 'Transparency reports',
+    });
+    expect(METHODOLOGY_DOCUMENTS).toStrictEqual([
+      METHODOLOGY_PAGE,
+      PROMPTS_PAGE,
+      EVALS_PAGE,
+      CORRECTIONS_PAGE,
+      TRANSPARENCY_PAGE,
+    ]);
+    expect(siteUrl(TRANSPARENCY_PAGE)).toBe('https://unalgorithmfeed.com/transparency');
+  });
+
+  it('test_transparency_page_wording', () => {
+    // P3-70, decisions D89, D90, D106, D108: what the quarterly report counts, what it can't, and how it is made.
+    const md = read(TRANSPARENCY_PAGE.source);
+    const text = flat(md);
+    const headings = md.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual(['## What we count', "## What we can't count", '## How a report is made', '## Reports']);
+    const section = (from: string, to?: string) => flat(md.slice(md.indexOf(from), to ? md.indexOf(to) : undefined));
+    expect(section('## What we count', "## What we can't count")).toContain('fewer than 10');
+    const cannot = section("## What we can't count", '## How a report is made');
+    for (const phrase of ['verdict', 'your own key', 'your own server', 'own source lists'])
+      expect(cannot, phrase).toContain(phrase);
+    const how = section('## How a report is made', '## Reports');
+    for (const phrase of ['cli/transparency.ts --quarter', '`correction`', '`source-list-appeal`', 'Quarterly audit']) {
+      expect(how, phrase).toContain(phrase);
+    }
+    expect(section('## Reports')).toContain(
+      'The first report covers October to December 2026 and will be published in January 2027.',
+    );
+    expect(text).toContain('no verdict counts');
+    for (const name of Object.values(FEATURE_NAMES)) expect(text).toContain(name);
+    expect(text).not.toMatch(/panel|registry/i);
   });
 
   it('test_corrections_page_required_wording', () => {
@@ -181,6 +219,10 @@ describe('cloud beta documents', () => {
     expect(flat(notice)).toContain('Privacy contact: Tom Heiber, HeitechSoft, privacy@heitechsoft.com');
     // P3-76: a person's own UnEcho Chamber list syncs with their settings, and is stored in their browser.
     expect(flat(notice)).toContain('own UnEcho Chamber source list');
+    // P3-70: the quarterly transparency report publishes totals, small ones hidden.
+    expect(flat(notice.slice(notice.indexOf('## 3.'), notice.indexOf('## 4.')))).toContain(
+      "totals under 10 are shown as 'fewer than 10', and nothing in them identifies an account.",
+    );
     expect(flat(read('PRIVACY.md'))).toContain('your own UnEcho Chamber source list');
   });
 

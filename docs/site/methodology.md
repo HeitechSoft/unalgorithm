@@ -137,4 +137,4 @@ passed or failed. The sets, the gates and the results are in [Evaluations and tr
 ## Mistakes and appeals
 
 If a result got something wrong, or an outlet's lean on UnAlgorithm Cloud's source list looks wrong, see
-[Corrections and appeals](corrections.md).
+[Corrections and appeals](corrections.md). Each quarter we publish a [transparency report](transparency.md).

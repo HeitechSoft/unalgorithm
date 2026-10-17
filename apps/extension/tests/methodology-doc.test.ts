@@ -17,6 +17,7 @@ import {
   PERSPECTIVES_WINDOW_DAYS,
   PROMPTS_PAGE,
   SOURCE_LIST_PAGE_URL,
+  TRANSPARENCY_PAGE,
 } from '@unalgorithm/protocol';
 import { TRUST_GATES } from '@unalgorithm/research/eval';
 import { PERSPECTIVES_TRUST_GATES } from '@unalgorithm/research/eval/perspectives';
@@ -128,7 +129,7 @@ describe('methodology', () => {
 
   it('test_methodology_links_exist_and_no_registry', () => {
     const links = [...md.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1] ?? '');
-    for (const page of [PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE]) {
+    for (const page of [PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE, TRANSPARENCY_PAGE]) {
       const file = page.source.slice(page.source.lastIndexOf('/') + 1);
       expect(links, file).toContain(file);
     }

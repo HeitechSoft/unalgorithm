@@ -19,6 +19,7 @@
     "sync:new-epoch": "node --import ./src/require-node.js src/cli/sync-new-epoch.ts",
     "setup-link": "node --import ./src/require-node.js src/cli/setup-link.ts",
     "alerts": "node --import ./src/require-node.js src/cli/alerts.ts",
+    "transparency": "node --import ./src/require-node.js src/cli/transparency.ts",
     "db:generate": "drizzle-kit generate",
     "auth:generate": "auth generate --config auth.cli.ts --output src/db/auth-schema.ts --adapter drizzle --dialect postgresql --yes && pnpm run db:generate"
   },

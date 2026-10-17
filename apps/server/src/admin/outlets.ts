@@ -11,17 +11,20 @@
 import { type Candidates, listProblems, listProblemText } from '@unalgorithm/outlets';
 import {
   type AdminOutletChange,
+  LEAN_BUCKETS,
+  type LeanBucket,
   MAX_LISTED_CHANGES,
   type OfficialList,
   type OfficialOutlet,
   OfficialOutletSchema,
+  OUTLET_CHANGE_ACTIONS,
   type OutletChange,
   type OutletChangeAction,
   type OutletChangeRequest,
   type OutletInput,
   type WireError,
 } from '@unalgorithm/protocol';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, max, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.ts';
 import { outletChanges, outlets, user } from '../db/schema.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
@@ -142,6 +145,49 @@ export async function listChanges(db: Db, { withBy }: { withBy: boolean }): Prom
     .orderBy(newest)
     .limit(MAX_LISTED_CHANGES);
   return rows.map((row) => ({ ...change(row), by: row.by }));
+}
+
+/** The list as a quarter ended, for P3-70's transparency report (decision D108): a public list's numbers, no one's. */
+export interface ListAtQuarterEnd {
+  /** The list's version at `to` (the last change before it), '0' when none. */
+  version: string;
+  /** Outlets with a lean at `to`, per bucket, from each outlet's last change before `to`. */
+  counts: Record<LeanBucket, number>;
+  /** Changes made in [from, to), by action. */
+  changes: Record<OutletChangeAction, number>;
+}
+
+/**
+ * The list at `to` and its changes in [from, to), from the history alone (never `outlets`, which is the list now), so
+ * a report printed later still describes the quarter. A removed outlet's last `after` is null: no lean. No admin id is
+ * read.
+ */
+export async function listAtQuarterEnd(db: Db, from: Date, to: Date): Promise<ListAtQuarterEnd> {
+  const before = lt(outletChanges.changedAt, to);
+  const [latest] = await db
+    .select({ seq: max(outletChanges.seq) })
+    .from(outletChanges)
+    .where(before);
+  const last = await db
+    .selectDistinctOn([outletChanges.outletId], { bucket: sql<string | null>`${outletChanges.after} -> 'lean' ->> 'bucket'` })
+    .from(outletChanges)
+    .where(before)
+    .orderBy(outletChanges.outletId, desc(outletChanges.seq));
+  const byAction = await db
+    .select({ action: outletChanges.action, n: count() })
+    .from(outletChanges)
+    .where(and(gte(outletChanges.changedAt, from), before))
+    .groupBy(outletChanges.action);
+
+  const counts = Object.fromEntries(LEAN_BUCKETS.map((b) => [b, 0])) as Record<LeanBucket, number>;
+  const isBucket = (b: string | null): b is LeanBucket => (LEAN_BUCKETS as readonly (string | null)[]).includes(b);
+  for (const { bucket } of last) {
+    if (isBucket(bucket)) counts[bucket]++;
+  }
+  const changes = Object.fromEntries(
+    OUTLET_CHANGE_ACTIONS.map((a) => [a, byAction.find((r) => r.action === a)?.n ?? 0]),
+  ) as Record<OutletChangeAction, number>;
+  return { version: String(latest?.seq ?? 0), counts, changes };
 }
 
 /** Whether an edit changes anything an admin sends: everything but `changedOn`, domain and evidence order included. */
