@@ -423,7 +423,9 @@ describe('price', () => {
       return within(await loadedCredits()).queryByText(/^From /)?.textContent ?? null;
     };
     const OCT_20 = new Date('2026-10-20T12:00:00Z');
-    // The real schedule: the 2026-11-01 entry only adds perspectives, so the account page names no change.
+    // The real schedule: the 2026-10-18 entry only adds perspectives and factcheck, so the account page names no change
+    // before it (and after it nothing further is scheduled).
+    expect(await shows(undefined, new Date('2026-10-17T12:00:00Z'))).toBeNull();
     expect(await shows(undefined, OCT_20)).toBeNull();
     // A next entry that changes the classify multiplier still shows.
     expect(await shows(S, OCT_20)).toBe('From Nov 15, 2026 (UTC): about $0.18 per 1,000 posts.');

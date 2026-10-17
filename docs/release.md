@@ -154,10 +154,10 @@ that first prices it. Until that entry is in effect the task is not offered (`ta
 refuses its jobs. A task's first card is not a raise; after it, the notice rule applies to it like any other card, and
 a higher `maxChargeMicros` is a raise. Adding a task follows [The procedure](#the-procedure) like any other entry.
 
-`perspectives` was added this way: its first card is the 2026-11-01 entry (2×, hold cap $0.50), which copies the
-2026-10-01 classify card unchanged.
-`factcheck` was added the same way: its first card is the 2026-12-01 entry (2×, hold cap $0.40), which copies the
-classify and perspectives cards unchanged.
+`perspectives` (UnEcho Chamber) and `factcheck` were added this way, together: both are first priced in the 2026-10-18
+entry (`perspectives` 2×, hold cap $0.50; `factcheck` 2×, hold cap $0.40), which copies the 2026-10-01 classify card
+unchanged. That entry replaced the 2026-11-01 entry (`perspectives`) and the 2026-12-01 entry (`factcheck`), scheduled
+earlier at the same cards, before either took effect.
 
 ### Merging a schedule change
 
