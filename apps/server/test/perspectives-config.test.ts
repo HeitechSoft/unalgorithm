@@ -146,8 +146,16 @@ describe('offer', () => {
       price: { typicalMicros: 270_000, maxMicros: 500_000 },
       maxCostMicros: 250_000,
     });
-    // Production's card takes effect 2026-11-01: not offered before it.
+    // Production's card takes effect 2026-10-18: not offered before it, offered at its price from it.
     expect(perspectivesOffer(billing, CREDIT_PRICE_SCHEDULE, NOW)).toEqual({ offered: false });
+    expect(perspectivesOffer(billing, CREDIT_PRICE_SCHEDULE, new Date('2026-10-17T23:59:59.999Z'))).toEqual({
+      offered: false,
+    });
+    expect(perspectivesOffer(billing, CREDIT_PRICE_SCHEDULE, new Date('2026-10-18T00:00:00Z'))).toEqual({
+      offered: true,
+      price: { typicalMicros: 270_000, maxMicros: 500_000 },
+      maxCostMicros: 250_000,
+    });
   });
 });
 
