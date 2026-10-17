@@ -8,9 +8,9 @@ zip on a GitHub Release, then the Chrome Web Store (the steps below).
 The server (`apps/server`) is not released from here: no tags, no GitHub Releases and no public images (Tom,
 2026-10-16). It runs unAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
 repository (ADR 0007, amended; [The server](#the-server)). Its source stays public here. Security fixes follow their
-own rule: see [Security fixes](#security-fixes). Credit prices are dated: a raise is scheduled at least 30 days ahead,
-a cut can start at the next 00:00 UTC, and every part switches on its date: see
-[Changing a price card](#changing-a-price-card).
+own rule: see [Security fixes](#security-fixes). Credit prices are set on a server's Pricing page and dated: a raise
+is scheduled at least 30 days ahead, a cut can start at the next 00:00 UTC, and every part switches on its date: see
+[Prices](#prices).
 
 ## Versioning
 
@@ -107,39 +107,88 @@ A database is restored with the backup's private key through `apps/server/backup
 with the server stopped), into the same server release or a newer one, never an older one. Then
 `apps/server/src/cli/sync-new-epoch.ts` starts a new sync epoch, so every browser syncs again from the restored copy.
 
-## Changing a price card
+## Prices
 
-Credit prices are a dated schedule, `CREDIT_PRICE_SCHEDULE` in `packages/protocol/src/price-schedule.ts`. An entry's
-price cards apply from its `effectiveFrom` (00:00 UTC of that day) until the next entry's. Each part finds the price in
-effect by itself:
+What a server charges is its price book: the task prices (a dated schedule), the starter credit, the amounts one
+purchase may add and the caps on automatic purchases. Its admins set it on the server's Pricing page (`/admin/prices`),
+and the server keeps every change in `price_changes`, with when and which admin (the admin is never published). Until
+an admin first saves, the server uses the code defaults, `DEFAULT_PRICE_BOOK` (`packages/protocol/src/prices.ts`):
+`CREDIT_PRICE_SCHEDULE` (`packages/protocol/src/price-schedule.ts`), `STARTER_CREDIT`, the amount rules
+(`CREDIT_AMOUNT_MIN_MICROS`, `CREDIT_AMOUNT_MAX_MICROS`, `CREDIT_AMOUNT_PRESETS`, `DEFAULT_CREDIT_AMOUNT` in
+`packages/protocol/src/billing.ts`) and the auto-reload caps ($1,000 a month, two top-ups a day). The first save stores
+those defaults as its first row, then the change. From then on, a release's code schedule no longer changes that
+server's prices: only its Pricing page does.
 
-- unAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
-- The account page and the extension's "about N posts" use the time they show it.
-- The website is built from `main`: its "How credits work" page (`docs/site/credits.md`) is filled at build time by
-  `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change. Its examples of buying
-  credit and the calculator's data (`calculatorData`) come from the same entries and the amount rules
-  (`CREDIT_AMOUNT_MIN_MICROS`, `CREDIT_AMOUNT_MAX_MICROS`, `CREDIT_AMOUNT_PRESETS`, `DEFAULT_CREDIT_AMOUNT` in
-  `packages/protocol/src/billing.ts`, the only place they are stated).
+Every save is checked by the server with [the rules](#the-rules) below and refused in plain words. The server runs the
+same functions as the `price-schedule` CI job, which still guards the code schedule for servers that never saved.
+
+An entry's price cards apply from its `effectiveFrom` (00:00 UTC of that day) until the next entry's. Each reader finds
+the price in effect by itself, in the server's book, and reads the book at each use, so a save applies without a
+restart:
+
+- The server's offers and discovery (`jobPrices` and `classifyPrice` in `/.well-known/unalgorithm.json`), and so the
+  extension's price lines and its "about N posts", at the time they show them.
+- The account page, at the time it shows it.
+- The billing module, through the billing host (`host.prices`): it prices each request at the instant the server
+  checks it (`checkedAt`), grants the starter credit, and checks purchases and automatic purchases from the same book.
+  It keeps no copy.
+- `/prices.json`, the book as published: public, cached for 5 minutes, with an ETag, and with no history and no admin.
+  A server with `BILLING=off` charges nothing and publishes none.
+- The website, at its build: its "How credits work" page (`docs/site/credits.md`, filled by `creditsMarkdown` in
+  `packages/core`) and the calculator's data (`calculatorData`) come from unAlgorithm Cloud's `/prices.json`: the
+  entry in effect then, the next dated change, and the amount rules.
+
+### unAlgorithm Cloud's procedure
+
+A price change on unAlgorithm Cloud is a save on its Pricing page. It needs no Cloud deploy and no extension release.
+
+1. Save the change on `https://cloud.unalgorithm.app/admin/prices`. The Cloud charges from the book at once: a dated
+   task price from its date, by itself, and the other parts as [When a change applies](#when-a-change-applies) says.
+2. Deploy the website right after saving. Every line on it about a scheduled price is dated, so it stays true until
+   the date.
+3. Deploy the website again on or after a task price's date, so its first line and its examples move to the new card.
+   It is static and cannot switch by itself: until that deploy it shows the earlier price.
+
+**Price cuts.** A cut may take effect from the next 00:00 UTC; raises keep the 30-day notice. Within 30 days of its
+date a cut is never cancelled (the rules refuse it), so check the date before saving one. Until the website's deploy on
+or after the date, it shows the earlier, higher price, never a lower one than the Cloud charges.
+
+Older installed extensions that don't read `classifyPrice` estimate "about N posts" at their bundled schedule until
+Chrome updates them; the balance itself and the job price lines always come from the server. A raise's notice period
+leaves time for those updates; after a cut they estimate fewer posts than the balance buys, never more.
+
+### When a change applies
+
+- **Task prices:** from the entry's date, as [the rules](#the-rules) allow.
+- **The starter credit:** to accounts created after the change is saved. An account gets the amount in effect when it
+  was created, whenever its first check grants it, and credit already granted never changes. It is a gift, so a
+  change needs no notice.
+- **Buying credit:** at once, for new purchases. A Checkout already started still adds exactly what was paid, and an
+  auto-reload agreement keeps the amount the person agreed to.
+- **Auto-reload caps:** lowering a cap applies at once, to every agreement; raising one applies only to agreements
+  made after it.
 
 ### The rules
 
-The `price-schedule` CI job enforces them on pull requests and pushes to `main`:
+The server enforces them on every save on the Pricing page, and the `price-schedule` CI job on the code schedule, on
+pull requests and pushes to `main`:
 
 - A price in effect is never changed or removed.
-- A new or changed entry starts at a 00:00 UTC after its merge, never in the past.
-- Within `PRICE_NOTICE_DAYS` (30) days of the merge, no task may charge (its multiplier) or publish (its price per 1,000
-  posts) more than before, and no price may rise on a date where it did not already rise. So a raise, the end of a cut
-  included, is dated at least 30 days ahead, and a scheduled cut that falls within those 30 days cannot be cancelled.
+- A new or changed entry starts at a 00:00 UTC after its save or merge, never in the past.
+- Within `PRICE_NOTICE_DAYS` (30) days of the save or merge, no task may charge (its multiplier) or publish (its price
+  per 1,000 posts) more than before, and no price may rise on a date where it did not already rise. So a raise, the
+  end of a cut included, is dated at least 30 days ahead, and a scheduled cut that falls within those 30 days cannot be
+  cancelled.
 - A cut may take effect from the next 00:00 UTC, and a scheduled raise may be lowered or cancelled before its date.
 - An entry not yet in effect may be removed, unless that raises a price within the 30 days.
 
-unAlgorithm Cloud's private build checks the first rule again (`--in-effect-only`) before it builds an image, against
-the commit it last deployed ([The server](#the-server)).
+unAlgorithm Cloud's private build checks the first rule again on the code schedule (`--in-effect-only`) before it
+builds an image, against the commit it last deployed ([The server](#the-server)).
 
 ### Adding a task
 
 `CREDIT_TASKS` (`packages/protocol/src/billing.ts`) lists the tasks a server may charge for. Tasks are only ever added,
-and adding one never edits an entry in effect. The shape check enforces:
+and adding one never edits an entry in effect. The shape check enforces, on the code schedule or the Pricing page:
 
 - Every card key is a `CREDIT_TASKS` member, and every entry prices `classify`.
 - An entry prices every task the entry before it priced: a task is never dropped.
@@ -152,24 +201,28 @@ and adding one never edits an entry in effect. The shape check enforces:
 There is deliberately no rule that the last entry prices every task: a task can be in `CREDIT_TASKS` before the entry
 that first prices it. Until that entry is in effect the task is not offered (`taskPriceAt`), and a billing server
 refuses its jobs. A task's first card is not a raise; after it, the notice rule applies to it like any other card, and
-a higher `maxChargeMicros` is a raise. Adding a task follows [The procedure](#the-procedure) like any other entry.
+a higher `maxChargeMicros` is a raise. A task's first card is added like any other entry, on the Pricing page or in the
+code schedule.
 
 `perspectives` (UnEcho Chamber) and `factcheck` were added this way, together: both are first priced in the 2026-10-18
 entry (`perspectives` 2×, hold cap $0.50; `factcheck` 2×, hold cap $0.40), which copies the 2026-10-01 classify card
 unchanged. That entry replaced the 2026-11-01 entry (`perspectives`) and the 2026-12-01 entry (`factcheck`), scheduled
 earlier at the same cards, before either took effect.
 
-### Merging a schedule change
+### Changing the code schedule
 
-The check uses its run's clock, and GitHub does not run it again at merge. On the day you merge a pull request that
-touches the schedule, re-run its `price-schedule` check first and merge only on green. Merge a cut early enough that
-its push-to-`main` run and steps 2 and 3 below finish before 00:00 UTC of its date.
+The code defaults are the prices of every server whose admins never saved, unAlgorithm Cloud's included until its
+first save. After that save, a change here no longer changes the Cloud's prices: use its Pricing page.
+
+**Merging.** The check uses its run's clock, and GitHub does not run it again at merge. On the day you merge a pull
+request that touches the schedule, re-run its `price-schedule` check first and merge only on green. Merge a cut early
+enough that its push-to-`main` run and the steps below finish before 00:00 UTC of its date.
 
 A red `price-schedule` run on `main` is fixed before the Cloud deploys a commit after it, with two exceptions that
 need no fix:
 
 - A cut merged after its date, or whose push run started after its date, stays as merged. Rule 1 still holds at the
-  Cloud build (the previously deployed commit lacks the entry), no build charges a date already past, and the Cloud
+  Cloud build (the previously deployed commit lacks the entry), no build charges a date already past, and a server
   charges the previous card until it runs the cut.
 - The restoration below, whose own push run is red as expected.
 
@@ -177,63 +230,31 @@ When the red run is a price in effect that was removed, the fix restores the ent
 restoration as a backdated entry, so it is merged with a code-owner (@TomHeiber) override of that one check. The
 override is used for nothing else.
 
-### The procedure
-
-All of it is done before the effective date:
+**The procedure.** All of it is done before the effective date:
 
 1. Add the entry, with the code owner's sign-off (@TomHeiber) and changesets for the server and the extension, and
-   merge it.
-2. HeitechSoft adds the same entry to the Cloud module's multiplier schedule, pins a commit with the entry, and deploys
-   the Cloud ([The server](#the-server)). The module's CI and its start-up check refuse a schedule that differs from the
-   pinned commit's, future entries included.
-3. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit with the entry.
-4. Deploy the website.
+   merge it. A server that never saved charges it once it runs a release with it: unAlgorithm Cloud, until its first
+   save, once HeitechSoft pins a commit with the entry and deploys it ([The server](#the-server)).
+2. Release the extension (`vX.Y.Z`, [Steps](#steps)) built from a commit with the entry: its bundled schedule is what
+   it estimates with for a server that sends no `classifyPrice`.
+3. Deploy the website, and again on or after the date, as in the Cloud's procedure.
 
-**Price cuts.** A cut may take effect from the next 00:00 UTC; raises keep the 30-day notice. Date a cut at the first
-00:00 UTC by which the Cloud deploy (step 2) can be done, and deploy the Cloud and release the extension (steps 1 to 3)
-before that date. The Cloud keeps charging the previous card until it runs a build with the cut, and the ledger records which card priced each request (`price_from`). A cut is never
-cancelled because a step is late (within 30 days of its date the check refuses that): finish the late steps as soon as
-possible. An extension release that trails the cut is harmless: older extensions estimate fewer posts than the balance
-buys. The website is redeployed on or after the date, and only once the Cloud runs the cut (step 4 is not needed
-before it): until then it shows the earlier, higher price, never a lower one than the Cloud charges.
+A cut is dated at the first 00:00 UTC by which steps 1 and 2 can be done. A server charges the previous card until it
+runs a release with the cut, and the Cloud's ledger records which card priced each request (`price_from`). A cut is
+never cancelled because a step is late (within 30 days of its date the check refuses that): finish the late steps as
+soon as possible.
 
-On the date, at 00:00 UTC, each part switches by itself:
-
-- the Cloud charges requests checked from then on at the new card;
-- the account page shows the new price;
-- extensions with step 3's release estimate at it.
-
-The website is the exception. It is static, so it cannot switch by itself. Every line on it about a scheduled price is
-dated, so a scheduled change stays true on it. Deploy it again on or after the date so its first line and its examples
-move to the new card (after a cut, once the Cloud runs it); until that deploy it shows the earlier, higher price.
-
-Older installed extensions estimate at the old price until Chrome updates them; the balance itself always comes from
-the server. A raise's notice period leaves time for those updates; after a cut they estimate fewer posts than the
-balance buys, never more.
-
-### Cancelling
-
-Before the date, a change is cancelled by removing its entry, except a cut within 30 days of its date: removing it
-would raise a price people were told, and the check refuses it. Steps 2 to 4 are repeated before the date, the
-extension release included, or installed extensions estimate at the cancelled price from that date. If any step of a
-raise, or of a cut more than 30 days from its date, cannot be finished before the date, cancel the change, also before
-the date; a cut within 30 days of its date is never cancelled because a step is late (Price cuts, above).
-
-A cancellation that has not reached the Cloud by the date leaves that price in effect: the Cloud charges it from 00:00
-UTC and then refuses to start on a build without it. So the entry is restored on `main` (the override above) and is
-changed from then on only by a new dated entry (a cut back to the earlier price can start at the next 00:00 UTC).
+**Cancelling.** Before the date, a change is cancelled by removing its entry, except a cut within 30 days of its date:
+removing it would raise a price people were told, and the check refuses it. The steps are repeated before the date,
+the extension release included, or installed extensions estimate at the cancelled price from that date. If any step of
+a raise, or of a cut more than 30 days from its date, cannot be finished before the date, cancel the change, also
+before the date. A cancellation that has not reached a server by the date leaves that price in effect there, so the
+entry is restored on `main` (the override above) and is changed from then on only by a new dated entry.
 
 ### Once in effect, no rollback
 
-There is no rollback of a price in effect. A wrong price is corrected by a new dated entry: a lower price from the next
-00:00 UTC, a higher one with 30 days' notice.
-
-### The starter credit
-
-`STARTER_CREDIT` (`packages/protocol/src/billing.ts`) is not a price and is not dated. A change to it is merged,
-pinned and deployed on the Cloud, released in the extension, and only then shown by a website deploy. The website is
-not deployed between the merge and the Cloud deploy unless from a commit whose `STARTER_CREDIT` equals the running
-Cloud build's. It is reverted the same way.
+There is no rollback of a price in effect. A wrong price is corrected by a new dated entry, in the code schedule or on
+the Pricing page: a lower price from the next 00:00 UTC, a higher one with 30 days' notice.
 
 ## Security fixes
 

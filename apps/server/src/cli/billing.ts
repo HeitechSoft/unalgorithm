@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_PRICE_BOOK } from '@unalgorithm/protocol';
+import { openPriceStore } from '../admin/prices.ts';
 import { createAuth } from '../auth/better-auth.ts';
 import { type BillingModule, createBillingHost } from '../billing/host.ts';
 import { BillingLoadError, importBillingModule } from '../billing/provider.ts';
@@ -14,8 +16,9 @@ import { smtpMailer } from '../mail/mailer.ts';
  * `docker compose exec server node apps/server/src/cli/billing.ts <command> …`. The commands are the module's own
  * (`BillingModule.runCli`): this entry point loads the module that `BILLING_MODULE` names, builds the billing host the
  * server builds at start, and hands it the arguments as given; the module reads them and prints its own usage. It never
- * runs migrations: the server applies them when it starts, and this runs against a deployment that is up. Exit code: the
- * module's, or 1 when there is no module or the command fails.
+ * runs migrations: the server applies them when it starts, and this runs against a deployment that is up. The host's
+ * prices are the stored book as it is when the command starts (decision PD13). Exit code: the module's, or 1 when there
+ * is no module or the command fails.
  */
 
 export interface BillingCliDeps {
@@ -70,7 +73,9 @@ export async function main(argv: readonly string[], deps: BillingCliDeps = {}): 
     const auth = createAuth({ config, db: handle, mailer, log });
     // Never started: a command runs once, and the server's own process runs the jobs.
     const jobs = createJobRegistry();
-    const host = createBillingHost({ config, db: handle, log, auth, jobs, mailer, env: config.billingEnv });
+    // The book the server uses, read once: a stored book that is not sound fails the command (PriceBookError).
+    const prices = await openPriceStore(handle.db, { seed: DEFAULT_PRICE_BOOK });
+    const host = createBillingHost({ config, db: handle, log, auth, jobs, mailer, env: config.billingEnv, prices });
     return await mod.runCli(argv, host, out);
   } catch (err) {
     // By name and code only: the message can name a host.

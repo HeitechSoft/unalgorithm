@@ -8,14 +8,15 @@
  * of it starter credit), a classify costs 100 micro-dollars a post (never more than is left), and an empty balance is
  * refused. One command, `balance --user <id>`, runs through the server's billing CLI (CL2-06).
  *
- * A real module prices a request with `host.protocol.priceCardsAt(checkedAt)`; this one charges a flat 100 micro-dollars
- * a post. It settles only with the instant its check received, so every test that classifies through it proves the
- * instant arrives.
+ * A real module prices a request with `host.protocol.taskPriceAt(checkedAt, task, host.prices.current().schedule)`; this
+ * one charges a flat 100 micro-dollars a post. It settles only with the instant its check received, so every test that
+ * classifies through it proves the instant arrives.
  *
  * A job (a fact-check, a comparison) follows the hold contract (`BillingDecision`): its check reads the card in effect
- * from `host.priceSchedule` and holds `min(maxChargeMicros, balance)`; its settlement charges `retailMicros(costMicros,
- * multiplier)`, never more than the hold or the balance; a release lets the hold go and charges nothing. Holding at most
- * the balance is this double's choice, not policy.
+ * from the server's prices (`host.prices.current().schedule`, read at each check) and holds
+ * `min(maxChargeMicros, balance)`; its settlement charges `retailMicros(costMicros, multiplier)`, never more than the
+ * hold or the balance; a release lets the hold go and charges nothing. Holding at most the balance is this double's
+ * choice, not policy.
  *
  * One module page (CL5-03): `GET /billing/fixture-form` renders a script-free form through `host.pages.render`, and its
  * POST, behind `host.auth.ownPage`, answers "Form received.", so a real browser proves a module's form passes the Origin
@@ -88,7 +89,7 @@ export async function createBillingProvider(host: BillingHost): Promise<BillingP
     id: 'fixture',
     advertised: true,
     async check({ userId, requestId, task, checkedAt }): Promise<BillingDecision> {
-      const price = task === 'classify' ? null : protocol.taskPriceAt(checkedAt, task, host.priceSchedule);
+      const price = task === 'classify' ? null : protocol.taskPriceAt(checkedAt, task, host.prices.current().schedule);
       // The server refuses a task its schedule does not offer before asking (P3-19), so this never runs in a correct one.
       if (price && !price.offered) throw new Error('task not offered');
       const balance = balanceOf(userId);

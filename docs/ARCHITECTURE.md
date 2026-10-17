@@ -250,8 +250,10 @@ to load, throws or returns no valid provider stops the start, so a server meant 
 The host (`BillingHost`, `apps/server/src/billing/host.ts`) is all a module is offered: SQL on the server's database,
 for the module's own `billing` schema; its own migrations, under a lock of their own; an account's id, email address,
 verified flag and creation time; the two auth checks for its routes (the extension's bearer token and the server
-pages' session); the job registry; the logger; the server's origin, name and version; and the running release's
-`packages/protocol` with its dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`); and the server's metered
+pages' session); the job registry; the logger; the server's origin, name and version; the running release's
+`packages/protocol` with its price rules (`taskPriceAt`, `starterCreditAt`, `creditAmount`); the server's prices
+(`prices.current()`: the price book its admins set on the Pricing page, or the code defaults, read at each use, so the
+module charges from the book discovery and `/prices.json` publish); and the server's metered
 AI cost per UTC day and model (`usage.costByDay`: summed cost and request counts, no user or request id). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
 reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
 (its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests

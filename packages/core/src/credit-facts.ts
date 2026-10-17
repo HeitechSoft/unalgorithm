@@ -24,7 +24,7 @@ import { formatBalance, formatPostsEstimate, formatPrice } from './usage.ts';
  * "How credits work" on the website (R30, CL2-14): the figures its Markdown (`CREDITS_PAGE.source`) leaves as
  * `{{name}}` placeholders, computed from the dated price schedule so the page can only show what the Cloud charges.
  * The site is static: every sentence about a scheduled price is dated, so it stays true before and after the date
- * (docs/release.md → Changing a price card has the site redeployed around a change).
+ * (docs/release.md → Prices has the site redeployed around a change).
  */
 
 /** The credit amounts of the examples table, in micro-dollars. */

@@ -1,7 +1,7 @@
 /**
  * Data only: no runtime import, only `import type`. scripts/check-price-schedule.mjs reads this file from the base
  * commit with `git show` and imports it with Node's type stripping from a temporary directory. Never edit an entry
- * that is in effect: add a new dated entry (docs/release.md → Changing a price card).
+ * that is in effect: add a new dated entry (docs/release.md → Prices).
  */
 import type { CreditPriceSchedule } from './billing.ts';
 

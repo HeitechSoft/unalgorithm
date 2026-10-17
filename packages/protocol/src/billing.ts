@@ -496,7 +496,7 @@ export function nextMidnight(now: Date): string {
 }
 
 /**
- * The CI rule for a change from `base` to `head` at `now` (docs/release.md → Changing a price card). Problems, or `[]`
+ * The CI rule for a change from `base` to `head` at `now` (docs/release.md → Prices). Problems, or `[]`
  * when the change is allowed. The head's shape comes first and alone. Rule 1: a base entry in effect stays on the head
  * unchanged. Rule 2a: a new or changed entry starts after `now`. Rule 2b (`priceRaisesWithinNotice`, only when nothing
  * else failed): no raise within `noticeDays`. A base entry not yet in effect may be removed (a cancellation), which 2b

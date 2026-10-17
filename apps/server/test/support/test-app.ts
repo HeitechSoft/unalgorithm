@@ -57,11 +57,14 @@ export interface TestAppOptions {
   billingModule?: BillingModule;
   /** The module's `BILLING_*` variables (`host.env`). Default: none. */
   billingEnv?: Record<string, string>;
-  /** The price book's seed: the book in use until an admin saves (`prices`). Default: `DEFAULT_PRICE_BOOK`. */
+  /**
+   * The price book's seed: the book in use until an admin saves (`prices`, which the app and the billing host both
+   * read). Default: `DEFAULT_PRICE_BOOK`.
+   */
   priceBook?: PriceBook;
   /**
-   * The billing host's `priceSchedule`, and shorthand for a `priceBook` of `{ ...DEFAULT_PRICE_BOOK, schedule }`.
-   * Default: `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks.
+   * Shorthand for a `priceBook` of `{ ...DEFAULT_PRICE_BOOK, schedule }`. Default: `CREDIT_PRICE_SCHEDULE`;
+   * `TEST_PRICE_SCHEDULE` prices checks.
    */
   priceSchedule?: CreditPriceSchedule;
   /**
@@ -104,10 +107,17 @@ export interface TestAppOptions {
   claimCache?: AppDeps['claimCache'];
 }
 
+/** The price store's seed `opts` ask for: `priceBook`, else the defaults with `priceSchedule`, else the defaults. */
+export function priceSeed(opts: { priceBook?: PriceBook; priceSchedule?: CreditPriceSchedule }): PriceBook {
+  if (opts.priceBook) return opts.priceBook;
+  return opts.priceSchedule ? { ...DEFAULT_PRICE_BOOK, schedule: opts.priceSchedule } : DEFAULT_PRICE_BOOK;
+}
+
 /**
  * The real app on a fresh migrated PGlite database (or the caller's `db`), logging into memory: `lines` and `events()`
  * hold what it wrote (`deps.errors` counts its error lines, as the server's window does), `outbox` every email it
- * sent, and `prices` the price book's store on its database (`deps.prices`). Its classify route (`route`) is the app's
+ * sent, and `prices` the price book's store on its database (`deps.prices`, and the billing host's `prices`). Its
+ * classify route (`route`) is the app's
  * own mock AI provider (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's
  * billing, and `host` and `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs
  * never start). Call `close()` when done. Tests add routes of their own to `app` when they need one.
@@ -128,19 +138,9 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
     const log = capture.log;
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: overrides.authRateLimit ?? false });
     const jobs = createJobRegistry();
-    const { priceSchedule } = overrides;
-    const seed = overrides.priceBook ?? (priceSchedule ? { ...DEFAULT_PRICE_BOOK, schedule: priceSchedule } : DEFAULT_PRICE_BOOK);
-    const prices = await openPriceStore(db.db, { seed });
-    const host = createBillingHost({
-      config,
-      db,
-      log,
-      auth,
-      jobs,
-      mailer,
-      env: overrides.billingEnv ?? {},
-      priceSchedule: priceSchedule ?? overrides.priceBook?.schedule,
-    });
+    const prices = await openPriceStore(db.db, { seed: priceSeed(overrides) });
+    // The one store, as `startServer` passes it: the module charges from the book discovery and the offers read.
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: overrides.billingEnv ?? {}, prices });
     const provider = overrides.billingModule
       ? await overrides.billingModule.createBillingProvider(host)
       : (overrides.billing ?? noopBilling);
@@ -160,8 +160,6 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       errors: capture.errors,
       search: overrides.search,
       linkCheck: overrides.linkCheck,
-      // The billing host's schedule, so discovery and the job gates price checks as the module does.
-      priceSchedule: host.priceSchedule,
       factcheckJobs: overrides.factcheckJobs,
       perspectivesJobs: overrides.perspectivesJobs,
       resolveLink: overrides.resolveLink,

@@ -556,7 +556,7 @@ describe('perspectives jobs: lifecycle', { timeout: PGLITE_TIMEOUT }, () => {
     // Only the perspectives routes, as the fact-check paths are compared (job-routes.test.ts).
     const app = new OpenAPIHono<AppEnv>();
     const jobs = createJobStore<never>({ ttlMs: 1, maxRunning: 1, maxKeptPerUser: 1 });
-    perspectivesRoutes(app, { ...t.deps, priceSchedule: TEST_PRICE_SCHEDULE, perspectivesJobs: jobs }, {} as LimitDeps);
+    perspectivesRoutes(app, { ...t.deps, perspectivesJobs: jobs }, {} as LimitDeps);
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'test', version: '1' } });
     const paths = doc.paths ?? {};
     const codes = (op: { responses?: object } | undefined) => Object.keys(op?.responses ?? {}).sort();

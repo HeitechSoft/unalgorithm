@@ -66,6 +66,8 @@ export const ServerInfoSchema = z.object({
   }),
   /** A billing server's price for an on-demand task now (CL2-26 schedule). Absent when it charges nothing for it. */
   jobPrices: z.object({ factcheck: JobPriceSchema.optional(), perspectives: JobPriceSchema.optional() }).optional(),
+  /** A billing server's price of 1,000 classified posts now, on its reference model. Absent when it charges nothing. */
+  classifyPrice: z.object({ microsPer1000Posts: Micros }).optional(),
   auth: z.object({
     /**
      * Sign-in methods the server offers, such as `email-otp`. Open-ended, so a server that adds a method later still

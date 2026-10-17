@@ -91,7 +91,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     // The price book in use, kept in memory: a stored book that is not sound (PriceBookError) stops the start before
-    // anything is served, as a billing module that cannot be loaded does.
+    // anything is served, as a billing module that cannot be loaded does. The one store: the billing host (so the module
+    // charges from the book people see) and the app (discovery, offers, `/prices.json`, the Pricing page) both read it.
     const prices = await openPriceStore(db.db, { seed: DEFAULT_PRICE_BOOK });
     await logSetupNeeded(db.db, log);
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
@@ -109,7 +110,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     registerSyncJobs(jobs, { db: db.db });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
-    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv });
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv, prices });
     const billing = await loadBilling(config, host, log);
     // After loadBilling, so the alert check also asks the module for its alerts; before the jobs start.
     const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
@@ -130,7 +131,6 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       search,
       linkCheck: egress.checkLinks,
       resolveLink: egress.resolveLink,
-      priceSchedule: host.priceSchedule,
       factcheckJobs,
       perspectivesJobs,
     });

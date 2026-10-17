@@ -9,7 +9,6 @@
 import { AIError } from '@unalgorithm/ai';
 import { listProblems, sourceListFromWire } from '@unalgorithm/outlets';
 import {
-  type CreditPriceSchedule,
   FEATURE_NAMES,
   PERSPECTIVES_JOBS_PATH,
   type PerspectivesJobRequest,
@@ -31,13 +30,10 @@ import { mountJobRoutes } from './jobs.ts';
 /** Mounts the perspectives job endpoints: start, poll and cancel. `limits` is the app's one `LimitDeps`. */
 export function perspectivesRoutes(
   app: App,
-  deps: AppDeps & {
-    priceSchedule: CreditPriceSchedule;
-    perspectivesJobs: JobStore<PerspectivesResult>;
-  },
+  deps: AppDeps & { perspectivesJobs: JobStore<PerspectivesResult> },
   limits: LimitDeps,
 ): void {
-  const { config, db, log, ai, priceSchedule } = deps;
+  const { config, db, log, ai, prices } = deps;
   const search = deps.search ?? null;
   mountJobRoutes<PerspectivesJobRequest, PerspectivesResult>(
     app,
@@ -59,7 +55,8 @@ export function perspectivesRoutes(
       },
       // The comparison runs on the synthesis route (P3-33).
       refusedModel: config.factcheck.synthesisModel,
-      offer: () => perspectivesOffer(config, priceSchedule),
+      // The book in use at each request, as fact-check's.
+      offer: () => perspectivesOffer(config, prices.current().schedule),
       // F18: only a public post's link is ever compared; nothing is metered for another. The list keeps P3-72's rules
       // (one outlet per web address, none inside another's), so each search hit maps to one bucket.
       admit: (req) => {

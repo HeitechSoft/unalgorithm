@@ -1,5 +1,12 @@
 /**
- * The price book's admin routes (PA-03, decisions PD1, PD9), guarded as the source list's are (`routes/outlets.ts`).
+ * The price book's public route (PA-04, decision PD8) and its admin routes (PA-03, decisions PD1, PD9).
+ *
+ * Public: `GET /prices.json`, the book in use as `/outlets.json` publishes the source list: outside `/v1`, any origin
+ * may read it and a cache may keep it for 5 minutes, with an ETag (a hash of the body). It reads no cookie, session or
+ * header but `If-None-Match`, sets no cookie and logs nothing of its own. It holds the book alone: no history, no admin.
+ * A server that charges nothing (`BILLING=off`) publishes no prices: 404.
+ *
+ * Admin: guarded as the source list's are (`routes/outlets.ts`).
  *
  * `GET /v1/admin/prices` is what the Pricing page reads: the book in use, as `/prices.json` publishes it, its latest
  * changes with each admin's address, the server's clock and whether it charges. It needs a web session with the admin
@@ -12,12 +19,35 @@
  * (every admin line stays ids-only).
  */
 import { createRoute } from '@hono/zod-openapi';
-import { ADMIN_PRICES_PATH, AdminPricesSchema, PriceChangedSchema, PriceChangeRequestSchema } from '@unalgorithm/protocol';
+import {
+  ADMIN_PRICES_PATH,
+  AdminPricesSchema,
+  PRICES_JSON_PATH,
+  PriceChangedSchema,
+  PriceChangeRequestSchema,
+} from '@unalgorithm/protocol';
 import { requireAdmin } from '../admin/access.ts';
 import { applyPriceChange, listPriceChanges } from '../admin/prices.ts';
 import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps } from '../http/app.ts';
-import { errorResponse, json } from './openapi.ts';
+import { errorResponse, json, NOT_FOUND } from './openapi.ts';
+import { JSON_UTF8, noneMatchHolds, publicHeaders } from './outlets.ts';
+
+/**
+ * Mounts `/prices.json` (PD8). Plain `app.get`, as discovery and `/outlets.json`: a page-level path outside the OpenAPI
+ * document. The body and its tag come from the store's copy, made when it was (re)loaded, so an answer costs no query.
+ */
+export function pricePublicRoutes(app: App, { config, prices }: AppDeps): void {
+  app.get(PRICES_JSON_PATH, (c) => {
+    if (config.billing === 'off') return c.json(NOT_FOUND, 404);
+    publicHeaders(c);
+    // One read: the body and the tag of the same book.
+    const { body, etag } = prices.published();
+    c.header('ETag', etag);
+    if (noneMatchHolds(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
+    return c.json(body, 200, JSON_UTF8);
+  });
+}
 
 /** Mounts the price book's admin routes on the app. */
 export function priceAdminRoutes(app: App, deps: AppDeps): void {
