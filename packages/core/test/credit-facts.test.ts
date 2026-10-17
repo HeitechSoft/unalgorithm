@@ -10,7 +10,9 @@ import {
   DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
   FEATURE_NAMES,
+  PRICE_CARDS,
   priceCardsAt,
+  REFERENCE_MODELS,
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
 } from '@unalgorithm/protocol';
@@ -134,6 +136,15 @@ describe('credit facts', () => {
     for (const entry of CREDIT_PRICE_SCHEDULE) {
       for (const card of Object.values(entry.cards)) expect(REFERENCE_MODEL_LABELS[card.referenceModel]).toBeTruthy();
     }
+  });
+
+  it('test_every_reference_model_has_a_label_and_card', () => {
+    expect(REFERENCE_MODELS).toEqual(['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+    for (const model of REFERENCE_MODELS) {
+      expect(Object.hasOwn(PRICE_CARDS, model), model).toBe(true);
+      expect(REFERENCE_MODEL_LABELS[model], model).toBeTruthy();
+    }
+    expect(REFERENCE_MODEL_LABELS['claude-opus-5-5']).toBe('Claude Opus 5.5');
   });
 
   it('test_starter_facts_follow_protocol', () => {

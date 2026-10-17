@@ -2,11 +2,14 @@ import {
   CREDIT_TASKS,
   type CreditTask,
   FEATURE_NAMES,
+  PRICE_BOUNDS,
   PRICE_NOTICE_DAYS,
   type PriceIssue,
   type PriceIssueCode,
+  REFERENCE_MODELS,
   TASK_UNITS,
 } from '@unalgorithm/protocol';
+import { REFERENCE_MODEL_LABELS } from './credit-facts.ts';
 import { formatPrice } from './usage.ts';
 
 /**
@@ -38,6 +41,14 @@ const unitOf = (task: string | undefined): string => (isCreditTask(task) ? TASK_
 /** The CI line without the `head: ` the change rules put before a shape problem of the schedule checked. */
 const ciLine = (text: string): string => text.replace(/^head: /, '');
 
+/** Whole dollars as a bound reads: "$1", "$1,000"; cents only when there are any ("$0.10"). */
+const usd = (micros: number): string => formatPrice(micros).replace(/\.00$/, '');
+const MODEL_NAMES = REFERENCE_MODELS.map((model) => REFERENCE_MODEL_LABELS[model] ?? model);
+/** "Claude Haiku 5.5, Claude Sonnet 5.5 or Claude Opus 5.5". */
+const referenceModels = `${MODEL_NAMES.slice(0, -1).join(', ')} or ${MODEL_NAMES.at(-1)}`;
+const { multiplier, maxChargeMicros, starterMicros, purchaseMicros, presets, perDay, monthlyLimitMaxMicros } = PRICE_BOUNDS;
+const pastStarter = () => "Past starter credit amounts can't change.";
+
 const SENTENCES: Readonly<Record<PriceIssueCode, (issue: PriceIssue, n: number) => string>> = {
   'in-effect-changed': (i) =>
     `The prices from ${day(i.effectiveFrom)} are in effect, so they can't change. Schedule a new price instead.`,
@@ -64,6 +75,22 @@ const SENTENCES: Readonly<Record<PriceIssueCode, (issue: PriceIssue, n: number) 
   'not-a-task': (i) => `The price list isn't valid (${ciLine(i.text)}).`,
   'no-classify': (i) => `The price list isn't valid (${ciLine(i.text)}).`,
   unit: (i) => `The price list isn't valid (${ciLine(i.text)}).`,
+  // The price book: the bounds on what a change sets (decisions PD4–PD7) and the soundness of its other parts.
+  'reference-model-unknown': () => `Pick ${referenceModels} as the reference model.`,
+  'multiplier-range': () => `The multiplier must be from ${multiplier.min}× to ${multiplier.max}×: never below our AI cost.`, // U+00D7
+  'cap-too-high': (i) => `The most one ${unitOf(i.task)} can cost must be ${formatPrice(maxChargeMicros.max)} or less.`,
+  'starter-order': pastStarter,
+  'starter-history': pastStarter,
+  'starter-range': () =>
+    `The starter credit must be from ${formatPrice(starterMicros.min)} to ${formatPrice(starterMicros.max)}, in whole cents.`,
+  'purchase-order': () => 'The least amount must be at most the preselected one, and that at most the most, in whole dollars.',
+  'purchase-default': () => 'The preselected amount must be one of the quick picks.',
+  'purchase-presets': () =>
+    `Quick picks: ${presets.min} to ${presets.max} whole-dollar amounts, smallest first, from the least to the most.`,
+  'purchase-range': () => `Amounts must be whole dollars from ${usd(purchaseMicros.min)} to ${usd(purchaseMicros.max)}.`,
+  'auto-reload-per-day': () => `Automatic top-ups a day must be from ${perDay.min} to ${perDay.max}.`,
+  'auto-reload-monthly': () =>
+    `The monthly limit must be whole dollars from the least amount people can buy to ${usd(monthlyLimitMaxMicros.max)}.`,
 };
 
 /** Why the rules refuse a price change, in plain words. `noticeDays` is the notice a raise needs (`{n}`). */

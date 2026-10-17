@@ -796,6 +796,25 @@ describe('credit amounts (any amount from $5 to $500)', () => {
     for (const value of hostile) expect(() => creditAmount(value)).not.toThrow();
     for (const value of hostile) expect(creditAmount(value)).toBeNull();
   });
+
+  it('test_credit_amount_takes_rules', () => {
+    // The price book's purchase rules are the limits; the amounts stay whole dollars.
+    const wide = { minMicros: 1_000_000, maxMicros: 1_000_000_000 };
+    expect(creditAmount({ dollars: 600 }, wide)).toEqual({ dollars: 600, cents: 60_000, micros: 600_000_000 });
+    expect(creditAmount({ dollars: 600 })).toBeNull();
+    expect(creditAmount({ dollars: 1 }, wide)).toEqual({ dollars: 1, cents: 100, micros: 1_000_000 });
+    expect(creditAmount({ dollars: '1000' }, wide)).toEqual({ dollars: 1000, cents: 100_000, micros: 1_000_000_000 });
+    for (const value of [0, 1001]) expect(creditAmount({ dollars: value }, wide), String(value)).toBeNull();
+    expect(creditAmount({ micros: 600_500_000 }, wide)).toBeNull();
+    const narrow = { minMicros: 20_000_000, maxMicros: 50_000_000 };
+    for (const dollars of [5, 10, 19, 51, 500]) expect(creditAmount({ dollars }, narrow), String(dollars)).toBeNull();
+    expect(creditAmount({ micros: 20_000_000 }, narrow)?.dollars).toBe(20);
+    // The default rules are the constants.
+    const constants = { minMicros: CREDIT_AMOUNT_MIN_MICROS, maxMicros: CREDIT_AMOUNT_MAX_MICROS };
+    for (const dollars of [4, 5, 10, 500, 501]) {
+      expect(creditAmount({ dollars }, constants), String(dollars)).toEqual(creditAmount({ dollars }));
+    }
+  });
 });
 
 describe('money entries (CL5-01)', () => {
@@ -1149,6 +1168,19 @@ describe('price issues', () => {
       'cap-raise',
       'raise',
       'rise',
+      // the price book (priceBookIssues, priceBookChangeIssues)
+      'reference-model-unknown',
+      'multiplier-range',
+      'cap-too-high',
+      'starter-order',
+      'starter-history',
+      'starter-range',
+      'purchase-order',
+      'purchase-default',
+      'purchase-presets',
+      'purchase-range',
+      'auto-reload-per-day',
+      'auto-reload-monthly',
     ]);
     const NOV_2 = at('2026-11-02T12:00:00Z');
     const NOV_3 = '2026-11-03T00:00:00Z';

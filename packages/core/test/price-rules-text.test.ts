@@ -2,10 +2,14 @@ import {
   CREDIT_PRICE_SCHEDULE,
   type CreditPriceCard,
   type CreditPriceScheduleEntry,
+  DEFAULT_PRICE_BOOK,
   FEATURE_NAMES,
+  PRICE_ISSUE_CODES,
   type PriceIssue,
+  priceBookChangeIssues,
   priceScheduleChangeIssues,
   priceScheduleIssues,
+  withStarterCredit,
   withTaskCard,
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
@@ -139,5 +143,44 @@ describe('the price rules in plain words', () => {
     expect(priceIssuesText(raise, 45)).toBe(
       "This raises the price of Fact-check, so it needs 45 days' notice. The earliest date is Dec 18, 2026.",
     );
+  });
+
+  it('test_book_issue_texts', () => {
+    const text = (issue: Omit<PriceIssue, 'text'>) => priceIssueText({ ...issue, text: 'ci line' });
+    const card = { effectiveFrom: NOV_3, task: 'factcheck' };
+    expect(text({ code: 'reference-model-unknown', ...card })).toBe(
+      'Pick Claude Haiku 5.5, Claude Sonnet 5.5 or Claude Opus 5.5 as the reference model.',
+    );
+    expect(text({ code: 'multiplier-range', ...card })).toBe('The multiplier must be from 1× to 10×: never below our AI cost.');
+    expect(text({ code: 'cap-too-high', ...card })).toBe('The most one check can cost must be $5.00 or less.');
+    expect(text({ code: 'cap-too-high', effectiveFrom: NOV_3, task: 'perspectives' })).toBe(
+      'The most one comparison can cost must be $5.00 or less.',
+    );
+    expect(text({ code: 'starter-order' })).toBe("Past starter credit amounts can't change.");
+    expect(text({ code: 'starter-history' })).toBe("Past starter credit amounts can't change.");
+    expect(text({ code: 'starter-range' })).toBe('The starter credit must be from $0.10 to $10.00, in whole cents.');
+    expect(text({ code: 'purchase-order' })).toBe(
+      'The least amount must be at most the preselected one, and that at most the most, in whole dollars.',
+    );
+    expect(text({ code: 'purchase-default' })).toBe('The preselected amount must be one of the quick picks.');
+    expect(text({ code: 'purchase-presets' })).toBe(
+      'Quick picks: 1 to 4 whole-dollar amounts, smallest first, from the least to the most.',
+    );
+    expect(text({ code: 'purchase-range' })).toBe('Amounts must be whole dollars from $1 to $1,000.');
+    expect(text({ code: 'auto-reload-per-day' })).toBe('Automatic top-ups a day must be from 1 to 4.');
+    expect(text({ code: 'auto-reload-monthly' })).toBe(
+      'The monthly limit must be whole dollars from the least amount people can buy to $5,000.',
+    );
+    // Every code has its words.
+    for (const code of PRICE_ISSUE_CODES) expect(text({ code, ...card }), code).toMatch(/^[A-Z].+\.$/);
+
+    // The book's rules themselves, as the save refuses them.
+    const book = DEFAULT_PRICE_BOOK;
+    const head = { ...book, schedule: withTaskCard(book.schedule, 'factcheck', NOV_3, { ...FC, multiplier: 0.5 }) };
+    expect(priceIssuesText(priceBookChangeIssues(book, head, NOW))).toBe(
+      'The multiplier must be from 1× to 10×: never below our AI cost.',
+    );
+    const starter = priceBookChangeIssues(book, withStarterCredit(book, 50_000, NOW), NOW);
+    expect(priceIssuesText(starter)).toBe('The starter credit must be from $0.10 to $10.00, in whole cents.');
   });
 });

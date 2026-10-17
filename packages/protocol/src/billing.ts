@@ -80,7 +80,7 @@ export const CREDIT_CURRENCY = 'usd';
  * CREDIT_PRICE_SCHEDULE), and what "about N posts" it buys is `estimatePosts(micros, at)`, never stored.
  */
 export interface CreditAmount {
-  /** Whole US dollars, from 5 to 500. */
+  /** Whole US dollars, within the rules' limits (by default from 5 to 500). */
   dollars: number;
   /** The same amount in US cents, as a payment provider charges it (`dollars × 100`). */
   cents: number;
@@ -90,13 +90,23 @@ export interface CreditAmount {
 
 const WHOLE_DOLLARS = /^[1-9]\d{0,5}$/;
 
+/** The least and the most one purchase adds: the price book's purchase rules (`PurchaseRules`) are one. */
+export interface CreditAmountLimits {
+  minMicros: number;
+  maxMicros: number;
+}
+
 /**
  * The purchase of `amount` under the amount rules (the purchase page and auto-reload both use them), or null. `amount`
  * is `{ dollars }`, a whole number or the digits of a form field ("25"), or `{ micros }`, a whole number of
- * micro-dollars. Null for anything else: under $5, over $500, not a whole dollar, a fraction, NaN, a sign, spaces,
- * exponent notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
+ * micro-dollars. `rules` are the least and the most one purchase adds (by default $5 and $500, the constants). Null for
+ * anything else: under the least, over the most, not a whole dollar, a fraction, NaN, a sign, spaces, exponent
+ * notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
  */
-export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
+export function creditAmount(
+  amount: unknown,
+  rules: Readonly<CreditAmountLimits> = { minMicros: CREDIT_AMOUNT_MIN_MICROS, maxMicros: CREDIT_AMOUNT_MAX_MICROS },
+): Readonly<CreditAmount> | null {
   if (typeof amount !== 'object' || amount === null) return null;
   let micros: number;
   try {
@@ -116,9 +126,7 @@ export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
   } catch {
     return null; // a throwing getter or proxy
   }
-  if (micros < CREDIT_AMOUNT_MIN_MICROS || micros > CREDIT_AMOUNT_MAX_MICROS || micros % CREDIT_AMOUNT_STEP_MICROS !== 0) {
-    return null;
-  }
+  if (micros < rules.minMicros || micros > rules.maxMicros || micros % CREDIT_AMOUNT_STEP_MICROS !== 0) return null;
   const dollars = micros / MICROS_PER_DOLLAR;
   return Object.freeze({ dollars, cents: dollars * 100, micros });
 }
@@ -298,6 +306,19 @@ export const PRICE_ISSUE_CODES = [
   'cap-raise',
   'raise',
   'rise',
+  // the price book (prices.ts: priceBookIssues, priceBookChangeIssues)
+  'reference-model-unknown',
+  'multiplier-range',
+  'cap-too-high',
+  'starter-order',
+  'starter-history',
+  'starter-range',
+  'purchase-order',
+  'purchase-default',
+  'purchase-presets',
+  'purchase-range',
+  'auto-reload-per-day',
+  'auto-reload-monthly',
 ] as const;
 export type PriceIssueCode = (typeof PRICE_ISSUE_CODES)[number];
 
@@ -311,7 +332,10 @@ export interface PriceIssue {
   earliest?: string;
   /** cap-below-typical: the card's typical price in micro-dollars. */
   typicalMicros?: number;
-  /** The CI line, character for character what the string functions returned before the issues had codes. */
+  /**
+   * The CI line, character for character what the string functions returned before the issues had codes; for the
+   * price book's codes, a line in the same style.
+   */
   text: string;
 }
 
