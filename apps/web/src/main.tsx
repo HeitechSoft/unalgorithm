@@ -36,7 +36,7 @@ export function Home() {
   }, []);
   if (!info && !failed) return <div className="web-page" aria-busy="true" />;
   return (
-    <Page info={info} intro="This server provides AI for the UnAlgorithm Feed extension.">
+    <Page info={info} intro="This server provides AI for the unAlgorithm Feed extension.">
       {failed ? (
         <Banner tone="danger" title="Couldn't reach the server. Try again." />
       ) : (

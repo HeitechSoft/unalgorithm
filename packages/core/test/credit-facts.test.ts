@@ -126,7 +126,7 @@ describe('credit facts', () => {
     ]);
     // Only classify priced, now and later.
     expect(creditFacts([LAUNCH], OCT_14).labsPrices).toBe(
-      'Fact-check and UnEcho Chamber are not offered on UnAlgorithm Cloud yet.',
+      'Fact-check and UnEcho Chamber are not offered on unAlgorithm Cloud yet.',
     );
   });
 
@@ -178,7 +178,7 @@ describe('credits page copy', () => {
     const text = flat(page);
     expect(page.split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
     expect(page).not.toMatch(/\{\{|\}\}/);
-    expect(text).toContain('UnAlgorithm Cloud');
+    expect(text).toContain('unAlgorithm Cloud');
     expect(page).toContain('(https://cloud.unalgorithm.app)');
     expect(text).toContain('Add credit, or switch to on-device or your own key');
     for (const free of ['Rules', 'On-device AI', 'Your own key']) expect(text).toContain(free);

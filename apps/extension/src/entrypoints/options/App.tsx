@@ -17,7 +17,7 @@ function subFromHash(): string | null {
   return location.hash.replace(/^#\/?/, '').split('/')[1] ?? null;
 }
 
-/** UnAlgorithm Settings, laid out like macOS System Settings. Every change applies instantly. */
+/** unAlgorithm Settings, laid out like macOS System Settings. Every change applies instantly. */
 export function App() {
   const [settings, save] = useSettings();
   const [device, saveDevice] = useDevice();
@@ -37,7 +37,7 @@ export function App() {
   useEffect(() => {
     const item = NAV.find((n) => n.id === pane);
     const title = pane === 'ai' && sub === 'sources' ? 'Your source list' : (item?.label ?? 'Settings');
-    document.title = `${title} · UnAlgorithm`;
+    document.title = `${title} · unAlgorithm`;
     document.querySelector<HTMLElement>('.pane h1')?.focus();
   }, [pane, sub]);
 

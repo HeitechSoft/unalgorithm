@@ -81,7 +81,7 @@ function start(longPoll: boolean): Promise<SyncOutcome> {
     try {
       return await syncOnce({ waitSeconds: longPoll ? SYNC_MAX_WAIT_SECONDS : 0, signal: abort.signal });
     } catch (err) {
-      console.debug('[UnAlgorithm] sync failed', err);
+      console.debug('[unAlgorithm] sync failed', err);
       return { ok: false, problem: 'server' } as const;
     } finally {
       if (inFlight === run) inFlight = null;
@@ -172,7 +172,7 @@ async function longPollLoop(): Promise<void> {
 function ensureLongPoll(): void {
   if (loop) return;
   loop = longPollLoop()
-    .catch((err: unknown) => console.debug('[UnAlgorithm] sync loop stopped', err))
+    .catch((err: unknown) => console.debug('[unAlgorithm] sync loop stopped', err))
     .finally(() => {
       loop = null;
     });
@@ -257,7 +257,7 @@ export async function resetSync(): Promise<void> {
 
 /** Called synchronously at the top of `defineBackground`, so the alarm and storage listeners wake the worker. */
 export function initSync(): void {
-  const log = (err: unknown) => console.debug('[UnAlgorithm] sync', err);
+  const log = (err: unknown) => console.debug('[unAlgorithm] sync', err);
   browser.alarms?.onAlarm.addListener((alarm) => {
     if (alarm.name === SYNC_ALARM) runSync().catch(log);
   });

@@ -1,7 +1,7 @@
 import { clamp } from './util.ts';
 
 /**
- * What the user taught UnAlgorithm with "More like this" / "Less like this". Topic weights apply instantly,
+ * What the user taught unAlgorithm with "More like this" / "Less like this". Topic weights apply instantly,
  * without any AI call; with AI on, a few rated examples also go into the next profile snapshot.
  */
 export interface FeedbackEvent {

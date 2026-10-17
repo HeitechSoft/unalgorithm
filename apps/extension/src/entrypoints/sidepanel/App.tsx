@@ -116,7 +116,7 @@ export function App() {
         <EmptyState
           icon={Newspaper}
           title="Open your feed to see highlights"
-          body="UnAlgorithm lists the posts picked for you and everything it folded away, right here."
+          body="unAlgorithm lists the posts picked for you and everything it folded away, right here."
         />
         <div className="ua-hstack" style={{ justifyContent: 'center', gap: 8 }}>
           <Button variant="tinted" size="sm" href={FEED_URLS.linkedin}>

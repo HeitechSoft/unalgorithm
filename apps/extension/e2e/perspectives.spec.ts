@@ -45,7 +45,7 @@ import {
 
 /**
  * UnEcho Chamber end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built in
- * e2e mode (so UnAlgorithm Cloud's list, the default choice, is the fictional fixture), goes from the public Facebook
+ * e2e mode (so unAlgorithm Cloud's list, the default choice, is the fictional fixture), goes from the public Facebook
  * link share to the comparison in the side panel, with nothing but a mocked api.anthropic.com answered through
  * `context.route`. Every other request is aborted by the fixtures. No server, no Docker.
  */

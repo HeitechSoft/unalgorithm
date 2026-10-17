@@ -30,7 +30,7 @@ export function sampleHostTheme(doc: Document, sample: Element | null, fallback:
 
 /**
  * The only CSS we put on the host page itself: attribute rules on post roots, plus theme variables that
- * cascade into every shadow root. Removed when UnAlgorithm stops on the page.
+ * cascade into every shadow root. Removed when unAlgorithm stops on the page.
  */
 export function globalCss(t: HostTheme, debug = false): string {
   const ring = t.scheme === 'dark' ? 'rgb(60 207 192 / .75)' : 'rgb(11 122 117 / .7)';

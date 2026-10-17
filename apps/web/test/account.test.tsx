@@ -183,6 +183,6 @@ describe('home', () => {
     expect(link.getAttribute('href')).toBe('/account');
     // Still the home page: what the server is for, under its name.
     expect(screen.getByRole('heading', { level: 1, name: INFO.name })).toBeTruthy();
-    expect(screen.getByText('This server provides AI for the UnAlgorithm Feed extension.')).toBeTruthy();
+    expect(screen.getByText('This server provides AI for the unAlgorithm Feed extension.')).toBeTruthy();
   });
 });

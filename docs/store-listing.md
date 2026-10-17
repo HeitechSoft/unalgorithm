@@ -1,6 +1,6 @@
 # Chrome Web Store listing
 
-The text and graphics for UnAlgorithm Feed's Chrome Web Store entry, ready to paste into the developer dashboard
+The text and graphics for unAlgorithm Feed's Chrome Web Store entry, ready to paste into the developer dashboard
 (HeitechSoft developer account). Nothing here is submitted automatically; see [release.md](release.md#chrome-web-store-listing)
 for when and how a release goes to the store.
 
@@ -15,7 +15,7 @@ update both here and in the dashboard in the same release.
 
 | Field | Value |
 |---|---|
-| Name | **UnAlgorithm Feed** (from `extName` in `apps/extension/public/_locales/en/messages.json`; the dashboard reads it from the zip) |
+| Name | **unAlgorithm Feed** (from `extName` in `apps/extension/public/_locales/en/messages.json`; the dashboard reads it from the zip) |
 | Summary | From `extDescription` in the same file (the dashboard reads it from the zip): *See the posts you came for. Folds away ads, suggested posts and other noise on LinkedIn and Facebook.* |
 | Category | Lifestyle → **Social Networking**: it works on social feeds, which is where people look for it |
 | Language | English |
@@ -29,11 +29,11 @@ Paste as plain text. It opens with the full name and byline and ends with the no
 ([brand.md](brand.md)).
 
 ```text
-UnAlgorithm Feed by HeitechSoft
+unAlgorithm Feed by HeitechSoft
 
 See the posts you came for.
 
-Social feeds are ranked to keep you scrolling. They mix in ads, posts "suggested for you", "Jane liked this" activity and content from people you never chose to follow. UnAlgorithm Feed folds that noise into a thin line, so you can still peek, and it never touches posts from the people you follow.
+Social feeds are ranked to keep you scrolling. They mix in ads, posts "suggested for you", "Jane liked this" activity and content from people you never chose to follow. unAlgorithm Feed folds that noise into a thin line, so you can still peek, and it never touches posts from the people you follow.
 
 Works with LinkedIn and Facebook, in English.
 
@@ -42,7 +42,7 @@ WHAT IT DOES
 • Three strengths: Light (just the clutter), Balanced (what you didn't ask for) and Calm (only what matters). Change it from the toolbar and the feed updates live.
 • Always explains itself: every folded post has Why?, with what was detected and one-click fixes such as "Always show this person" or "Stop hiding suggested posts", with Undo.
 • For you: pick a few interests and matching posts get a quiet highlight. Highlights, in the side panel, lists the posts picked for you and the ones folded away on the page.
-• Fails open: if a site changes its layout and detection looks wrong, UnAlgorithm stops hiding and tells you.
+• Fails open: if a site changes its layout and detection looks wrong, unAlgorithm stops hiding and tells you.
 
 OPTIONAL AI, YOUR CHOICE
 Rules run in your browser and need no AI. To also spot off-topic posts, engagement bait and rage bait, choose where AI runs:
@@ -53,21 +53,21 @@ Rules run in your browser and need no AI. To also spot off-topic posts, engageme
 FACT-CHECK AND UNECHO CHAMBER (OFF BY DEFAULT)
 For posts in your feed, with your own Anthropic or OpenAI key, or your own AI server and a Brave or Tavily search key:
 • Fact-check: checks the claims in a public post against sources on the web, and shows each verdict with its sources and quotes. A check runs only when you confirm it.
-• UnEcho Chamber: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by UnAlgorithm Cloud's source list or your own.
+• UnEcho Chamber: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by unAlgorithm Cloud's source list or your own.
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
 • Nothing leaves your browser unless you turn on AI. Then only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
 • Your API keys stay in this browser.
-• UnAlgorithm only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses for you.
+• unAlgorithm only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses for you.
 
 FREE AND OPEN SOURCE
-UnAlgorithm Feed is in public preview and open source under the AGPL-3.0 licence: https://github.com/HeitechSoft/unalgorithm
+unAlgorithm Feed is in public preview and open source under the AGPL-3.0 licence: https://github.com/HeitechSoft/unalgorithm
 
 Help: https://unalgorithmfeed.com/help/
 Privacy policy: https://unalgorithmfeed.com/privacy/
 
-UnAlgorithm Feed is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta.
+unAlgorithm Feed is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta.
 ```
 
 ### Graphics
@@ -82,7 +82,7 @@ All made from fixtures, never from real feeds, and committed in [`store/`](store
 | [`store/screenshot-3-popup.png`](store/screenshot-3-popup.png) | 1280×800 | Screenshot 3 | The toolbar popup on a brand canvas: posts hidden by reason, Strength |
 | [`store/screenshot-4-highlights.png`](store/screenshot-4-highlights.png) | 1280×800 | Screenshot 4 | Highlights in the side panel beside the feed |
 | [`store/screenshot-5-settings.png`](store/screenshot-5-settings.png) | 1280×800 | Screenshot 5 | Settings → LinkedIn: Strength and what to hide |
-| [`store/promo-small-440x280.png`](store/promo-small-440x280.png) | 440×280 | Small promo tile (required) | The mark, "UnAlgorithm Feed" and the tagline |
+| [`store/promo-small-440x280.png`](store/promo-small-440x280.png) | 440×280 | Small promo tile (required) | The mark, "unAlgorithm Feed" and the tagline |
 | [`store/promo-marquee-1400x560.png`](store/promo-marquee-1400x560.png) | 1400×560 | Marquee promo tile (optional) | The lockup, the tagline and an abstract folded feed |
 
 All are 24-bit PNGs without alpha, as the store asks. To make them again, from the repository root:
@@ -104,7 +104,7 @@ results before committing: fonts come from the machine that renders them.
 ### Single purpose
 
 ```text
-UnAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Fact-check and UnEcho Chamber, off by default, are feed features too: Fact-check checks the claims in a public post the user picks in their feed, and UnEcho Chamber shows how outlets across the spectrum covered the news story a public post in their feed links to.
+unAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Fact-check and UnEcho Chamber, off by default, are feed features too: Fact-check checks the claims in a public post the user picks in their feed, and UnEcho Chamber shows how outlets across the spectrum covered the news story a public post in their feed links to.
 ```
 
 ### Permission justifications
@@ -151,12 +151,12 @@ Not granted at install. Asked for only if the user clicks "Fix it for me" becaus
 ### Remote code
 
 **No, I am not using remote code.** All JavaScript ships in the extension package. The AI and search services the
-user chooses answer with data (JSON), which is never run as code. UnAlgorithm Cloud's published source list is JSON
+user chooses answer with data (JSON), which is never run as code. unAlgorithm Cloud's published source list is JSON
 data, never run as code.
 
 ### Data usage
 
-What user data does UnAlgorithm Feed collect? Tick only **Website content**; leave every other category unticked.
+What user data does unAlgorithm Feed collect? Tick only **Website content**; leave every other category unticked.
 
 | Category | Answer | Why |
 |---|---|---|
@@ -167,7 +167,7 @@ With each classification, the AI service also receives the user's interests, the
 the user turned on learning from ratings, short AI-written summaries of up to 4 posts they rated. These are the user's
 own settings for the same feed, sent to the service the user chose, not one of the categories above. If a reviewer
 asks, point to *When you turn on AI* in the privacy policy. While UnEcho Chamber is on, the extension downloads
-UnAlgorithm Cloud's public source list at most once a day; the request carries no user data.
+unAlgorithm Cloud's public source list at most once a day; the request carries no user data.
 
 Tick all three certifications:
 

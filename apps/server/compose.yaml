@@ -1,4 +1,4 @@
-# The UnAlgorithm Feed server with Postgres: the compose model CI's compose-smoke job runs and UnAlgorithm Cloud
+# The unAlgorithm Feed server with Postgres: the compose model CI's compose-smoke job runs and unAlgorithm Cloud
 # extends with its own override.
 #
 # Postgres is never published. The server listens on 127.0.0.1 only. For HTTPS, turn on the caddy profile below
@@ -19,7 +19,7 @@
 
 services:
   server:
-    # The image is private (UnAlgorithm Cloud's, docs/release.md); `build:` makes it from this checkout.
+    # The image is private (unAlgorithm Cloud's, docs/release.md); `build:` makes it from this checkout.
     image: ghcr.io/heitechsoft/unalgorithm-server:${UNALGORITHM_VERSION:-latest}
     build:
       context: ../..

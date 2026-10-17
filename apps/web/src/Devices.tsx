@@ -75,7 +75,7 @@ export function Devices({ onSignedOut }: DevicesProps) {
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      <ListGroup header="Devices signed in with UnAlgorithm Feed">
+      <ListGroup header="Devices signed in with unAlgorithm Feed">
         {state.name !== 'loaded' ? null : state.devices.length === 0 ? (
           <ListRow title={<span className="ua-secondary">No devices are signed in.</span>} />
         ) : (

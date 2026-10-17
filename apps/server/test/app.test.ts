@@ -117,7 +117,7 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
     expect(files).toContain(join(srcDir, 'http', 'app.ts'));
     const offenders: string[] = [];
     for (const file of files) {
-      if (/UnAlgorithm\s+Cloud/i.test(await readFile(file, 'utf8'))) offenders.push(file);
+      if (/unAlgorithm\s+Cloud/i.test(await readFile(file, 'utf8'))) offenders.push(file);
     }
     // The hosted service gets its name from its own INSTANCE_NAME, like every other server.
     expect(offenders).toEqual([]);
@@ -283,7 +283,7 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
       const text = await res.text();
       expect([code, res.status]).toEqual([code, httpStatusFor(code)]);
       expect(ServerErrorSchema.parse(JSON.parse(text))).toEqual({ code, message: describeError(code, 'My Server') });
-      expect(text).not.toMatch(/UnAlgorithm\s+Cloud/i);
+      expect(text).not.toMatch(/unAlgorithm\s+Cloud/i);
     }
     // The two codes whose text used to name the hosted service now name this server.
     expect(describeError('auth-required', 'My Server')).toBe('Sign in to My Server again.');

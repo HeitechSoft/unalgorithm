@@ -16,7 +16,7 @@ import { getAccessToken, markNeedsSignIn, refreshServerInfo, type ServerAccount,
 import { noteRefused, noteSettlement } from './server-balance.ts';
 
 /**
- * The `server` AI source (R25): one `POST /v1/classify` per batch to an UnAlgorithm server, with the signed-in device's
+ * The `server` AI source (R25): one `POST /v1/classify` per batch to an unAlgorithm server, with the signed-in device's
  * token. The server builds the prompts, calls its own model and meters the request, so the extension sees no token
  * usage. Posts arrive here with batch-local refs (`p1`…), never anything derived from a post key, and Facebook posts
  * that aren't public never arrive at all.

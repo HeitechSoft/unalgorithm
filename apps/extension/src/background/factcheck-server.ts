@@ -26,7 +26,7 @@ import { noteRefused, noteSettlement } from './server-balance.ts';
 import { type ServerHttpDeps, type ServerResult, serverRequest } from './server-http.ts';
 
 /**
- * Server jobs on the person's UnAlgorithm server (P3-21, generic over the task since P3-37): start a job with the
+ * Server jobs on the person's unAlgorithm server (P3-21, generic over the task since P3-37): start a job with the
  * device's token, long-poll it until it ends, and cancel it when the tab closes or the deadline passes. Errors carry the
  * extension's own words for the server's error code, never the server's text.
  */

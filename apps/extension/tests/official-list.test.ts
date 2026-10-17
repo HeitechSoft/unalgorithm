@@ -1,5 +1,5 @@
 /**
- * UnAlgorithm Cloud's source list in the extension (P3-75, decision D98): fetched only while UnEcho Chamber is on (its
+ * unAlgorithm Cloud's source list in the extension (P3-75, decision D98): fetched only while UnEcho Chamber is on (its
  * switch, and an AI source that can compare, as Settings → AI shows it), at most once a day counted from the last request, anonymous (no cookie, no referrer, no header but Accept), and kept only
  * when it passes the schema and the list rules, so any failure keeps the last good copy. The network is a fake fetch,
  * the clock fixed, extension storage the WXT fake browser; every list is the fictional `.example` fixture or a copy of

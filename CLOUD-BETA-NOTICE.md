@@ -1,20 +1,20 @@
-# UnAlgorithm Cloud beta privacy notice
+# unAlgorithm Cloud beta privacy notice
 
 Last updated: 17 October 2026
 
-UnAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. This notice covers only UnAlgorithm
+unAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. This notice covers only unAlgorithm
 Cloud, HeitechSoft's hosted AI service at `cloud.unalgorithm.app`, during its beta. The extension itself is covered by
-the UnAlgorithm privacy policy. Someone else's UnAlgorithm server is not UnAlgorithm Cloud, and this
+the unAlgorithm privacy policy. Someone else's unAlgorithm server is not unAlgorithm Cloud, and this
 notice does not cover it.
 
 ## 1. Who we are
 
-UnAlgorithm Cloud is run by HeitechSoft, in Ontario, Canada. The beta is invite-only: you can sign in only after we
+unAlgorithm Cloud is run by HeitechSoft, in Ontario, Canada. The beta is invite-only: you can sign in only after we
 invite your email address. It is free during the beta.
 
 ## 2. What the Cloud receives, and does not keep
 
-When you choose UnAlgorithm Cloud as your AI source, the extension sends it only what is needed to classify a post:
+When you choose unAlgorithm Cloud as your AI source, the extension sends it only what is needed to classify a post:
 
 - the post's text, capped at 2,000 characters, with email addresses and phone numbers masked, and @mentions and tagged
   names masked unless you turned that off,
@@ -68,7 +68,7 @@ expired session records are deleted when you delete your account.
 ## 4. Accounts and sync
 
 You sign in with a code we email you, with Google, or with a passkey you added. Google is optional: if you use it,
-Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy.
+Google knows you signed in to unAlgorithm Cloud, under Google's own privacy policy.
 
 Sync is off until you turn it on in the extension. Then the Cloud stores your settings, interests and exceptions (the
 names and profile identifiers you chose to always show or hide), and your own UnEcho Chamber source list (outlet names,
@@ -82,7 +82,7 @@ or remove passkeys, download your data and delete your account (section 8).
 
 ## 5. Subprocessors
 
-These companies process data for UnAlgorithm Cloud:
+These companies process data for unAlgorithm Cloud:
 
 | Subprocessor | What for | Where |
 |---|---|---|

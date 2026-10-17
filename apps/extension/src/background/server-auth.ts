@@ -71,7 +71,7 @@ const REVOKE_TIMEOUT_MS = 5_000;
 const REFRESH_MARGIN_MS = 60_000;
 const E2E_FLOW_TIMEOUT_MS = 5 * 60_000;
 
-const NOT_A_SERVER = "That address isn't an UnAlgorithm server.";
+const NOT_A_SERVER = "That address isn't an unAlgorithm server.";
 const UNFINISHED = "Sign-in didn't finish. Try again.";
 
 function withDefaults(deps: Partial<AuthDeps>): AuthDeps {
@@ -85,7 +85,7 @@ function toBgError(e: unknown): BgError {
 // The rule lives with the labels, so extension pages share it (the account page link, CL3-22).
 export { isTrustedServerOrigin };
 
-/** Checks that an address is an UnAlgorithm server this extension can sign in to, and reads its discovery document. */
+/** Checks that an address is an unAlgorithm server this extension can sign in to, and reads its discovery document. */
 export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}): Promise<DiscoverResult> {
   const href = safeExternalUrl(input);
   if (!href) {
@@ -120,7 +120,7 @@ export async function signIn(input: string, deps: Partial<AuthDeps> = {}): Promi
 }
 
 async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise<ServerAccount> {
-  if (!browser.identity) throw new AIError('permission', 'UnAlgorithm needs permission to open the sign-in window.');
+  if (!browser.identity) throw new AIError('permission', 'unAlgorithm needs permission to open the sign-in window.');
   const clientId = browser.runtime.id;
   const redirectUri = chromiumRedirectUri(clientId);
   // Servers bind every code to this address (CL1-01): a browser that sends the sign-in window elsewhere can't finish.

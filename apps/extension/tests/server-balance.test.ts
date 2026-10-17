@@ -61,7 +61,7 @@ const REFRESH_KEY = `server-refresh:${ORIGIN}`;
 
 const INFO: ServerInfo = {
   v: 1,
-  name: 'UnAlgorithm',
+  name: 'unAlgorithm',
   version: '0.2.0',
   source: 'https://github.com/HeitechSoft/unalgorithm',
   billing: true,
@@ -269,7 +269,7 @@ describe('recording', () => {
       updatedAt: NOW,
     });
     expect(codes(after)).toStrictEqual(['insufficient-credits']);
-    const message = describeError('insufficient-credits', 'UnAlgorithm Cloud');
+    const message = describeError('insufficient-credits', 'unAlgorithm Cloud');
     for (const r of after.byRef.values()) expect(r.ok ? undefined : r.error.message).toBe(message);
     expect(after).toStrictEqual(before);
     expect(after).toMatchObject({ calls: 1, failedCalls: 1 });
@@ -284,7 +284,7 @@ describe('refresh', () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout');
     const status = await aiStatus();
 
-    expect(status).toMatchObject({ kind: 'server', label: 'UnAlgorithm Cloud', state: 'ready' });
+    expect(status).toMatchObject({ kind: 'server', label: 'unAlgorithm Cloud', state: 'ready' });
     expect(status).not.toHaveProperty('message');
     expect(status.balance).toStrictEqual({
       balanceMicros: 970_000,
@@ -498,7 +498,7 @@ describe('refresh', () => {
     expect(await serverBalanceItem.getValue()).toStrictEqual(refused);
     const empty = await aiStatus();
     expect(empty).toMatchObject({ state: 'needs-attention', balance: { balanceMicros: 0, empty: true } });
-    expect(empty.message).toBe(describeError('insufficient-credits', 'UnAlgorithm Cloud'));
+    expect(empty.message).toBe(describeError('insufficient-credits', 'unAlgorithm Cloud'));
     expect(s.balanceCalls()).toHaveLength(1);
 
     // So does a classify answer's balance.
@@ -573,7 +573,7 @@ describe('waiting and failures', () => {
 
     for (const err of [
       new AIError('network', describeError('network')),
-      new AIError('auth-required', 'Sign in to UnAlgorithm Cloud again.'),
+      new AIError('auth-required', 'Sign in to unAlgorithm Cloud again.'),
     ]) {
       auth.getAccessToken.mockRejectedValue(err);
       await serverBalanceItem.setValue(null);
@@ -611,7 +611,7 @@ describe('status', () => {
     const empty = await flags(0);
     expect(empty.balance).toMatchObject({ balanceMicros: 0, low: false, empty: true });
     expect(empty.state).toBe('needs-attention');
-    expect(empty.message).toBe(describeError('insufficient-credits', 'UnAlgorithm Cloud'));
+    expect(empty.message).toBe(describeError('insufficient-credits', 'unAlgorithm Cloud'));
     expect(empty.message).toMatch(/Add credit, or switch to on-device or your own key\.$/);
     expect(s.calls).toHaveLength(0);
   });
@@ -637,7 +637,7 @@ describe('status', () => {
     await serverAccountItem.setValue(account({ needsSignIn: true }));
     const signIn = await aiStatus();
     expect(signIn).not.toHaveProperty('balance');
-    expect(signIn).toMatchObject({ state: 'needs-attention', message: 'Sign in to UnAlgorithm Cloud again.' });
+    expect(signIn).toMatchObject({ state: 'needs-attention', message: 'Sign in to unAlgorithm Cloud again.' });
     await serverAccountItem.setValue(null);
     expect(await aiStatus()).not.toHaveProperty('balance');
 

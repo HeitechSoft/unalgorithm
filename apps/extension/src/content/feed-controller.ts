@@ -65,8 +65,8 @@ const HEALTH_WINDOW = 30;
 const MAX_HIGHLIGHTS = 20;
 const MAX_HIDDEN_ITEMS = 60;
 const TOAST_MS = 6000;
-const FACTCHECK_STALE = "Couldn't reach UnAlgorithm. Reload the page.";
-const FACTCHECK_TOOLBAR_HINT = 'Open UnAlgorithm from the toolbar to see it.';
+const FACTCHECK_STALE = "Couldn't reach unAlgorithm. Reload the page.";
+const FACTCHECK_TOOLBAR_HINT = 'Open unAlgorithm from the toolbar to see it.';
 
 export interface Runtime {
   settings: Settings;
@@ -76,7 +76,7 @@ export interface Runtime {
   /** What the signed-in server offers (`local:serverOffer`); only a server source reads it. */
   serverOffer: ServerOffer | null;
   /**
-   * UnAlgorithm Cloud's source list as the background stored it (`local:officialList`); read only through
+   * unAlgorithm Cloud's source list as the background stored it (`local:officialList`); read only through
    * `storedOfficialList`.
    */
   officialList: StoredOfficialList;
@@ -897,7 +897,7 @@ export class FeedController {
       case 'not-bait':
       case 'want-like-this':
         await this.castVote(e, 'more');
-        this.toast('Thanks. UnAlgorithm will learn from this.');
+        this.toast('Thanks. unAlgorithm will learn from this.');
         return;
       case 'settings':
         this.bridge.openSettings(`#/${platform}`);
@@ -992,7 +992,7 @@ export class FeedController {
           e.aiStatus = 'idle';
           e.retryAt = Date.now() + 20_000;
         }
-        console.debug('[UnAlgorithm] classify failed', err);
+        console.debug('[unAlgorithm] classify failed', err);
       } finally {
         this.aiWorking--;
       }

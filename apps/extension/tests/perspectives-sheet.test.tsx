@@ -193,10 +193,10 @@ describe('PerspectivesSheet', () => {
   });
 
   it('test_perspectives_sheet_footer_by_list', async () => {
-    // UnAlgorithm Cloud's list: its version, set by people with evidence. Balanced: no notice.
+    // unAlgorithm Cloud's list: its version, set by people with evidence. Balanced: no notice.
     sheet({ result: result({ registryVersion: '57' }), listWarnings: [] });
     expect(
-      screen.getByText("Leans come from UnAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI."),
+      screen.getByText("Leans come from unAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI."),
     ).toBeTruthy();
     expect(screen.queryByText(/your own source list/)).toBeNull();
     expect(screen.queryByText(/isn't balanced/)).toBeNull();
@@ -205,7 +205,7 @@ describe('PerspectivesSheet', () => {
     // Your own list: unreviewed, and its warnings as they were when the run started, above the footer.
     sheet({ result: result({ list: 'own', registryVersion: '' }), listWarnings: ['No outlets in Right.'] });
     const footer = screen.getByText('Leans come from your own source list, which no one has reviewed. Never from AI.');
-    expect(screen.queryByText(/UnAlgorithm Cloud's source list/)).toBeNull();
+    expect(screen.queryByText(/unAlgorithm Cloud's source list/)).toBeNull();
     const notice = screen.getByRole('status');
     expect(within(notice).getByText("Your list isn't balanced")).toBeTruthy();
     expect(within(notice).getByText('No outlets in Right.')).toBeTruthy();
@@ -214,7 +214,7 @@ describe('PerspectivesSheet', () => {
 
     // The Cloud's list with warnings: named as the Cloud's.
     sheet({ result: result(), listWarnings: ['Only 1 outlet in Center.'] });
-    expect(within(screen.getByRole('status')).getByText("UnAlgorithm Cloud's list isn't balanced")).toBeTruthy();
+    expect(within(screen.getByRole('status')).getByText("unAlgorithm Cloud's list isn't balanced")).toBeTruthy();
     cleanup();
 
     // The side panel passes the entry's warnings.
@@ -240,7 +240,7 @@ describe('PerspectivesSheet', () => {
   });
 
   it('test_perspectives_sheet_source_list_link_for_cloud_only', async () => {
-    const CLOUD_LINE = "Leans come from UnAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI.";
+    const CLOUD_LINE = "Leans come from unAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI.";
     const OWN_LINE = 'Leans come from your own source list, which no one has reviewed. Never from AI.';
     const leansLine = (container: HTMLElement) =>
       [...(container.querySelector('.ua-factcheck-foot') as HTMLElement).children].find((c) =>
@@ -249,7 +249,7 @@ describe('PerspectivesSheet', () => {
 
     // A Cloud result with `listHref`: the list's name in the footer sentence is the link, the sentence unchanged.
     const cloud = sheet({ result: result({ registryVersion: '57' }), listHref: SOURCE_LIST_PAGE_URL });
-    const link = screen.getByRole('link', { name: "UnAlgorithm Cloud's source list" });
+    const link = screen.getByRole('link', { name: "unAlgorithm Cloud's source list" });
     expect(link.getAttribute('href')).toBe('https://cloud.unalgorithm.app/outlets');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -307,11 +307,11 @@ describe('PerspectivesSheet', () => {
       ],
     });
     render(<SidePanel />);
-    const panelLink = await screen.findByRole('link', { name: "UnAlgorithm Cloud's source list" });
+    const panelLink = await screen.findByRole('link', { name: "unAlgorithm Cloud's source list" });
     expect(panelLink.getAttribute('href')).toBe(SOURCE_LIST_PAGE_URL);
     const report = new URL(screen.getByRole('link', { name: 'Report a mistake' }).getAttribute('href') as string);
     expect(report.searchParams.get('feature')).toBe('UnEcho Chamber');
-    expect(report.searchParams.get('list')).toBe("UnAlgorithm Cloud's list");
+    expect(report.searchParams.get('list')).toBe("unAlgorithm Cloud's list");
     expect(report.searchParams.get('version')).toBe('9.8.7');
     expect(screen.getByRole('link', { name: 'How UnEcho Chamber works' })).toBeTruthy();
   });

@@ -13,7 +13,7 @@ export interface SheetLink {
 
 /** The correction form's `list` options (P3-68), by list kind: the exact labels GitHub matches. */
 export const LIST_OPTIONS: Readonly<Record<ListKind, string>> = Object.freeze({
-  cloud: "UnAlgorithm Cloud's list",
+  cloud: "unAlgorithm Cloud's list",
   own: 'My own list',
 });
 

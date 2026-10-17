@@ -1,6 +1,6 @@
 # Third-party notices
 
-The UnAlgorithm extension bundles the following open-source software. This file is generated from the build by
+The unAlgorithm extension bundles the following open-source software. This file is generated from the build by
 `node scripts/third-party-notices.mjs`; do not edit it by hand. It is also included in every release zip.
 
 | Package | Version | License |

@@ -3,7 +3,7 @@
   "version": "0.0.2",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "Sign-in and account pages an UnAlgorithm server serves on its own origin for the UnAlgorithm Feed extension",
+  "description": "Sign-in and account pages an unAlgorithm server serves on its own origin for the unAlgorithm Feed extension",
   "type": "module",
   "scripts": {
     "dev": "vite",

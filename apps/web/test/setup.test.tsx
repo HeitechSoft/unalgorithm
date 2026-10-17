@@ -247,13 +247,13 @@ describe('naming and storage', () => {
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
     expect(document.title).toBe(`Set up · ${INFO.name}`);
     expect(screen.getByRole('heading', { level: 1, name: INFO.name })).toBeTruthy();
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
     await signIn(user);
 
     await expectDone();
     expect(document.title).toBe(`Set up · ${INFO.name}`);
     expect(screen.getByRole('heading', { level: 1, name: INFO.name })).toBeTruthy();
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
   });
 
   it('test_setup_stores_nothing', async () => {

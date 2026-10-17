@@ -42,7 +42,7 @@
   page shows what AI costs per 1,000 posts and the next scheduled price change, with its date. A billing module now
   receives `checkedAt`, the instant the server checked a request, in `check` and `settle`, and prices the request at it.
 
-- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`58fc51c`](https://github.com/HeitechSoft/unalgorithm/commit/58fc51cb934b351f40d149c416181a3c77b978b1) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Fact-check (Labs) can run on a billing server such as UnAlgorithm Cloud from 2026-12-01, at the same 2× our AI cost
+- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`58fc51c`](https://github.com/HeitechSoft/unalgorithm/commit/58fc51cb934b351f40d149c416181a3c77b978b1) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Fact-check (Labs) can run on a billing server such as unAlgorithm Cloud from 2026-12-01, at the same 2× our AI cost
   as everything else: typically about $0.24 a check, never more than $0.40. Before that date a billing server doesn't
   offer it.
 
@@ -50,7 +50,7 @@
   step sees only sources it can quote. The fact-check prompt version is now 2. Upgrade note for servers: fact-check and
   Other perspectives stay off until the admin runs `route-eval factcheck` again, about $3 with Anthropic.
 
-- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`17a8385`](https://github.com/HeitechSoft/unalgorithm/commit/17a8385ded5f776693a6cdf5a6b41d9062d4a924) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives (Labs) can run on a billing server such as UnAlgorithm Cloud from 2026-11-01, at the same 2× our AI
+- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`17a8385`](https://github.com/HeitechSoft/unalgorithm/commit/17a8385ded5f776693a6cdf5a6b41d9062d4a924) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives (Labs) can run on a billing server such as unAlgorithm Cloud from 2026-11-01, at the same 2× our AI
   cost as everything else: typically about $0.27 a comparison, never more than $0.50. Classifying is unchanged, so the
   account page shows no new price line for it. The discovery document can
   advertise `capabilities.perspectives` and `jobPrices.perspectives`; older documents still parse.

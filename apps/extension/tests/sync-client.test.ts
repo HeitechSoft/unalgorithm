@@ -371,7 +371,7 @@ describe('push', () => {
     expect(problem).toBe('clock');
     expect(known).not.toHaveProperty(['display.showAuthor']);
     expect(known['display.tips']).toBe((await settingsClocksItem.getValue())['display.tips']);
-    expect(debug).toHaveBeenCalledWith('[UnAlgorithm] sync rejected', 1);
+    expect(debug).toHaveBeenCalledWith('[unAlgorithm] sync rejected', 1);
 
     expect(await run()).toStrictEqual({ ok: false, problem: 'clock' });
     expect(server.pushBodies()[1]?.items.map((i) => i.key)).toStrictEqual(['display.showAuthor']);

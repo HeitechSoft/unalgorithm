@@ -5,7 +5,7 @@
 
 ## Context
 
-UnAlgorithm starts as a Chrome extension but will grow a server (Phase 2: sync, hosted AI), more browsers and more
+unAlgorithm starts as a Chrome extension but will grow a server (Phase 2: sync, hosted AI), more browsers and more
 platforms. The earlier prototype was a single WXT app where rules, prompts and DOM code were mixed.
 
 ## Decision

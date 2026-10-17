@@ -1,5 +1,5 @@
 /**
- * The source list UnEcho Chamber runs on (the one the person chose: UnAlgorithm Cloud's or their own), whether it can,
+ * The source list UnEcho Chamber runs on (the one the person chose: unAlgorithm Cloud's or their own), whether it can,
  * and the check that keeps every lean shown to the person that list's own. Lean labels come only from a source list
  * people set, never from a model or a server.
  */
@@ -28,7 +28,7 @@ export function validOfficialList(raw: unknown): OfficialList | null {
 }
 
 /**
- * UnAlgorithm Cloud's source list as this build may use it: the fictional fixture in e2e builds (which never fetch),
+ * unAlgorithm Cloud's source list as this build may use it: the fictional fixture in e2e builds (which never fetch),
  * else the last good copy the background stored (`officialListItem`), checked again because content scripts can write
  * `storage.local` (ADR 0005). Null before the first good copy. Every reader of the Cloud's list goes through here.
  */
@@ -74,9 +74,9 @@ export function namedListProblems(list: Pick<SourceList, 'outlets'>): NamedListP
   });
 }
 
-/** "Your list", "UnAlgorithm Cloud's list": a list's name in a balance notice. */
+/** "Your list", "unAlgorithm Cloud's list": a list's name in a balance notice. */
 export function listName(kind: SourceList['kind']): string {
-  return kind === 'own' ? 'Your list' : "UnAlgorithm Cloud's list";
+  return kind === 'own' ? 'Your list' : "unAlgorithm Cloud's list";
 }
 
 function hostOf(url: string): string {

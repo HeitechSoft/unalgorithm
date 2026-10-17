@@ -2,4 +2,4 @@
 '@unalgorithm/extension': minor
 ---
 
-While UnEcho Chamber is on, UnAlgorithm downloads UnAlgorithm Cloud's source list once a day, with nothing about you.
+While UnEcho Chamber is on, unAlgorithm downloads unAlgorithm Cloud's source list once a day, with nothing about you.

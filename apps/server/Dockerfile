@@ -1,5 +1,5 @@
-# The UnAlgorithm Feed server image: the server's TypeScript source, run by Node.js's built-in type stripping, with the
-# sign-in page (apps/web) built in. UnAlgorithm Cloud runs this image, built from a public release tag (ADR 0007).
+# The unAlgorithm Feed server image: the server's TypeScript source, run by Node.js's built-in type stripping, with the
+# sign-in page (apps/web) built in. unAlgorithm Cloud runs this image, built from a public release tag (ADR 0007).
 #
 #   docker build -f apps/server/Dockerfile .          from the repository root (.dockerignore keeps .env files out)
 #   docker compose -f apps/server/compose.yaml up -d  with the server and Postgres
@@ -71,7 +71,7 @@ COPY LICENSE ./
 # 3. The runtime: the production tree only, owned by root and run as `node`, so the server cannot change its own code.
 FROM node:24-bookworm-slim AS runtime
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="UnAlgorithm Feed server" \
+LABEL org.opencontainers.image.title="unAlgorithm Feed server" \
       org.opencontainers.image.source="https://github.com/HeitechSoft/unalgorithm" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.version="$VERSION"

@@ -1,6 +1,6 @@
 /**
  * Source lists for UnEcho Chamber: the bundled candidate list's schema, the one runtime shape every run reads, the list
- * rules and the lookups. A lean exists only where a person set one: UnAlgorithm Cloud's admins with evidence, or a
+ * rules and the lookups. A lean exists only where a person set one: unAlgorithm Cloud's admins with evidence, or a
  * person on their own list. Never a model, never an agent. Browser-safe: no `node:` import.
  */
 import {

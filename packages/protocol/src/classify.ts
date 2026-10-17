@@ -97,7 +97,7 @@ export const ClassifyResponseSchema = z.object({
   v: z.literal(1),
   results: z.array(PostClassificationResultSchema).max(MAX_POSTS_PER_REQUEST),
   source: z.object({ kind: z.string().max(40), model: z.string().max(MAX_MODEL_CHARS), promptVersion: z.number().int() }),
-  /** Present only when the server bills (UnAlgorithm Cloud); absent for self-hosted servers. */
+  /** Present only when the server bills (unAlgorithm Cloud); absent for self-hosted servers. */
   billing: z.object({ chargedMicros: z.number().int(), balanceMicros: z.number().int() }).optional(),
 });
 export type ClassifyResponse = z.infer<typeof ClassifyResponseSchema>;

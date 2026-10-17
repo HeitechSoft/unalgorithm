@@ -1,12 +1,12 @@
 # How credits work
 
-UnAlgorithm Feed is free. Credit pays only for AI that runs on
-[UnAlgorithm Cloud](https://cloud.unalgorithm.app), HeitechSoft's hosted AI service at `cloud.unalgorithm.app`.
-Everything else in UnAlgorithm Feed costs nothing.
+unAlgorithm Feed is free. Credit pays only for AI that runs on
+[unAlgorithm Cloud](https://cloud.unalgorithm.app), HeitechSoft's hosted AI service at `cloud.unalgorithm.app`.
+Everything else in unAlgorithm Feed costs nothing.
 
 ## What credit pays for
 
-Classifying posts on UnAlgorithm Cloud is charged at {{classifyMultiplier}} our AI cost, about {{classifyPer1000}} per
+Classifying posts on unAlgorithm Cloud is charged at {{classifyMultiplier}} our AI cost, about {{classifyPer1000}} per
 thousand posts on {{referenceModel}}. {{priceChange}}
 
 Failed AI requests are never charged.

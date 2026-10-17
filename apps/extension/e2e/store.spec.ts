@@ -65,7 +65,7 @@ function canvas(shot: Buffer, width: number, title: string, text: string): strin
     <div style="flex:1">
       <div style="display:flex;align-items:center;gap:14px">
         <img src="data:image/png;base64,${MARK}" width="48" height="48" style="margin:-8px" alt="">
-        <span style="font-size:30px;font-weight:600;letter-spacing:-0.02em"><span style="color:#0b7a75;font-weight:700">Un</span>Algorithm</span>
+        <span style="font-size:30px;font-weight:600;letter-spacing:-0.02em"><span style="color:#0b7a75;font-weight:700">un</span>Algorithm</span>
       </div>
       <h1 style="margin:56px 0 0;font-size:44px;line-height:1.15;font-weight:700;letter-spacing:-0.02em">${title}</h1>
       <p style="margin:20px 0 0;font-size:21px;line-height:1.5;color:#5e5e63">${text}</p>

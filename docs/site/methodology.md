@@ -10,7 +10,7 @@ price first, are labelled AI-generated, and show every source they used, so you 
 - Only on public posts. A Facebook post that isn't public never gets either.
 - Only on posts the AI flagged as news or as making checkable claims. UnEcho Chamber needs news that shares a link.
 - Only when your AI option can search the web: your own Anthropic or OpenAI key, your own AI server with a Brave or
-  Tavily key, or an UnAlgorithm server that offers them.
+  Tavily key, or an unAlgorithm server that offers them.
 - The price comes first, or "Free on this server", and nothing runs until you confirm.
 
 Turn on Fact-check in Settings → AI → Fact-check, and UnEcho Chamber in Settings → AI → UnEcho Chamber. Both are off
@@ -23,7 +23,7 @@ until you do. UnEcho Chamber also needs a source list with at least one outlet w
 
 The post's text, with the same masking as classification (email addresses and phone numbers always masked, @mentions
 and tagged names masked unless you turned that off), at most 2,000 characters, and a shared link's domain and title.
-Nothing about the post's author, and not your interests. It goes directly to your AI provider, or to your UnAlgorithm
+Nothing about the post's author, and not your interests. It goes directly to your AI provider, or to your unAlgorithm
 server only. The [privacy policy](../../PRIVACY.md) says where each AI option sends it.
 
 ### How a check works
@@ -57,12 +57,12 @@ The AI's answer is checked by code before you see it:
 - A verdict with citations from fewer than 2 independent sites becomes Can't verify.
 - Satire and content-farm sites on the blocklist are never cited. People review the blocklist before anything is added
   to it, and it is published with the prompts.
-- On an UnAlgorithm server, links that no longer exist are dropped.
+- On an unAlgorithm server, links that no longer exist are dropped.
 - Verdicts are about claims, never about people: a result has no place for the name of whoever made or shared a claim.
 
 ### Earlier checks
 
-A claim checked in the last 24 hours on the same UnAlgorithm server, or on your device, may show the earlier verdict
+A claim checked in the last 24 hours on the same unAlgorithm server, or on your device, may show the earlier verdict
 instead of being researched again, marked with the date it was checked. What is kept for each such claim is a keyed hash
 of it (never the claim itself), the verdict, the short explanation, the sources' addresses, titles and quotes, and the
 hour of the check; never the post or who checked. The [privacy policy](../../PRIVACY.md) has the details.
@@ -72,7 +72,7 @@ hour of the check; never the post or who checked. The [privacy policy](../../PRI
 ### What is sent
 
 The shared link (with tracking parameters removed) and its title, never the post's text, its author or anything about
-you. To an UnAlgorithm server, also your chosen list's outlets with a lean, as web addresses and leans without names,
+you. To an unAlgorithm server, also your chosen list's outlets with a lean, as web addresses and leans without names,
 kept in its memory for that comparison only and never stored or logged. To your own AI provider, each search's web
 addresses, never which lean they have.
 
@@ -94,7 +94,7 @@ A bucket with no coverage is shown as a gap, never filled in. The exact instruct
 Each outlet on a source list sits in one of five buckets: Left, Leans left, Center, Leans right or Right. You choose the
 list in Settings → AI → UnEcho Chamber:
 
-- **UnAlgorithm Cloud's source list** is set by UnAlgorithm Cloud's admins. Each lean comes with evidence and is
+- **unAlgorithm Cloud's source list** is set by unAlgorithm Cloud's admins. Each lean comes with evidence and is
   published as soon as it is saved, and every change is listed publicly on the list's page,
   [https://cloud.unalgorithm.app/outlets](https://cloud.unalgorithm.app/outlets), which never names the admin who made
   it.
@@ -102,7 +102,7 @@ list in Settings → AI → UnEcho Chamber:
   none) and its leans are yours. No one reviews them.
 
 Never the AI. No prompt names a side, and the AI is never told which bucket a source is in: code sorts every source
-into its bucket from the list. Each result says which list it used, UnAlgorithm Cloud's source list (with its version)
+into its bucket from the list. Each result says which list it used, unAlgorithm Cloud's source list (with its version)
 or your own list.
 
 ### When a list isn't balanced
@@ -136,5 +136,5 @@ passed or failed. The sets, the gates and the results are in [Evaluations and tr
 
 ## Mistakes and appeals
 
-If a result got something wrong, or an outlet's lean on UnAlgorithm Cloud's source list looks wrong, see
+If a result got something wrong, or an outlet's lean on unAlgorithm Cloud's source list looks wrong, see
 [Corrections and appeals](corrections.md). Each quarter we publish a [transparency report](transparency.md).

@@ -323,7 +323,7 @@ describe('Check facts: price first, then the check', () => {
     await user.click(screen.getByRole('button', { name: 'See result' }));
     await flush();
     expect(b.openFactcheck).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Checked. Open UnAlgorithm from the toolbar to see it.')).toBeTruthy();
+    expect(screen.getByText('Checked. Open unAlgorithm from the toolbar to see it.')).toBeTruthy();
     expect(b.factcheck).toHaveBeenCalledTimes(1);
     c.stop();
   });
@@ -346,7 +346,7 @@ describe('Check facts: price first, then the check', () => {
     factcheck.mockRejectedValueOnce(new Error('Extension context invalidated.'));
     await user.click(screen.getByRole('button', { name: 'Check' }));
     await flush();
-    expect(screen.getByText("Couldn't reach UnAlgorithm. Reload the page.")).toBeTruthy();
+    expect(screen.getByText("Couldn't reach unAlgorithm. Reload the page.")).toBeTruthy();
     c.stop();
   });
 });

@@ -211,7 +211,7 @@ export async function sendToBackground<T extends BgRequest['type']>(
 
 /** For requests nobody waits on (opening a page, a preset change): a failure is logged, never unhandled. */
 export function sendQuietly<T extends BgRequest['type']>(msg: Extract<BgRequest, { type: T }>): void {
-  sendToBackground(msg).catch((err: unknown) => console.debug('[UnAlgorithm]', msg.type, err));
+  sendToBackground(msg).catch((err: unknown) => console.debug('[unAlgorithm]', msg.type, err));
 }
 
 // ---------- extension pages -> content script ----------

@@ -169,7 +169,7 @@ export async function facebookFeed(context: BrowserContext): Promise<Page> {
  */
 export async function seeResult(ui: Locator): Promise<void> {
   await ui.getByRole('button', { name: 'See result' }).click();
-  const hint = ui.getByText('Open UnAlgorithm from the toolbar to see it.');
+  const hint = ui.getByText('Open unAlgorithm from the toolbar to see it.');
   const refused = await hint.waitFor({ timeout: 2_000 }).then(
     () => true,
     () => false,

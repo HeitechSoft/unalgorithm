@@ -163,7 +163,7 @@ describe('report links', () => {
     });
 
     const cloud = correctionUrl({ task: 'perspectives', extensionVersion: VERSION, promptVersion: 5, list: 'cloud' });
-    expect(queryOf(cloud).list).toBe("UnAlgorithm Cloud's list");
+    expect(queryOf(cloud).list).toBe("unAlgorithm Cloud's list");
   });
 
   it('test_sheet_links_never_carry_result_or_post_text', () => {

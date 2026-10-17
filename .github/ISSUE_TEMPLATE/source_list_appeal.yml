@@ -1,5 +1,5 @@
 name: Source list appeal
-description: An outlet's lean, name, web addresses or country on UnAlgorithm Cloud's source list looks wrong.
+description: An outlet's lean, name, web addresses or country on unAlgorithm Cloud's source list looks wrong.
 title: "[Appeal] "
 labels: [source-list-appeal, triage]
 body:
@@ -12,7 +12,7 @@ body:
 
         How appeals are decided: https://unalgorithmfeed.com/corrections/
 
-        Appeals are for UnAlgorithm Cloud's source list only. The leans on your own list are yours to change in Settings → AI.
+        Appeals are for unAlgorithm Cloud's source list only. The leans on your own list are yours to change in Settings → AI.
   - type: input
     id: outlet
     attributes:

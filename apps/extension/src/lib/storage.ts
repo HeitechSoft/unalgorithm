@@ -16,7 +16,7 @@ import { storage } from 'wxt/utils/storage';
 import type { BgError } from './messages.ts';
 
 /**
- * Every storage key UnAlgorithm uses. `local:settings` and its clocks are the only data sync reads; `local:syncState`
+ * Every storage key unAlgorithm uses. `local:settings` and its clocks are the only data sync reads; `local:syncState`
  * is this device's own bookkeeping and never leaves it. Device state, usage, learned preferences and caches stay on
  * this machine. API keys are not here at all: they live in the extension's own IndexedDB (see background/idb.ts),
  * which content scripts cannot read.
@@ -43,7 +43,7 @@ export const lowBalanceNoticeItem = storage.defineItem<string | null>('local:low
  */
 export const serverOfferItem = storage.defineItem<ServerOffer | null>('local:serverOffer', { fallback: null });
 
-/** UnAlgorithm Cloud's published source list, the last copy that passed validation, and when it was last asked for. */
+/** unAlgorithm Cloud's published source list, the last copy that passed validation, and when it was last asked for. */
 export interface StoredOfficialList {
   list: OfficialList | null;
   /** Epoch ms of the last request, answered or not: the daily limit counts from here. */

@@ -222,8 +222,8 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
     const pane = () => <AiPane settings={holder.stored} save={save} device={anthropic} saveDevice={vi.fn(async () => {})} />;
     const { rerender } = render(pane());
 
-    // UnAlgorithm Cloud's list by default, under the switch; nothing downloaded yet.
-    const cloud = screen.getByRole('radio', { name: "UnAlgorithm Cloud's list" }) as HTMLInputElement;
+    // unAlgorithm Cloud's list by default, under the switch; nothing downloaded yet.
+    const cloud = screen.getByRole('radio', { name: "unAlgorithm Cloud's list" }) as HTMLInputElement;
     expect(cloud.checked).toBe(true);
     expect(before(screen.getByRole('switch', { name: 'UnEcho Chamber' }), cloud)).toBe(true);
     expect(screen.getByText('Not downloaded yet: it downloads once UnEcho Chamber is on')).toBeTruthy();
@@ -242,7 +242,7 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
 
     // Back on the Cloud's list, now stored: its version and count.
     await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
-    await user.click(screen.getByRole('radio', { name: "UnAlgorithm Cloud's list" }));
+    await user.click(screen.getByRole('radio', { name: "unAlgorithm Cloud's list" }));
     rerender(pane());
     expect(holder.stored.perspectives.list).toBe('cloud');
     expect(await screen.findByText('Version 1, 10 outlets with a lean')).toBeTruthy();

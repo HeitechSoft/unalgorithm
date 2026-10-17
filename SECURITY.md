@@ -14,15 +14,15 @@ keep you updated, and credit you in the release notes unless you prefer otherwis
 
 ## Scope
 
-- The UnAlgorithm Feed extension (`apps/extension` and the packages it is built from).
-- The UnAlgorithm server: `apps/server` and its sign-in page, `apps/web`, on `main` (the source of UnAlgorithm
+- The unAlgorithm Feed extension (`apps/extension` and the packages it is built from).
+- The unAlgorithm server: `apps/server` and its sign-in page, `apps/web`, on `main` (the source of unAlgorithm
   Cloud's server, which has no releases of its own).
   This includes:
   - the admin page (`/admin`) and its routes (`/v1/admin/*`);
   - setup links (`setup-link`, `/setup`);
   - the backup and restore scripts (`apps/server/backup`) and the compose file that runs them;
   - `/metrics`.
-- UnAlgorithm Cloud, HeitechSoft's hosted server at `cloud.unalgorithm.app`, once it is live.
+- unAlgorithm Cloud, HeitechSoft's hosted server at `cloud.unalgorithm.app`, once it is live.
 
 A problem in someone else's running copy of the server is for its operator, unless it comes from our code.
 
@@ -31,12 +31,12 @@ A problem in someone else's running copy of the server is for its operator, unle
 During the preview, security fixes go to:
 
 - the extension's latest release, tagged `vX.Y.Z`;
-- the server on `main`, which UnAlgorithm Cloud runs. The server is not released separately
+- the server on `main`, which unAlgorithm Cloud runs. The server is not released separately
   ([release.md](docs/release.md#the-server)).
 
-## Security fixes and UnAlgorithm Cloud
+## Security fixes and unAlgorithm Cloud
 
-A security fix for the server may reach UnAlgorithm Cloud before it is merged here, as in any coordinated disclosure
+A security fix for the server may reach unAlgorithm Cloud before it is merged here, as in any coordinated disclosure
 (ADR 0007). It is merged to `main` within 30 days of the Cloud fix, or at once if the issue is already public. The
 GitHub security advisory names the commit that fixes it.
 
@@ -64,14 +64,14 @@ GitHub security advisory names the commit that fixes it.
 
 - API keys and a server's refresh token live in the extension's own IndexedDB, which content scripts (running in the
   page's origin) cannot read. They are never synced, exported or included in diagnostics.
-- Only UnAlgorithm's own content scripts (which run only on LinkedIn and Facebook) and its extension pages can
+- Only unAlgorithm's own content scripts (which run only on LinkedIn and Facebook) and its extension pages can
   message the background; there is no `externally_connectable`. Every handler also checks the sender: classification
   and tab state only from LinkedIn/Facebook tabs; keys, AI setup and data deletion only from extension pages.
 - The background re-validates every post sent for classification against the `PostForAI` schema, dropping any extra
   field, so a faulty content script cannot add fields such as author names or profile links to an AI request.
 - Post text is untrusted: it is normalized, stripped of control and bidi characters, escaped and fenced with a random
   nonce before it reaches a model, and model output must match a strict schema.
-- No remote code. AI hosts are optional permissions requested one origin at a time; an UnAlgorithm server needs none,
+- No remote code. AI hosts are optional permissions requested one origin at a time; an unAlgorithm server needs none,
   because it answers the extension through CORS.
 - Emailed sign-in codes are limited per email address as well as per client address: 5 codes an address an hour,
   refilled over the hour (past that the server answers as before and sends nothing) and 10 wrong codes an address an

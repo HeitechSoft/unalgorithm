@@ -1,5 +1,5 @@
 name: Filtering looks wrong
-description: A post was hidden that shouldn't be, noise got through, or UnAlgorithm says the layout looks different.
+description: A post was hidden that shouldn't be, noise got through, or unAlgorithm says the layout looks different.
 title: '[platform] Filtering looks wrong'
 labels: [detection, triage]
 body:
@@ -33,7 +33,7 @@ body:
     id: what
     attributes:
       label: What happened
-      description: What kind of post was it, and what did UnAlgorithm show (the reason on the stub, or "Why?")?
+      description: What kind of post was it, and what did unAlgorithm show (the reason on the stub, or "Why?")?
     validations:
       required: true
   - type: dropdown

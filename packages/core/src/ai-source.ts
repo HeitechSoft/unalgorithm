@@ -7,7 +7,7 @@ export type CompatPreset = (typeof COMPAT_PRESETS)[number];
 
 /**
  * Where AI runs. Device-local (never synced): each machine chooses its own source, and keys never leave it.
- * `server` covers both UnAlgorithm Cloud and self-hosted UnAlgorithm servers (Phase 2).
+ * `server` covers both unAlgorithm Cloud and self-hosted unAlgorithm servers (Phase 2).
  */
 export const AISourceConfigSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('on-device') }),

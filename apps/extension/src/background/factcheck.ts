@@ -154,7 +154,7 @@ function ownKeyError(err: unknown, cfg: OwnKey, task: Task): BgError {
 
 /**
  * Fact-check one post for a feed tab, on the person's own key (Anthropic, OpenAI, or an OpenAI-compatible server with
- * this device's web search key) or on their UnAlgorithm server. Every gate is checked again here, and each refusal
+ * this device's web search key) or on their unAlgorithm server. Every gate is checked again here, and each refusal
  * returns before anything is sent. The result is kept in the tab's session storage, where the side panel reads it.
  */
 export async function runFactcheckForTab(tabId: number, key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<FactcheckResponse> {
@@ -244,7 +244,7 @@ async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | 
   const name = webSearchName(webSearch.provider);
   return refuse(
     'host-permission',
-    `UnAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → AI.`,
+    `unAlgorithm needs permission to reach ${name}. Save your web search key again in Settings → AI.`,
   );
 }
 
@@ -310,7 +310,7 @@ const LEANS_MISMATCH = "This result doesn't match your source list, so it isn't 
 /** Drafts (D110). */
 const OWN_LIST_EMPTY = 'Your source list has no outlets with a lean yet. Add some in Settings → AI.';
 const CLOUD_LIST_EMPTY =
-  "UnAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
+  "unAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
 
 /**
  * Why UnEcho Chamber can't run on `list`, one that isn't `listReady` (decision D103): its first problem (an own list's:
@@ -325,7 +325,7 @@ function listRefusal(list: SourceList | null): Refusal {
 
 /**
  * UnEcho Chamber for one shared link in a feed tab, on the person's own key (as fact-check) or on their
- * UnAlgorithm server, on the source list they chose (`chosenList`). Every gate is checked again here, and each refusal
+ * unAlgorithm server, on the source list they chose (`chosenList`). Every gate is checked again here, and each refusal
  * returns before anything is sent. Only the link leaves the browser, canonicalised first (tracking and per-click ids
  * removed, decision D35), with, to a server, the list's outlets with a lean as web addresses and buckets (`wireList`); a
  * result is kept only when every lean in it is that list's, and then shows the list's own outlet names (`matchLeans`).

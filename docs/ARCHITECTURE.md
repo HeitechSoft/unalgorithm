@@ -1,8 +1,8 @@
 # Architecture
 
-UnAlgorithm Feed (UnAlgorithm for short) is a Manifest V3 browser extension built with [WXT](https://wxt.dev) and
+unAlgorithm Feed (unAlgorithm for short) is a Manifest V3 browser extension built with [WXT](https://wxt.dev) and
 React, organized as a pnpm workspace. Everything platform-specific lives behind one adapter interface; everything that
-does not need the browser is plain TypeScript, so the UnAlgorithm server (`apps/server`) reuses it.
+does not need the browser is plain TypeScript, so the unAlgorithm server (`apps/server`) reuses it.
 
 ```
 apps/extension ──► packages/platforms ──► packages/core ──► packages/protocol
@@ -24,7 +24,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `sync` | Collection registry, merge strategies, settings items and merge; imported by the server and the extension | Only `protocol`, `core`, zod and the SDK-free `@unalgorithm/ai/presets`; no `chrome.*`, DOM or Node |
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
-| `apps/server` | The open-source UnAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
+| `apps/server` | The open-source unAlgorithm server: email-code sign-in, PKCE sign-in for the extension, the `/v1/classify` gateway, usage records, limits and the billing seam ([Server](#server)) | Imports `protocol`, `core`, `ai` and `sync`; never `ui`, `platforms` or `wxt`. Logs no request body |
 | `apps/web` | The sign-in and account pages the server serves on its own origin (`/`, `/authorize` and `/account`), and its public source list (`/outlets`, read from `/outlets.json`), built by Vite into `apps/web/dist` | Imports `protocol`, `ui`, `core`'s wording helpers and `outlets`' balance rule; never `platforms` or `wxt` |
 
 Boundaries are enforced with Biome `noRestrictedImports` per folder and per-package `tsconfig` settings. Packages
@@ -74,10 +74,10 @@ that page (fail open). The toolbar icon says so, and the popup shows a banner wi
 | `storage.local` `device` | AI source config (no keys), onboarding state, dev flags | Never |
 | `storage.local` `learned`, `votes`, `usage`, `stats` | Topic weights, recent votes, AI usage (30 days), daily counts | Learned/votes later; usage never |
 | `storage.session` `tab:<id>` | Live per-tab state for the popup and side panel: counts, health, and for each hidden or highlighted post its author, a short snippet and its link. Memory only; cleared when the tab closes or on Erase everything | Never |
-| `storage.local` `serverAccount` | The UnAlgorithm server the user signed in to: its origin and discovery answer, the email address, the device id, when it signed in, and whether it needs a new sign-in. No tokens. Removed on sign-out and on Erase everything | Never |
+| `storage.local` `serverAccount` | The unAlgorithm server the user signed in to: its origin and discovery answer, the email address, the device id, when it signed in, and whether it needs a new sign-in. No tokens. Removed on sign-out and on Erase everything | Never |
 | `storage.session` `serverAccess` | That server's 15-minute access token. Memory only, closed to content scripts | Never |
 | `storage.session` `serverBalance` | The signed-in account's latest credit balance, from a classify answer, a 402 or the balance endpoint, with the server's origin and the device id it belongs to. Only for a server that advertises billing. Memory only, closed to content scripts, cleared on Erase everything | Never |
-| `storage.local` `officialList` | UnAlgorithm Cloud's published source list (outlets, web addresses, leans, evidence) and when it was last asked for | Never |
+| `storage.local` `officialList` | unAlgorithm Cloud's published source list (outlets, web addresses, leans, evidence) and when it was last asked for | Never |
 | IndexedDB `secrets` | API keys, and the server's refresh token under `server-refresh:<origin>` | **Never**; not exported, not in diagnostics |
 | IndexedDB `classifications` | Cached verdicts keyed by post + input hash + profile hash + source:model + prompt version; no text, no names | Never |
 
@@ -102,11 +102,11 @@ usage is recorded even when a call fails.
 
 ## Server
 
-`apps/server` is the open-source UnAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
-Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. UnAlgorithm Cloud
+`apps/server` is the open-source unAlgorithm server: Hono with zod-openapi, Postgres 17 through Drizzle, and Better
+Auth for email codes. `apps/web` holds the sign-in and account pages it serves on its own origin. unAlgorithm Cloud
 runs this same server; HeitechSoft's private repository adds only a billing module and its own operations
 configuration (ADR 0007).
-One image holds both apps (`apps/server/Dockerfile`). It is not released from here: UnAlgorithm Cloud's private
+One image holds both apps (`apps/server/Dockerfile`). It is not released from here: unAlgorithm Cloud's private
 repository builds it from a pinned commit ([release.md](release.md#the-server)). What a server keeps is in
 [privacy-model.md](privacy-model.md#what-a-server-stores).
 
@@ -254,7 +254,7 @@ pages' session); the job registry; the logger; the server's origin, name and ver
 AI cost per UTC day and model (`usage.costByDay`: summed cost and request counts, no user or request id). It offers no API to the server's schema, the AI clients, post text or prompts. The seam is a
 reviewed contract, not an isolation boundary: the module runs in the server process with the server's database access
 (its SQL runs on the server's pool and database role, so it could read any server table), and its routes see requests
-as any server route does. Adding to `BillingHost` is a reviewed public change. UnAlgorithm Cloud's billing module lives
+as any server route does. Adding to `BillingHost` is a reviewed public change. unAlgorithm Cloud's billing module lives
 in HeitechSoft's private repository and reaches the server only through this seam. Where discovery advertises billing,
 the account page (`apps/web`) shows the balance and history the module answers at `GET /v1/billing/account`.
 

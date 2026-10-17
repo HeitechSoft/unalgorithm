@@ -1,5 +1,5 @@
 /**
- * Other perspectives through the person's UnAlgorithm server (P3-37): the link-only body with the chosen list as web
+ * Other perspectives through the person's unAlgorithm server (P3-37): the link-only body with the chosen list as web
  * addresses and buckets (P3-77), the job's start and long polls, the 402 and the settlement, the refusals in comparison words, the cancel on abort and the lost job. The server
  * is a stubbed fetch answering the job paths and the device token a stubbed `getAccessToken`. Outlets are fictional.
  * Nothing real is called.

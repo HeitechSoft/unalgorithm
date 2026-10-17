@@ -61,17 +61,17 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'permission':
       return `${name} says this key can't use that model.`;
     case 'host-permission':
-      return `UnAlgorithm needs permission to reach ${provider || 'this AI server'}. Open Settings → AI and test it again.`;
+      return `unAlgorithm needs permission to reach ${provider || 'this AI server'}. Open Settings → AI and test it again.`;
     case 'origin-blocked':
       return 'The local server refused the request. For Ollama, set OLLAMA_ORIGINS=chrome-extension://* and restart it.';
     case 'model-not-found':
       return `${name} doesn't have that model. Pick another in Settings → AI.`;
     case 'rate-limit':
-      return `${name} is rate limiting requests. UnAlgorithm will try again shortly.`;
+      return `${name} is rate limiting requests. unAlgorithm will try again shortly.`;
     case 'quota':
       return `Your ${name} account is out of credit or over its quota.`;
     case 'overloaded':
-      return `${name} is busy right now. UnAlgorithm will try again shortly.`;
+      return `${name} is busy right now. unAlgorithm will try again shortly.`;
     case 'refusal':
       return 'The AI declined to classify this post.';
     case 'truncated':
@@ -85,7 +85,7 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'not-available':
       return 'This AI option is not available on this computer.';
     case 'unsupported':
-      return "This model can't produce the structured answers UnAlgorithm needs.";
+      return "This model can't produce the structured answers unAlgorithm needs.";
     case 'context-overflow':
       return 'The post was too long for this model.';
     case 'insufficient-credits':

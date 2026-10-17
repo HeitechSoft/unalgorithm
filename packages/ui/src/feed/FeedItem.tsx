@@ -359,7 +359,7 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
   );
 }
 
-/** The UI UnAlgorithm adds to one feed item. Ordinary posts never render this at all. */
+/** The UI unAlgorithm adds to one feed item. Ordinary posts never render this at all. */
 export function FeedItem({ model, on }: { model: FeedItemModel; on: FeedItemHandlers }) {
   // Job rows sit below whatever else the item shows (fact-check first); a plain shown post gets only the rows.
   return (

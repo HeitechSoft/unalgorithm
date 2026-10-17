@@ -1,5 +1,5 @@
 /**
- * UnAlgorithm Cloud's published source list (decision D98): every extension reads it for UnEcho Chamber, whatever its AI
+ * unAlgorithm Cloud's published source list (decision D98): every extension reads it for UnEcho Chamber, whatever its AI
  * source, and only while UnEcho Chamber is on as Settings → AI shows it (`perspectivesSwitchOn`: the switch on and a
  * source that can compare; the stored flag alone is not enough). At most one request a day, counted from the last
  * request whether it was answered or not; anonymous (no cookie, no referrer, no header but Accept, nothing about the
