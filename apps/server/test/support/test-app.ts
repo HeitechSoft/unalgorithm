@@ -90,8 +90,6 @@ export interface TestAppOptions {
   linkCheck?: AppDeps['linkCheck'];
   /** The fact-check job store, such as one on a test clock. Default: the app's own. */
   factcheckJobs?: AppDeps['factcheckJobs'];
-  /** The perspectives source list: `FIXTURE_LIST`, or null. Default: the app's own (none). */
-  outlets?: AppDeps['outlets'];
   /** The perspectives job store. Default: the app's own. */
   perspectivesJobs?: AppDeps['perspectivesJobs'];
   /** The shared link's resolution (the egress fetcher's in production). Default: none. */
@@ -157,7 +155,6 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       factcheckJobs: overrides.factcheckJobs,
       perspectivesJobs: overrides.perspectivesJobs,
       resolveLink: overrides.resolveLink,
-      outlets: overrides.outlets,
       ...(overrides.claimCache !== undefined ? { claimCache: overrides.claimCache } : {}),
     };
     const app = createApp(deps);

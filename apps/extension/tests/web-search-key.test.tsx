@@ -21,21 +21,12 @@ import { deviceItem, readDevice } from '../src/lib/storage.ts';
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   create: vi.fn(),
-  registry: { ready: false },
 }));
 
 vi.mock('@unalgorithm/research', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@unalgorithm/research')>()),
   createSearchProvider: mocks.create,
 }));
-
-vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_LIST } = await import('@unalgorithm/outlets/testing');
-  return {
-    ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (mocks.registry.ready ? FIXTURE_LIST : null),
-  };
-});
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
@@ -74,7 +65,6 @@ const permit = (granted: boolean) =>
 beforeEach(async () => {
   fakeBrowser.reset();
   await clearSecrets();
-  mocks.registry.ready = false;
   mocks.search.mockReset().mockResolvedValue([]);
   mocks.create.mockReset().mockImplementation((cfg: { provider: string }) => ({ id: cfg.provider, search: mocks.search }));
   vi.mocked(sendToBackground)
@@ -168,7 +158,6 @@ describe('Settings → AI', () => {
   });
 
   it('test_labs_switches_follow_search_key', async () => {
-    mocks.registry.ready = true;
     const labs = { factcheck: true, perspectives: true };
     render(
       <CheckSettings

@@ -10,7 +10,7 @@ import {
   webSearchName,
   webSearchOrigin,
 } from '@unalgorithm/core';
-import type { SourceList } from '@unalgorithm/outlets';
+import { listBalance, listProblems, listProblemText, type SourceList, wireList } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
   FEATURE_NAMES,
@@ -33,8 +33,8 @@ import {
 } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
 import type { BgError, BgResponses } from '../lib/messages.ts';
-import { leansMatchRegistry, perspectivesRegistry } from '../lib/outlets.ts';
-import { type FactcheckEntry, factcheckItem, readDevice } from '../lib/storage.ts';
+import { chosenList, listReady, matchLeans, storedOfficialList } from '../lib/outlets.ts';
+import { type FactcheckEntry, factcheckItem, officialListItem, readDevice, readSettings } from '../lib/storage.ts';
 import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
 import { deviceClaimCache } from './claim-cache.ts';
 import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
@@ -260,6 +260,8 @@ async function track<A extends TaskAnswer<unknown>>(
   cfg: AISourceConfig,
   run: () => Promise<A>,
   webSearch: WebSearchKey | null = null,
+  /** Kept on the entry from the start: a comparison's list warnings. */
+  start: Pick<FactcheckEntry, 'listWarnings'> = {},
 ): Promise<A | Refusal> {
   if (inFlight.has(tabId)) return refuse('rate-limit', BUSY[task]);
   inFlight.add(tabId);
@@ -274,7 +276,7 @@ async function track<A extends TaskAnswer<unknown>>(
     // Another `running` entry can only be left by a worker that died mid-check: this tab is in `inFlight` now.
     const stale: Partial<FactcheckEntry> = { status: 'failed', error: { code: 'timeout', message: describeError('timeout') } };
     await updateEntries(tabId, (entries) => [
-      { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running' },
+      { key, ...(task === 'perspectives' ? { task } : {}), label, startedAt, status: 'running', ...start },
       ...entries.map((e) => (e.status === 'running' ? { ...e, ...stale } : e)),
     ]);
 
@@ -304,13 +306,29 @@ export interface PerspectivesTabRequest {
 
 const NOT_COMPARABLE = "This link can't be compared.";
 const PLACE = PerspectivesJobRequestSchema.pick({ platform: true, audience: true });
-const LEANS_MISMATCH = "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.";
+const LEANS_MISMATCH = "This result doesn't match your source list, so it isn't shown.";
+/** Drafts (D110). */
+const OWN_LIST_EMPTY = 'Your source list has no outlets with a lean yet. Add some in Settings → AI.';
+const CLOUD_LIST_EMPTY =
+  "UnAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
+
+/**
+ * Why UnEcho Chamber can't run on `list`, one that isn't `listReady` (decision D103): its first problem (an own list's:
+ * the Cloud's stored copy passed the list rules), else that it has no outlet with a lean. No list at all is the Cloud's,
+ * not downloaded yet.
+ */
+function listRefusal(list: SourceList | null): Refusal {
+  const [problem] = list ? listProblems(list.outlets) : [];
+  if (problem) return refuse('not-available', `Your source list needs fixing in Settings → AI: ${listProblemText(problem)}`);
+  return refuse('not-available', list?.kind === 'own' ? OWN_LIST_EMPTY : CLOUD_LIST_EMPTY);
+}
 
 /**
  * UnEcho Chamber for one shared link in a feed tab, on the person's own key (as fact-check) or on their
- * UnAlgorithm server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link
- * leaves the browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when
- * every lean in it is this build's own source list's (`leansMatchRegistry`).
+ * UnAlgorithm server, on the source list they chose (`chosenList`). Every gate is checked again here, and each refusal
+ * returns before anything is sent. Only the link leaves the browser, canonicalised first (tracking and per-click ids
+ * removed, decision D35), with, to a server, the list's outlets with a lean as web addresses and buckets (`wireList`); a
+ * result is kept only when every lean in it is that list's, and then shows the list's own outlet names (`matchLeans`).
  */
 export async function runPerspectivesForTab(
   tabId: number,
@@ -319,8 +337,9 @@ export async function runPerspectivesForTab(
 ): Promise<PerspectivesResponse> {
   const device = await readDevice();
   if (!device.labs.perspectives) return refuse('not-available', `Turn on ${FEATURE_NAMES.perspectives} in Settings → AI.`);
-  const registry = perspectivesRegistry();
-  if (!registry) return refuse('not-available', `${FEATURE_NAMES.perspectives} isn't available yet.`);
+  // No fetch here: the Cloud's list updates at every service-worker start (`official-list.ts`), at most once a day.
+  const list = chosenList(await readSettings(), storedOfficialList(await officialListItem.getValue()));
+  if (!listReady(list)) return listRefusal(list);
   const parsed = SharedLinkSchema.safeParse(req.link);
   const url = parsed.success ? canonicalLink(parsed.data.url) : null;
   if (!parsed.success || !url) return refuse('bad-request', NOT_COMPARABLE);
@@ -336,24 +355,33 @@ export async function runPerspectivesForTab(
     return refuse('not-available', `${FEATURE_NAMES.perspectives} works only on public posts.`);
 
   const label = title?.trim() ? title.trim().slice(0, LABEL_CHARS) : new URL(url).hostname;
-  const checked = (answer: PerspectivesResponse): PerspectivesResponse =>
-    answer.ok && !leansMatchRegistry(answer.result, registry) ? refuse('not-available', LEANS_MISMATCH) : answer;
+  const checked = (answer: PerspectivesResponse): PerspectivesResponse => {
+    if (!answer.ok) return answer;
+    const result = matchLeans(answer.result, list);
+    return result ? { ...answer, result } : refuse('not-available', LEANS_MISMATCH);
+  };
+  // The list's balance as the run starts, kept for the sheet (D104).
+  const start = { listWarnings: listBalance(list).warnings };
 
   const cfg = device.aiSource;
   if (cfg?.kind === 'server') {
     const account = await serverAccountItem.getValue();
     if (!account || !sourceCapabilities(cfg, serverOfferFrom(account)).perspectives)
       return refuse('unsupported', `This server doesn't offer ${FEATURE_NAMES.perspectives}.`);
-    return track(tabId, key, label, 'perspectives', cfg, async () =>
-      checked(await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where }, { signal }))),
-    );
+    // Ready, so within the caps.
+    const wire = wireList(list) as NonNullable<ReturnType<typeof wireList>>;
+    const compare = async () =>
+      checked(
+        await cancelOnTabClose(tabId, (signal) => runPerspectivesViaServer(account, { link, ...where, list: wire }, { signal })),
+      );
+    return track(tabId, key, label, 'perspectives', cfg, compare, null, start);
   }
   const own = capableOwnKey(cfg, device, 'perspectives');
   if (!own) return refuse('unsupported', NEEDS.perspectives);
   const mode = await ownKeyMode(own, device);
   if (isRefusal(mode)) return mode;
-  const compare = async () => checked(await compareOwnKey(link, registry, own, mode));
-  return track(tabId, key, label, 'perspectives', own, compare, device.webSearch);
+  const compare = async () => checked(await compareOwnKey(link, list, own, mode));
+  return track(tabId, key, label, 'perspectives', own, compare, device.webSearch, start);
 }
 
 /** The pipeline on the person's key: no `resolveLink` (the extension never fetches a link), no ceiling (own key). */

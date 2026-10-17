@@ -122,6 +122,11 @@ export interface FactcheckEntry {
   result?: FactcheckResult;
   /** A comparison's result (`task: 'perspectives'`). */
   perspectives?: PerspectivesResult;
+  /**
+   * A comparison's source list balance warnings as they were when it started (`listBalance(list).warnings`): fixed words
+   * from code, never post content. The sheet shows them above its footer (D104).
+   */
+  listWarnings?: string[];
   error?: BgError;
   costMicros?: number;
   /** What the server charged for this check (a billing server only). */

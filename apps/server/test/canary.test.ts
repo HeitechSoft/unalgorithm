@@ -3,11 +3,13 @@
  * interest profile is sent down every classify path in one run against one app and one database: a success, provider
  * failures that echo it, and requests the server refuses. The fact-check job endpoints get the same (P3-19): a done job,
  * a provider failure that echoes it, a friends-only post and an invalid body; so do the perspectives job endpoints
- * (P3-35), with the marker in the shared link's URL path and title. A public post checked twice (P3-59) really writes
+ * (P3-35), with the marker in the shared link's URL path and title, and a marked web address in the source list each
+ * request carries (P3-77), refused once more for an unsound list. A public post checked twice (P3-59) really writes
  * and then reads the server's claim cache, so its rows are scanned too. Afterwards it must be in none of the app's
  * log lines, nothing the process wrote to standard output, standard error or the console, no error answer and no row of
  * any table, graphile-worker's included. The model (and, for a check, the search provider) is the one place it may
- * reach, and never from a friends-only post.
+ * reach, and never from a friends-only post; the list's marked web address may reach only the search provider and the
+ * done comparison's own answer.
  *
  * The run uses PGlite in every `pnpm test`, and Postgres too when `TEST_DATABASE_URL` is set (the CI `server` job). The
  * same check runs through the Cloud's nginx in CL1-35.
@@ -15,6 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { format } from 'node:util';
 import { describeError } from '@unalgorithm/ai';
+import { wireList } from '@unalgorithm/outlets';
 import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   CLASSIFY_PATH,
@@ -24,6 +27,7 @@ import {
   factcheckJobPath,
   PERSPECTIVES_JOBS_PATH,
   PerspectivesJobSchema,
+  type PerspectivesList,
   perspectivesJobPath,
 } from '@unalgorithm/protocol';
 import { FACTCHECK_PROMPT_VERSION } from '@unalgorithm/research';
@@ -67,6 +71,19 @@ const FRIENDS_SHARED = { url: `https://news.example.com/${FRIENDS_ONLY}/${CANARY
  * not be a whole URL), so this is a substring search for a mention, not a check that sanitizes a URL.
  */
 const LINK_HOST = new URL(CANARY_SHARED.url).hostname;
+
+/** A web address only the comparisons' source list holds: it may reach the search provider, never a log or a table. */
+const LIST_CANARY = 'ua-canary-7f3c9e1b.example';
+/** The list every comparison carries: the fixture's outlets and one more, on the marked address. */
+const CANARY_LIST: PerspectivesList = (() => {
+  const fixture = wireList(FIXTURE_LIST) as PerspectivesList;
+  return { ...fixture, outlets: [...fixture.outlets, { bucket: 'center', domains: [LIST_CANARY] }] };
+})();
+/** The same list made unsound: the marked address in a second outlet, refused before anything is metered. */
+const UNSOUND_LIST: PerspectivesList = {
+  ...CANARY_LIST,
+  outlets: [...CANARY_LIST.outlets, { bucket: 'right', domains: [`news.${LIST_CANARY}`, LIST_CANARY] }],
+};
 
 /** Path 8c's post: its claim (the whole first sentence, as the mock picks it) carries the marker. */
 const CACHEABLE_TEXT = `Cacheable quarterly update ${CANARY} about AI agents.`;
@@ -166,6 +183,8 @@ interface Answers {
   compareFriendsOnly: Answer;
   /** 15: a comparison body carrying post text (the marker) in `text`, refused by the strict schema. */
   compareInvalid: Answer;
+  /** 16: a comparison whose list names the marked address in two outlets, refused before anything is metered. */
+  compareUnsoundList: Answer;
 }
 
 interface CanaryRun {
@@ -263,7 +282,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     cleanup.push(() => database.close());
     const searx = await startMockSearxng({ hits: canaryHits });
     cleanup.push(() => searx.close());
-    const t = await createTestApp({ config: configFor(searx.url), db: database.handle, outlets: FIXTURE_LIST });
+    const t = await createTestApp({ config: configFor(searx.url), db: database.handle });
     cleanup.push(t.close);
     await seedPassingRoute(database.handle.db, {
       task: 'synthesis',
@@ -360,19 +379,34 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     expect(searx.queries.length).toBe(searchedPublic);
 
     const compareSearchedBefore = searx.queries.length;
-    const compareDone = await compare({ v: 1, link: CANARY_SHARED, platform: 'linkedin' });
+    const list = CANARY_LIST;
+    const compareDone = await compare({ v: 1, link: CANARY_SHARED, platform: 'linkedin', list });
     const compareSearched = searx.queries.slice(compareSearchedBefore);
     t.mock.failNext(500, `echo: ${CANARY}`);
-    const compareProviderEcho = await compare({ v: 1, link: CANARY_SHARED, platform: 'facebook', audience: 'public' });
+    const compareProviderEcho = await compare({
+      v: 1,
+      link: CANARY_SHARED,
+      platform: 'facebook',
+      audience: 'public',
+      list,
+    });
     const comparedPublic = searx.queries.length;
-    const compareFriendsOnly = await compare({ v: 1, link: FRIENDS_SHARED, platform: 'facebook', audience: 'friends' });
+    const compareFriendsOnly = await compare({
+      v: 1,
+      link: FRIENDS_SHARED,
+      platform: 'facebook',
+      audience: 'friends',
+      list,
+    });
     const compareInvalid = await startCompare({
       v: 1,
       link: CANARY_SHARED,
       platform: 'linkedin',
+      list,
       text: `Quarterly update ${CANARY}`,
     });
-    // Neither refused comparison reached the search provider.
+    const compareUnsoundList = await compare({ v: 1, link: CANARY_SHARED, platform: 'linkedin', list: UNSOUND_LIST });
+    // No refused comparison reached the search provider.
     expect(searx.queries.length).toBe(comparedPublic);
 
     const answers: Answers = {
@@ -394,6 +428,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
       compareProviderEcho,
       compareFriendsOnly,
       compareInvalid,
+      compareUnsoundList,
     };
     // `output` is filled when the capture stops, after the app and the database have closed.
     return {
@@ -578,7 +613,8 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
   });
 
   check('test_canary_perspectives_link_never_kept', () => {
-    const { compareDone, compareProviderEcho, compareFriendsOnly, compareInvalid } = run.answers;
+    const { compareDone, compareProviderEcho, compareFriendsOnly, compareInvalid, compareUnsoundList } = run.answers;
+    const refused = [compareFriendsOnly, compareInvalid, compareUnsoundList];
 
     // A done comparison: the link travelled to the model and, as its story query, to the search provider.
     expect(compareDone.status).toBe(200);
@@ -588,6 +624,9 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     expect(compareDone.sent.length).toBeGreaterThanOrEqual(2);
     expect(compareDone.sent.some((body) => body.includes(CANARY))).toBe(true);
     expect(run.compareSearched).toHaveLength(5);
+    // The list travelled: the done comparison's center search named the marked address, and found coverage on it.
+    expect(run.compareSearched.filter((q) => q.includes(`site:${LIST_CANARY}`))).toHaveLength(1);
+    expect(done.result?.sources.some((s) => s.domain === LIST_CANARY)).toBe(true);
     // Only the shared link left: no post text of any canary post reached the model during a comparison.
     for (const body of [...compareDone.sent, ...compareProviderEcho.sent]) expect(body).not.toContain('Quarterly update');
 
@@ -600,22 +639,29 @@ describe.each(DATABASES)('canary (%s)', (name, open) => {
     // Refused before a job: the friends-only link reached neither the model nor the search provider.
     expect(compareFriendsOnly.status).toBe(400);
     expect(compareInvalid.status).toBe(400);
-    for (const answer of [compareFriendsOnly, compareInvalid]) expect(answer.sent).toEqual([]);
+    expect(compareUnsoundList.status).toBe(400);
+    for (const answer of refused) expect(answer.sent).toEqual([]);
     for (const body of run.sent) expect(body).not.toContain(FRIENDS_ONLY);
     for (const query of run.allSearched) expect(query).not.toContain(FRIENDS_ONLY);
 
-    for (const answer of [compareDone, compareProviderEcho, compareFriendsOnly, compareInvalid]) {
+    for (const answer of [compareDone, compareProviderEcho, ...refused]) {
       expect(answer.headers).not.toContain(CANARY);
+      expect(answer.headers).not.toContain(LIST_CANARY);
     }
-    for (const answer of [compareProviderEcho, compareFriendsOnly, compareInvalid]) expect(answer.body).not.toContain(CANARY);
+    for (const answer of [compareProviderEcho, ...refused]) {
+      expect(answer.body).not.toContain(CANARY);
+      expect(answer.body).not.toContain(LIST_CANARY);
+    }
     expect(run.log.filter((line) => line.includes('"event":"perspectives.done"'))).toHaveLength(2);
-    expect(run.log.filter((line) => line.includes(CANARY) || line.includes(LINK_HOST))).toEqual([]);
-    expect(run.output.filter((chunk) => chunk.includes(CANARY))).toEqual([]);
+    const kept = (text: string) => text.includes(CANARY) || text.includes(LINK_HOST) || text.includes(LIST_CANARY);
+    expect(run.log.filter(kept)).toEqual([]);
+    expect(run.output.filter((chunk) => chunk.includes(CANARY) || chunk.includes(LIST_CANARY))).toEqual([]);
 
-    // Two job rows (done, failed), and no table holds the marker: graphile-worker's too on Postgres.
+    // Two job rows (done, failed; the unsound list was refused before metering), and no table holds the marker or the
+    // list: graphile-worker's too on Postgres.
     const rows = JSON.parse(run.tables.get('public.usage_events') ?? '[]') as { task: string }[];
     expect(rows.filter((r) => r.task === 'perspectives')).toHaveLength(2);
-    expect([...run.tables].filter(([, r]) => r.includes(CANARY) || r.includes(LINK_HOST)).map(([t]) => t)).toEqual([]);
+    expect([...run.tables].filter(([, r]) => kept(r)).map(([t]) => t)).toEqual([]);
 
     // Jobs live in memory only: the route module never touches graphile-worker.
     const source = readFileSync(new URL('../src/routes/perspectives.ts', import.meta.url), 'utf8');

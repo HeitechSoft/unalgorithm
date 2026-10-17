@@ -102,16 +102,34 @@ describe('Chrome Web Store material', () => {
     for (const file of docs) expect(read(file), file).not.toMatch(/\bLabs\b/);
   });
 
-  it('test_store_listing_names_unecho_chamber_only_with_a_usable_registry', () => {
-    // D79: a listing must not describe a feature the build hides. Store builds have no source list with a lean until the
-    // extension reads UnAlgorithm Cloud's (P3-75, P3-77), so UnEcho Chamber stays hidden; P3-77 adds it to the listing.
-    // The one mention before then is P3-75's note under *Data usage*, for whoever fills in the store's form: when the
-    // source list is downloaded. It describes a request, not the feature, and is never pasted into the store.
+  it('test_store_listing_describes_unecho_chamber', () => {
+    // D103 (reverses D79): every build shows UnEcho Chamber, so the listing describes it, with what it sends.
+    const oneLine = (text: string) => text.replace(/\s+/g, ' ');
     const md = listing();
-    const dataUsage = section(md, 'Data usage');
-    expect(md.replace(dataUsage, '')).not.toContain(FEATURE_NAMES.perspectives);
-    expect(dataUsage.split(FEATURE_NAMES.perspectives)).toHaveLength(2);
-    expect(dataUsage.replace(/\s+/g, ' ')).toContain(`While ${FEATURE_NAMES.perspectives} is on, the extension downloads`);
+    const description = section(md, 'Description');
+    expect(description).toContain('FACT-CHECK AND UNECHO CHAMBER (OFF BY DEFAULT)');
+    expect(description).not.toContain('FACT-CHECK (OFF BY DEFAULT)');
+    expect(description).toContain(
+      `• ${FEATURE_NAMES.perspectives}: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by UnAlgorithm Cloud's source list or your own.`,
+    );
+    expect(oneLine(section(md, 'Data usage'))).toContain(
+      "the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber)",
+    );
+
+    // PRIVACY.md says what a comparison sends a server, that it is never kept, and where leans come from.
+    const privacy = read('PRIVACY.md').replace(/\r\n/g, '\n');
+    const paragraph = (start: string) => oneLine(privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '');
+    const ownKey = paragraph('**UnEcho Chamber (off by default');
+    const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
+    expect(ownKey).toContain("the outlets your chosen source list gives a lean (UnAlgorithm Cloud's list or your own)");
+    expect(ownKey).toContain(
+      "Lean labels come only from UnAlgorithm Cloud's source list, set by its admins with evidence, or from your own list, never from the AI.",
+    );
+    expect(server).toContain("your chosen list's outlets with a lean, as web addresses and leans without names");
+    expect(server).toContain('never stored or logged');
+    expect(server).toContain('This browser shows a result only when every lean in it matches the list it sent.');
+    expect(oneLine(privacy)).toContain('your own list, never from the AI');
+    expect(privacy).not.toMatch(/reviewed outlet list|our outlet list/);
   });
 
   it('test_privacy_and_listing_describe_source_list_fetch', () => {

@@ -1,8 +1,8 @@
 /**
  * Fact-check and UnEcho Chamber out of Labs (P3-64, D77, D78): their switches sit at the end of Settings → AI, next to
  * the source they need. The Fact-check switch works only with a source that can fact-check and writes the device-local
- * `labs.factcheck` flag, whose stored name and value are kept from Labs. The UnEcho Chamber row (P3-40) shows only when
- * this build has a usable outlet registry (RM3 D36). The sidebar has no Labs item; `#/labs` opens the AI pane.
+ * `labs.factcheck` flag, whose stored name and value are kept from Labs. The UnEcho Chamber row (P3-40) shows on every
+ * build (D103), with the source list it uses under it. The sidebar has no Labs item; `#/labs` opens the AI pane.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import {
@@ -21,16 +21,6 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App } from '../src/entrypoints/options/App.tsx';
 import { AiPane } from '../src/entrypoints/options/panes.tsx';
 import { officialListItem, serverOfferItem } from '../src/lib/storage.ts';
-
-/** Whether this build has a usable registry (the fictional fixture); none by default, as in store builds today. */
-const registry = vi.hoisted(() => ({ ready: false }));
-vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_LIST } = await import('@unalgorithm/outlets/testing');
-  return {
-    ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (registry.ready ? FIXTURE_LIST : null),
-  };
-});
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
@@ -69,7 +59,6 @@ const factcheckSwitch = () => screen.getByRole('switch', { name: 'Fact-check' })
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 afterEach(() => {
-  registry.ready = false;
   cleanup();
   location.hash = '';
   fakeBrowser.reset();
@@ -120,7 +109,8 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
       const sw = factcheckSwitch();
       expect(sw.disabled).toBe(true);
       expect(sw.getAttribute('aria-checked')).toBe('false');
-      expect(screen.getByText(NOT_CAPABLE)).toBeTruthy();
+      // The same reason under Fact-check and under UnEcho Chamber, shown on every build.
+      expect(screen.getAllByText(NOT_CAPABLE)).toHaveLength(2);
       expect(screen.queryByRole('button', { name: 'Set up AI' })).toBeNull();
       await user.click(sw);
       expect(saveDevice).not.toHaveBeenCalled();
@@ -146,7 +136,7 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
     renderAi(device(COMPAT));
     expect(before(screen.getByRole('heading', { name: 'Web search key' }), factcheckSwitch())).toBe(true);
     expect(factcheckSwitch().disabled).toBe(true);
-    expect(screen.getByText('Needs a web search key (above).')).toBeTruthy();
+    expect(screen.getAllByText('Needs a web search key (above).')).toHaveLength(2);
   });
 
   it('test_ai_pane_server_offer_enables_switch', async () => {
@@ -167,22 +157,19 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
     expect(screen.queryByText("Your server doesn't offer fact-check.")).toBeNull();
   });
 
-  it('test_ai_pane_unecho_chamber_only_with_registry', async () => {
-    // No usable registry (every real build today): no header, row or switch.
-    renderAi(device({ kind: 'anthropic', model: null }));
-    expect(screen.queryByText('UnEcho Chamber')).toBeNull();
-    expect(screen.queryByRole('switch', { name: 'UnEcho Chamber' })).toBeNull();
-    expect(factcheckSwitch().disabled).toBe(false);
-    cleanup();
-
-    // The fixture registry and an Anthropic source: an enabled switch that sets `labs.perspectives`.
-    registry.ready = true;
+  it('test_ai_pane_unecho_chamber_on_every_build', async () => {
+    // A store or development build (not e2e), no list downloaded yet, an Anthropic source: an enabled switch that sets
+    // `labs.perspectives` (D103).
+    expect(import.meta.env.MODE).not.toBe('e2e');
     const user = setupUser();
     const { holder, saveDevice } = deviceStore(device({ kind: 'anthropic', model: null }));
     renderAi(holder.stored, saveDevice);
     const header = screen.getByRole('heading', { level: 3, name: 'UnEcho Chamber' });
     expect(before(screen.getByRole('heading', { level: 3, name: 'Fact-check' }), header)).toBe(true);
-    expect(within(header.closest('section') as HTMLElement).getByText(/sends only the link and its title/)).toBeTruthy();
+    const footer = within(header.closest('section') as HTMLElement).getByText(/^Adds UnEcho Chamber/);
+    expect(footer.textContent).toBe(
+      "Adds UnEcho Chamber to public posts that share a news link. It runs only when you click and shows the price first. It sends the link, its title and the web addresses of your chosen list's outlets with a lean, never the post. Leans come from people, never from AI. AI can be wrong, so open the sources.",
+    );
     const sw = screen.getByRole('switch', { name: 'UnEcho Chamber' }) as HTMLButtonElement;
     expect(sw.disabled).toBe(false);
     expect(sw.getAttribute('aria-checked')).toBe('false');
@@ -214,7 +201,6 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
 
   it('test_ai_pane_source_list_choice', async () => {
     // P3-76 (D100, D110): the list UnEcho Chamber uses, chosen under its switch; the choice is a synced setting.
-    registry.ready = true;
     const user = setupUser();
     const own = (name: string, domain: string, bucket: OwnOutlet['bucket']): OwnOutlet => ({
       name,
@@ -241,7 +227,7 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
     expect(cloud.checked).toBe(true);
     expect(before(screen.getByRole('switch', { name: 'UnEcho Chamber' }), cloud)).toBe(true);
     expect(screen.getByText('Not downloaded yet: it downloads once UnEcho Chamber is on')).toBeTruthy();
-    expect(screen.queryByText(/outlets with a lean/)).toBeNull();
+    expect(screen.queryByText(/\d+ outlets? with a lean/)).toBeNull();
 
     // Your own list: saved as the setting, with its count and its balance.
     await user.click(screen.getByRole('radio', { name: 'Your own list' }));

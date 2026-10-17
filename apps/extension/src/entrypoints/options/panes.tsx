@@ -55,7 +55,7 @@ import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
-import { perspectivesRegistry, storedOfficialList } from '../../lib/outlets.ts';
+import { listName, storedOfficialList } from '../../lib/outlets.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
 import { learnedItem, officialListItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
@@ -807,35 +807,33 @@ export function CheckSettings({
           }
         />
       </ListGroup>
-      {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
-      {perspectivesRegistry() !== null ? (
-        <ListGroup
-          header={FEATURE_NAMES.perspectives}
-          footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from the source list you choose, set by people, never by AI. AI can be wrong, so open the sources.`}
-        >
-          <ListRow
-            title={FEATURE_NAMES.perspectives}
-            subtitle={
-              can.perspectives
-                ? undefined
-                : onServer
-                  ? `Your server doesn't offer ${FEATURE_NAMES.perspectives}.`
-                  : onCompat
-                    ? needsKey
-                    : needsSource
-            }
-            control={
-              <Switch
-                checked={can.perspectives && device.labs.perspectives}
-                disabled={!can.perspectives}
-                label={FEATURE_NAMES.perspectives}
-                onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
-              />
-            }
-          />
-          <SourceListChoice settings={settings} save={save} />
-        </ListGroup>
-      ) : null}
+      {/* On every build (D103): it runs on the source list chosen below. Copy is a draft (D110). */}
+      <ListGroup
+        header={FEATURE_NAMES.perspectives}
+        footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click and shows the price first. It sends the link, its title and the web addresses of your chosen list's outlets with a lean, never the post. Leans come from people, never from AI. AI can be wrong, so open the sources.`}
+      >
+        <ListRow
+          title={FEATURE_NAMES.perspectives}
+          subtitle={
+            can.perspectives
+              ? undefined
+              : onServer
+                ? `Your server doesn't offer ${FEATURE_NAMES.perspectives}.`
+                : onCompat
+                  ? needsKey
+                  : needsSource
+          }
+          control={
+            <Switch
+              checked={can.perspectives && device.labs.perspectives}
+              disabled={!can.perspectives}
+              label={FEATURE_NAMES.perspectives}
+              onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
+            />
+          }
+        />
+        <SourceListChoice settings={settings} save={save} />
+      </ListGroup>
     </>
   );
 }
@@ -881,13 +879,7 @@ function SourceListChoice({ settings, save }: { settings: Settings; save: Save }
             <span className="ua-footnote">{ownStatus}</span>
           </ChoiceCard>
         </ChoiceCardGroup>
-        {balance ? (
-          <BalanceNotice
-            name={chosen === 'own' ? 'Your list' : "UnAlgorithm Cloud's list"}
-            empty={balance.empty}
-            warnings={balance.warnings}
-          />
-        ) : null}
+        {balance ? <BalanceNotice name={listName(chosen)} empty={balance.empty} warnings={balance.warnings} /> : null}
       </div>
       <ListRow
         title="Edit your list"

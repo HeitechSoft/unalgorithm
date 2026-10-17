@@ -1,8 +1,8 @@
 /**
  * UnEcho Chamber: the wire contract every RM3 piece shares (pipeline, server endpoint, extension, side panel).
  * The only part of a post a comparison sends anywhere is its shared link (`SharedLinkSchema`); lean labels come only
- * from a source list that people set (packages/outlets), never from a model. The published list's own contract is
- * `outlets.ts`, which builds on the field schemas here.
+ * from a source list that people set (packages/outlets), never from a model, and a server request carries that list
+ * (`PerspectivesListSchema`). The published list's own contract is `outlets.ts`, which builds on the field schemas here.
  */
 import { z } from 'zod';
 import { AUDIENCES, MAX_MODEL_CHARS } from './classify.ts';
@@ -110,6 +110,29 @@ export const perspectivesJobPath = (id: string) => `${PERSPECTIVES_JOBS_PATH}/${
 /** POST, as fact-check's: CORS on /v1 allows GET and POST only. */
 export const perspectivesJobCancelPath = (id: string) => `${perspectivesJobPath(id)}/cancel`;
 
+/**
+ * The list a comparison runs on, as it travels: its outlets with a lean, by web addresses and bucket only. Never a name,
+ * an id, evidence or an outlet without a lean. Capped so the request stays under the server's 128 KB body limit
+ * (decision D102).
+ */
+export const PerspectivesListSchema = z
+  .strictObject({
+    kind: z.enum(LIST_KINDS),
+    /** The Cloud list's version; '' for an own list. */
+    version: z.string().max(40),
+    outlets: z
+      .array(
+        z.strictObject({
+          bucket: z.enum(LEAN_BUCKETS),
+          domains: z.array(OutletDomainSchema).min(1).max(MAX_OUTLET_DOMAINS),
+        }),
+      )
+      .min(1)
+      .max(MAX_LIST_OUTLETS),
+  })
+  .refine((l) => l.outlets.reduce((n, o) => n + o.domains.length, 0) <= MAX_LIST_DOMAINS, { path: ['outlets'] });
+export type PerspectivesList = z.infer<typeof PerspectivesListSchema>;
+
 /** Strict: a body with post text (or any other field) is refused, not stripped (F18). */
 export const PerspectivesJobRequestSchema = z.strictObject({
   v: z.literal(1),
@@ -117,6 +140,8 @@ export const PerspectivesJobRequestSchema = z.strictObject({
   platform: PlatformIdSchema,
   /** Facebook only, as PostForAI: the server refuses anything not public. */
   audience: z.enum(AUDIENCES).optional(),
+  /** The person's chosen source list: the comparison searches only its outlets (D102). Kept in memory, never logged. */
+  list: PerspectivesListSchema,
 });
 export type PerspectivesJobRequest = z.infer<typeof PerspectivesJobRequestSchema>;
 

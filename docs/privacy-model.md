@@ -151,6 +151,33 @@ a model. Every extension reads UnAlgorithm Cloud's published list, whatever its 
   (`apps/extension/src/lib/outlets.ts`), which checks it against the schema and the list rules again (and answers the
   fixture in e2e builds).
 
+### A comparison carries its list
+
+A comparison runs on the list the person chose (`chosenList`: the Cloud's stored copy or their own), and only when that
+list is ready (`listReady`: an outlet with a lean, no list problem; decision D103). Before anything is sent, the
+background (`runPerspectivesForTab` in `apps/extension/src/background/factcheck.ts`) refuses a list that isn't, and
+keeps the list's balance warnings (fixed words from code) on the tab's entry for the side panel.
+
+- **Own key.** The pipeline runs in the browser on that list: each bucket's search sends the web addresses of that
+  bucket's outlets with a lean to the provider (or to Brave or Tavily), never a lean, a name or the post.
+- **Server.** `POST /v1/jobs/perspectives` carries `{ v: 1, link, platform, audience?, list }`, where `list` is
+  `wireList(chosen)` (`PerspectivesListSchema`): `kind`, `version` and the outlets with a lean as `{ bucket, domains }`,
+  sorted by id. No outlet name, id or evidence, and no outlet without a lean; at most 300 outlets and 400 web addresses,
+  so the largest request stays under the server's 128 KB `/v1` body limit. The server
+  (`apps/server/src/routes/perspectives.ts`) rebuilds a list from it (`sourceListFromWire`: outlets `o1`…`oN`, named by
+  their first web address), refuses one with a list problem (a web address in two outlets, or inside another's) with a
+  400 before anything is metered, and holds it only in the request handler and the in-memory job: no log line (the
+  `perspectives.done` line is counts), no table, no usage row. No server needs a list of its own.
+- **The answer.** The extension keeps a result only when every lean in it is the sent list's (`matchLeans`: each
+  source's web address and page address map to one outlet of the list with that bucket, each coverage row holds only its
+  own bucket's sources, and the result names the same list and version); it then shows the list's own outlet names and
+  ids, never the server's.
+
+The canary covers the field: every comparison in `apps/server/test/canary.test.ts` carries a list with one more outlet,
+on a marked web address, and one more comparison sends that address in two outlets. The address may reach the search
+provider and the done comparison's own answer; it must be in no log line, nothing written to standard output or standard
+error, no error answer and no table, after the done, failed and refused comparisons.
+
 ## What a server stores
 
 An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
@@ -290,7 +317,8 @@ an account, an address or a post. Alert emails go to the server's admins, or to 
 address or header; with the Ollama profile, posts are classified on the same machine and go nowhere else.
 
 The canary test (`apps/server/test/canary.test.ts`) proves the rule for the server's own code. It puts a marker in
-post text, link titles and the interest profile, and sends it down every classify path: a success, provider errors
+post text, link titles and the interest profile (and a marked web address in the source list each comparison carries,
+[above](#a-comparison-carries-its-list)), and sends it down every classify path: a success, provider errors
 that echo it back, invalid and unauthenticated requests, and a Facebook post that isn't public. The marker must then be
 in no log line, nothing the process wrote to standard output or standard error, no error answer and no row of any
 table. The test also checks that the marker did reach the mock model, and never from the non-public post. It runs on

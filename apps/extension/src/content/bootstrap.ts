@@ -4,7 +4,16 @@ import { uuid } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { type ContentRequest, type ContentResponses, sendQuietly, sendToBackground } from '../lib/messages.ts';
-import { deviceItem, learnedItem, readDevice, readSettings, serverOfferItem, settingsItem, votesItem } from '../lib/storage.ts';
+import {
+  deviceItem,
+  learnedItem,
+  officialListItem,
+  readDevice,
+  readSettings,
+  serverOfferItem,
+  settingsItem,
+  votesItem,
+} from '../lib/storage.ts';
 import { type Bridge, FeedController, type Runtime } from './feed-controller.ts';
 import { reportProblemUrl } from './report.ts';
 import { mountUiHost, UiLayer } from './ui-layer.tsx';
@@ -20,6 +29,7 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     learned: await learnedItem.getValue(),
     votes: await votesItem.getValue(),
     serverOffer: await serverOfferItem.getValue(),
+    officialList: await officialListItem.getValue(),
   };
 
   const bridge: Bridge = {
@@ -90,6 +100,11 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     }),
     serverOfferItem.watch((v) => {
       rt.serverOffer = v;
+      refresh();
+    }),
+    // UnAlgorithm Cloud's source list, as the background stores a new copy: UnEcho Chamber follows the chosen list.
+    officialListItem.watch((v) => {
+      rt.officialList = v;
       refresh();
     }),
   ];

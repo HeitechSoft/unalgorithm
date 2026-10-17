@@ -7,7 +7,6 @@ import { existsSync } from 'node:fs';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { type AIClient, AIError, describeError } from '@unalgorithm/ai';
-import type { SourceList } from '@unalgorithm/outlets';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
@@ -106,11 +105,6 @@ export interface AppDeps {
   priceSchedule?: CreditPriceSchedule;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }). */
   factcheckJobs?: JobStore<FactcheckResult>;
-  /**
-   * The source list UnEcho Chamber compares across; null (the default): not offered, since nothing bundled holds a lean.
-   * Tests pass `FIXTURE_LIST`. P3-77 removes it: a request will carry its list.
-   */
-  outlets?: SourceList | null;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }). */
   perspectivesJobs?: JobStore<PerspectivesResult>;
   /** The egress fetcher's resolution of a shared link to its canonical URL (P3-32); default: none (the link as shared). */
@@ -200,7 +194,6 @@ export function createApp(deps: AppDeps): App {
   });
 
   const priceSchedule = deps.priceSchedule ?? CREDIT_PRICE_SCHEDULE;
-  const outlets = deps.outlets ?? null;
   const serverInfo: ServerInfo = {
     v: 1,
     name: config.instanceName,
@@ -222,7 +215,7 @@ export function createApp(deps: AppDeps): App {
     c.header('Access-Control-Allow-Origin', '*');
     // Per request: whether checks are offered, and their price, follow the schedule entry in effect now.
     const offer = factcheckOffer(config, priceSchedule);
-    const compare = perspectivesOffer(config, priceSchedule, outlets);
+    const compare = perspectivesOffer(config, priceSchedule);
     const billed = config.billing === 'module';
     const jobPrices = {
       ...(offer.offered && offer.price && billed ? { factcheck: offer.price } : {}),
@@ -267,7 +260,6 @@ export function createApp(deps: AppDeps): App {
       ...deps,
       search,
       priceSchedule,
-      outlets,
       perspectivesJobs:
         deps.perspectivesJobs ?? createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 4, maxKeptPerUser: 5 }),
     },

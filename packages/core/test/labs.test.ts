@@ -237,7 +237,7 @@ describe('Other perspectives', () => {
     device: { aiSource: ANTHROPIC, labs: { factcheck: false, perspectives: true }, webSearch: null },
     post: { platform: 'linkedin', sharedLink: LINK },
     classification: { isNews: true },
-    registryReady: true,
+    listReady: true,
   });
 
   it('test_labs_perspectives_defaults_off_and_migrates', () => {
@@ -300,7 +300,7 @@ describe('Other perspectives', () => {
     const server = { aiSource: SERVER, labs: { factcheck: false, perspectives: true }, webSearch: null };
     const cases: [string, PInput][] = [
       ['flag off', { ...b, device: { ...b.device, labs: { factcheck: true, perspectives: false } } }],
-      ['registry not ready', { ...b, registryReady: false }],
+      ['list not ready', { ...b, listReady: false }],
       [
         'checkable claims only',
         { ...b, classification: { isNews: false, hasCheckableClaims: true } as PInput['classification'] },
@@ -404,12 +404,12 @@ describe('OpenAI and OpenAI-compatible sources (RM4)', () => {
       device: { aiSource: REMOTE, labs: { factcheck: false, perspectives: true }, webSearch: null },
       post: { platform: 'facebook', audience: 'public', sharedLink: LINK },
       classification: { isNews: true },
-      registryReady: true,
+      listReady: true,
     };
     expect(perspectivesOffered(input)).toBe(false);
     const withKey: PInput = { ...input, device: { ...input.device, webSearch: TAVILY } };
     expect(perspectivesOffered(withKey)).toBe(true);
-    expect(perspectivesOffered({ ...withKey, registryReady: false })).toBe(false);
+    expect(perspectivesOffered({ ...withKey, listReady: false })).toBe(false);
     expect(perspectivesOffered({ ...withKey, post: { ...withKey.post, audience: 'friends' } })).toBe(false);
   });
 

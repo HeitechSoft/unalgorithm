@@ -1,7 +1,8 @@
 /**
- * The side-panel "Other perspectives" sheet (P3-39): coverage by lean bucket with every gap named, agreed facts,
- * differences and one-side claims with their quoted sources, the AI and registry labels, all as plain text; the side
- * panel picks it for a `task: 'perspectives'` entry. Outlets are fictional fixtures.
+ * The side-panel UnEcho Chamber sheet (P3-39, P3-77): coverage by lean bucket with every gap named, agreed facts,
+ * differences and one-side claims with their quoted sources, the AI label, which source list the leans came from and its
+ * balance warnings, all as plain text; the side panel picks it for a `task: 'perspectives'` entry. Outlets are
+ * fictional fixtures.
  */
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { emptyTabState } from '@unalgorithm/core';
@@ -188,10 +189,53 @@ describe('PerspectivesSheet', () => {
     expect(screen.getByText('AI-generated')).toBeTruthy();
     const when = new Date(CHECKED_AT).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     expect(screen.getByText(`Compared ${when}`)).toBeTruthy();
-    expect(
-      screen.getByText('Leans come from the UnAlgorithm outlet registry (fixture-1), reviewed by people, never from AI.'),
-    ).toBeTruthy();
     expect(screen.getByText('AI can be wrong, so open the sources.')).toBeTruthy();
+  });
+
+  it('test_perspectives_sheet_footer_by_list', async () => {
+    // UnAlgorithm Cloud's list: its version, set by people with evidence. Balanced: no notice.
+    sheet({ result: result({ registryVersion: '57' }), listWarnings: [] });
+    expect(
+      screen.getByText("Leans come from UnAlgorithm Cloud's source list (version 57), set by people with evidence, never by AI."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/your own source list/)).toBeNull();
+    expect(screen.queryByText(/isn't balanced/)).toBeNull();
+    cleanup();
+
+    // Your own list: unreviewed, and its warnings as they were when the run started, above the footer.
+    sheet({ result: result({ list: 'own', registryVersion: '' }), listWarnings: ['No outlets in Right.'] });
+    const footer = screen.getByText('Leans come from your own source list, which no one has reviewed. Never from AI.');
+    expect(screen.queryByText(/UnAlgorithm Cloud's source list/)).toBeNull();
+    const notice = screen.getByRole('status');
+    expect(within(notice).getByText("Your list isn't balanced")).toBeTruthy();
+    expect(within(notice).getByText('No outlets in Right.')).toBeTruthy();
+    expect(notice.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+
+    // The Cloud's list with warnings: named as the Cloud's.
+    sheet({ result: result(), listWarnings: ['Only 1 outlet in Center.'] });
+    expect(within(screen.getByRole('status')).getByText("UnAlgorithm Cloud's list isn't balanced")).toBeTruthy();
+    cleanup();
+
+    // The side panel passes the entry's warnings.
+    fakeBrowser.reset();
+    const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
+    await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
+    const entry: FactcheckEntry = {
+      key: 'li:1' as FactcheckEntry['key'],
+      task: 'perspectives',
+      label: 'Harbour bridge reopens',
+      startedAt: Date.now(),
+      status: 'done',
+      perspectives: result({ list: 'own', registryVersion: '' }),
+      listWarnings: ['No outlets in Right.'],
+    };
+    await factcheckItem(TAB.id).setValue({ entries: [entry] });
+    render(<SidePanel />);
+    expect(await screen.findByText("Your list isn't balanced")).toBeTruthy();
+    expect(screen.getByText('No outlets in Right.')).toBeTruthy();
+    expect(screen.getByText('Leans come from your own source list, which no one has reviewed. Never from AI.')).toBeTruthy();
   });
 
   it('test_perspectives_sheet_text_only', () => {

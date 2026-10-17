@@ -18,12 +18,12 @@ import { allowServer, signInFromSettings } from './server-sign-in.ts';
 
 /**
  * UnEcho Chamber end to end through a self-hosted server (P3-41, RM3): the real extension in Chromium, signed in
- * to the real server process started from `test/support/fixture-outlets-entry.ts` (the server with the fictional
- * fixture registry), goes from the public Facebook link share to the comparison in the side panel with no key in the
- * browser. The server runs on Postgres with `FACTCHECK=on` and `PERSPECTIVES=on`, the mock OpenAI-compatible provider
- * as its model (it answers the story and comparison prompts, P3-31) and the mock SearXNG as its search provider. Like
- * `factcheck-server.spec.ts` it needs Postgres and Mailpit, so it runs only with `UA_SERVER_E2E=1` (the CI `server`
- * job); elsewhere it is reported as skipped.
+ * to the real server process as shipped (`src/index.ts`, with no source list of its own: the comparison request carries
+ * the e2e build's list, the fictional fixture, P3-77), goes from the public Facebook link share to the comparison in the
+ * side panel with no key in the browser. The server runs on Postgres with `FACTCHECK=on` and `PERSPECTIVES=on`, the
+ * mock OpenAI-compatible provider as its model (it answers the story and comparison prompts, P3-31) and the mock SearXNG
+ * as its search provider. Like `factcheck-server.spec.ts` it needs Postgres and Mailpit, so it runs only with
+ * `UA_SERVER_E2E=1` (the CI `server` job); elsewhere it is reported as skipped.
  */
 const EMAIL = 'tester@example.com';
 const FREE = 'Free on this server';
@@ -93,7 +93,6 @@ test.describe
         SEARCH_URL: searx?.url ?? '',
       }),
       { verdict },
-      { entry: 'fixture-outlets' },
     );
 
     test.beforeAll(async () => {

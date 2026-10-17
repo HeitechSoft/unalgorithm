@@ -7,6 +7,7 @@ import {
 } from '@unalgorithm/protocol';
 import type { ReactNode } from 'react';
 import { ChevronLeft, ExternalLink, LoaderCircle, Newspaper } from '../icons.ts';
+import { BalanceNotice } from './balance.tsx';
 import { IconButton } from './controls.tsx';
 import { CitationFigure } from './factcheck.tsx';
 import { Badge, Banner, EmptyState } from './feedback.tsx';
@@ -27,6 +28,8 @@ export interface PerspectivesSheetProps {
   status: 'running' | 'done' | 'failed';
   result?: PerspectivesResult;
   errorMessage?: string;
+  /** The source list's balance warnings when the comparison started (`FactcheckEntry.listWarnings`). */
+  listWarnings?: readonly string[];
   /** Up to 4 older checks and comparisons on this tab. */
   earlier?: { label: string; onOpen(): void }[];
   onBack(): void;
@@ -40,12 +43,28 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, DAY_FOR
 /** A search result's page age as a date when it parses as one, else as given. */
 const pageDay = (age: string) => (Number.isNaN(Date.parse(age)) ? age : day(age));
 
+/** Where a result's leans came from, by the list it ran on (D104). Copy is a draft (D110). */
+function leansFrom(result: PerspectivesResult): string {
+  return result.list === 'own'
+    ? 'Leans come from your own source list, which no one has reviewed. Never from AI.'
+    : `Leans come from UnAlgorithm Cloud's source list (version ${result.registryVersion}), set by people with evidence, never by AI.`;
+}
+
 /**
  * One UnEcho Chamber comparison in the side panel: who covered the story by lean bucket (every gap named),
- * facts agreed across sides, differences and one-side claims, each with quoted sources. Model and page text render
- * only as React text nodes; source URLs are http(s) by `PerspectivesSourceSchema`.
+ * facts agreed across sides, differences and one-side claims, each with quoted sources; then the list's balance
+ * warnings as they were when it started, and which list the leans came from. Model and page text render only as React
+ * text nodes; source URLs are http(s) by `PerspectivesSourceSchema`.
  */
-export function PerspectivesSheet({ label, status, result, errorMessage, earlier = [], onBack }: PerspectivesSheetProps) {
+export function PerspectivesSheet({
+  label,
+  status,
+  result,
+  errorMessage,
+  listWarnings = [],
+  earlier = [],
+  onBack,
+}: PerspectivesSheetProps) {
   return (
     <section className="ua-factcheck ua-perspectives" aria-label={FEATURE_NAMES.perspectives}>
       <div className="ua-factcheck-head">
@@ -69,13 +88,18 @@ export function PerspectivesSheet({ label, status, result, errorMessage, earlier
       ) : null}
 
       {status === 'done' && result ? (
-        <footer className="ua-factcheck-foot">
-          <div>Compared {new Date(result.checkedAt).toLocaleString(undefined, COMPARED_AT_FORMAT)}</div>
-          <div>
-            Leans come from the UnAlgorithm outlet registry ({result.registryVersion}), reviewed by people, never from AI.
-          </div>
-          <div>AI can be wrong, so open the sources.</div>
-        </footer>
+        <>
+          <BalanceNotice
+            name={result.list === 'own' ? 'Your list' : "UnAlgorithm Cloud's list"}
+            empty={false}
+            warnings={listWarnings}
+          />
+          <footer className="ua-factcheck-foot">
+            <div>Compared {new Date(result.checkedAt).toLocaleString(undefined, COMPARED_AT_FORMAT)}</div>
+            <div>{leansFrom(result)}</div>
+            <div>AI can be wrong, so open the sources.</div>
+          </footer>
+        </>
       ) : null}
 
       {earlier.length ? (

@@ -78,7 +78,7 @@ export function coveredBucketInQuery(query: string): (typeof COVERED)[number] | 
 /**
  * The side panel (opened as a page; the feed brought to the front so it is the panel's active tab) shows the
  * comparison: coverage under Left, Center and Right, "No coverage found" under the two gaps, the agreed point quoting
- * the Left and Center sources, the registry line and the AI-generated badge. Returns the sheet.
+ * the Left and Center sources, the source list line and the AI-generated badge. Returns the sheet.
  */
 export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   const sheet = panel.getByRole('region', { name: PERSPECTIVES });
@@ -98,7 +98,7 @@ export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   await expect(agreed.locator('blockquote')).toHaveText([first8(PASSAGES.left), first8(PASSAGES.center)]);
   await expect(
     sheet.getByText(
-      `Leans come from the UnAlgorithm outlet registry (${FIXTURE_LIST.version}), reviewed by people, never from AI.`,
+      `Leans come from UnAlgorithm Cloud's source list (version ${FIXTURE_LIST.version}), set by people with evidence, never by AI.`,
       { exact: true },
     ),
   ).toBeVisible();

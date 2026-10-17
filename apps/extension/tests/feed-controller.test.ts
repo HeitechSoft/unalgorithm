@@ -21,6 +21,7 @@ function runtime(over: Partial<Runtime> = {}): Runtime {
     learned: EMPTY_LEARNED,
     votes: {},
     serverOffer: null,
+    officialList: { list: null, checkedAt: 0 },
     ...over,
   };
 }

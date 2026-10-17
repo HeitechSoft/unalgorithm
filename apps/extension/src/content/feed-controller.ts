@@ -29,6 +29,7 @@ import {
   type TabState,
   toPostForAI,
 } from '@unalgorithm/core';
+import { listBalance } from '@unalgorithm/outlets';
 import { type InspectContext, MAX_FRUITLESS, type PlatformAdapter, rearmMarker, shouldRearm } from '@unalgorithm/platforms';
 import {
   BLOCKING_AI_ERRORS,
@@ -50,7 +51,8 @@ import {
   whyCopy,
 } from '@unalgorithm/ui';
 import type { BgError, BgResponses, ClassifyItem, SettingsAction } from '../lib/messages.ts';
-import { perspectivesRegistry } from '../lib/outlets.ts';
+import { chosenList, listName, listReady, storedOfficialList } from '../lib/outlets.ts';
+import type { StoredOfficialList } from '../lib/storage.ts';
 import { GLOBAL_STYLE_ID, globalCss, sampleHostTheme } from './global-css.ts';
 
 const BATCH_SIZE = 6;
@@ -73,6 +75,20 @@ export interface Runtime {
   votes: Record<string, 'more' | 'less'>;
   /** What the signed-in server offers (`local:serverOffer`); only a server source reads it. */
   serverOffer: ServerOffer | null;
+  /**
+   * UnAlgorithm Cloud's source list as the background stored it (`local:officialList`); read only through
+   * `storedOfficialList`.
+   */
+  officialList: StoredOfficialList;
+}
+
+/** The chosen source list as the feed needs it: whether UnEcho Chamber can run on it, and its balance notice. */
+interface ListState {
+  /** What it was computed from: recomputed only when the settings section or the stored copy is another object. */
+  from: [Settings['perspectives'], StoredOfficialList];
+  ready: boolean;
+  /** "Your list isn't balanced: No outlets in Right." (drafts, D110); absent when balanced. */
+  notice?: string;
 }
 
 /** How the controller talks to the rest of the extension (mocked in tests). */
@@ -163,6 +179,7 @@ const EMPTY_DECISION: Decision = { filter: null, highlight: null };
 
 export class FeedController {
   private rt: Runtime | undefined;
+  private listState: ListState | undefined;
   private active = false;
   private scope: HTMLElement | null = null;
   private entries = new Map<HTMLElement, Entry>();
@@ -694,7 +711,26 @@ export class FeedController {
   }
 
   /**
-   * A job's offer rule (fact-check: P3-05; perspectives: P3-36, with this build's registry), on a post that is not
+   * The chosen source list's readiness and balance notice (D103, D104), computed once per change of the settings'
+   * `perspectives` section or of the stored Cloud copy (each a new object when it changes), not once per post.
+   */
+  private chosenListState(rt: Runtime): ListState {
+    const cached = this.listState;
+    if (cached && cached.from[0] === rt.settings.perspectives && cached.from[1] === rt.officialList) return cached;
+    const list = chosenList(rt.settings, storedOfficialList(rt.officialList));
+    const ready = listReady(list);
+    const warnings = ready ? listBalance(list).warnings : [];
+    const state: ListState = {
+      from: [rt.settings.perspectives, rt.officialList],
+      ready,
+      ...(ready && warnings.length ? { notice: `${listName(list.kind)} isn't balanced: ${warnings.join(' ')}` } : {}),
+    };
+    this.listState = state;
+    return state;
+  }
+
+  /**
+   * A job's offer rule (fact-check: P3-05; perspectives: P3-36, with the chosen source list ready), on a post that is not
    * folded away (shown, revealed or dimmed).
    */
   private jobOffered(e: Entry, job: Job): boolean {
@@ -705,17 +741,20 @@ export class FeedController {
     const offer = { device: rt.device, post: e.post, classification: e.classification, serverOffer: rt.serverOffer };
     return job === 'factcheck'
       ? factcheckOffered(offer)
-      : perspectivesOffered({ ...offer, registryReady: perspectivesRegistry() !== null });
+      : perspectivesOffered({ ...offer, listReady: this.chosenListState(rt).ready });
   }
 
   private jobModel(e: Entry, job: Job): { factcheck?: FactcheckItemModel } | { perspectives?: FactcheckItemModel } {
     const state = e[job]?.state ?? 'offered';
     if ((state === 'offered' || state === 'confirming') && !this.jobOffered(e, job)) return {};
+    // The chosen list's balance warnings, beside the price (D104): they warn and never block.
+    const notice = job === 'perspectives' && this.rt ? this.chosenListState(this.rt).notice : undefined;
     return {
       [job]: {
         state,
         price:
           jobPriceLabel(job, this.rt?.device.aiSource ?? null, this.rt?.serverOffer ?? null, this.rt?.device.webSearch) ?? '',
+        ...(notice ? { notice } : {}),
         ...(e[job]?.message ? { message: e[job].message } : {}),
       },
     };

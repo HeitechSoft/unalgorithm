@@ -13,6 +13,8 @@ import {
   OUTLET_COUNTRIES,
   OutletDomainSchema,
   OutletIdSchema,
+  type PerspectivesList,
+  PerspectivesListSchema,
 } from '@unalgorithm/protocol';
 import { z } from 'zod';
 
@@ -70,6 +72,45 @@ export function ownSourceList(
     outlets: Object.entries(outlets)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([id, o]) => ({ id, name: o.name, domains: o.domains, lean: o.bucket ? { bucket: o.bucket } : null })),
+  };
+}
+
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/**
+ * `list` as a comparison request carries it (decision D102): its outlets with a lean, sorted by id, as `{ bucket,
+ * domains }` only (no name, id or evidence). Null when no outlet has a lean, or when the result fails
+ * `PerspectivesListSchema` (over a cap).
+ */
+export function wireList(list: SourceList): PerspectivesList | null {
+  const outlets = list.outlets.flatMap((o) => (o.lean ? [o] : []));
+  if (outlets.length === 0) return null;
+  const wire = {
+    kind: list.kind,
+    version: list.version,
+    outlets: [...outlets].sort(byId).map((o) => ({ bucket: o.lean?.bucket as LeanBucket, domains: [...o.domains] })),
+  };
+  return PerspectivesListSchema.safeParse(wire).success ? wire : null;
+}
+
+/** A name holds at most this many characters (`PerspectivesSourceSchema.outlet`). */
+const MAX_NAME_CHARS = 120;
+
+/**
+ * A request's list as a server's run reads it: outlets `o1`…`oN` in the wire's order, each named by its first web
+ * address (the server has no names; the extension shows its own after checking every lean), `kind` and `version`
+ * copied. Held only for that run.
+ */
+export function sourceListFromWire(wire: PerspectivesList): SourceList {
+  return {
+    kind: wire.kind,
+    version: wire.version,
+    outlets: wire.outlets.map((o, i) => ({
+      id: `o${i + 1}`,
+      name: (o.domains[0] ?? '').slice(0, MAX_NAME_CHARS),
+      domains: o.domains,
+      lean: { bucket: o.bucket },
+    })),
   };
 }
 
@@ -171,7 +212,7 @@ export function listProblemText(p: ListProblem): string {
 
 /** Outlets with a lean in one bucket, sorted by id (the order bucket searches use). */
 export function outletsIn<O extends ListedOutlet>(list: { outlets: readonly O[] }, bucket: LeanBucket): O[] {
-  return list.outlets.filter((o) => o.lean?.bucket === bucket).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return list.outlets.filter((o) => o.lean?.bucket === bucket).sort(byId);
 }
 
 /**

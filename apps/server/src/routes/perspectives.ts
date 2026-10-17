@@ -1,11 +1,13 @@
 /**
  * UnEcho Chamber jobs (F22, F18): one shared link in, a comparison of its coverage across the source list's lean
  * buckets out, on the job kit (`routes/jobs.ts`), which owns the lifecycle, the holds, the usage row and the no-content
- * logging. The request is the link alone (URL and link-card title) with the platform and audience: the schema is strict,
- * so a body carrying post text or any other field is refused, never stripped. The link is never logged or stored.
+ * logging. The request is the link alone (URL and link-card title) with the platform and audience, and the person's
+ * chosen source list as web addresses and buckets (decision D102): the schema is strict, so a body carrying post text or
+ * any other field is refused, never stripped. The link and the list are never logged or stored: the list lives in the
+ * request handler and the in-memory job only, and an unsound one is refused before anything is metered.
  */
 import { AIError } from '@unalgorithm/ai';
-import type { SourceList } from '@unalgorithm/outlets';
+import { listProblems, sourceListFromWire } from '@unalgorithm/outlets';
 import {
   type CreditPriceSchedule,
   FEATURE_NAMES,
@@ -32,12 +34,10 @@ export function perspectivesRoutes(
   deps: AppDeps & {
     priceSchedule: CreditPriceSchedule;
     perspectivesJobs: JobStore<PerspectivesResult>;
-    /** The source list, or null: then UnEcho Chamber is not offered. */
-    outlets: SourceList | null;
   },
   limits: LimitDeps,
 ): void {
-  const { config, db, log, ai, priceSchedule, outlets } = deps;
+  const { config, db, log, ai, priceSchedule } = deps;
   const search = deps.search ?? null;
   mountJobRoutes<PerspectivesJobRequest, PerspectivesResult>(
     app,
@@ -59,15 +59,19 @@ export function perspectivesRoutes(
       },
       // The comparison runs on the synthesis route (P3-33).
       refusedModel: config.factcheck.synthesisModel,
-      offer: () => perspectivesOffer(config, priceSchedule, outlets),
-      // F18: only a public post's link is ever compared; nothing is metered for another.
+      offer: () => perspectivesOffer(config, priceSchedule),
+      // F18: only a public post's link is ever compared; nothing is metered for another. The list keeps P3-72's rules
+      // (one outlet per web address, none inside another's), so each search hit maps to one bucket.
       admit: (req) => {
         if (!serverMayReceive(req)) throw new AIError('bad-request', 'Only a public post can be compared.');
+        if (listProblems(sourceListFromWire(req.list).outlets).length > 0) {
+          throw new AIError('bad-request', 'The source list was not valid.');
+        }
       },
       limits: (account) => checkJobLimits(limits, account),
       prepare: async (maxCostMicros, req) => {
-        // `offer` refused without a source list, so it is here.
-        const registry = outlets as SourceList;
+        // The request's own list, sound by `admit`: outlets `o1`…`oN`, named by web address.
+        const registry = sourceListFromWire(req.list);
         const routes = await resolveFactcheckRoutes(db.db, config, log);
         const pDeps = perspectivesDepsFor(routes, {
           ai,

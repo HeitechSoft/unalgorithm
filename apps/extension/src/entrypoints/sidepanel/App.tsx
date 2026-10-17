@@ -93,7 +93,7 @@ export function App() {
     return (
       <main className="panel" data-density="compact">
         {openEntry.task === 'perspectives' ? (
-          <PerspectivesSheet {...sheet} result={openEntry.perspectives} />
+          <PerspectivesSheet {...sheet} result={openEntry.perspectives} listWarnings={openEntry.listWarnings} />
         ) : (
           <FactcheckSheet {...sheet} result={openEntry.result} costLine={checkCostLine(openEntry)} />
         )}

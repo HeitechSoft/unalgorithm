@@ -39,6 +39,11 @@ export interface FactcheckItemModel {
   state: 'offered' | 'confirming' | 'running' | 'done' | 'failed';
   /** factcheckPriceLabel(...), e.g. 'About $0.12 on your Anthropic account'. */
   price: string;
+  /**
+   * Shown beside the price while confirming: UnEcho Chamber's chosen list isn't balanced, e.g. "Your list isn't balanced:
+   * No outlets in Right." It warns and never blocks.
+   */
+  notice?: string;
   /** failed: the error; done: the toolbar hint when the panel could not open. */
   message?: string;
 }
@@ -302,7 +307,9 @@ function JobRow({ model, on, words }: { model: FactcheckItemModel; on: (action: 
   }, [model.state]);
   const text =
     model.state === 'confirming'
-      ? model.price
+      ? model.notice
+        ? `${model.price} · ${model.notice}`
+        : model.price
       : model.state === 'running'
         ? words.running
         : model.state === 'done'

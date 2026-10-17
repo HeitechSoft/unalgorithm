@@ -1,7 +1,8 @@
 /**
- * "Other perspectives" in the background (P3-38, P3-46): the registry by build mode, every gate, the own-key pipeline
- * (Anthropic, OpenAI, OpenAI-compatible with a Brave key) and its ledger, only the link leaving, the server path
- * (canonical link, cancel on tab close), one run per tab, and the check of leans against this build's registry.
+ * UnEcho Chamber in the background (P3-38, P3-46, P3-77): the chosen source list and its gate, every gate, the own-key
+ * pipeline (Anthropic, OpenAI, OpenAI-compatible with a Brave key) on the chosen list and its ledger, only the link and
+ * the list's web addresses leaving, the server path (canonical link, the list in the body, cancel on tab close), one run
+ * per tab, and the check of every lean against the list sent.
  * Extension storage is the WXT fake browser, API keys fake-indexeddb, Anthropic and OpenAI the mock responders, the
  * compat server, Brave and the UnAlgorithm server stubbed fetches; outlets are the fictional fixture. Nothing real is
  * called.
@@ -22,13 +23,23 @@ import {
   type ResponsesRequestKind,
   researchResponse,
 } from '@unalgorithm/ai/testing/openai-responses';
-import { type AISourceConfig, dayUsage, defaultDevice, sourceId, type WebSearchKey } from '@unalgorithm/core';
-import type { SourceList } from '@unalgorithm/outlets';
-import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
+import {
+  type AISourceConfig,
+  dayUsage,
+  defaultDevice,
+  defaultSettings,
+  type OwnOutlet,
+  sourceId,
+  type WebSearchKey,
+} from '@unalgorithm/core';
+import { outletForHost, outletsIn, ownSourceList, type SourceList, sourceListFromWire, wireList } from '@unalgorithm/outlets';
+import { FIXTURE_LIST, FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import {
   AUTHORIZE_PAGE_PATH,
   LEAN_BUCKETS,
+  type LeanBucket,
   PERSPECTIVES_JOBS_PATH,
+  type PerspectivesList,
   type PerspectivesResult,
   PerspectivesResultSchema,
   type PostKey,
@@ -47,18 +58,16 @@ import { type ServerAccount, serverAccountItem } from '../src/background/server-
 import { forgetTab } from '../src/background/tabs.ts';
 import { handlers } from '../src/entrypoints/background.ts';
 import type { BgRequest } from '../src/lib/messages.ts';
-import { leansMatchRegistry } from '../src/lib/outlets.ts';
-import { deviceItem, type FactcheckEntry, factcheckItem, usageItem } from '../src/lib/storage.ts';
+import { chosenList, listReady, matchLeans } from '../src/lib/outlets.ts';
+import { deviceItem, type FactcheckEntry, factcheckItem, officialListItem, settingsItem, usageItem } from '../src/lib/storage.ts';
 
-/** `leans`: what the leans check answers instead of the real one (undefined: the real one). */
-const reg = vi.hoisted(() => ({ value: null as SourceList | null, leans: undefined as boolean | undefined }));
+/** `refuse`: the leans check refuses every result (an own-key mismatch, which the real pipeline can't produce). */
+const leans = vi.hoisted(() => ({ refuse: false }));
 vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/outlets.ts')>();
   return {
     ...actual,
-    perspectivesRegistry: () => reg.value,
-    leansMatchRegistry: (...args: Parameters<typeof actual.leansMatchRegistry>) =>
-      reg.leans ?? actual.leansMatchRegistry(...args),
+    matchLeans: (...args: Parameters<typeof actual.matchLeans>) => (leans.refuse ? null : actual.matchLeans(...args)),
   };
 });
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
@@ -207,37 +216,71 @@ function perspectives(over: Partial<PerspectivesMsg> & Record<string, unknown> =
 }
 const entries = async (tabId = TAB) => (await factcheckItem(tabId).getValue()).entries;
 
-const outletName = (id: string) => FIXTURE_LIST.outlets.find((o) => o.id === id)?.name ?? '';
-/** A valid result naming one fixture outlet per bucket. */
-function fixtureResult(): PerspectivesResult {
+/**
+ * A valid result on `list`: one source per bucket with an outlet, on that bucket's first outlet (by id) and its first web
+ * address, named as `list` names it; the other buckets are gaps.
+ */
+function resultFor(list: SourceList): PerspectivesResult {
+  const picked = LEAN_BUCKETS.flatMap((bucket) => {
+    const outlet = outletsIn(list, bucket)[0];
+    return outlet ? [{ bucket, outlet }] : [];
+  });
   return {
     v: 1,
     checkedAt: '2026-10-15T09:00:00.000Z',
     model: 'claude-sonnet-5-5',
     promptVersion: 1,
-    registryVersion: FIXTURE_LIST.version,
-    list: 'cloud',
+    registryVersion: list.version,
+    list: list.kind,
     story: {
       url: LINK.url,
       query: 'city bridge reopens',
       from: '2026-10-12T09:00:00.000Z',
       to: '2026-10-15T09:00:00.000Z',
     },
-    coverage: LEAN_BUCKETS.map((bucket, i) => ({ bucket, sourceIds: [`s${i + 1}`] })),
+    coverage: LEAN_BUCKETS.map((bucket) => {
+      const i = picked.findIndex((p) => p.bucket === bucket);
+      return { bucket, sourceIds: i < 0 ? [] : [`s${i + 1}`] };
+    }),
     agreed: [{ text: 'The bridge reopened.', citations: [{ sourceId: 's1', quote: 'The city bridge reopened' }] }],
     differences: [],
     unique: [],
-    sources: LEAN_BUCKETS.map((bucket, i) => ({
+    sources: picked.map(({ bucket, outlet }, i) => ({
       id: `s${i + 1}`,
-      url: `https://${bucket}-a.example/news/bridge`,
-      domain: `${bucket}-a.example`,
+      url: `https://${outlet.domains[0]}/news/bridge`,
+      domain: outlet.domains[0] as string,
       title: 'Bridge reopens',
       pageAge: '2026-10-14',
-      outletId: `fx-${bucket}-a`,
-      outlet: outletName(`fx-${bucket}-a`),
+      outletId: outlet.id,
+      outlet: outlet.name,
       bucket,
     })),
   };
+}
+/** A valid result naming one fixture outlet per bucket, as the fixture list names it. */
+const fixtureResult = (): PerspectivesResult => resultFor(FIXTURE_LIST);
+/** What a server answers for `list`: the list it was sent, its outlets `o1`…`oN` named by web address. */
+const serverAnswer = (list: SourceList): PerspectivesResult => resultFor(sourceListFromWire(wireList(list) as PerspectivesList));
+/** Each source's web address with the outlet id and name `list` gives it. */
+const namesOn = (r: PerspectivesResult | undefined, list: SourceList) =>
+  (r?.sources ?? []).map((s) => [s.domain, outletForHost(list, s.domain)?.id, outletForHost(list, s.domain)?.name]);
+const namesIn = (r: PerspectivesResult | undefined) => (r?.sources ?? []).map((s) => [s.domain, s.outletId, s.outlet]);
+
+const own = (name: string, domains: string[], bucket: LeanBucket | null): OwnOutlet => ({ name, domains, bucket, addedAt: 1 });
+/**
+ * The person's own list: the fixture's outlets without its Right ones, under their own ids and names ("My Left A" on
+ * `left-a.example`). Unbalanced: no outlet in Right.
+ */
+const MY_OUTLETS: Record<string, OwnOutlet> = Object.fromEntries(
+  FIXTURE_LIST.outlets
+    .filter((o) => o.lean && o.lean.bucket !== 'right')
+    .map((o) => [`my-${o.id.slice(3)}`, own(`My ${o.name.slice('Fixture '.length)}`, [...o.domains], o.lean?.bucket ?? null)]),
+);
+/** Settings with the person's own list chosen, holding `outlets`. */
+async function chooseOwnList(outlets: Record<string, OwnOutlet>) {
+  const settings = defaultSettings();
+  settings.perspectives = { list: 'own', outlets };
+  await settingsItem.setValue(settings);
 }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
@@ -256,8 +299,9 @@ const doneServer =
 
 beforeEach(async () => {
   fakeBrowser.reset();
-  reg.value = FIXTURE_LIST;
-  reg.leans = undefined;
+  leans.refuse = false;
+  // UnAlgorithm Cloud's list (the default choice), stored: the fictional fixture.
+  await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockResolvedValue('access-token-1');
   vi.mocked(runPerspectivesViaServer).mockClear();
@@ -272,20 +316,67 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('registry', () => {
-  it('test_perspectives_registry_by_build_mode', async () => {
-    const load = async () => {
-      vi.resetModules();
-      const mod = await vi.importActual<typeof import('../src/lib/outlets.ts')>('../src/lib/outlets.ts');
-      return mod.perspectivesRegistry();
-    };
-    // No source list with a lean in this (non-e2e) mode: the bundled candidates hold none.
-    expect(import.meta.env.MODE).not.toBe('e2e');
-    expect(await load()).toBeNull();
+describe('the chosen list', () => {
+  it('test_chosen_list_and_ready', async () => {
+    const settings = defaultSettings();
+    // UnAlgorithm Cloud's stored copy (the default choice), or null before the first one.
+    expect(chosenList(settings, FIXTURE_OFFICIAL_LIST)).toStrictEqual(FIXTURE_LIST);
+    expect(chosenList(settings, null)).toBeNull();
+    // The person's own, whatever the Cloud's.
+    settings.perspectives = { list: 'own', outlets: MY_OUTLETS };
+    expect(chosenList(settings, FIXTURE_OFFICIAL_LIST)).toStrictEqual(ownSourceList(MY_OUTLETS));
+    expect(chosenList(settings, null)?.kind).toBe('own');
 
+    // Ready: an outlet with a lean and no list problem. Unbalanced warns, never blocks (D101).
+    expect(listReady(FIXTURE_LIST)).toBe(true);
+    expect(listReady(ownSourceList(MY_OUTLETS))).toBe(true);
+    expect(listReady(ownSourceList({ 'my-a': own('My A', ['a.example'], 'center') }))).toBe(true);
+    expect(listReady(null)).toBe(false);
+    expect(listReady(ownSourceList({}))).toBe(false);
+    expect(listReady(ownSourceList({ 'my-a': own('My A', ['a.example'], null) }))).toBe(false);
+    expect(listReady({ ...FIXTURE_LIST, outlets: FIXTURE_LIST.outlets.map((o) => ({ ...o, lean: null })) })).toBe(false);
+    expect(listReady(ownSourceList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') }))).toBe(false);
+
+    // E2E builds read the fixture as the Cloud's list, and never fetch.
+    expect(import.meta.env.MODE).not.toBe('e2e');
     vi.stubEnv('MODE', 'e2e');
-    expect(await load()).toStrictEqual(FIXTURE_LIST);
+    vi.resetModules();
+    const e2e = await vi.importActual<typeof import('../src/lib/outlets.ts')>('../src/lib/outlets.ts');
+    expect(e2e.chosenList(defaultSettings(), e2e.storedOfficialList({ list: null, checkedAt: 0 }))).toStrictEqual(FIXTURE_LIST);
     vi.unstubAllEnvs();
+  });
+
+  it('test_perspectives_refuses_list_not_ready', async () => {
+    const refusal = (message: string) => ({ ok: false, error: { code: 'not-available', message } });
+    const CLOUD = "UnAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
+    const OWN = 'Your source list has no outlets with a lean yet. Add some in Settings → AI.';
+    const noLean = { ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
+    useNetwork({ server: doneServer(fixtureResult()) });
+    for (const source of [ANTHROPIC, SERVER]) {
+      await setup({ source });
+      // UnAlgorithm Cloud's list chosen (the default): its stored copy has no lean, or none is stored yet.
+      await officialListItem.setValue({ list: noLean, checkedAt: 1 });
+      expect(await perspectives()).toStrictEqual(refusal(CLOUD));
+      await officialListItem.setValue({ list: null, checkedAt: 1 });
+      expect(await perspectives()).toStrictEqual(refusal(CLOUD));
+      // Your own list chosen: empty, or no outlet with a lean.
+      await chooseOwnList({});
+      expect(await perspectives()).toStrictEqual(refusal(OWN));
+      await chooseOwnList({ 'my-a': own('My A', ['a.example'], null) });
+      expect(await perspectives()).toStrictEqual(refusal(OWN));
+      // A web address in two of your outlets: what to fix, naming the outlet.
+      await chooseOwnList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') });
+      expect(await perspectives()).toStrictEqual(
+        refusal(
+          'Your source list needs fixing in Settings → AI: my-zz-copy: another outlet already lists one of its web addresses.',
+        ),
+      );
+      await settingsItem.removeValue();
+      await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
+    }
+    // Nothing was sent, and no comparison started.
+    expect(requests).toHaveLength(0);
+    expect(await entries()).toStrictEqual([]);
   });
 });
 
@@ -297,10 +388,6 @@ describe('gates', () => {
     expect(await perspectives()).toStrictEqual(refusal('not-available', 'Turn on UnEcho Chamber in Settings → AI.'));
 
     await setup();
-    reg.value = null;
-    expect(await perspectives()).toStrictEqual(refusal('not-available', "UnEcho Chamber isn't available yet."));
-    reg.value = FIXTURE_LIST;
-
     expect(await perspectives({ link: { url: 'javascript:alert(1)' } })).toStrictEqual(
       refusal('bad-request', "This link can't be compared."),
     );
@@ -398,9 +485,16 @@ describe('runs', () => {
     const res = await perspectives({ link: tracked, platform: 'facebook', audience: 'public', text: MARKER });
     expect(res.ok).toBe(true);
     const [call] = vi.mocked(runPerspectivesViaServer).mock.calls;
-    expect(call?.[1]).toStrictEqual({ link: LINK, platform: 'facebook', audience: 'public' });
+    const list = wireList(FIXTURE_LIST);
+    expect(call?.[1]).toStrictEqual({ link: LINK, platform: 'facebook', audience: 'public', list });
     const start = requests.find((r) => isStart(r.url, r.init));
-    expect(JSON.parse(String(start?.init.body))).toStrictEqual({ v: 1, link: LINK, platform: 'facebook', audience: 'public' });
+    expect(JSON.parse(String(start?.init.body))).toStrictEqual({
+      v: 1,
+      link: LINK,
+      platform: 'facebook',
+      audience: 'public',
+      list,
+    });
     expect(JSON.stringify(requests.map((r) => [String(r.url), r.init.body]))).not.toMatch(/utm_source|li_fat_id|MARKER/);
     expect((await entries())[0]).toMatchObject({ task: 'perspectives', status: 'done', perspectives: fixtureResult() });
 
@@ -583,8 +677,8 @@ describe('runs', () => {
     expect(entry).toMatchObject({ task: 'perspectives', status: 'done' });
     expect(entry?.costMicros).toBeUndefined();
 
-    // A result whose leans don't match this build's registry is refused, on own keys as on a server.
-    reg.leans = false;
+    // A result whose leans don't match the list sent is refused, on own keys as on a server.
+    leans.refuse = true;
     expect(await perspectives()).toMatchObject({ ok: false, error: { code: 'not-available' } });
     expect((await entries())[0]).toMatchObject({ status: 'failed' });
 
@@ -597,29 +691,112 @@ describe('runs', () => {
     expect(ledger.byModel.llama?.calls).toBe(14);
   });
 
-  it('test_perspectives_bg_server_leans_checked_against_own_registry', async () => {
+  it('test_perspectives_server_body_carries_wire_list', async () => {
+    // UnAlgorithm Cloud's list (the fixture): its wire list goes, never an outlet's name or id.
+    await setup({ source: SERVER });
+    const answer = serverAnswer(FIXTURE_LIST);
+    useNetwork({ server: doneServer(answer) });
+    const res = await perspectives();
+    expect(res.ok).toBe(true);
+    const start = requests.find((r) => isStart(r.url, r.init));
+    const body = JSON.parse(String(start?.init.body)) as { list: unknown };
+    expect(body.list).toStrictEqual(wireList(FIXTURE_LIST));
+    const sent = String(start?.init.body);
+    for (const o of FIXTURE_LIST.outlets) {
+      expect(sent).not.toContain(o.name);
+      expect(sent).not.toContain(`"${o.id}"`);
+    }
+    // The server named its outlets by web address; the stored result carries the chosen list's ids and names.
+    const [entry] = await entries();
+    expect(entry).toMatchObject({ task: 'perspectives', status: 'done', listWarnings: [] });
+    expect(namesIn(answer).every(([domain, id, name]) => /^o\d+$/.test(String(id)) && name === domain)).toBe(true);
+    expect(namesIn(entry?.perspectives)).toStrictEqual(namesOn(answer, FIXTURE_LIST));
+    expect(namesIn(entry?.perspectives).every(([, , name]) => String(name).startsWith('Fixture '))).toBe(true);
+    expect({ ...entry?.perspectives, sources: [] }).toStrictEqual({ ...answer, sources: [] });
+    if (res.ok) expect(res.result).toStrictEqual(entry?.perspectives);
+
+    // Your own list: its outlets with a lean go (sorted by id, no Right), and its own names come back.
+    await factcheckItem(TAB).removeValue();
+    await chooseOwnList(MY_OUTLETS);
+    const mine = ownSourceList(MY_OUTLETS);
+    const myAnswer = serverAnswer(mine);
+    useNetwork({ server: doneServer(myAnswer) });
+    expect((await perspectives()).ok).toBe(true);
+    const myStart = requests.find((r) => isStart(r.url, r.init));
+    const myList = (JSON.parse(String(myStart?.init.body)) as { list: PerspectivesList }).list;
+    expect(myList).toStrictEqual(wireList(mine));
+    expect(myList.kind).toBe('own');
+    expect(myList.outlets).toHaveLength(8);
+    expect(String(myStart?.init.body)).not.toMatch(/My |"my-/);
+    const [mineEntry] = await entries();
+    expect(mineEntry?.listWarnings).toStrictEqual(['No outlets in Right.']);
+    expect(namesIn(mineEntry?.perspectives)).toStrictEqual(namesOn(myAnswer, mine));
+    expect(namesIn(mineEntry?.perspectives).every(([, id, name]) => MY_OUTLETS[String(id)]?.name === name)).toBe(true);
+  });
+
+  it('test_perspectives_own_key_runs_on_chosen_list', async () => {
+    await setup();
+    await chooseOwnList(MY_OUTLETS);
+    const res = await perspectives();
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    // The pipeline ran on your list: a search per bucket with an outlet, on its web addresses only (no Right).
+    expect(kinds.filter((k) => k === 'research')).toHaveLength(4);
+    const searched = anthropic.bodies.flatMap(
+      (b) => ((b as { tools?: { allowed_domains?: string[] }[] }).tools ?? [])[0]?.allowed_domains ?? [],
+    );
+    const domains = Object.values(MY_OUTLETS).flatMap((o) => o.domains);
+    expect([...searched].sort()).toStrictEqual([...domains].sort());
+    // Stored with your list's ids and names, the list it used, and its warnings as they were at the start.
+    const [entry] = await entries();
+    expect(entry).toMatchObject({ task: 'perspectives', status: 'done', listWarnings: ['No outlets in Right.'] });
+    const result = entry?.perspectives;
+    expect(result?.list).toBe('own');
+    expect(result?.registryVersion).toBe('');
+    expect(result?.sources).toHaveLength(4);
+    for (const source of result?.sources ?? []) {
+      expect(MY_OUTLETS[source.outletId]?.name, source.outletId).toBe(source.outlet);
+      expect(source.outlet).toMatch(/^My /);
+    }
+    expect(result?.coverage.find((c) => c.bucket === 'right')?.sourceIds).toStrictEqual([]);
+  });
+
+  it('test_match_leans_refuses_foreign_leans', async () => {
     const valid = fixtureResult();
     expect(PerspectivesResultSchema.safeParse(valid).success).toBe(true);
-    expect(leansMatchRegistry(valid, FIXTURE_LIST)).toBe(true);
+    expect(matchLeans(valid, FIXTURE_LIST)).toStrictEqual(valid);
+    // A server's own ids and names (web addresses) give way to the list's; nothing else changes.
+    const answer = serverAnswer(FIXTURE_LIST);
+    const named = matchLeans(answer, FIXTURE_LIST);
+    expect(namesIn(named ?? undefined)).toStrictEqual(namesOn(answer, FIXTURE_LIST));
+    expect({ ...named, sources: [] }).toStrictEqual({ ...answer, sources: [] });
 
     const changed = (edit: (r: PerspectivesResult) => void) => {
       const r = structuredClone(valid);
       edit(r);
-      return leansMatchRegistry(r, FIXTURE_LIST);
+      return matchLeans(r, FIXTURE_LIST);
     };
     const first = (r: PerspectivesResult) => r.sources[0] as PerspectivesResult['sources'][number];
-    expect(changed((r) => void (first(r).bucket = 'right'))).toBe(false);
-    expect(changed((r) => void (first(r).outletId = 'fx-left-b'))).toBe(false);
-    expect(changed((r) => void (first(r).domain = 'nowhere.example'))).toBe(false);
-    expect(changed((r) => void (first(r).url = 'https://nowhere.example/news/bridge'))).toBe(false);
-    expect(changed((r) => void ((r.coverage[0] as { sourceIds: string[] }).sourceIds = ['s2']))).toBe(false);
+    // A bucket the list doesn't give that outlet, an outlet or a page off the list, a row of another bucket's source.
+    expect(changed((r) => void (first(r).bucket = 'right'))).toBeNull();
+    expect(changed((r) => void (first(r).domain = 'nowhere.example'))).toBeNull();
+    expect(changed((r) => void (first(r).url = 'https://nowhere.example/news/bridge'))).toBeNull();
+    expect(changed((r) => void (first(r).url = 'https://left-b.example/news/bridge'))).toBeNull();
+    expect(changed((r) => void ((r.coverage[0] as { sourceIds: string[] }).sourceIds = ['s2']))).toBeNull();
+    // Another list's result: an own list's for a Cloud run, or another version of the Cloud's.
+    expect(changed((r) => void (r.list = 'own'))).toBeNull();
+    expect(changed((r) => void (r.registryVersion = '2'))).toBeNull();
+    // An outlet the list sent without a lean.
     const unlabelled: SourceList = {
       ...FIXTURE_LIST,
       outlets: FIXTURE_LIST.outlets.map((o) => (o.id === 'fx-left-a' ? { ...o, lean: null } : o)),
     };
-    expect(leansMatchRegistry(valid, unlabelled)).toBe(false);
-    // Another outlet's name beside this outlet's lean.
-    expect(changed((r) => void (first(r).outlet = outletName('fx-right-a')))).toBe(false);
+    expect(matchLeans(valid, unlabelled)).toBeNull();
+    // Another outlet's id or name beside this outlet's lean: replaced by the list's own.
+    const renamed = changed((r) => {
+      first(r).outletId = 'fx-right-a';
+      first(r).outlet = 'Fixture Right A';
+    });
+    expect(renamed?.sources[0]).toMatchObject({ outletId: 'fx-left-a', outlet: 'Fixture Left A', bucket: 'left' });
     // A repeated source id (the schema allows it): the right row's `s1` would show the left outlet under Right.
     type Row = { sourceIds: string[] };
     const repeated = structuredClone(valid);
@@ -627,21 +804,26 @@ describe('runs', () => {
     (repeated.coverage[0] as Row).sourceIds = [];
     (repeated.coverage[4] as Row).sourceIds = ['s1'];
     expect(PerspectivesResultSchema.safeParse(repeated).success).toBe(true);
-    expect(leansMatchRegistry(repeated, FIXTURE_LIST)).toBe(false);
+    expect(matchLeans(repeated, FIXTURE_LIST)).toBeNull();
 
-    // A server whose result carries a lean this build's registry doesn't hold: failed, nothing stored.
+    // A server whose result carries a lean the list sent doesn't hold, or names another list: failed, nothing stored.
     await setup({ source: SERVER });
-    const relabelled = structuredClone(valid);
-    first(relabelled).bucket = 'center';
-    useNetwork({ server: doneServer(relabelled) });
     const error = {
       code: 'not-available',
-      message: "This server's outlet list doesn't match this version of UnAlgorithm, so the comparison isn't shown.",
+      message: "This result doesn't match your source list, so it isn't shown.",
     };
-    expect(await perspectives()).toStrictEqual({ ok: false, error });
-    const [entry] = await entries();
-    expect(entry).toMatchObject({ task: 'perspectives', status: 'failed', error });
-    expect(entry?.perspectives).toBeUndefined();
+    const edits: ((r: PerspectivesResult) => void)[] = [(r) => void (first(r).bucket = 'center'), (r) => void (r.list = 'own')];
+    let foreign = answer;
+    useNetwork({ server: (url, init) => doneServer(foreign)(url, init) });
+    for (const edit of edits) {
+      await factcheckItem(TAB).removeValue();
+      foreign = structuredClone(answer);
+      edit(foreign);
+      expect(await perspectives()).toStrictEqual({ ok: false, error });
+      const [entry] = await entries();
+      expect(entry).toMatchObject({ task: 'perspectives', status: 'failed', error });
+      expect(entry?.perspectives).toBeUndefined();
+    }
   });
 });
 

@@ -79,9 +79,10 @@ export function runFactcheckViaServer(account: ServerAccount, post: PostForAI, o
 }
 
 /**
- * UnEcho Chamber on the server: only the shared link (URL and link-card title), the platform and, on Facebook, the
- * audience leave the browser. The body is built field by field, `link` too, so nothing else on the caller's objects
- * (post text included) can ride along.
+ * UnEcho Chamber on the server: only the shared link (URL and link-card title), the platform, on Facebook the audience,
+ * and the chosen source list as web addresses and buckets (`wireList`, decision D102) leave the browser. The body is
+ * built field by field, `link` and `list` too, so nothing else on the caller's objects (post text, an outlet's name or
+ * id) can ride along.
  */
 export function runPerspectivesViaServer(
   account: ServerAccount,
@@ -93,6 +94,11 @@ export function runPerspectivesViaServer(
     link: { url: req.link.url, ...(req.link.title !== undefined ? { title: req.link.title } : {}) },
     platform: req.platform,
     ...(req.audience ? { audience: req.audience } : {}),
+    list: {
+      kind: req.list.kind,
+      version: req.list.version,
+      outlets: req.list.outlets.map((o) => ({ bucket: o.bucket, domains: [...o.domains] })),
+    },
   };
   return runJobViaServer(account, PERSPECTIVES_TASK, body, opts);
 }

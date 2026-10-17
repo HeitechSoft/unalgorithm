@@ -58,8 +58,8 @@ function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
 }
 
 /**
- * The one offer rule for UnEcho Chamber: its switch on (`labs.perspectives`), a source that can compare, a usable
- * outlet registry (`registryReady`, decided by the extension: P3-38's `perspectivesRegistry() !== null`), the
+ * The one offer rule for UnEcho Chamber: its switch on (`labs.perspectives`), a source that can compare, the chosen
+ * source list is usable (`listReady`, decided by the extension: `listReady(chosenList(…))`, decision D103), the
  * classifier flagged the post as news, the post shares an http(s) link, and the post is public (decision D38).
  */
 export function perspectivesOffered(i: {
@@ -67,13 +67,13 @@ export function perspectivesOffered(i: {
   post: Pick<PostData, 'platform' | 'audience' | 'sharedLink'>;
   classification: Pick<Classification, 'isNews'> | undefined;
   serverOffer?: ServerOffer | null;
-  registryReady: boolean;
+  listReady: boolean;
 }): boolean {
-  const { device, post, classification, serverOffer = null, registryReady } = i;
+  const { device, post, classification, serverOffer = null, listReady } = i;
   return (
     device.labs.perspectives === true &&
     sourceCapabilities(device.aiSource, serverOffer, device.webSearch).perspectives &&
-    registryReady &&
+    listReady &&
     classification?.isNews === true &&
     sharesWebLink(post) &&
     serverMayReceive(post)

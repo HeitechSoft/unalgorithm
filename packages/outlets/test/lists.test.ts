@@ -3,7 +3,13 @@
  * is on `.example`: no real outlet, no real lean.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { LEAN_BUCKETS, MAX_LIST_DOMAINS, MAX_LIST_OUTLETS, OfficialListSchema } from '@unalgorithm/protocol';
+import {
+  LEAN_BUCKETS,
+  MAX_LIST_DOMAINS,
+  MAX_LIST_OUTLETS,
+  OfficialListSchema,
+  PerspectivesListSchema,
+} from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   bundledCandidates,
@@ -17,6 +23,8 @@ import {
   outletsIn,
   ownCopyOf,
   ownSourceList,
+  sourceListFromWire,
+  wireList,
 } from '../src/index.ts';
 import { FIXTURE_LIST, FIXTURE_MARKER, FIXTURE_OFFICIAL_LIST } from '../src/testing/fixture.ts';
 
@@ -180,6 +188,79 @@ describe('source lists', () => {
       // Every copy is a list the rules accept, so the editor can save it as it is.
       expect(listProblems(ownSourceList(copy).outlets)).toEqual([]);
     }
+  });
+
+  it('test_wire_list_round_trip', () => {
+    // P3-77 (D102): what a comparison request carries. Outlets with a lean, by web addresses and bucket only.
+    const wire = wireList(FIXTURE_LIST);
+    expect(wire).not.toBeNull();
+    expect(PerspectivesListSchema.safeParse(wire).success).toBe(true);
+    expect(wire?.kind).toBe('cloud');
+    expect(wire?.version).toBe('1');
+    expect(wire?.outlets).toHaveLength(10);
+    for (const o of wire?.outlets ?? []) expect(Object.keys(o).sort()).toEqual(['bucket', 'domains']);
+    expect(wire?.outlets[0]).toStrictEqual({ bucket: 'center', domains: ['center-a.example'] });
+    const text = JSON.stringify(wire);
+    for (const o of FIXTURE_LIST.outlets) {
+      expect(text).not.toContain(o.name);
+      expect(text).not.toContain(`"${o.id}"`);
+    }
+    expect(text).not.toContain('evidence');
+
+    // Sorted by id, whatever the list's order; outlets with no lean left out; a copy of the domains.
+    const own = ownSourceList({
+      'fx-z': { name: 'FX Zulu', domains: ['zulu.example', 'zulu-news.example'], bucket: 'right' },
+      'fx-a': { name: 'FX Alpha', domains: ['alpha.example'], bucket: 'left' },
+      'fx-m': { name: 'FX Mike', domains: ['mike.example'], bucket: null },
+    });
+    expect(wireList(own)).toStrictEqual({
+      kind: 'own',
+      version: '',
+      outlets: [
+        { bucket: 'left', domains: ['alpha.example'] },
+        { bucket: 'right', domains: ['zulu.example', 'zulu-news.example'] },
+      ],
+    });
+    expect(wireList({ ...own, outlets: [...own.outlets].reverse() })).toStrictEqual(wireList(own));
+    expect(wireList(own)?.outlets[1]?.domains).not.toBe(own.outlets[2]?.domains);
+
+    // No lean at all, or over a cap: null.
+    expect(wireList({ ...FIXTURE_LIST, outlets: FIXTURE_LIST.outlets.map((o) => ({ ...o, lean: null })) })).toBeNull();
+    expect(wireList(ownSourceList({}))).toBeNull();
+    const tooMany = Array.from({ length: MAX_LIST_OUTLETS + 1 }, (_, i) => ({
+      id: `fx-${i}`,
+      name: `FX ${i}`,
+      domains: [`outlet-${i}.example`],
+      lean: { bucket: 'center' as const },
+    }));
+    expect(wireList({ kind: 'own', version: '', outlets: tooMany })).toBeNull();
+    expect(wireList({ kind: 'own', version: '', outlets: tooMany.slice(1) })).not.toBeNull();
+
+    // Back on a server: ids o1…o10 in the wire's order, each named by its first web address, the same buckets.
+    const back = sourceListFromWire(wire as NonNullable<typeof wire>);
+    expect(back.kind).toBe('cloud');
+    expect(back.version).toBe('1');
+    expect(back.outlets.map((o) => o.id)).toEqual(Array.from({ length: 10 }, (_, i) => `o${i + 1}`));
+    expect(back.outlets.map((o) => o.name)).toEqual(wire?.outlets.map((o) => o.domains[0]));
+    expect(back.outlets.map((o) => o.lean?.bucket)).toEqual(wire?.outlets.map((o) => o.bucket));
+    for (const bucket of LEAN_BUCKETS) {
+      expect(
+        outletsIn(back, bucket)
+          .flatMap((o) => o.domains)
+          .sort(),
+      ).toEqual(
+        outletsIn(FIXTURE_LIST, bucket)
+          .flatMap((o) => o.domains)
+          .sort(),
+      );
+    }
+    expect(listProblems(back.outlets)).toEqual([]);
+    expect(sourceListFromWire(wireList(own) as NonNullable<ReturnType<typeof wireList>>).outlets[1]).toStrictEqual({
+      id: 'o2',
+      name: 'zulu.example',
+      domains: ['zulu.example', 'zulu-news.example'],
+      lean: { bucket: 'right' },
+    });
   });
 
   it('test_fixture_names_only_example_hosts', () => {

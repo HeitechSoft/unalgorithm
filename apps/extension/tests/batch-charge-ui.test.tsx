@@ -190,6 +190,7 @@ describe('feed controller', () => {
       learned: EMPTY_LEARNED,
       votes: {},
       serverOffer: null,
+      officialList: { list: null, checkedAt: 0 },
     };
     c.start(rt);
     await vi.advanceTimersByTimeAsync(1000);

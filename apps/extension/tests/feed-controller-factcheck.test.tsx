@@ -49,7 +49,14 @@ const device = (labs: boolean, aiSource: AISourceConfig = ANTHROPIC): Device => 
 });
 
 function runtime(d: Device, serverOffer: ServerOffer | null = null): Runtime {
-  return { settings: defaultSettings(), device: d, learned: EMPTY_LEARNED, votes: {}, serverOffer };
+  return {
+    settings: defaultSettings(),
+    device: d,
+    learned: EMPTY_LEARNED,
+    votes: {},
+    serverOffer,
+    officialList: { list: null, checkedAt: 0 },
+  };
 }
 
 function bridge(over: Partial<Bridge> = {}): Bridge {

@@ -1,15 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { type AIClient, AIError, type ResearchRequest } from '@unalgorithm/ai';
 import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
-import { CREDIT_PRICE_SCHEDULE, ZERO_USAGE } from '@unalgorithm/protocol';
+import { CREDIT_PRICE_SCHEDULE, SERVER_INFO_PATH, ServerInfoSchema, ZERO_USAGE } from '@unalgorithm/protocol';
 import type { SearchProvider } from '@unalgorithm/research';
 import { describe, expect, it } from 'vitest';
 import type { FactcheckRoutes } from '../src/ai/factcheck.ts';
 import { perspectivesDepsFor, perspectivesOffer } from '../src/ai/perspectives.ts';
 import type { AiRoute } from '../src/ai/routes.ts';
 import { ConfigError } from '../src/config.ts';
+import { outlets } from '../src/db/schema.ts';
 import { TEST_PRICE_SCHEDULE } from './support/job-prices.ts';
-import { testConfig } from './support/test-app.ts';
+import { createTestApp, testConfig } from './support/test-app.ts';
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const API_KEY = 'sk-ant-test-P334-never-shown';
 const ANTHROPIC: Record<string, string | undefined> = {
@@ -106,33 +108,46 @@ describe('setting', () => {
 });
 
 describe('offer', () => {
-  it('test_perspectives_offer_needs_registry', () => {
-    const config = testConfig({ ...ANTHROPIC, FACTCHECK: 'on', PERSPECTIVES: 'on' });
-    // A real server has no source list (the bundled candidates hold no lean): UnEcho Chamber stays hidden.
-    expect(perspectivesOffer(config, TEST_PRICE_SCHEDULE, null, NOW)).toEqual({ offered: false });
+  it('test_perspectives_offered_without_server_list', { timeout: PGLITE_TIMEOUT }, async () => {
+    // D102, D103: every request carries its list, so a server needs none of its own; only PERSPECTIVES decides.
+    for (const [env, offered] of [
+      [{ FACTCHECK: 'on', PERSPECTIVES: 'on' }, true],
+      [{ FACTCHECK: 'on', PERSPECTIVES: 'off' }, false],
+    ] as const) {
+      const t = await createTestApp({ config: testConfig({ ...ANTHROPIC, ...env }) });
+      try {
+        // No list anywhere: the server's own published list is empty, and the app is given none.
+        expect(await t.deps.db.db.select().from(outlets)).toEqual([]);
+        expect('outlets' in t.deps).toBe(false);
+        const info = ServerInfoSchema.parse(await (await t.app.request(SERVER_INFO_PATH)).json());
+        expect(info.capabilities.perspectives, JSON.stringify(env)).toBe(offered);
+      } finally {
+        await t.close();
+      }
+    }
   });
 
   it('test_perspectives_offer_free_server', () => {
     const config = testConfig({ ...ANTHROPIC, FACTCHECK: 'on', PERSPECTIVES: 'on' });
     expect(config.billing).toBe('off');
-    expect(perspectivesOffer(config, CREDIT_PRICE_SCHEDULE, FIXTURE, NOW)).toEqual({
+    expect(perspectivesOffer(config, CREDIT_PRICE_SCHEDULE, NOW)).toEqual({
       offered: true,
       price: null,
       maxCostMicros: 250_000,
     });
-    // PERSPECTIVES off: not offered, registry or not.
-    expect(perspectivesOffer(testConfig(ANTHROPIC), CREDIT_PRICE_SCHEDULE, FIXTURE, NOW)).toEqual({ offered: false });
+    // PERSPECTIVES off: not offered.
+    expect(perspectivesOffer(testConfig(ANTHROPIC), CREDIT_PRICE_SCHEDULE, NOW)).toEqual({ offered: false });
   });
 
   it('test_perspectives_offer_billing_schedule', () => {
     const billing = { ...ON, billing: 'module' as const };
-    expect(perspectivesOffer(billing, TEST_PRICE_SCHEDULE, FIXTURE, NOW)).toEqual({
+    expect(perspectivesOffer(billing, TEST_PRICE_SCHEDULE, NOW)).toEqual({
       offered: true,
       price: { typicalMicros: 270_000, maxMicros: 500_000 },
       maxCostMicros: 250_000,
     });
     // Production's card takes effect 2026-11-01: not offered before it.
-    expect(perspectivesOffer(billing, CREDIT_PRICE_SCHEDULE, FIXTURE, NOW)).toEqual({ offered: false });
+    expect(perspectivesOffer(billing, CREDIT_PRICE_SCHEDULE, NOW)).toEqual({ offered: false });
   });
 });
 

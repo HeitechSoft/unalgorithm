@@ -84,11 +84,12 @@ the last day, never who. The cache stays on that server and is never shared with
 
 **UnEcho Chamber (off by default).** When you turn on Settings → AI → UnEcho Chamber, use your own
 Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
-per-click parameters removed first) and its link-card title go from your browser to that provider, which searches news
-sites from our outlet list for coverage of the same story and compares it. The post's text is never sent, nor its
-author, your interests or anything else about you. Lean labels come only from UnAlgorithm's reviewed outlet list,
-never from the AI. The result stays in this browser's temporary session storage for that tab, as a fact-check's does,
-and nothing goes to HeitechSoft.
+per-click parameters removed first) and its link-card title go from your browser to that provider, which searches the
+outlets your chosen source list gives a lean (UnAlgorithm Cloud's list or your own), by their web addresses, for
+coverage of the same story and compares it. The post's text is never sent, nor its author, your interests or anything
+else about you. Lean labels come only from UnAlgorithm Cloud's source list, set by its admins with evidence, or from
+your own list, never from the AI. The result stays in this browser's temporary session storage for that tab, as a
+fact-check's does, and nothing goes to HeitechSoft.
 
 **UnEcho Chamber's source list.** While UnEcho Chamber is on, UnAlgorithm downloads UnAlgorithm Cloud's published
 source list (the outlets and their leans) from `cloud.unalgorithm.app` at most once a day, whatever AI option you use.
@@ -107,11 +108,12 @@ Tavily. Saving the key sends one test search for the word "UnAlgorithm". The key
 an API key, and Facebook posts that aren't public are never checked.
 
 **UnEcho Chamber on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers
-UnEcho Chamber, the same comparison sends the link and title (with tracking parameters removed) to **that server only**,
-with your device's sign-in, never the post's text. The server follows the link's redirects to find the story's address
-and searches through the search provider its operator configured; it keeps the comparison in its memory only, for at
-most 10 minutes. Closing the tab cancels a comparison that is still running. This browser shows a result only when
-every outlet's lean in it matches this version's own reviewed outlet list.
+UnEcho Chamber, the same comparison sends the link and title (with tracking parameters removed) and your chosen list's
+outlets with a lean, as web addresses and leans without names, to **that server only**, with your device's sign-in,
+never the post's text. The server follows the link's redirects to find the story's address and searches those outlets
+through the search provider its operator configured. The list is kept in its memory for the comparison and never
+stored or logged; the comparison stays in its memory only, for at most 10 minutes. Closing the tab cancels a comparison
+that is still running. This browser shows a result only when every lean in it matches the list it sent.
 
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.

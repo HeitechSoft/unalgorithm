@@ -50,9 +50,10 @@ Rules run in your browser and need no AI. To also spot off-topic posts, engageme
 • your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq)
 • a local or self-hosted model (Ollama, LM Studio or any OpenAI-compatible server)
 
-FACT-CHECK (OFF BY DEFAULT)
+FACT-CHECK AND UNECHO CHAMBER (OFF BY DEFAULT)
 For posts in your feed, with your own Anthropic or OpenAI key, or your own AI server and a Brave or Tavily search key:
 • Fact-check: checks the claims in a public post against sources on the web, and shows each verdict with its sources and quotes. A check runs only when you confirm it.
+• UnEcho Chamber: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by UnAlgorithm Cloud's source list or your own.
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
@@ -159,7 +160,7 @@ What user data does UnAlgorithm Feed collect? Tick only **Website content**; lea
 
 | Category | Answer | Why |
 |---|---|---|
-| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Fact-check, when the user turns it on and confirms a check, sends one post to that same service, and the claims to Brave or Tavily with the user's own key. None of it goes to HeitechSoft |
+| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Fact-check and UnEcho Chamber, when the user turns them on and confirms a check or a comparison, send to that same service one post (Fact-check) or the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber), and the claims or the story's search words to Brave or Tavily with the user's own key. None of it goes to HeitechSoft |
 | Personally identifiable information, health, financial and payment, authentication, personal communications, location, web history, user activity | No | Author names, profile links, comments, images and browsing history are never sent. API keys stay in the browser and go only to the provider they belong to |
 
 With each classification, the AI service also receives the user's interests, the optional "About you" note and, if

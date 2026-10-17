@@ -1,7 +1,8 @@
 /**
  * UnEcho Chamber on the server (F22): the offer rule and `PerspectivesDeps` on the fact-check routes. Perspectives has
  * no route or eval of its own in RM3 (decision D33): it is served on the routes past the fact-check eval, with the story
- * query and the searches on the classify route's model and the comparison on the synthesis route.
+ * query and the searches on the classify route's model and the comparison on the synthesis route. The source list is
+ * the request's own (`routes/perspectives.ts`), held for that run only.
  */
 import { type AIClient, AIError } from '@unalgorithm/ai';
 import type { SourceList } from '@unalgorithm/outlets';
@@ -18,14 +19,15 @@ import { type JobOffer, jobOffer } from '../routes/jobs.ts';
 import type { FactcheckRoutes } from './factcheck.ts';
 import type { AiRoute } from './routes.ts';
 
-/** Not offered without a source list; otherwise P3-33's rule for the `perspectives` task. */
+/**
+ * P3-33's rule for the `perspectives` task. No source list of the server's own is needed: every request carries the
+ * person's chosen list (decision D102).
+ */
 export function perspectivesOffer(
   config: Pick<Config, 'perspectives' | 'billing'>,
   schedule: CreditPriceSchedule,
-  registry: SourceList | null,
   now: Date = new Date(),
 ): JobOffer {
-  if (!registry) return { offered: false };
   return jobOffer(
     'perspectives',
     { enabled: config.perspectives.enabled, defaultCeilingMicros: PERSPECTIVES_COST_CEILING_MICROS, billing: config.billing },
