@@ -23,9 +23,7 @@
   one purchase may add from the server's `/prices.json`, and the extension's "about N posts" uses the price in the
   server's discovery document (`classifyPrice`), falling back to the bundled schedule for a server that sends none.
   The extension reads that document again at most every 5 minutes while the server classifies for it, not only when
-  you sign in, so its price lines follow a price change too.
-  `creditFacts`, `creditsMarkdown` and `calculatorData` take a price book (by default `DEFAULT_PRICE_BOOK`, today's
-  prices) instead of a schedule, and `balanceLine` takes the server's price. No price changes.
+  you sign in, so its price lines follow a price change too. No price changes.
 
 - [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - A finished fact-check or UnEcho Chamber result links to how it works and to a form for reporting a mistake. The form is filled in with versions only, never anything from the post.
 
@@ -33,15 +31,6 @@
   Settings, messages, the sign-in and account pages, and the wordmark.
 
 - [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives is now called UnEcho Chamber. Only its name changed.
-- Updated dependencies [[`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8)]:
-  - @unalgorithm/protocol@0.2.0
-  - @unalgorithm/core@0.2.0
-  - @unalgorithm/ai@0.0.3
-  - @unalgorithm/outlets@0.0.2
-  - @unalgorithm/platforms@0.0.4
-  - @unalgorithm/research@0.0.3
-  - @unalgorithm/sync@0.0.3
-  - @unalgorithm/ui@0.0.3
 
 ## 0.2.3
 
