@@ -16,27 +16,37 @@ import {
   CreditAccountSchema,
   CreditBalanceSchema,
   CreditHistoryItemSchema,
+  type CreditPriceCard,
   type CreditPriceSchedule,
   type CreditPriceScheduleEntry,
   checkPriceScheduleChange,
   creditAmount,
   DEFAULT_CREDIT_AMOUNT,
+  earliestRaise,
   estimatePosts,
   FACTCHECK_COST_CEILING_MICROS,
   FACTCHECK_TYPICAL_COST_MICROS,
+  isPriceDate,
   jobPriceAt,
   LOW_BALANCE_MICROS,
   MAX_CREDIT_HISTORY,
+  nextMidnight,
   nextPriceChange,
   PRICE_CARDS,
+  PRICE_ISSUE_CODES,
   PRICE_NOTICE_DAYS,
+  type PriceIssueCode,
   priceCardsAt,
+  priceRaiseIssues,
   priceRaisesWithinNotice,
+  priceScheduleChangeIssues,
+  priceScheduleIssues,
   priceScheduleProblems,
   retailMicros,
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
   taskPriceAt,
+  withTaskCard,
 } from '../src/index.ts';
 
 /** The undated cards CL2-26 removed, spelled in parts so that `git grep` finds the name in no tracked file. */
@@ -909,6 +919,287 @@ describe('auto-reload (CL6-01)', () => {
     ];
     for (const autoReload of refused) {
       expect(CreditAccountSchema.safeParse({ ...minimal, autoReload }).success, JSON.stringify(autoReload)).toBe(false);
+    }
+  });
+});
+
+describe('price issues', () => {
+  /** What a call returns, or the error it throws: the string rules and the issue rules must agree on both. */
+  const outcome = <T>(call: () => T): T | string => {
+    try {
+      return call();
+    } catch (err) {
+      return `throws ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`;
+    }
+  };
+  const texts = (issues: readonly { text: string }[]) => issues.map((issue) => issue.text);
+
+  it('test_issue_texts_equal_ci_lines', () => {
+    // Every schedule the shape tests above pass to priceScheduleProblems, with the codes its issues carry.
+    const withCards = (cards: unknown) => [A, { ...B, cards: cards as CreditPriceScheduleEntry['cards'] }];
+    const e = '2026-12-01T00:00:00Z';
+    const { factcheck: _dropped, ...rest } = F.cards;
+    const { maxChargeMicros: _cap, ...noCap } = FACTCHECK;
+    const { unit: _unit, ...noUnit } = FACTCHECK;
+    const classify15 = { ...L.cards.classify, multiplier: 1.5 };
+    const summarize = [L, { ...F, cards: { ...F.cards, summarize: L.cards.classify } } as unknown as CreditPriceScheduleEntry];
+    const shapes: [CreditPriceSchedule, PriceIssueCode[]][] = [
+      [CREDIT_PRICE_SCHEDULE, []],
+      [[], ['empty']],
+      [[A, { ...B, effectiveFrom: '2026-11-15T01:00:00Z' }], ['date-format']],
+      [[A, { ...B, effectiveFrom: '2026-11-15' }], ['date-format']],
+      [[A, { ...B, effectiveFrom: '2026-02-30T00:00:00Z' }], ['date-format']],
+      [[A, { ...B, effectiveFrom: A.effectiveFrom }], ['date-order']],
+      [[A, { ...B, effectiveFrom: '2026-09-01T00:00:00Z' }], ['date-order']],
+      [withCards({}), ['no-classify']],
+      [withCards({ ...B.cards, factcheck: B.cards.classify }), ['add-copies', 'unit', 'cap-below-typical']],
+      [withCards({ classify: null }), ['no-classify']],
+      [withCards({ classify: undefined }), ['no-classify']],
+      [[A, entry(B.effectiveFrom, 1.00001)], ['multiplier']],
+      [[A, entry(B.effectiveFrom, 0)], ['multiplier']],
+      [[A, entry(B.effectiveFrom, 2.5, 0)], ['reference-cost']],
+      [[A, entry(B.effectiveFrom, 2.5, 1.5)], ['reference-cost']],
+      [[A, entry(B.effectiveFrom, 2.5, 73_000, '')], ['reference-model']],
+      [FIXTURE, []],
+      [[...FIXTURE, { effectiveFrom: e, cards: rest }], ['drops-task']],
+      [[L, { ...F, cards: { ...F.cards, classify: classify15 } }], ['add-copies']],
+      [after(e, { classify: classify15 }), []],
+      [summarize, ['not-a-task']],
+      [
+        [{ effectiveFrom: L.effectiveFrom, cards: { factcheck: FACTCHECK } } as unknown as CreditPriceScheduleEntry],
+        ['no-classify'],
+      ],
+      [after(e, { factcheck: noCap }), ['cap-below-typical']],
+      [after(e, { factcheck: noUnit }), ['unit']],
+      [after(e, { factcheck: { ...FACTCHECK, unit: 'post' } }), ['unit']],
+      [after(e, { factcheck: { ...FACTCHECK, maxChargeMicros: 100_000 } }), ['cap-below-typical']],
+      [after(e, { classify: { ...L.cards.classify, unit: 'post' } }), []],
+      [after(e, { classify: { ...L.cards.classify, maxChargeMicros: 1_000 } }), ['classify-cap']],
+    ];
+    for (const [schedule, codes] of shapes) {
+      const issues = priceScheduleIssues(schedule);
+      expect(texts(issues)).toEqual(priceScheduleProblems(schedule));
+      expect(issues.map((issue) => issue.code)).toEqual(codes);
+    }
+    expect(priceScheduleIssues(summarize)[0]).toMatchObject({ task: 'summarize', effectiveFrom: F.effectiveFrom });
+    expect(priceScheduleIssues(after(e, { factcheck: noCap }))[0]).toMatchObject({
+      effectiveFrom: e,
+      task: 'factcheck',
+      typicalMicros: 240_000,
+    });
+
+    // Every base and head the change tests above compare, at their instant and notice.
+    const OCT_15 = at('2026-10-15T12:00:00Z');
+    const OCT_17 = at('2026-10-17T12:00:00Z');
+    const nov5 = at('2026-11-05T12:00:00Z');
+    const later = at('2026-10-20T00:00:00Z');
+    const D = CREDIT_PRICE_SCHEDULE[1] as CreditPriceScheduleEntry;
+    const C = entry('2026-10-15T00:00:00Z', 1.5);
+    const R = entry('2026-10-20T00:00:00Z', 2);
+    const U = entry('2026-11-01T00:00:00Z', 2.5);
+    const K = entry('2026-10-20T00:00:00Z', 1.5);
+    const P = entry('2026-10-20T00:00:00Z', 2.5);
+    const raise = (d: string) => [A, entry(d, 2.25), B];
+    const on20th = (multiplier: number, cost: number, model = MODEL) => [
+      A,
+      entry('2026-10-20T00:00:00Z', multiplier, cost, model),
+      B,
+    ];
+    const cut = after('2026-11-06T00:00:00Z', { factcheck: { ...FACTCHECK, maxChargeMicros: 350_000 } });
+    const dearer = { ...FACTCHECK, multiplier: 3, maxChargeMicros: 600_000 };
+    const addedThenRaised = (d: string) => [...FIXTURE, { effectiveFrom: d, cards: { ...F.cards, factcheck: dearer } }];
+    const capFrom = (d: string, task: 'factcheck' | 'perspectives', card: CreditPriceCard): CreditPriceSchedule => [
+      ...CREDIT_PRICE_SCHEDULE,
+      { effectiveFrom: d, cards: { ...D.cards, [task]: card } },
+    ];
+    const pairs: [CreditPriceSchedule, CreditPriceSchedule, Date, number?][] = [
+      [S, S, NOW],
+      [S, [A], NOW],
+      [S, [entry(A.effectiveFrom, 2.5), B], NOW],
+      [S, [B], NOW],
+      [S, [A], at('2026-11-15T00:00:00Z')],
+      [S, [A, C, B], NOW],
+      [S, raise('2026-11-13T00:00:00Z'), NOW],
+      [S, raise('2026-11-14T00:00:00Z'), NOW],
+      [S, raise('2026-11-14T00:00:00Z'), NOW, 45],
+      [S, [A, B, entry('2026-11-19T00:00:00Z', 3)], later],
+      [S, [A, B, entry('2026-11-18T00:00:00Z', 3)], later],
+      [S, S, NOW, 0],
+      [S, S, NOW, Number.NaN],
+      [S, S, NOW, -1],
+      [S, S, NOW, 1.5],
+      [S, S, new Date(Number.NaN)],
+      [S, [A, C, R, B], NOW],
+      [S, [A, C, entry('2026-11-14T00:00:00Z', 2), B], NOW],
+      [[A, C, B], [A, C, R, B], NOW],
+      [[A, U], [A, C, U], NOW],
+      [S, [A, entry('2026-10-10T00:00:00Z', 1.5), B], NOW],
+      [S, [A, entry('2026-10-10T00:00:00Z', 2.5), B], NOW],
+      [S, [A, entry('2026-10-14T00:00:00Z', 1.5), B], NOW],
+      [S, [A, C, B], at('2026-10-15T00:00:00Z')],
+      [S, [A, C, B], at('2026-10-14T23:59:59.999Z')],
+      [S, [A, entry('2026-10-10T00:00:00Z', 1.5), B], at('2026-10-14T23:59:59.999Z')],
+      [[A, P], [A, { ...P, effectiveFrom: '2026-10-10T00:00:00Z' }, P], at('2026-10-25T00:00:00Z')],
+      [S, [A, entry(B.effectiveFrom, 3)], NOW],
+      [S, [A, entry(B.effectiveFrom, 3)], later],
+      [S, [A, entry(B.effectiveFrom, 2.25)], later],
+      [S, [A, entry('2026-11-14T01:00:00Z', 2.5), B], NOW],
+      [S, [], NOW],
+      [[A, K, U], [A, U], NOW],
+      [[A, K, U], [A, K], NOW],
+      [[A, entry(B.effectiveFrom, 1.5)], [A], NOW],
+      [S, on20th(2, 80_000), NOW],
+      [S, on20th(2.5, 50_000), NOW],
+      [S, on20th(2, 70_000), NOW],
+      [S, on20th(2, 73_000, 'other-model'), NOW],
+      [CREDIT_PRICE_SCHEDULE, CREDIT_PRICE_SCHEDULE, OCT_15],
+      [[LAUNCH], CREDIT_PRICE_SCHEDULE, OCT_15],
+      [
+        CREDIT_PRICE_SCHEDULE,
+        capFrom('2026-11-11T00:00:00Z', 'perspectives', { ...PERSPECTIVES, maxChargeMicros: 600_000 }),
+        nov5,
+      ],
+      [THREE_ENTRIES, FIXTURE, OCT_15],
+      [[LAUNCH], FIXTURE, OCT_15],
+      [FIXTURE, after('2026-11-15T00:00:00Z', { factcheck: { ...FACTCHECK, maxChargeMicros: 450_000 } }), nov5],
+      [FIXTURE, cut, nov5],
+      [cut, [...cut, { effectiveFrom: '2026-11-10T00:00:00Z', cards: F.cards }], nov5],
+      [FIXTURE, [L, { ...F, cards: { ...F.cards, factcheck: dearer } }], OCT_15],
+      [FIXTURE, [L, { effectiveFrom: '2026-11-10T00:00:00Z', cards: { ...F.cards, factcheck: dearer } }], OCT_15],
+      [FIXTURE, [L, { ...F, cards: { ...F.cards, factcheck: { ...FACTCHECK, maxChargeMicros: 350_000 } } }], OCT_15],
+      [FIXTURE, [L, { ...F, effectiveFrom: '2026-11-10T00:00:00Z' }], OCT_15],
+      [FIXTURE, [L], OCT_15],
+      [THREE_ENTRIES, addedThenRaised('2026-11-05T00:00:00Z'), OCT_15],
+      [THREE_ENTRIES, addedThenRaised('2026-11-15T00:00:00Z'), OCT_15],
+      [CREDIT_PRICE_SCHEDULE, addedThenRaised('2026-11-05T00:00:00Z'), OCT_15],
+      [CREDIT_PRICE_SCHEDULE, addedThenRaised('2026-11-15T00:00:00Z'), OCT_15],
+      [TWO_ENTRIES, CREDIT_PRICE_SCHEDULE, OCT_15],
+      [THREE_ENTRIES, CREDIT_PRICE_SCHEDULE, OCT_15],
+      [THREE_ENTRIES, CREDIT_PRICE_SCHEDULE, OCT_17],
+      [THREE_ENTRIES, CREDIT_PRICE_SCHEDULE, at('2026-10-17T23:59:59.999Z')],
+      [[LAUNCH], CREDIT_PRICE_SCHEDULE, at('2026-10-18T12:00:00Z')],
+      [THREE_ENTRIES, CREDIT_PRICE_SCHEDULE, at('2026-10-18T12:00:00Z')],
+      [
+        CREDIT_PRICE_SCHEDULE,
+        capFrom('2026-12-11T00:00:00Z', 'factcheck', { ...FACTCHECK, maxChargeMicros: 450_000 }),
+        at('2026-12-05T12:00:00Z'),
+      ],
+      [CREDIT_PRICE_SCHEDULE, [LAUNCH], OCT_17],
+      [CREDIT_PRICE_SCHEDULE, [LAUNCH], at('2026-10-19T00:00:00Z')],
+      [CREDIT_PRICE_SCHEDULE, [LAUNCH, { ...D, effectiveFrom: '2026-10-25T00:00:00Z' }], OCT_17],
+      [PUBLISHED, CREDIT_PRICE_SCHEDULE, OCT_17],
+    ];
+    let refused = 0;
+    for (const [base, head, now, days = 30] of pairs) {
+      for (const rules of ['all', 'in-effect'] as const) {
+        const lines = outcome(() => checkPriceScheduleChange(base, head, now, days, rules));
+        if (typeof lines === 'string' || lines.length > 0) refused += 1;
+        expect(outcome(() => texts(priceScheduleChangeIssues(base, head, now, days, rules)))).toEqual(lines);
+      }
+      expect(outcome(() => texts(priceRaiseIssues(base, head, now, days)))).toEqual(
+        outcome(() => priceRaisesWithinNotice(base, head, now, days)),
+      );
+    }
+    // The vectors reach the rules, not only the empty answer.
+    expect(refused).toBeGreaterThan(30);
+
+    // `priceRaisesWithinNotice` reads no shape: the per-task vectors of test_schedule_change_compares_each_task.
+    const two = (effectiveFrom: string, classify: number, factcheck: number) => ({
+      effectiveFrom,
+      cards: {
+        classify: { multiplier: classify, referenceModel: MODEL, referenceCostMicrosPer1000: 73_000 },
+        factcheck: { multiplier: factcheck, referenceModel: MODEL, referenceCostMicrosPer1000: 73_000 },
+      },
+    });
+    const W = [two('2026-10-01T00:00:00Z', 2, 2)] as unknown as CreditPriceSchedule;
+    for (const factcheck of [2.5, 2]) {
+      const head = [...W, two('2026-10-20T00:00:00Z', 1.5, factcheck)] as unknown as CreditPriceSchedule;
+      expect(texts(priceRaiseIssues(W, head, NOW, 30))).toEqual(priceRaisesWithinNotice(W, head, NOW, 30));
+    }
+
+    // A head's shape issue keeps its code and facts; only its text gains the `head: ` prefix.
+    expect(priceScheduleChangeIssues(S, [A, entry('2026-11-14T01:00:00Z', 2.5), B], NOW)).toEqual([
+      {
+        code: 'date-format',
+        effectiveFrom: '2026-11-14T01:00:00Z',
+        text: 'head: entry 1 (2026-11-14T01:00:00Z): effectiveFrom must be YYYY-MM-DDT00:00:00Z on a real calendar day',
+      },
+    ]);
+  });
+
+  it('test_change_issue_codes_and_dates', () => {
+    // Only ever appended to.
+    expect(PRICE_ISSUE_CODES).toEqual([
+      'empty',
+      'date-format',
+      'date-order',
+      'not-a-task',
+      'no-classify',
+      'drops-task',
+      'add-copies',
+      'multiplier',
+      'reference-cost',
+      'reference-model',
+      'unit',
+      'classify-cap',
+      'cap-below-typical',
+      'in-effect-removed',
+      'in-effect-changed',
+      'starts-in-past',
+      'cap-raise',
+      'raise',
+      'rise',
+    ]);
+    const NOV_2 = at('2026-11-02T12:00:00Z');
+    const NOV_3 = '2026-11-03T00:00:00Z';
+    const DEC_3 = '2026-12-03T00:00:00Z';
+    const FC = (CREDIT_PRICE_SCHEDULE[1] as CreditPriceScheduleEntry).cards.factcheck as CreditPriceCard;
+    const edit = (from: string, card: CreditPriceCard) => withTaskCard(CREDIT_PRICE_SCHEDULE, 'factcheck', from, card);
+    const facts = (head: CreditPriceSchedule) =>
+      priceScheduleChangeIssues(CREDIT_PRICE_SCHEDULE, head, NOV_2).map(({ text: _text, ...rest }) => rest);
+
+    // AC 3: a cut from the next 00:00 UTC passes; a higher multiplier or hold cap needs 30 days' notice.
+    expect(facts(edit(NOV_3, { ...FC, maxChargeMicros: 300_000 }))).toEqual([]);
+    const raise = { ...FC, multiplier: 2.5 };
+    const capRaise = { ...FC, maxChargeMicros: 500_000 };
+    expect(facts(edit(NOV_3, raise))).toEqual([{ code: 'raise', task: 'factcheck', effectiveFrom: NOV_3, earliest: DEC_3 }]);
+    expect(facts(edit(NOV_3, capRaise))).toEqual([
+      { code: 'cap-raise', task: 'factcheck', effectiveFrom: NOV_3, earliest: DEC_3 },
+    ]);
+    expect(facts(edit(DEC_3, raise))).toEqual([]);
+    expect(facts(edit(DEC_3, capRaise))).toEqual([]);
+
+    // AC 4: an entry in effect cannot change; a new price cannot start before the next 00:00 UTC.
+    const cutCard = { ...FC, maxChargeMicros: 300_000 };
+    expect(facts(edit(OCT_18, cutCard))).toEqual([{ code: 'in-effect-changed', effectiveFrom: OCT_18 }]);
+    expect(facts(edit('2026-11-02T00:00:00Z', cutCard))).toEqual([
+      { code: 'starts-in-past', effectiveFrom: '2026-11-02T00:00:00Z', earliest: NOV_3 },
+    ]);
+    expect(facts([LAUNCH])).toEqual([{ code: 'in-effect-removed', effectiveFrom: OCT_18 }]);
+
+    // Ending a cut within the notice is a rise the base does not have: the issue names the instant of the rise.
+    const cut = edit(NOV_3, { ...FC, multiplier: 1.5 });
+    const ended = withTaskCard(cut, 'factcheck', '2026-11-10T00:00:00Z', FC);
+    expect(facts(ended)).toEqual([{ code: 'rise', task: 'factcheck', effectiveFrom: '2026-11-10T00:00:00Z', earliest: DEC_3 }]);
+
+    // The two dates the rules compute, and the dates they accept.
+    expect(nextMidnight(NOV_2)).toBe(NOV_3);
+    expect(nextMidnight(at('2026-11-02T00:00:00Z'))).toBe(NOV_3);
+    expect(earliestRaise(NOV_2)).toBe(DEC_3);
+    expect(earliestRaise(at('2026-11-02T00:00:00Z'))).toBe('2026-12-02T00:00:00Z');
+    expect(earliestRaise(NOV_2, 45)).toBe('2026-12-18T00:00:00Z');
+    expect(() => nextMidnight(new Date(Number.NaN))).toThrow(RangeError);
+    expect(() => earliestRaise(NOV_2, 1.5)).toThrow(RangeError);
+    for (const value of [NOV_3, '2028-02-29T00:00:00Z']) expect(isPriceDate(value), value).toBe(true);
+    for (const value of [
+      '2026-11-03',
+      '2026-11-03T00:00:00.000Z',
+      '2026-02-30T00:00:00Z',
+      '2026-11-03T01:00:00Z',
+      20261103,
+      null,
+    ]) {
+      expect(isPriceDate(value), String(value)).toBe(false);
     }
   });
 });

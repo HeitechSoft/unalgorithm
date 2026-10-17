@@ -9,6 +9,7 @@ export * from './ids.ts';
 export * from './outlets.ts';
 export * from './perspectives.ts';
 export * from './platform.ts';
+export * from './schedule-edits.ts';
 export * from './server.ts';
 export * from './site.ts';
 export * from './sync.ts';
