@@ -13,6 +13,7 @@ import {
   priceScheduleIssues,
   sameTaskCard,
   scheduledTaskChanges,
+  taskPriceAt,
   withTaskCard,
 } from '../src/index.ts';
 
@@ -140,6 +141,104 @@ describe('edits', () => {
     const later = moveTaskChange(S2, 'factcheck', DEC_10, '2026-12-20T00:00:00Z') as CreditPriceSchedule;
     expect(dates(later)).toEqual([OCT_1, OCT_18, '2026-12-20T00:00:00Z']);
     expect(later[2]?.cards.factcheck).toEqual(raisedCard);
+  });
+
+  it('test_move_keeps_the_end_of_a_temporary_change', () => {
+    const DEC_5 = '2026-12-05T00:00:00Z';
+    const DEC_15 = '2026-12-15T00:00:00Z';
+    const JAN_10 = '2027-01-10T00:00:00Z';
+    const JAN_20 = '2027-01-20T00:00:00Z';
+    const MAR_1 = '2027-03-01T00:00:00Z';
+
+    // A temporary raise: 2.5x from 2026-12-10, back to the card before it on 2027-01-10.
+    const raise = withTaskCard(withTaskCard(S, 'factcheck', DEC_10, raisedCard), 'factcheck', JAN_10, FC);
+    expect(dates(raise)).toEqual([OCT_1, OCT_18, DEC_10, JAN_10]);
+    expect(priceScheduleChangeIssues(S, raise, NOW)).toEqual([]);
+
+    // Moved later or sooner, the raise still ends on 2027-01-10.
+    for (const to of [DEC_15, DEC_5]) {
+      const moved = moveTaskChange(raise, 'factcheck', DEC_10, to) as CreditPriceSchedule;
+      expect(dates(moved), to).toEqual([OCT_1, OCT_18, to, JAN_10]);
+      expect(moved[2]?.cards.factcheck).toEqual(raisedCard);
+      expect(moved[3]?.cards.factcheck).toEqual(FC);
+      expect(scheduledTaskChanges(moved, 'factcheck', NOW)).toEqual([
+        { effectiveFrom: to, card: raisedCard, before: FC },
+        { effectiveFrom: JAN_10, card: FC, before: raisedCard },
+      ]);
+      expect(taskPriceAt(new Date('2027-02-01T00:00:00Z'), 'factcheck', moved)).toEqual({
+        offered: true,
+        card: FC,
+        effectiveFrom: JAN_10,
+      });
+      expect(priceScheduleChangeIssues(raise, moved, NOW)).toEqual([]);
+      expect(isDeepFrozen(moved)).toBe(true);
+    }
+    // Its end moves on its own, and the raise stays where it is.
+    const longer = moveTaskChange(raise, 'factcheck', JAN_10, JAN_20) as CreditPriceSchedule;
+    expect(dates(longer)).toEqual([OCT_1, OCT_18, DEC_10, JAN_20]);
+    expect(longer[2]?.cards.factcheck).toEqual(raisedCard);
+    expect(longer[3]?.cards.factcheck).toEqual(FC);
+    // Moved to its own date, nothing changes.
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, DEC_10)).toEqual(raise);
+
+    // A sale: 1.5x from 2026-11-20, back to the card before it on 2026-12-20. Moved sooner, it still ends.
+    const NOV_15 = '2026-11-15T00:00:00Z';
+    const NOV_20 = '2026-11-20T00:00:00Z';
+    const DEC_20 = '2026-12-20T00:00:00Z';
+    const saleCard: CreditPriceCard = { ...FC, multiplier: 1.5 };
+    const sale = withTaskCard(withTaskCard(S, 'factcheck', NOV_20, saleCard), 'factcheck', DEC_20, FC);
+    expect(dates(sale)).toEqual([OCT_1, OCT_18, NOV_20, DEC_20]);
+    expect(priceScheduleChangeIssues(S, sale, NOW)).toEqual([]);
+    const sooner = moveTaskChange(sale, 'factcheck', NOV_20, NOV_15) as CreditPriceSchedule;
+    expect(dates(sooner)).toEqual([OCT_1, OCT_18, NOV_15, DEC_20]);
+    expect(sooner[2]?.cards.factcheck).toEqual(saleCard);
+    expect(sooner[3]?.cards.factcheck).toEqual(FC);
+    expect(priceScheduleChangeIssues(sale, sooner, NOW)).toEqual([]);
+
+    // An end followed later by the same card again: both later changes stay.
+    const again = withTaskCard(raise, 'factcheck', MAR_1, raisedCard);
+    expect(dates(again)).toEqual([OCT_1, OCT_18, DEC_10, JAN_10, MAR_1]);
+    const movedAgain = moveTaskChange(again, 'factcheck', DEC_10, DEC_15) as CreditPriceSchedule;
+    expect(dates(movedAgain)).toEqual([OCT_1, OCT_18, DEC_15, JAN_10, MAR_1]);
+    expect(movedAgain.map((entry) => entry.cards.factcheck?.multiplier)).toEqual([undefined, 2, 2.5, 2, 2.5]);
+
+    // An end in an entry that also changes another task: that task's change stays, and so does the end.
+    const shared = withTaskCard(raise, 'classify', JAN_10, cheaperClassify);
+    const movedShared = moveTaskChange(shared, 'factcheck', DEC_10, DEC_15) as CreditPriceSchedule;
+    expect(dates(movedShared)).toEqual([OCT_1, OCT_18, DEC_15, JAN_10]);
+    expect(movedShared[2]?.cards.factcheck).toEqual(raisedCard);
+    expect(movedShared[2]?.cards.classify).toEqual(CLASSIFY);
+    expect(movedShared[3]?.cards.factcheck).toEqual(FC);
+    expect(movedShared[3]?.cards.classify).toEqual(cheaperClassify);
+  });
+
+  it('test_move_never_crosses_another_change_of_the_task', () => {
+    const JAN_10 = '2027-01-10T00:00:00Z';
+    const JAN_20 = '2027-01-20T00:00:00Z';
+    const raise = withTaskCard(withTaskCard(S, 'factcheck', DEC_10, raisedCard), 'factcheck', JAN_10, FC);
+    // The raise can't move to or past its own end, nor its end to or before the raise.
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, JAN_10)).toBeNull();
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, JAN_20)).toBeNull();
+    expect(moveTaskChange(raise, 'factcheck', JAN_10, DEC_10)).toBeNull();
+    expect(moveTaskChange(raise, 'factcheck', JAN_10, NOV_10)).toBeNull();
+    // Nor to or before the task's first card, nor to a date that does not parse.
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, OCT_18)).toBeNull();
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, '2026-10-10T00:00:00Z')).toBeNull();
+    expect(moveTaskChange(raise, 'factcheck', DEC_10, 'soon')).toBeNull();
+    // A date in the past but after the task's change before it is moved to: the rules refuse it, not the edit.
+    const past = moveTaskChange(raise, 'factcheck', DEC_10, '2026-10-20T00:00:00Z') as CreditPriceSchedule;
+    expect(dates(past)).toEqual([OCT_1, OCT_18, '2026-10-20T00:00:00Z', JAN_10]);
+    expect(priceScheduleChangeIssues(raise, past, NOW)).not.toEqual([]);
+    // Another task's change between the two dates is not in the way, and keeps its own card.
+    const DEC_12 = '2026-12-12T00:00:00Z';
+    const DEC_14 = '2026-12-14T00:00:00Z';
+    const classify = withTaskCard(raise, 'classify', DEC_12, cheaperClassify);
+    const moved = moveTaskChange(classify, 'factcheck', DEC_10, DEC_14) as CreditPriceSchedule;
+    expect(dates(moved)).toEqual([OCT_1, OCT_18, DEC_12, DEC_14, JAN_10]);
+    expect(moved.map((entry) => entry.cards.factcheck?.multiplier)).toEqual([undefined, 2, 2, 2.5, 2]);
+    expect(moved.map((entry) => entry.cards.classify?.multiplier)).toEqual([2, 2, 1.5, 1.5, 1.5]);
+    // And back again: the same schedule as before the move.
+    expect(moveTaskChange(moved, 'factcheck', DEC_14, DEC_10)).toEqual(classify);
   });
 
   it('test_first_card_for_a_new_task_passes_rules', () => {

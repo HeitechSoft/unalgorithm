@@ -1,9 +1,10 @@
 /**
  * One task's price change as an edit of the dated schedule (decision PD3): "from date D, this card" lasts until that
- * task's next scheduled change; cancelling restores the card before D; moving is a cancel plus the same card from the
- * new date. Pure: never mutates its input, returns new frozen entries, and checks nothing. An edit that breaks a rule
- * returns a schedule the rules refuse, and the caller always runs `priceScheduleChangeIssues(base, head, now)` on it (the
- * server on every save, the Pricing page as it is filled in): one rule implementation, never a second in here.
+ * task's next scheduled change; cancelling restores the card before D; moving starts the same change at another date
+ * between the task's changes before and after it, so a temporary price keeps its end. Pure: never mutates its input,
+ * returns new frozen entries, and checks no price rule. An edit that breaks a rule returns a schedule the rules refuse,
+ * and the caller always runs `priceScheduleChangeIssues(base, head, now)` on it (the server on every save, the Pricing
+ * page as it is filled in): one rule implementation, never a second in here.
  */
 import {
   type CreditPriceCard,
@@ -44,6 +45,46 @@ function sameEntryCards(a: Entry, b: Entry): boolean {
   );
 }
 
+/** A frozen card as it is; any other copied and frozen. */
+const frozenCard = (card: Card | null): Card | null =>
+  card === null || Object.isFrozen(card) ? card : Object.freeze({ ...card });
+
+/** `entry` with `task` priced by `card` (a frozen card or null: the task is removed). */
+function entryWithTaskCard(entry: Entry, task: CreditTask, card: Card | null): Entry {
+  const others = Object.fromEntries(Object.entries(cardsOf(entry)).filter(([key]) => key !== task));
+  return entryWith(entry.effectiveFrom, card === null ? others : { ...cardsOf(entry), [task]: card });
+}
+
+/**
+ * The index of the entry at `from` in `entries` (a copy of `schedule`), first inserting one there whose cards are a copy
+ * of the entry in effect at `from` when there is none.
+ */
+function entryAt(entries: Entry[], schedule: CreditPriceSchedule, from: string): number {
+  const at = entries.findIndex((entry) => entry.effectiveFrom === from);
+  if (at !== -1) return at;
+  const t = Date.parse(from);
+  const later = entries.findIndex((entry) => Date.parse(entry.effectiveFrom) > t);
+  const start = later === -1 ? entries.length : later;
+  // A date that does not parse goes last (the shape rules refuse it); an empty schedule has no cards to copy.
+  const inEffect = entries.length === 0 ? undefined : Number.isNaN(t) ? entries.at(-1) : priceCardsAt(new Date(t), schedule);
+  entries.splice(start, 0, entryWith(from, inEffect ? cardsOf(inEffect) : {}));
+  return start;
+}
+
+/** `entries`, frozen, without every entry from index `start` on whose cards equal the entry before it's. */
+function withoutRepeats(entries: readonly Entry[], start: number): CreditPriceSchedule {
+  const result = entries.slice(0, start);
+  for (const entry of entries.slice(start)) {
+    const before = result.at(-1);
+    if (before === undefined || !sameEntryCards(before, entry)) result.push(entry);
+  }
+  return Object.freeze(result);
+}
+
+/** Whether the entry at index `i` prices `task` differently from the entry before it (no entry before: no card). */
+const changesTask = (schedule: CreditPriceSchedule, task: CreditTask, i: number): boolean =>
+  !sameTaskCard(cardIn(schedule[i], task), cardIn(schedule[i - 1], task));
+
 /**
  * `schedule` with `task` priced by `card` from `from` (null: not priced), until that task's next scheduled change:
  * 1. no entry at `from` → insert one there whose cards are a copy of the entry in effect at `from`;
@@ -59,33 +100,16 @@ export function withTaskCard(
   from: string,
   card: CreditPriceCard | null,
 ): CreditPriceSchedule {
-  const next: Card | null = card === null || Object.isFrozen(card) ? card : Object.freeze({ ...card });
+  const next = frozenCard(card);
   const entries: Entry[] = [...schedule];
-
-  let start = entries.findIndex((entry) => entry.effectiveFrom === from);
-  if (start === -1) {
-    const t = Date.parse(from);
-    const later = entries.findIndex((entry) => Date.parse(entry.effectiveFrom) > t);
-    start = later === -1 ? entries.length : later;
-    // A date that does not parse goes last (the shape rules refuse it); an empty schedule has no cards to copy.
-    const inEffect = entries.length === 0 ? undefined : Number.isNaN(t) ? entries.at(-1) : priceCardsAt(new Date(t), schedule);
-    entries.splice(start, 0, entryWith(from, inEffect ? cardsOf(inEffect) : {}));
-  }
-
+  const start = entryAt(entries, schedule, from);
   const old = cardIn(entries[start], task);
   for (let i = start; i < entries.length; i += 1) {
     const entry = entries[i] as Entry;
     if (!sameTaskCard(cardIn(entry, task), old)) break;
-    const others = Object.fromEntries(Object.entries(cardsOf(entry)).filter(([key]) => key !== task));
-    entries[i] = entryWith(entry.effectiveFrom, next === null ? others : { ...cardsOf(entry), [task]: next });
+    entries[i] = entryWithTaskCard(entry, task, next);
   }
-
-  const result = entries.slice(0, start);
-  for (const entry of entries.slice(start)) {
-    const before = result.at(-1);
-    if (before === undefined || !sameEntryCards(before, entry)) result.push(entry);
-  }
-  return Object.freeze(result);
+  return withoutRepeats(entries, start);
 }
 
 /**
@@ -94,30 +118,45 @@ export function withTaskCard(
  */
 export function cancelTaskChange(schedule: CreditPriceSchedule, task: CreditTask, at: string): CreditPriceSchedule | null {
   const i = schedule.findIndex((entry) => entry.effectiveFrom === at);
-  if (i === -1) return null;
-  const before = cardIn(schedule[i - 1], task);
-  if (sameTaskCard(cardIn(schedule[i], task), before)) return null;
-  return withTaskCard(schedule, task, at, before);
+  if (i === -1 || !changesTask(schedule, task, i)) return null;
+  return withTaskCard(schedule, task, at, cardIn(schedule[i - 1], task));
 }
 
-/** `cancelTaskChange` at `from`, then the same card from `to`. Null when there is nothing to move. */
+/**
+ * The scheduled change of `task` at `from` starting at `to` instead, still until the task's next change, so the end of a
+ * temporary price (the later entry that brings the card back) keeps its date and card:
+ * 1. insert an entry at `to` as `withTaskCard` does;
+ * 2. the entries from `to` up to `from` take the moved card (moved sooner), or the entries from `from` up to `to` take
+ *    the card in effect just before `from` (moved later); every other entry and task keeps its card;
+ * 3. drop the entries left changing nothing, as `withTaskCard` does.
+ * Null when no entry at `from` changes `task` (nothing to move), and when `to` is not a date after the task's change
+ * before `from` and before its next change after `from`: a move never lands on or crosses another change of the task.
+ */
 export function moveTaskChange(
   schedule: CreditPriceSchedule,
   task: CreditTask,
   from: string,
   to: string,
 ): CreditPriceSchedule | null {
-  const cancelled = cancelTaskChange(schedule, task, from);
-  if (cancelled === null) return null;
-  return withTaskCard(
-    cancelled,
-    task,
-    to,
-    cardIn(
-      schedule.find((entry) => entry.effectiveFrom === from),
-      task,
-    ),
-  );
+  const i = schedule.findIndex((entry) => entry.effectiveFrom === from);
+  if (i === -1 || !changesTask(schedule, task, i)) return null;
+  const moved = frozenCard(cardIn(schedule[i], task));
+  const before = frozenCard(cardIn(schedule[i - 1], task));
+
+  let previous = i - 1;
+  while (previous >= 0 && !changesTask(schedule, task, previous)) previous -= 1;
+  const next = schedule.findIndex((entry, j) => j > i && !sameTaskCard(cardIn(entry, task), moved));
+  const t = Date.parse(to);
+  const after = previous === -1 ? Number.NEGATIVE_INFINITY : Date.parse((schedule[previous] as Entry).effectiveFrom);
+  const until = next === -1 ? Number.POSITIVE_INFINITY : Date.parse((schedule[next] as Entry).effectiveFrom);
+  if (!(t > after && t < until)) return null;
+
+  const entries: Entry[] = [...schedule];
+  const at = entryAt(entries, schedule, to);
+  const start = entries.findIndex((entry) => entry.effectiveFrom === from);
+  const [first, end, card] = at < start ? [at, start, moved] : [start, at, before];
+  for (let k = first; k < end; k += 1) entries[k] = entryWithTaskCard(entries[k] as Entry, task, card);
+  return withoutRepeats(entries, first);
 }
 
 export interface ScheduledTaskChange {
