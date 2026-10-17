@@ -6,7 +6,7 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AIError } from '@unalgorithm/ai';
-import { type AISourceConfig, type Device, defaultDevice, sourceId } from '@unalgorithm/core';
+import { type AISourceConfig, type Device, defaultDevice, defaultSettings, sourceId } from '@unalgorithm/core';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
@@ -96,11 +96,25 @@ describe('Settings → AI', () => {
       null,
     ];
     for (const source of others) {
-      render(<CheckSettings device={device(source)} saveDevice={vi.fn(async () => {})} />);
+      render(
+        <CheckSettings
+          settings={defaultSettings()}
+          save={vi.fn(async () => {})}
+          device={device(source)}
+          saveDevice={vi.fn(async () => {})}
+        />,
+      );
       expect(screen.queryByRole('heading', { name: 'Web search key' })).toBeNull();
       cleanup();
     }
-    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(
+      <CheckSettings
+        settings={defaultSettings()}
+        save={vi.fn(async () => {})}
+        device={device(COMPAT)}
+        saveDevice={vi.fn(async () => {})}
+      />,
+    );
     expect(screen.getByRole('heading', { name: 'Web search key' })).toBeTruthy();
     expect(screen.getByText(/search the web with your own Brave or Tavily key/)).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Brave/ })).toBeTruthy();
@@ -110,7 +124,14 @@ describe('Settings → AI', () => {
   it('test_save_requests_permission_from_click', async () => {
     const request = vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => true) as never);
     const user = setupUser();
-    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(
+      <CheckSettings
+        settings={defaultSettings()}
+        save={vi.fn(async () => {})}
+        device={device(COMPAT)}
+        saveDevice={vi.fn(async () => {})}
+      />,
+    );
     expect(request).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText('Brave API key'), ' brave-key ');
     // A synchronous click: the request must already have been made when the handler returns.
@@ -126,7 +147,14 @@ describe('Settings → AI', () => {
   it('test_permission_denied_sends_nothing', async () => {
     vi.spyOn(fakeBrowser.permissions, 'request').mockImplementation((async () => false) as never);
     const user = setupUser();
-    render(<CheckSettings device={device(COMPAT)} saveDevice={vi.fn(async () => {})} />);
+    render(
+      <CheckSettings
+        settings={defaultSettings()}
+        save={vi.fn(async () => {})}
+        device={device(COMPAT)}
+        saveDevice={vi.fn(async () => {})}
+      />,
+    );
     await user.click(screen.getByRole('radio', { name: /Tavily/ }));
     await user.type(screen.getByLabelText('Tavily API key'), 'tvly-key');
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -142,7 +170,14 @@ describe('Settings → AI', () => {
   it('test_labs_switches_follow_search_key', async () => {
     mocks.registry.ready = true;
     const labs = { factcheck: true, perspectives: true };
-    render(<CheckSettings device={device(COMPAT, { labs })} saveDevice={vi.fn(async () => {})} />);
+    render(
+      <CheckSettings
+        settings={defaultSettings()}
+        save={vi.fn(async () => {})}
+        device={device(COMPAT, { labs })}
+        saveDevice={vi.fn(async () => {})}
+      />,
+    );
     for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;
       expect(sw.disabled).toBe(true);
@@ -155,7 +190,12 @@ describe('Settings → AI', () => {
     // With a key: enabled and on, and the section shows the saved key (never the key itself) with Remove.
     const user = setupUser();
     render(
-      <CheckSettings device={device(COMPAT, { labs, webSearch: { provider: 'brave' } })} saveDevice={vi.fn(async () => {})} />,
+      <CheckSettings
+        settings={defaultSettings()}
+        save={vi.fn(async () => {})}
+        device={device(COMPAT, { labs, webSearch: { provider: 'brave' } })}
+        saveDevice={vi.fn(async () => {})}
+      />,
     );
     for (const name of ['Fact-check', 'UnEcho Chamber']) {
       const sw = screen.getByRole('switch', { name }) as HTMLButtonElement;

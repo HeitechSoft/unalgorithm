@@ -60,6 +60,48 @@ export function officialSourceList(list: OfficialList): SourceList {
   };
 }
 
+/** The person's own list (settings `perspectives.outlets`) as a run reads it: kind 'own', version '', outlets sorted by id. */
+export function ownSourceList(
+  outlets: Readonly<Record<string, { name: string; domains: readonly string[]; bucket: LeanBucket | null }>>,
+): SourceList {
+  return {
+    kind: 'own',
+    version: '',
+    outlets: Object.entries(outlets)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([id, o]) => ({ id, name: o.name, domains: o.domains, lean: o.bucket ? { bucket: o.bucket } : null })),
+  };
+}
+
+/** One outlet of a person's own list as settings store it, under its id (`OwnOutletSchema` in `@unalgorithm/core`). */
+export interface OwnListEntry {
+  name: string;
+  domains: string[];
+  bucket: LeanBucket | null;
+  addedAt: number;
+}
+
+/**
+ * The own list a person starts from: the Cloud's list when it has at least one lean (name, domains and bucket of every
+ * outlet; never its evidence), else the candidates with no lean. Keys are the outlets' ids, so two devices copying the
+ * same list write the same entries.
+ */
+export function ownCopyOf(
+  official: OfficialList | null,
+  candidates: Pick<Candidates, 'outlets'>,
+  now: number,
+): Record<string, OwnListEntry> {
+  const entry = (
+    o: { id: string; name: string; domains: readonly string[] },
+    bucket: LeanBucket | null,
+  ): [string, OwnListEntry] => [o.id, { name: o.name, domains: [...o.domains], bucket, addedAt: now }];
+  return Object.fromEntries(
+    official?.outlets.some((o) => o.lean !== null)
+      ? official.outlets.map((o) => entry(o, o.lean?.bucket ?? null))
+      : candidates.outlets.map((o) => entry(o, null)),
+  );
+}
+
 export type ListProblemCode = 'duplicate-id' | 'domain-taken' | 'domain-nested' | 'too-many-outlets' | 'too-many-domains';
 export interface ListProblem {
   code: ListProblemCode;

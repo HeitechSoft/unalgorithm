@@ -3,7 +3,8 @@
  * client and drizzle-kit see one schema.
  *
  * No table holds post text or prompts. The server keeps accounts, devices, tokens, AI routes, usage counts and each
- * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3).
+ * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3)
+ * and the outlet names of their own UnEcho Chamber source list (P3-76).
  * Post content passes through classification and is never written down (ADR 0007).
  *
  * Adding a table: define it here (or in a module re-exported from here), run

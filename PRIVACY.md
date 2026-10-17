@@ -13,8 +13,9 @@ cookies; see [This website](#this-website).
 - UnAlgorithm reads the LinkedIn and Facebook pages you open, in your browser, to decide which posts to fold away.
   It only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses on your behalf.
 - Your settings, interests, exceptions ("always show/hide", which hold the names or profile links you chose),
-  feedback ("more/less like this"), daily statistics and cached AI results are stored in your browser. Cached results
-  contain no post text and no names.
+  your own UnEcho Chamber source list (outlets, their web addresses and the leans you gave them), feedback ("more/less
+  like this"), daily statistics and cached AI results are stored in your browser. Cached results contain no post text
+  and no names.
 - While a LinkedIn or Facebook tab is open, the lists in the popup and side panel (the author, a short snippet and a
   link for each hidden or highlighted post) are kept in the browser's temporary session storage. They are removed
   when the tab closes, when the browser restarts, or when you choose Erase everything.

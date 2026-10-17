@@ -1,6 +1,6 @@
 # UnAlgorithm Cloud beta privacy notice
 
-Last updated: 16 October 2026
+Last updated: 17 October 2026
 
 UnAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. This notice covers only UnAlgorithm
 Cloud, HeitechSoft's hosted AI service at `cloud.unalgorithm.app`, during its beta. The extension itself is covered by
@@ -50,8 +50,8 @@ search words. The job is kept in memory only, and is gone at most 10 minutes aft
   entries cannot be changed. When you delete your account, its credit records are erased with it, except the keyed hash
   of your email address that keeps the starter credit to one per mailbox. Buying credit is not available during the
   beta; how records of purchases are kept will be stated here before it is.
-- Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions. Never API keys or
-  post text.
+- Synced settings, only if you turn sync on (section 4): your settings, interests and exceptions, and your own
+  UnEcho Chamber source list (outlet names, web addresses and the leans you gave them). Never API keys or post text.
 - For fact-checks of public posts: a 24-hour shared cache of verdicts and their short explanations, keyed by a hash of
   each claim, with the public sources found. Never the claim, the post, or who checked it.
 - A nightly encrypted backup of the database, kept for 14 nights.
@@ -67,7 +67,8 @@ You sign in with a code we email you, with Google, or with a passkey you added. 
 Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy.
 
 Sync is off until you turn it on in the extension. Then the Cloud stores your settings, interests and exceptions (the
-names and profile identifiers you chose to always show or hide), one item per setting with the time it was changed.
+names and profile identifiers you chose to always show or hide), and your own UnEcho Chamber source list (outlet names,
+web addresses and the leans you gave them), one item per setting or outlet with the time it was changed.
 Deleted entries are kept as markers for 90 days, then removed. A record of each sync request (which items, never their
 values) is kept for 24 hours. Sync never carries API keys, endpoint tokens, refresh tokens, AI source settings, learned
 topics, votes, statistics, cached results or post text, and the Cloud refuses items that look like API keys.

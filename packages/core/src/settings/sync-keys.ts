@@ -20,6 +20,7 @@ export const SETTINGS_ENTRY_MAPS = [
   'interests.less',
   'interests.highlightWords',
   'interests.muteWords',
+  'perspectives.outlets',
 ] as const;
 
 const ENTRY_MAP_PATTERNS = SETTINGS_ENTRY_MAPS.map((m) => m.split('.'));

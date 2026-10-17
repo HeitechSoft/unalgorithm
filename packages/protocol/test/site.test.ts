@@ -83,6 +83,9 @@ describe('cloud beta documents', () => {
       expect(notice, phrase).toContain(phrase);
     }
     expect(flat(notice)).toContain('Privacy contact: Tom Heiber, HeitechSoft, privacy@heitechsoft.com');
+    // P3-76: a person's own UnEcho Chamber list syncs with their settings, and is stored in their browser.
+    expect(flat(notice)).toContain('own UnEcho Chamber source list');
+    expect(flat(read('PRIVACY.md'))).toContain('your own UnEcho Chamber source list');
   });
 
   it('test_beta_notice_has_ten_sections', () => {

@@ -21,12 +21,16 @@ import {
   sourceCapabilities,
   type Topic,
 } from '@unalgorithm/core';
-import { FEATURE_NAMES, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
+import { listBalance, officialSourceList, ownSourceList, type SourceList } from '@unalgorithm/outlets';
+import { FEATURE_NAMES, type ListKind, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
 import {
   Badge,
+  BalanceNotice,
   Banner,
   Button,
   Chip,
+  ChoiceCard,
+  ChoiceCardGroup,
   Dialog,
   DisplayModeThumb,
   Download,
@@ -51,10 +55,10 @@ import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
-import { perspectivesRegistry } from '../../lib/outlets.ts';
+import { perspectivesRegistry, storedOfficialList } from '../../lib/outlets.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
-import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
+import { learnedItem, officialListItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
 type SaveDevice = (mutate: (d: Device) => void) => Promise<void>;
@@ -746,7 +750,7 @@ export function AiPane({
           ))}
         </ListGroup>
       ) : null}
-      <CheckSettings device={device} saveDevice={saveDevice} />
+      <CheckSettings settings={settings} save={save} device={device} saveDevice={saveDevice} />
     </>
   );
 }
@@ -759,9 +763,20 @@ const BATCH_TIME = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
 /**
  * The switches for Fact-check and UnEcho Chamber, at the end of Settings → AI next to the source they need (P3-64,
- * D77). Both stay off until turned on (D78); the device-local flags keep their Labs-era names (`device.labs.*`).
+ * D77). Both stay off until turned on (D78); the device-local flags keep their Labs-era names (`device.labs.*`). Under
+ * the UnEcho Chamber switch, the source list it uses (P3-76), a synced setting.
  */
-export function CheckSettings({ device, saveDevice }: { device: Device; saveDevice: SaveDevice }) {
+export function CheckSettings({
+  settings,
+  save,
+  device,
+  saveDevice,
+}: {
+  settings: Settings;
+  save: Save;
+  device: Device;
+  saveDevice: SaveDevice;
+}) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
   const offer = useStorageItem(serverOfferItem, null);
   const can = sourceCapabilities(device.aiSource, offer, device.webSearch);
@@ -796,7 +811,7 @@ export function CheckSettings({ device, saveDevice }: { device: Device; saveDevi
       {perspectivesRegistry() !== null ? (
         <ListGroup
           header={FEATURE_NAMES.perspectives}
-          footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.`}
+          footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from the source list you choose, set by people, never by AI. AI can be wrong, so open the sources.`}
         >
           <ListRow
             title={FEATURE_NAMES.perspectives}
@@ -818,8 +833,69 @@ export function CheckSettings({ device, saveDevice }: { device: Device; saveDevi
               />
             }
           />
+          <SourceListChoice settings={settings} save={save} />
         </ListGroup>
       ) : null}
+    </>
+  );
+}
+
+/** "3 outlets with a lean": the outlets of `list` UnEcho Chamber can search. */
+function withLean(list: SourceList): string {
+  const n = list.outlets.filter((o) => o.lean !== null).length;
+  return `${n} ${n === 1 ? 'outlet' : 'outlets'} with a lean`;
+}
+
+/**
+ * Which source list UnEcho Chamber uses (decision D100): UnAlgorithm Cloud's, as last downloaded, or the person's own,
+ * with a status line under the chosen one, that list's balance, and the way to the editor (`#/ai/sources`). Copy is a
+ * draft (D110).
+ */
+function SourceListChoice({ settings, save }: { settings: Settings; save: Save }) {
+  const official = storedOfficialList(useStorageItem(officialListItem, { list: null, checkedAt: 0 }));
+  const chosen = settings.perspectives.list;
+  const own = ownSourceList(settings.perspectives.outlets);
+  const cloud = official ? officialSourceList(official) : null;
+  const cloudStatus = !cloud
+    ? `Not downloaded yet: it downloads once ${FEATURE_NAMES.perspectives} is on`
+    : cloud.outlets.some((o) => o.lean !== null)
+      ? `Version ${cloud.version}, ${withLean(cloud)}`
+      : 'No outlets with a lean yet';
+  const ownStatus = own.outlets.length === 0 ? 'Empty' : withLean(own);
+  const shown = chosen === 'own' ? own : cloud;
+  const balance = shown ? listBalance(shown) : null;
+  return (
+    <>
+      <ListRow title="Source list" />
+      <div className="ua-stack" style={{ padding: '0 12px 12px' }}>
+        <ChoiceCardGroup<ListKind>
+          label="Source list"
+          value={chosen}
+          columns={2}
+          onValueChange={(v) => void save((s) => void (s.perspectives.list = v))}
+        >
+          <ChoiceCard value="cloud" title="UnAlgorithm Cloud's list">
+            <span className="ua-footnote">{cloudStatus}</span>
+          </ChoiceCard>
+          <ChoiceCard value="own" title="Your own list">
+            <span className="ua-footnote">{ownStatus}</span>
+          </ChoiceCard>
+        </ChoiceCardGroup>
+        {balance ? (
+          <BalanceNotice
+            name={chosen === 'own' ? 'Your list' : "UnAlgorithm Cloud's list"}
+            empty={balance.empty}
+            warnings={balance.warnings}
+          />
+        ) : null}
+      </div>
+      <ListRow
+        title="Edit your list"
+        accessory="chevron"
+        onSelect={() => {
+          location.hash = '#/ai/sources';
+        }}
+      />
     </>
   );
 }

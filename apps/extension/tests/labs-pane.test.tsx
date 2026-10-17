@@ -5,13 +5,22 @@
  * this build has a usable outlet registry (RM3 D36). The sidebar has no Labs item; `#/labs` opens the AI pane.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import { type AISourceConfig, type Device, defaultDevice, defaultSettings, migrateDevice } from '@unalgorithm/core';
+import {
+  type AISourceConfig,
+  type Device,
+  defaultDevice,
+  defaultSettings,
+  migrateDevice,
+  type OwnOutlet,
+  type Settings,
+} from '@unalgorithm/core';
+import { FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App } from '../src/entrypoints/options/App.tsx';
 import { AiPane } from '../src/entrypoints/options/panes.tsx';
-import { serverOfferItem } from '../src/lib/storage.ts';
+import { officialListItem, serverOfferItem } from '../src/lib/storage.ts';
 
 /** Whether this build has a usable registry (the fictional fixture); none by default, as in store builds today. */
 const registry = vi.hoisted(() => ({ ready: false }));
@@ -201,6 +210,69 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
     expect(screen.getByText("Your server doesn't offer UnEcho Chamber.")).toBeTruthy();
     await user.click(off);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('test_ai_pane_source_list_choice', async () => {
+    // P3-76 (D100, D110): the list UnEcho Chamber uses, chosen under its switch; the choice is a synced setting.
+    registry.ready = true;
+    const user = setupUser();
+    const own = (name: string, domain: string, bucket: OwnOutlet['bucket']): OwnOutlet => ({
+      name,
+      domains: [domain],
+      bucket,
+      addedAt: 1,
+    });
+    const holder = { stored: defaultSettings() };
+    holder.stored.perspectives.outlets = {
+      'fx-a': own('FX Alpha', 'alpha.example', 'left'),
+      'fx-b': own('FX Beta', 'beta.example', 'right'),
+      'fx-c': own('FX Gamma', 'gamma.example', null),
+    };
+    const save = vi.fn(async (m: (s: Settings) => Settings | void) => {
+      const next = structuredClone(holder.stored);
+      holder.stored = (m(next) ?? next) as Settings;
+    });
+    const anthropic = device({ kind: 'anthropic', model: null });
+    const pane = () => <AiPane settings={holder.stored} save={save} device={anthropic} saveDevice={vi.fn(async () => {})} />;
+    const { rerender } = render(pane());
+
+    // UnAlgorithm Cloud's list by default, under the switch; nothing downloaded yet.
+    const cloud = screen.getByRole('radio', { name: "UnAlgorithm Cloud's list" }) as HTMLInputElement;
+    expect(cloud.checked).toBe(true);
+    expect(before(screen.getByRole('switch', { name: 'UnEcho Chamber' }), cloud)).toBe(true);
+    expect(screen.getByText('Not downloaded yet: it downloads once UnEcho Chamber is on')).toBeTruthy();
+    expect(screen.queryByText(/outlets with a lean/)).toBeNull();
+
+    // Your own list: saved as the setting, with its count and its balance.
+    await user.click(screen.getByRole('radio', { name: 'Your own list' }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(holder.stored.perspectives.list).toBe('own');
+    expect(holder.stored.perspectives.outlets).toHaveProperty('fx-c');
+    rerender(pane());
+    expect((screen.getByRole('radio', { name: 'Your own list' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText('2 outlets with a lean')).toBeTruthy();
+    expect(screen.getByText("Your list isn't balanced")).toBeTruthy();
+    expect(screen.queryByText(/Not downloaded yet/)).toBeNull();
+
+    // Back on the Cloud's list, now stored: its version and count.
+    await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
+    await user.click(screen.getByRole('radio', { name: "UnAlgorithm Cloud's list" }));
+    rerender(pane());
+    expect(holder.stored.perspectives.list).toBe('cloud');
+    expect(await screen.findByText('Version 1, 10 outlets with a lean')).toBeTruthy();
+    expect(screen.queryByText("Your list isn't balanced")).toBeNull();
+
+    // Edit your list opens the editor at #/ai/sources, inside the AI pane.
+    await user.click(screen.getByRole('button', { name: 'Edit your list' }));
+    expect(location.hash).toBe('#/ai/sources');
+    cleanup();
+    render(<App />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your source list' })).toBeTruthy();
+    const current = screen.getByRole('navigation', { name: 'Settings' }).querySelector('[aria-current="page"]');
+    expect(current?.textContent).toBe('AI');
+    await user.click(screen.getByRole('button', { name: 'Back to AI' }));
+    expect(location.hash).toBe('#/ai');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI' })).toBeTruthy();
   });
 });
 

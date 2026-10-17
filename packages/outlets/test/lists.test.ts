@@ -15,8 +15,17 @@ import {
   outletForHost,
   outletIdFromName,
   outletsIn,
+  ownCopyOf,
+  ownSourceList,
 } from '../src/index.ts';
 import { FIXTURE_LIST, FIXTURE_MARKER, FIXTURE_OFFICIAL_LIST } from '../src/testing/fixture.ts';
+
+/** The bundled candidates (169 outlets, no lean). */
+function candidates() {
+  const c = bundledCandidates();
+  if (!c) throw new Error('The bundled candidate list is invalid.');
+  return c;
+}
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, REPO_ROOT), 'utf8');
@@ -121,6 +130,56 @@ describe('source lists', () => {
     expect(outletIdFromName('Radio-Canada Info')).toBe('radio-canada-info');
     expect(outletIdFromName('x'.repeat(50))).toBe('x'.repeat(40));
     expect(outletIdFromName(`${'a'.repeat(39)} b`)).toBe('a'.repeat(39));
+  });
+
+  it('test_own_source_list_shape', () => {
+    // P3-76: the person's own list as a run reads it. Map order doesn't matter: outlets come back sorted by id.
+    const own = ownSourceList({
+      b: { name: 'FX Center', domains: ['fx-center.example'], bucket: 'center' },
+      a: { name: 'FX Unlabelled', domains: ['fx-unlabelled.example', 'fx-u.example'], bucket: null },
+    });
+    expect(own).toEqual({
+      kind: 'own',
+      version: '',
+      outlets: [
+        { id: 'a', name: 'FX Unlabelled', domains: ['fx-unlabelled.example', 'fx-u.example'], lean: null },
+        { id: 'b', name: 'FX Center', domains: ['fx-center.example'], lean: { bucket: 'center' } },
+      ],
+    });
+    expect(ownSourceList({})).toEqual({ kind: 'own', version: '', outlets: [] });
+  });
+
+  it('test_own_copy_from_cloud_or_candidates', () => {
+    const at = 1_760_000_000_000;
+    // The Cloud's list with a lean: every outlet's name, web addresses and bucket, never its evidence.
+    const fromCloud = ownCopyOf(FIXTURE_OFFICIAL_LIST, candidates(), at);
+    expect(Object.keys(fromCloud).sort()).toEqual(FIXTURE_OFFICIAL_LIST.outlets.map((o) => o.id).sort());
+    expect(Object.keys(fromCloud)).toHaveLength(10);
+    for (const o of FIXTURE_OFFICIAL_LIST.outlets) {
+      expect(fromCloud[o.id]).toStrictEqual({ name: o.name, domains: o.domains, bucket: o.lean?.bucket ?? null, addedAt: at });
+    }
+    expect(JSON.stringify(fromCloud)).not.toContain('evidence');
+    expect(JSON.stringify(fromCloud)).not.toContain('changedOn');
+    // A copy, not the Cloud's own arrays.
+    expect(fromCloud['fx-left-a']?.domains).not.toBe(FIXTURE_OFFICIAL_LIST.outlets[0]?.domains);
+
+    // A Cloud list with no lean, or none stored: the candidates, every bucket null.
+    const noLean = { ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
+    for (const official of [noLean, null]) {
+      const copy = ownCopyOf(official, candidates(), at);
+      expect(Object.keys(copy)).toHaveLength(169);
+      expect(Object.keys(copy).sort()).toEqual(
+        candidates()
+          .outlets.map((o) => o.id)
+          .sort(),
+      );
+      for (const entry of Object.values(copy)) {
+        expect(entry.bucket).toBeNull();
+        expect(entry.addedAt).toBe(at);
+      }
+      // Every copy is a list the rules accept, so the editor can save it as it is.
+      expect(listProblems(ownSourceList(copy).outlets)).toEqual([]);
+    }
   });
 
   it('test_fixture_names_only_example_hosts', () => {

@@ -110,7 +110,9 @@ extension maps its codes to its own words. `local:serverOffer`, which content sc
 whether it bills, whether it offers fact-check and its price: no email, device id or token.
 
 Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
-keys.
+keys. Settings include the person's own UnEcho Chamber source list (`perspectives.outlets`, one sync item per outlet: its
+name, web addresses and the lean the person gave it) and which list UnEcho Chamber uses (`perspectives.list`). These
+leans are the person's own opinions: stored and synced like their interests and exceptions, never shared or published.
 
 ## UnEcho Chamber's source lists
 
@@ -201,10 +203,11 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   settings, interests and exceptions, one item per field, each with its edit time (a hybrid logical clock), the seq the
   server gave it and the device that wrote it (`sync_items`, in the account's one space, `sync_spaces`, which holds the
   space's epoch, counts and cleanup floor). Exceptions hold the name and profile identifier the person chose to always
-  show or hide. A deleted entry is kept as a marker without a value for 90 days, then removed. A record of each push
-  (its keys and the server's answers, no values, never a refused key) is kept for 24 hours (`sync_pushes`). Never
-  synced: API keys, endpoint tokens, refresh tokens, AI source settings, learned topics, votes, statistics or cached
-  results ([Sync](ARCHITECTURE.md#sync)).
+  show or hide. The person's own UnEcho Chamber source list is one item per outlet: its name, web addresses and the lean
+  the person gave it, their own opinion, never shared or published. A deleted entry is kept as a marker without a value
+  for 90 days, then removed. A record of each push (its keys and the server's answers, no values, never a refused key)
+  is kept for 24 hours (`sync_pushes`). Never synced: API keys, endpoint tokens, refresh tokens, AI source settings,
+  learned topics, votes, statistics or cached results ([Sync](ARCHITECTURE.md#sync)).
 - **Shared claim cache:** for each claim checked in a public post on this server, one row: a keyed hash of the
   normalized claim (HMAC-SHA-256 under a key derived from the server's `BETTER_AUTH_SECRET`, never stored), the verdict,
   the model's explanation of it (at most 280 characters; left out when it repeats six or more consecutive words of the
