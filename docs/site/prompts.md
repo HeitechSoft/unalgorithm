@@ -1,6 +1,6 @@
 # Published prompts
 
-These are the exact instructions UnAlgorithm Feed gives AI models for Fact-check and UnEcho Chamber. This page is generated from the code in `packages/research` by `pnpm docs:site`, and a test fails whenever the page and the code differ.
+These are the exact instructions unAlgorithm Feed gives AI models for Fact-check and UnEcho Chamber. This page is generated from the code in `packages/research` by `pnpm docs:site`, and a test fails whenever the page and the code differ.
 
 Whatever a stranger wrote that is sent to a model (a post, a shared link, the passages a search found) goes inside tags carrying a code that changes with every request, written `NONCE` below. It is escaped so it can never close or forge those tags, and every prompt tells the model that what is inside them is data, never instructions. The search steps read web pages through the AI provider's own search tool, and their prompts say those pages are untrusted too.
 
@@ -14,7 +14,7 @@ Prompt version 2.
 | Step 2: research | Claude Sonnet 5.5 | gpt-5 |
 | Step 3: verdicts | Claude Sonnet 5.5 | gpt-5 |
 
-On your own AI server, every step uses that server's model, and step 2 has no AI call: each claim is sent as a search query with your Brave or Tavily key, and the verdict step reads the results. An UnAlgorithm server uses the routes its operator has eval-gated, and with a search provider its step 2 works the same way.
+On your own AI server, every step uses that server's model, and step 2 has no AI call: each claim is sent as a search query with your Brave or Tavily key, and the verdict step reads the results. An unAlgorithm server uses the routes its operator has eval-gated, and with a search provider its step 2 works the same way.
 
 Limits: at most 3 claims per post; a search budget of 2 searches for one claim, never more than 5; quotes of at most 25 words; citations from at least 2 independent sites, or the verdict becomes `unverifiable`.
 

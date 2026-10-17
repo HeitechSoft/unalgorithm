@@ -1,6 +1,6 @@
 # Evaluations and trust gates
 
-This is how UnAlgorithm Feed tests Fact-check and UnEcho Chamber before a prompt or a model changes: each runs on a fixed set of test items, and the run must pass the trust gates below. Every item is written for testing, with no real post, person or outlet. This page is generated from the code by `pnpm docs:site`, and a test fails whenever the page and the code differ.
+This is how unAlgorithm Feed tests Fact-check and UnEcho Chamber before a prompt or a model changes: each runs on a fixed set of test items, and the run must pass the trust gates below. Every item is written for testing, with no real post, person or outlet. This page is generated from the code by `pnpm docs:site`, and a test fails whenever the page and the code differ.
 
 The sets are in [`factcheck-set.ts`](../../packages/research/eval/factcheck-set.ts) and [`perspectives-set.ts`](../../packages/research/eval/perspectives-set.ts).
 

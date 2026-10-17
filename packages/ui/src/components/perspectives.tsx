@@ -35,7 +35,7 @@ export interface PerspectivesSheetProps {
   /** Links shown last in the footer of a finished comparison (how it works, report a mistake): the extension's own URLs. */
   links?: readonly SheetFootLink[] | undefined;
   /**
-   * UnAlgorithm Cloud's public source list page (`SOURCE_LIST_PAGE_URL`): when set, a Cloud result's footer links the
+   * unAlgorithm Cloud's public source list page (`SOURCE_LIST_PAGE_URL`): when set, a Cloud result's footer links the
    * list's name to it, where appeals start. An own-list result never links: it is the person's list.
    */
   listHref?: string | undefined;
@@ -50,7 +50,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, DAY_FOR
 /** A search result's page age as a date when it parses as one, else as given. */
 const pageDay = (age: string) => (Number.isNaN(Date.parse(age)) ? age : day(age));
 
-const CLOUD_LIST = "UnAlgorithm Cloud's source list";
+const CLOUD_LIST = "unAlgorithm Cloud's source list";
 
 /**
  * Where a result's leans came from, by the list it ran on (D104), with the Cloud list's name linked to `listHref` when
@@ -115,7 +115,7 @@ export function PerspectivesSheet({
       {status === 'done' && result ? (
         <>
           <BalanceNotice
-            name={result.list === 'own' ? 'Your list' : "UnAlgorithm Cloud's list"}
+            name={result.list === 'own' ? 'Your list' : "unAlgorithm Cloud's list"}
             empty={false}
             warnings={listWarnings}
           />

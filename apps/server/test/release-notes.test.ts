@@ -61,7 +61,7 @@ describe('release notes', () => {
     expect(notes.startsWith('### Minor Changes\n\n- 1a2b3c4: Email sign-in and classify over HTTP.\n\n**Source:**')).toBe(true);
     expect(notes).not.toContain('Rate limits per user');
     expect(notes).not.toContain('\r');
-    // The source this release is built from, under the AGPL. The image is private (UnAlgorithm Cloud's), so nothing
+    // The source this release is built from, under the AGPL. The image is private (unAlgorithm Cloud's), so nothing
     // tells anyone to pull it.
     expect(notes).toContain('(https://github.com/HeitechSoft/unalgorithm/tree/server-v0.1.0)');
     expect(notes).toContain('AGPL-3.0-only');
@@ -74,7 +74,7 @@ describe('release notes', () => {
   it('test_server_tag_fallback_heading', () => {
     // No changelog at all, as for the first server release.
     const notes = notesFor('server-v0.1.0', files({}));
-    expect(notes.startsWith('UnAlgorithm Feed server 0.1.0\n\n**Source:**')).toBe(true);
+    expect(notes.startsWith('unAlgorithm Feed server 0.1.0\n\n**Source:**')).toBe(true);
     expect(notes).toContain('/tree/server-v0.1.0)');
 
     // A changelog without that version: the same fallback. The extension's changelog is never read for a server tag.
@@ -82,7 +82,7 @@ describe('release notes', () => {
       'server-v0.3.0',
       files({ 'apps/server/CHANGELOG.md': SERVER_CHANGELOG, 'apps/extension/CHANGELOG.md': EXTENSION_CHANGELOG }),
     );
-    expect(missing.startsWith('UnAlgorithm Feed server 0.3.0\n\n')).toBe(true);
+    expect(missing.startsWith('unAlgorithm Feed server 0.3.0\n\n')).toBe(true);
   });
 
   it('test_extension_tag_notes_unchanged', () => {
@@ -103,7 +103,7 @@ Developer mode and choose **Load unpacked**. Verify the download against \`SHA25
 attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
     );
     expect(notesFor('v0.3.0', read)).toBe(
-      `UnAlgorithm Feed 0.3.0
+      `unAlgorithm Feed 0.3.0
 
 **Install:** download \`unalgorithm-0.3.0-chrome.zip\`, unzip it, open \`chrome://extensions\`, turn on
 Developer mode and choose **Load unpacked**. Verify the download against \`SHA256SUMS.txt\` and the build provenance
@@ -132,6 +132,6 @@ attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
       return existsSync(file) ? readFileSync(file, 'utf8') : undefined;
     };
     expect(run.stdout).toBe(`${notesFor('server-v9.9.9', readRepo)}\n`);
-    expect(run.stdout.startsWith('UnAlgorithm Feed server 9.9.9\n')).toBe(true);
+    expect(run.stdout.startsWith('unAlgorithm Feed server 9.9.9\n')).toBe(true);
   });
 });

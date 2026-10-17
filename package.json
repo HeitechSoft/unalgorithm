@@ -1,7 +1,7 @@
 {
   "name": "unalgorithm",
   "private": true,
-  "description": "UnAlgorithm: see the posts you came for. An open-source feed curator for LinkedIn and Facebook.",
+  "description": "unAlgorithm: see the posts you came for. An open-source feed curator for LinkedIn and Facebook.",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.34.6",
   "engines": {

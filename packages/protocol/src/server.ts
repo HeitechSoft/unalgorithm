@@ -4,7 +4,7 @@ import type { JobPrice } from './billing.ts';
 import { MAX_POSTS_PER_REQUEST } from './classify.ts';
 import { AI_ERROR_CODES, type WireError } from './errors.ts';
 
-/** Discovery document every UnAlgorithm server serves; the extension reads it before signing in. */
+/** Discovery document every unAlgorithm server serves; the extension reads it before signing in. */
 export const SERVER_INFO_PATH = '/.well-known/unalgorithm.json';
 /** Web page (apps/web) the extension opens with `launchWebAuthFlow`. */
 export const AUTHORIZE_PAGE_PATH = '/authorize';
@@ -49,7 +49,7 @@ export const JobPriceSchema = z.object({ typicalMicros: Micros, maxMicros: Micro
 
 export const ServerInfoSchema = z.object({
   v: z.literal(1),
-  /** The server's INSTANCE_NAME. A display hint only: never trusted to decide what is "UnAlgorithm Cloud". */
+  /** The server's INSTANCE_NAME. A display hint only: never trusted to decide what is "unAlgorithm Cloud". */
   name: z.string().min(1).max(80),
   /** The running server release, e.g. "0.1.0". */
   version: z.string().min(1).max(40),

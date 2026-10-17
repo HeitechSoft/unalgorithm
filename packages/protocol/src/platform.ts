@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Social platforms UnAlgorithm understands. Add a platform here, then an adapter in @unalgorithm/platforms. */
+/** Social platforms unAlgorithm understands. Add a platform here, then an adapter in @unalgorithm/platforms. */
 export const PLATFORMS = ['linkedin', 'facebook'] as const;
 export type PlatformId = (typeof PLATFORMS)[number];
 export const PlatformIdSchema = z.enum(PLATFORMS);

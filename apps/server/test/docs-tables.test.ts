@@ -68,8 +68,8 @@ describe('trademarks', () => {
   it('test_trademarks_allows_unmodified_server', () => {
     const youMay = sectionOf(read('TRADEMARKS.md'), '## You may').replace(/\s+/g, ' ');
     expect(youMay).toContain(
-      'Run the unmodified UnAlgorithm server (`apps/server`) for yourself or your organization, under a name of your own ' +
-        '(`INSTANCE_NAME`). Don\'t call your server "UnAlgorithm Cloud": that name is only HeitechSoft\'s hosted service ' +
+      'Run the unmodified unAlgorithm server (`apps/server`) for yourself or your organization, under a name of your own ' +
+        '(`INSTANCE_NAME`). Don\'t call your server "unAlgorithm Cloud": that name is only HeitechSoft\'s hosted service ' +
         'at cloud.unalgorithm.app.',
     );
   });

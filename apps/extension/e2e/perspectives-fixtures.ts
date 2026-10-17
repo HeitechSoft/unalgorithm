@@ -98,7 +98,7 @@ export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   await expect(agreed.locator('blockquote')).toHaveText([first8(PASSAGES.left), first8(PASSAGES.center)]);
   await expect(
     sheet.getByText(
-      `Leans come from UnAlgorithm Cloud's source list (version ${FIXTURE_LIST.version}), set by people with evidence, never by AI.`,
+      `Leans come from unAlgorithm Cloud's source list (version ${FIXTURE_LIST.version}), set by people with evidence, never by AI.`,
       { exact: true },
     ),
   ).toBeVisible();

@@ -6,12 +6,12 @@
  */
 import { OUTLETS_PAGE_PATH } from './outlets.ts';
 
-/** The product website. `cloud.unalgorithm.app` is UnAlgorithm Cloud, never the website. */
+/** The product website. `cloud.unalgorithm.app` is unAlgorithm Cloud, never the website. */
 export const WEBSITE_ORIGIN = 'https://unalgorithmfeed.com';
 
-/** UnAlgorithm Cloud, HeitechSoft's server: the one origin the extension names "UnAlgorithm Cloud". */
+/** unAlgorithm Cloud, HeitechSoft's server: the one origin the extension names "unAlgorithm Cloud". */
 export const CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
-/** UnAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
+/** unAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
 export const SOURCE_LIST_PAGE_URL = `${CLOUD_ORIGIN}${OUTLETS_PAGE_PATH}`;
 
 /** The open-source repository, where issues are filed ("Report a problem", the correction form). */
@@ -31,14 +31,14 @@ export interface SiteDocument {
 export const CLOUD_BETA_NOTICE = {
   source: 'CLOUD-BETA-NOTICE.md',
   path: '/cloud/beta-privacy',
-  title: 'UnAlgorithm Cloud beta privacy notice',
+  title: 'unAlgorithm Cloud beta privacy notice',
   linkText: 'Beta privacy notice',
 } as const satisfies SiteDocument;
 
 export const CLOUD_BETA_TERMS = {
   source: 'CLOUD-BETA-TERMS.md',
   path: '/cloud/beta-terms',
-  title: 'UnAlgorithm Cloud beta terms',
+  title: 'unAlgorithm Cloud beta terms',
   linkText: 'Beta terms',
 } as const satisfies SiteDocument;
 
@@ -79,7 +79,7 @@ export const EVALS_PAGE = {
 
 /**
  * "How Fact-check and UnEcho Chamber work" (F29, P3-68): the methodology, written by hand. Every number it states is
- * pinned to the code by the extension's `methodology-doc.test.ts`. It links the generated pages above and UnAlgorithm
+ * pinned to the code by the extension's `methodology-doc.test.ts`. It links the generated pages above and unAlgorithm
  * Cloud's source list (`SOURCE_LIST_PAGE_URL`), which is not a site document: it lives on the Cloud (decision D97).
  */
 export const METHODOLOGY_PAGE = {

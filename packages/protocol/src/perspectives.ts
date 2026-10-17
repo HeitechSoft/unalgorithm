@@ -32,7 +32,7 @@ export const OutletDomainSchema = z
   .string()
   .max(253)
   .regex(/^(?!www\.)(?:[a-z0-9-]+\.)+[a-z]{2,}$/);
-/** Which list a UnEcho Chamber run used: UnAlgorithm Cloud's published list, or the person's own. */
+/** Which list a UnEcho Chamber run used: unAlgorithm Cloud's published list, or the person's own. */
 export const LIST_KINDS = ['cloud', 'own'] as const;
 export type ListKind = (typeof LIST_KINDS)[number];
 export const MAX_LIST_OUTLETS = 300;

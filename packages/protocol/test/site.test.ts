@@ -189,7 +189,7 @@ describe('issue forms (P3-68)', () => {
 
     expect(ids(correction)).toEqual(expect.arrayContaining(['feature', 'claim', 'version', 'prompt', 'list']));
     expect(options(correction, 'feature')).toStrictEqual(Object.values(FEATURE_NAMES));
-    expect(options(correction, 'list')).toStrictEqual(["UnAlgorithm Cloud's list", 'My own list']);
+    expect(options(correction, 'list')).toStrictEqual(["unAlgorithm Cloud's list", 'My own list']);
     expect(ids(appeal)).toEqual(expect.arrayContaining(['outlet', 'what', 'version']));
     for (const yml of [correction, appeal]) expect(new Set(ids(yml)).size).toBe(ids(yml).length);
   });
@@ -303,7 +303,7 @@ describe('cloud beta documents', () => {
     for (const never of ['API keys', 'endpoint tokens', 'refresh tokens', 'learned topics', 'votes']) {
       expect(section, never).toMatch(new RegExp(`Sync never carries [^.]*${never}`));
     }
-    expect(section).toContain("Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy");
+    expect(section).toContain("Google knows you signed in to unAlgorithm Cloud, under Google's own privacy policy");
     expect(flat(notice)).toContain('Google acts as a sign-in provider you choose, not as a processor of Cloud data.');
     const rights = flat(notice.slice(notice.indexOf('## 8.'), notice.indexOf('## 9.')));
     for (const text of [section, rights]) expect(text).toContain('`https://cloud.unalgorithm.app/account`');
@@ -317,8 +317,8 @@ describe('cloud beta documents', () => {
       ['notice', notice],
       ['terms', terms],
     ] as const) {
-      // The first "UnAlgorithm Cloud" says which service it is; no "zero retention" promise before an agreement exists.
-      const first = text.split('\n\n').find((paragraph) => !paragraph.startsWith('#') && paragraph.includes('UnAlgorithm Cloud'));
+      // The first "unAlgorithm Cloud" says which service it is; no "zero retention" promise before an agreement exists.
+      const first = text.split('\n\n').find((paragraph) => !paragraph.startsWith('#') && paragraph.includes('unAlgorithm Cloud'));
       expect(first && flat(first), name).toContain('`cloud.unalgorithm.app`');
       expect(text, name).not.toMatch(/zero[\s-]+(data[\s-]+)?retention/i);
       // No placeholder left for review to fill.

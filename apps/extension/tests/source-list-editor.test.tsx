@@ -1,6 +1,6 @@
 /**
  * Your own source list for UnEcho Chamber (P3-76, decisions D100, D101, D110): Settings → AI → Edit your list. It starts
- * from a copy of UnAlgorithm Cloud's stored list (or the candidates while the Cloud has no lean), and the person adds,
+ * from a copy of unAlgorithm Cloud's stored list (or the candidates while the Cloud has no lean), and the person adds,
  * edits and removes outlets and sets leans, with the balance warnings live. Every write is one `save` of
  * `perspectives.outlets`. Settings and the Cloud's stored copy live in the WXT fake browser; every outlet is fictional
  * (`.example`), and every lean here is a test's.
@@ -77,7 +77,7 @@ describe('Your source list', () => {
     let saves = await renderEditor();
     expect(screen.getByText('Your list is empty.')).toBeTruthy();
     expect(screen.getByText(/This list is yours: no one reviews it\./)).toBeTruthy();
-    await user.click(await screen.findByRole('button', { name: "Start from UnAlgorithm Cloud's list" }));
+    await user.click(await screen.findByRole('button', { name: "Start from unAlgorithm Cloud's list" }));
     await waitFor(async () => expect(Object.keys((await stored()).perspectives.outlets)).toHaveLength(10));
     expect(saves).toHaveBeenCalledTimes(1);
     const fromCloud = (await stored()).perspectives.outlets;
@@ -94,7 +94,7 @@ describe('Your source list', () => {
 
     // No stored copy: the candidates, with no lean, in one save.
     saves = await renderEditor();
-    expect(screen.queryByRole('button', { name: "Start from UnAlgorithm Cloud's list" })).toBeNull();
+    expect(screen.queryByRole('button', { name: "Start from unAlgorithm Cloud's list" })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Start from the candidate list' }));
     await waitFor(async () => expect(Object.keys((await stored()).perspectives.outlets)).toHaveLength(169));
     expect(saves).toHaveBeenCalledTimes(1);

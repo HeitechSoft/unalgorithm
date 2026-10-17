@@ -1,6 +1,6 @@
 /**
  * The server card (R25, R26, R47a): only builds made with the `UA_CLOUD` flag offer it, it never calls a self-hosted
- * server "UnAlgorithm Cloud", and no post leaves the browser before the person has seen who receives it and agreed.
+ * server "unAlgorithm Cloud", and no post leaves the browser before the person has seen who receives it and agreed.
  * Background messages are answered per test, the permission prompt is stubbed on the WXT fake browser, and the flag is
  * switched through a mocked `CLOUD_ENABLED` (builds set it with `define`, which Vitest doesn't apply).
  */
@@ -39,11 +39,11 @@ const TOM = 'tom@example.com';
 const SELF_HOSTED = 'https://ai.example.org';
 const NOW = Date.UTC(2026, 9, 13, 9);
 const CARD_TEXT =
-  'No API key needed. Sign in to UnAlgorithm Cloud (invite only during the beta) or to an UnAlgorithm server you trust.';
+  'No API key needed. Sign in to unAlgorithm Cloud (invite only during the beta) or to an unAlgorithm server you trust.';
 const WHAT_IS_SENT =
   "What is sent: the text of posts that pass your filters (up to 2,000 characters, emails and phone numbers masked), the kind of media and a shared link's site and title, whether the author is a person or a page, and your interests.";
 const NEVER_SENT = "Never sent: author names, profile links, comments, images, and Facebook posts that aren't public.";
-const NO_PERMISSION = 'UnAlgorithm needs permission to open the sign-in window.';
+const NO_PERMISSION = 'unAlgorithm needs permission to open the sign-in window.';
 
 const INFO: ServerInfo = {
   v: 1,
@@ -142,12 +142,12 @@ describe('flag', () => {
   it('test_card_disabled_without_flag', async () => {
     flag.cloud = false;
     render(<AiSetup device={device()} />);
-    const card = screen.getByRole('radio', { name: /^UnAlgorithm Cloud/ }) as HTMLInputElement;
+    const card = screen.getByRole('radio', { name: /^unAlgorithm Cloud/ }) as HTMLInputElement;
     expect(card.disabled).toBe(true);
     expect(card.closest('.ua-choice')?.textContent).toBe(
-      'UnAlgorithm CloudComing soonNothing to set up and works on all your devices. Pay only for what you use.',
+      'unAlgorithm CloudComing soonNothing to set up and works on all your devices. Pay only for what you use.',
     );
-    expect(screen.queryByText('UnAlgorithm server')).toBeNull();
+    expect(screen.queryByText('unAlgorithm server')).toBeNull();
     expect(screen.queryByLabelText('Server address')).toBeNull();
     await waitFor(() => expect(sentTypes()).toContain('onDeviceStatus'));
     expect(sentTypes()).not.toContain('serverAccount');
@@ -155,7 +155,7 @@ describe('flag', () => {
 
   it('test_card_enabled_with_flag_prefills_cloud', async () => {
     render(<AiSetup device={device()} />);
-    const card = screen.getByRole('radio', { name: /^UnAlgorithm server/ }) as HTMLInputElement;
+    const card = screen.getByRole('radio', { name: /^unAlgorithm server/ }) as HTMLInputElement;
     expect(card.disabled).toBe(false);
     expect(screen.queryByText('Coming soon')).toBeNull();
     fireEvent.click(card);
@@ -167,14 +167,14 @@ describe('flag', () => {
   it('test_card_names_server_not_cloud', async () => {
     replies.serverAccount = () => ({ account: account(SELF_HOSTED) });
     render(<AiSetup device={device({ kind: 'server', baseUrl: SELF_HOSTED })} />);
-    const card = screen.getByRole('radio', { name: /^UnAlgorithm server/ }) as HTMLInputElement;
+    const card = screen.getByRole('radio', { name: /^unAlgorithm server/ }) as HTMLInputElement;
     expect(card.checked).toBe(true);
     const choice = card.closest('.ua-choice');
-    expect(choice?.querySelector('.ua-choice-title')?.textContent).toBe('UnAlgorithm server');
+    expect(choice?.querySelector('.ua-choice-title')?.textContent).toBe('unAlgorithm server');
     expect(screen.getByText(CARD_TEXT)).toBeTruthy();
     expect(screen.getByText('In use · ai.example.org')).toBeTruthy();
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
-    expect(screen.queryByText('UnAlgorithm Cloud')).toBeNull();
+    expect(screen.queryByText('unAlgorithm Cloud')).toBeNull();
     for (const claim of ['Pay only', 'all your devices']) expect(document.body.textContent).not.toContain(claim);
   });
 
@@ -183,7 +183,7 @@ describe('flag', () => {
     vi.spyOn(fakeBrowser.permissions, 'getAll').mockResolvedValue({ origins: [], permissions: [] } as never);
     const keys = 'stats, AI usage history and saved API keys from this browser';
     for (const [cloud, description] of [
-      [true, `${keys}, and signs it out of any UnAlgorithm server. This can't be undone.`],
+      [true, `${keys}, and signs it out of any unAlgorithm server. This can't be undone.`],
       // Store builds have no server card, so nobody can be signed in to a server.
       [false, `${keys}. This can't be undone.`],
     ] as const) {
@@ -202,12 +202,12 @@ describe('flow', () => {
     const { user } = renderSetup();
     replies.serverDiscover = () => ({
       ok: false,
-      error: { code: 'unsupported', message: "That address isn't an UnAlgorithm server." },
+      error: { code: 'unsupported', message: "That address isn't an unAlgorithm server." },
     });
     const field = (await screen.findByLabelText('Server address')) as HTMLInputElement;
     expect(field.value).toBe(PINNED_CLOUD_ORIGIN);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByText("That address isn't an UnAlgorithm server.")).toBeTruthy();
+    expect(await screen.findByText("That address isn't an unAlgorithm server.")).toBeTruthy();
     expect(sent()).toContainEqual({ type: 'serverDiscover', baseUrl: PINNED_CLOUD_ORIGIN });
 
     await user.clear(field);
@@ -228,10 +228,10 @@ describe('flow', () => {
   it('test_consent_cloud_vs_self_hosted', async () => {
     const { user } = renderSetup();
     await continueTo(user);
-    expect(screen.getByRole('heading', { name: 'UnAlgorithm Cloud' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'unAlgorithm Cloud' })).toBeTruthy();
     expect(screen.getByText(recipientText(serverLabel(PINNED_CLOUD_ORIGIN)).text)).toBeTruthy();
     expect(screen.getByText('Invite only')).toBeTruthy();
-    expect(screen.getByText('UnAlgorithm Cloud is invite-only during the beta.')).toBeTruthy();
+    expect(screen.getByText('unAlgorithm Cloud is invite-only during the beta.')).toBeTruthy();
     expect(screen.getByText(WHAT_IS_SENT)).toBeTruthy();
     expect(screen.getByText(NEVER_SENT)).toBeTruthy();
     // The discovery name is never shown for the Cloud, and nothing is signed in yet.
@@ -249,7 +249,7 @@ describe('flow', () => {
     expect(screen.getByText(WHAT_IS_SENT)).toBeTruthy();
     expect(screen.getByText(NEVER_SENT)).toBeTruthy();
     expect(screen.queryByText('Invite only')).toBeNull();
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
   });
 
   it('test_cloud_consent_links_beta_documents', async () => {
@@ -299,7 +299,7 @@ describe('flow', () => {
     let { user, onSaved } = renderSetup();
     await user.click(await continueTo(user));
     expect(await screen.findByText('Signed in as tom@example.com')).toBeTruthy();
-    expect(screen.getByText('UnAlgorithm Cloud')).toBeTruthy();
+    expect(screen.getByText('unAlgorithm Cloud')).toBeTruthy();
     expect(sent()).toContainEqual({ type: 'serverSignIn', baseUrl: PINNED_CLOUD_ORIGIN });
     expect(onSaved).toHaveBeenCalledWith({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN });
     cleanup();
@@ -317,7 +317,7 @@ describe('flow', () => {
   it('test_sign_in_again_banner', async () => {
     replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN, { needsSignIn: true }) });
     const { user, onSaved } = renderSetup(device({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN }));
-    expect(await screen.findByText('Sign in to UnAlgorithm Cloud again.')).toBeTruthy();
+    expect(await screen.findByText('Sign in to unAlgorithm Cloud again.')).toBeTruthy();
     expect(screen.queryByText(/Signed in as/)).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Sign in again' }));
@@ -331,7 +331,7 @@ describe('flow', () => {
     // Consent was given for this origin before: no discovery, no consent step.
     expect(sentTypes()).not.toContain('serverDiscover');
     expect(screen.queryByText(WHAT_IS_SENT)).toBeNull();
-    expect(screen.queryByText('Sign in to UnAlgorithm Cloud again.')).toBeNull();
+    expect(screen.queryByText('Sign in to unAlgorithm Cloud again.')).toBeNull();
     expect(onSaved).toHaveBeenCalledWith({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN });
   });
 
@@ -359,7 +359,7 @@ describe('flow', () => {
     const onSaved = vi.fn();
     const user = setupUser();
     render(<AiSetup device={device({ kind: 'anthropic', model: null })} onSaved={onSaved} />);
-    await user.click(screen.getByRole('radio', { name: /^UnAlgorithm server/ }));
+    await user.click(screen.getByRole('radio', { name: /^unAlgorithm server/ }));
     expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Turn on' }));
     const server = { kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN };
@@ -383,7 +383,7 @@ describe('flow', () => {
     // Into the card group (on "Off, rules only"), then the arrow keys pick the server card.
     await tabTo(user, screen.getByRole('radio', { name: /^Off, rules only/ }));
     await user.keyboard('{ArrowDown}');
-    const card = screen.getByRole('radio', { name: /^UnAlgorithm server/ }) as HTMLInputElement;
+    const card = screen.getByRole('radio', { name: /^unAlgorithm server/ }) as HTMLInputElement;
     expect(card.checked).toBe(true);
 
     // Address: a visible label, and Enter in the field continues.

@@ -102,7 +102,7 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
       rt.serverOffer = v;
       refresh();
     }),
-    // UnAlgorithm Cloud's source list, as the background stores a new copy: UnEcho Chamber follows the chosen list.
+    // unAlgorithm Cloud's source list, as the background stores a new copy: UnEcho Chamber follows the chosen list.
     officialListItem.watch((v) => {
       rt.officialList = v;
       refresh();

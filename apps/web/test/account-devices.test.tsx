@@ -38,7 +38,7 @@ import {
 
 vi.mock('@simplewebauthn/browser');
 
-const DEVICES_HEADER = 'Devices signed in with UnAlgorithm Feed';
+const DEVICES_HEADER = 'Devices signed in with unAlgorithm Feed';
 const PASSKEYS_HEADER = 'Passkeys';
 const PASSKEYS_FOOTER = 'Sign in with your fingerprint, face or device PIN instead of an emailed code.';
 const NO_DEVICES = 'No devices are signed in.';

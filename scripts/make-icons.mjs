@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Renders the UnAlgorithm mark ("U" holding a dot) to PNG icons with headless Chromium:
+ * Renders the unAlgorithm mark ("U" holding a dot) to PNG icons with headless Chromium:
  *   apps/extension/public/icon/{16,32,48,128}.png and paused-{16,32}.png (greyscale).
  * 16 px is drawn flat with thicker strokes for toolbar legibility; 128 px keeps Chrome's 16 px transparent padding.
  *
@@ -49,10 +49,10 @@ const MUTED = '#5e5e63';
 const LAGOON = '#0b7a75';
 const TAGLINE = 'See the posts you came for.';
 
-/** The wordmark (Un in Lagoon, Algorithm in ink), followed by "Feed" so the artwork names the product in full. */
+/** The wordmark (un in Lagoon, Algorithm in ink), followed by "Feed" so the artwork names the product in full. */
 function wordmark(size) {
   return `<div style="font-size:${size}px;font-weight:600;line-height:1;letter-spacing:-0.02em;white-space:nowrap">
-    <span style="color:${LAGOON};font-weight:700">Un</span><span style="color:${INK}">Algorithm</span><span style="color:${INK};font-weight:400"> Feed</span>
+    <span style="color:${LAGOON};font-weight:700">un</span><span style="color:${INK}">Algorithm</span><span style="color:${INK};font-weight:400"> Feed</span>
   </div>`;
 }
 

@@ -371,7 +371,7 @@ test.describe('OpenAI-compatible with a Brave key', () => {
 
     await saveBraveKey(options);
     // The key's one test search: a fixed word, never post content.
-    expect(brave.queries).toEqual(['UnAlgorithm']);
+    expect(brave.queries).toEqual(['unAlgorithm']);
     expect(brave.keys).toEqual([BRAVE_KEY]);
     await expect(options.getByText(NEEDS_KEY, { exact: true })).toHaveCount(0);
     await turnOnLabs(options);

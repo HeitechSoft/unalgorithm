@@ -11,7 +11,7 @@ afterEach(cleanup);
 
 describe('balance notice', () => {
   it('test_balance_notice_states', () => {
-    const balanced = render(<BalanceNotice name="UnAlgorithm Cloud's list" empty={false} warnings={[]} />);
+    const balanced = render(<BalanceNotice name="unAlgorithm Cloud's list" empty={false} warnings={[]} />);
     expect(balanced.container.innerHTML).toBe('');
     balanced.unmount();
 

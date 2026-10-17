@@ -60,7 +60,7 @@ function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
 /**
  * UnEcho Chamber is on as Settings → AI shows its switch: the device-local flag (`labs.perspectives`) on and a source
  * that can compare. The flag stays stored when the source changes, and the switch then shows off and can't be changed,
- * so nothing of UnEcho Chamber may run on the flag alone: not the offer, and not the download of UnAlgorithm Cloud's
+ * so nothing of UnEcho Chamber may run on the flag alone: not the offer, and not the download of unAlgorithm Cloud's
  * source list (`official-list.ts`, decision D98). `serverOffer` as for `perspectivesOffered`.
  */
 export function perspectivesSwitchOn(

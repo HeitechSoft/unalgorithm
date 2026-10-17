@@ -132,7 +132,7 @@ function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
   }
   return lines.length > 0
     ? lines.join('\n')
-    : `${FEATURE_NAMES.factcheck} and ${FEATURE_NAMES.perspectives} are not offered on UnAlgorithm Cloud yet.`;
+    : `${FEATURE_NAMES.factcheck} and ${FEATURE_NAMES.perspectives} are not offered on unAlgorithm Cloud yet.`;
 }
 
 /**

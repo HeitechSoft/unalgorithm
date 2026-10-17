@@ -1,16 +1,16 @@
-# UnAlgorithm privacy policy
+# unAlgorithm privacy policy
 
-*Last updated: October 2026. This policy covers UnAlgorithm Feed ("UnAlgorithm"), the browser extension (public
+*Last updated: October 2026. This policy covers unAlgorithm Feed ("unAlgorithm"), the browser extension (public
 preview), and its website, unalgorithmfeed.com. It is also the privacy policy linked from the Chrome Web Store
 listing.*
 
-UnAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **The
+unAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **The
 extension does not collect your data, and it has no analytics or tracking.** The website counts visits without
 cookies; see [This website](#this-website).
 
 ## What happens on your computer
 
-- UnAlgorithm reads the LinkedIn and Facebook pages you open, in your browser, to decide which posts to fold away.
+- unAlgorithm reads the LinkedIn and Facebook pages you open, in your browser, to decide which posts to fold away.
   It only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses on your behalf.
 - Your settings, interests, exceptions ("always show/hide", which hold the names or profile links you chose),
   your own UnEcho Chamber source list (outlets, their web addresses and the leans you gave them), feedback ("more/less
@@ -23,7 +23,7 @@ cookies; see [This website](#this-website).
 
 ## When you turn on AI
 
-You choose where AI runs. UnAlgorithm then sends **only what is needed to classify a post** to that place:
+You choose where AI runs. unAlgorithm then sends **only what is needed to classify a post** to that place:
 
 - the post's text, capped in length, with email addresses and phone numbers always masked, @mentions and the names
   of people or pages tagged in the post masked unless you turn that off (Settings → AI), and web addresses reduced
@@ -44,7 +44,7 @@ It **never** sends author names, profile links, group names, comments, images or
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
 **Fact-check (off by default).** When you turn on Settings → AI → Fact-check, use your own Anthropic or OpenAI
-key and confirm a check on a public post, UnAlgorithm sends that one post to that provider, directly from your browser
+key and confirm a check on a public post, unAlgorithm sends that one post to that provider, directly from your browser
 with your key: the same post fields classification sends, with the same masking described above (email addresses and
 phone numbers always masked, @mentions and tagged names masked unless you turned that off in Settings → AI, at most
 2,000 characters, a shared link's domain and title). Your interests are not sent. The provider then runs web searches
@@ -62,9 +62,9 @@ and short quotes (a title or quote repeating a claim that way is left out), and 
 hours, a later check of the same claim on this device still sends the post to find its claims, then shows the kept
 verdict and explanation instead of searching and judging again, marked with when it was checked. Feed pages can't read
 this storage. Settings → Clear AI results cache removes the rows; Erase everything removes the rows and the key. Checks
-on an UnAlgorithm server never use or fill it.
+on an unAlgorithm server never use or fill it.
 
-**Fact-check on your UnAlgorithm server.** If your AI option is an UnAlgorithm server (self-hosted, or UnAlgorithm
+**Fact-check on your unAlgorithm server.** If your AI option is an unAlgorithm server (self-hosted, or unAlgorithm
 Cloud) and it offers fact-check, turning on Settings → AI → Fact-check and confirming a check on a public post sends
 that one post to **that server only**, with your device's sign-in: the same post fields and masking as above (at most
 2,000 characters, a shared link's domain and title, no author names, no interests). The server keeps the check in its
@@ -85,17 +85,17 @@ the last day, never who. The cache stays on that server and is never shared with
 **UnEcho Chamber (off by default).** When you turn on Settings → AI → UnEcho Chamber, use your own
 Anthropic or OpenAI key and ask to compare a public post's shared link, the shared link's address (with tracking and
 per-click parameters removed first) and its link-card title go from your browser to that provider, which searches the
-outlets your chosen source list gives a lean (UnAlgorithm Cloud's list or your own), by their web addresses, for
+outlets your chosen source list gives a lean (unAlgorithm Cloud's list or your own), by their web addresses, for
 coverage of the same story and compares it. The post's text is never sent, nor its author, your interests or anything
-else about you. Lean labels come only from UnAlgorithm Cloud's source list, set by its admins with evidence, or from
+else about you. Lean labels come only from unAlgorithm Cloud's source list, set by its admins with evidence, or from
 your own list, never from the AI. The result stays in this browser's temporary session storage for that tab, as a
 fact-check's does, and nothing goes to HeitechSoft.
 
-**UnEcho Chamber's source list.** While UnEcho Chamber is on, UnAlgorithm downloads UnAlgorithm Cloud's published
+**UnEcho Chamber's source list.** While UnEcho Chamber is on, unAlgorithm downloads unAlgorithm Cloud's published
 source list (the outlets and their leans) from `cloud.unalgorithm.app` at most once a day, whatever AI option you use.
 The request carries no account, cookie or sign-in and nothing about you, your feeds or your settings; like any web
 request it comes from your IP address. The Cloud's logs record the time and the address asked for, never your IP
-address; if a request fails, its web server's error log can keep your IP address for up to 14 days. UnAlgorithm keeps
+address; if a request fails, its web server's error log can keep your IP address for up to 14 days. unAlgorithm keeps
 the last good copy in this browser.
 
 **Fact-check and UnEcho Chamber with your own AI server and a web search key.** If your AI option is a local or
@@ -104,10 +104,10 @@ a fact-check sends the post (with the same fields and masking as above) and UnEc
 title (with tracking parameters removed) **only to the AI server address you entered**. The web searches go from your
 browser to Brave or Tavily with your key: for a fact-check, the claims the AI found in the post; for
 UnEcho Chamber, the story's search words and the outlet sites to search. The post itself is never sent to Brave or
-Tavily. Saving the key sends one test search for the word "UnAlgorithm". The key is stored only in this browser, like
+Tavily. Saving the key sends one test search for the word "unAlgorithm". The key is stored only in this browser, like
 an API key, and Facebook posts that aren't public are never checked.
 
-**UnEcho Chamber on your UnAlgorithm server.** If your AI option is an UnAlgorithm server and it offers
+**UnEcho Chamber on your unAlgorithm server.** If your AI option is an unAlgorithm server and it offers
 UnEcho Chamber, the same comparison sends the link and title (with tracking parameters removed) and your chosen list's
 outlets with a lean, as web addresses and leans without names, to **that server only**, with your device's sign-in,
 never the post's text. The server follows the link's redirects to find the story's address and searches those outlets
@@ -127,11 +127,11 @@ names, ids or links. These diagnostics are part of the link your browser opens o
 review the issue and submit it yourself, under GitHub's terms and privacy statement.
 
 A finished fact-check or UnEcho Chamber result in the side panel has a **Report a wrong verdict** (or **Report a
-mistake**) link. It opens our correction form on GitHub with only these filled in: the feature's name, UnAlgorithm's
-version, the version of the AI instructions and, for UnEcho Chamber, whether it used UnAlgorithm Cloud's source list or
+mistake**) link. It opens our correction form on GitHub with only these filled in: the feature's name, unAlgorithm's
+version, the version of the AI instructions and, for UnEcho Chamber, whether it used unAlgorithm Cloud's source list or
 your own. Never the post, the claims, the sources, the link, your list or anything about you. You describe the problem
 in your own words, and nothing is filed until you submit it yourself, under GitHub's terms and privacy statement. The
-result's *How it works* link opens our website, and the link on *UnAlgorithm Cloud's source list* opens the Cloud's
+result's *How it works* link opens our website, and the link on *unAlgorithm Cloud's source list* opens the Cloud's
 public list.
 
 ## Permissions
@@ -144,7 +144,7 @@ public list.
 | Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
 | Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → AI, for that one service |
-| Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses UnAlgorithm. It removes the `Origin` header from UnAlgorithm's own requests to that one server |
+| Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
 
 ## This website
 
@@ -160,12 +160,12 @@ trackers, and the extension never sends anything to this website.
 
 ## Children
 
-UnAlgorithm is not directed at children under 16.
+unAlgorithm is not directed at children under 16.
 
 ## Changes and contact
 
 We will describe material changes in the release notes and update the date above. Questions:
 **privacy@heitechsoft.com**.
 
-*UnAlgorithm Cloud (a future, optional service with accounts and sync) will have its own terms and privacy notice
+*unAlgorithm Cloud (a future, optional service with accounts and sync) will have its own terms and privacy notice
 before it launches.*

@@ -614,7 +614,7 @@ describe('own-key modes', () => {
       ok: false,
       error: {
         code: 'host-permission',
-        message: 'UnAlgorithm needs permission to reach Brave. Save your web search key again in Settings → AI.',
+        message: 'unAlgorithm needs permission to reach Brave. Save your web search key again in Settings → AI.',
       },
     });
     expect(fakeBrowser.permissions.contains).toHaveBeenCalledWith({ origins: [BRAVE_PATTERN] });

@@ -59,12 +59,12 @@ describe('Chrome Web Store material', () => {
   it('test_store_listing_names_and_describes_the_product', () => {
     const md = listing();
     const { extName, extDescription } = messages();
-    expect(extName?.message).toBe('UnAlgorithm Feed');
+    expect(extName?.message).toBe('unAlgorithm Feed');
     expect(md).toContain(`**${extName?.message}**`);
     expect(md).toContain(`*${extDescription?.message}*`);
     const description = section(md, 'Description');
-    expect(description).toContain('```text\nUnAlgorithm Feed by HeitechSoft\n');
-    expect(description).toContain('UnAlgorithm Feed is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta.');
+    expect(description).toContain('```text\nunAlgorithm Feed by HeitechSoft\n');
+    expect(description).toContain('unAlgorithm Feed is not affiliated with, endorsed by, or sponsored by LinkedIn or Meta.');
   });
 
   it('test_store_listing_justifies_every_store_permission', () => {
@@ -110,7 +110,7 @@ describe('Chrome Web Store material', () => {
     expect(description).toContain('FACT-CHECK AND UNECHO CHAMBER (OFF BY DEFAULT)');
     expect(description).not.toContain('FACT-CHECK (OFF BY DEFAULT)');
     expect(description).toContain(
-      `• ${FEATURE_NAMES.perspectives}: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by UnAlgorithm Cloud's source list or your own.`,
+      `• ${FEATURE_NAMES.perspectives}: on a public post that shares a news link, see how outlets across the spectrum covered the story, sorted by unAlgorithm Cloud's source list or your own.`,
     );
     expect(oneLine(section(md, 'Data usage'))).toContain(
       "the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber)",
@@ -120,10 +120,10 @@ describe('Chrome Web Store material', () => {
     const privacy = read('PRIVACY.md').replace(/\r\n/g, '\n');
     const paragraph = (start: string) => oneLine(privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '');
     const ownKey = paragraph('**UnEcho Chamber (off by default');
-    const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
-    expect(ownKey).toContain("the outlets your chosen source list gives a lean (UnAlgorithm Cloud's list or your own)");
+    const server = paragraph('**UnEcho Chamber on your unAlgorithm server');
+    expect(ownKey).toContain("the outlets your chosen source list gives a lean (unAlgorithm Cloud's list or your own)");
     expect(ownKey).toContain(
-      "Lean labels come only from UnAlgorithm Cloud's source list, set by its admins with evidence, or from your own list, never from the AI.",
+      "Lean labels come only from unAlgorithm Cloud's source list, set by its admins with evidence, or from your own list, never from the AI.",
     );
     expect(server).toContain("your chosen list's outlets with a lean, as web addresses and leans without names");
     expect(server).toContain('never stored or logged');
@@ -146,10 +146,10 @@ describe('Chrome Web Store material', () => {
     }
     const md = listing();
     expect(oneLine(section(md, 'Remote code'))).toContain(
-      "UnAlgorithm Cloud's published source list is JSON data, never run as code.",
+      "unAlgorithm Cloud's published source list is JSON data, never run as code.",
     );
     expect(oneLine(section(md, 'Data usage'))).toContain(
-      "downloads UnAlgorithm Cloud's public source list at most once a day; the request carries no user data.",
+      "downloads unAlgorithm Cloud's public source list at most once a day; the request carries no user data.",
     );
   });
 });

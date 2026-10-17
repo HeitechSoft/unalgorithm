@@ -150,7 +150,7 @@ describe('Settings → AI', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText(
-        "UnAlgorithm needs permission to reach api.tavily.com. That's the only place your web search key and the search words go.",
+        "unAlgorithm needs permission to reach api.tavily.com. That's the only place your web search key and the search words go.",
       ),
     ).toBeTruthy();
     expect(fakeBrowser.permissions.request).toHaveBeenCalledWith({ origins: [TAVILY] });
@@ -210,7 +210,7 @@ describe('background', () => {
     expect(fakeBrowser.permissions.contains).toHaveBeenCalledWith({ origins: [BRAVE] });
     expect(mocks.create).toHaveBeenCalledWith({ provider: 'brave', apiKey: 'k' });
     expect(mocks.search).toHaveBeenCalledTimes(1);
-    expect(mocks.search).toHaveBeenCalledWith('UnAlgorithm', { count: 1 });
+    expect(mocks.search).toHaveBeenCalledWith('unAlgorithm', { count: 1 });
     expect(await getSecret('search:brave')).toBe('k');
     expect(await getSecret('search:tavily')).toBeUndefined();
     expect((await readDevice()).webSearch).toStrictEqual({ provider: 'brave' });
@@ -248,7 +248,7 @@ describe('background', () => {
     permit(false);
     expect(await handlers.saveSearchKey({ type: 'saveSearchKey', provider: 'brave', apiKey: 'k' }, page())).toStrictEqual({
       ok: false,
-      error: { code: 'host-permission', message: 'UnAlgorithm needs permission to reach api.search.brave.com.' },
+      error: { code: 'host-permission', message: 'unAlgorithm needs permission to reach api.search.brave.com.' },
     });
     expect(mocks.search).not.toHaveBeenCalled();
     expect(await getSecret('search:brave')).toBeUndefined();

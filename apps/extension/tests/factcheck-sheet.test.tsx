@@ -324,6 +324,6 @@ describe('side panel', () => {
     expect(screen.getByRole('link', { name: 'How Fact-check works' }).getAttribute('href')).toBe(
       'https://unalgorithmfeed.com/methodology',
     );
-    expect(screen.queryByRole('link', { name: "UnAlgorithm Cloud's source list" })).toBeNull();
+    expect(screen.queryByRole('link', { name: "unAlgorithm Cloud's source list" })).toBeNull();
   });
 });

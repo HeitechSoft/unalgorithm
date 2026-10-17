@@ -1,4 +1,4 @@
-# The HTTPS front for an UnAlgorithm server (compose profile "caddy"). Caddy gets a certificate for the host in
+# The HTTPS front for an unAlgorithm server (compose profile "caddy"). Caddy gets a certificate for the host in
 # PUBLIC_URL and forwards to the server. No access log is kept, and Caddy's own lines carry no client address,
 # request address or header.
 {

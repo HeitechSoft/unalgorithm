@@ -1,5 +1,5 @@
 /*
- * UnAlgorithm fixture capture for Facebook. Paste into DevTools on your Facebook home feed, scroll a little first.
+ * unAlgorithm fixture capture for Facebook. Paste into DevTools on your Facebook home feed, scroll a little first.
  *
  * Copies anonymized HTML of the first N feed items to the clipboard:
  *  - every word is scrambled except Facebook's own UI labels (so detectors still see "Sponsored", "Follow"...);

@@ -190,7 +190,7 @@ export async function syncOnce(
   /** Pushes every item newer than what the server holds; says whether any came back stale or clock-ahead. */
   const push = async () => {
     const { items, withheld } = changedItems(await readSettings(), await settingsClocksItem.getValue(), st.known);
-    if (withheld.length) console.debug('[UnAlgorithm] sync withheld', withheld.length);
+    if (withheld.length) console.debug('[unAlgorithm] sync withheld', withheld.length);
     let stale = false;
     let clockAhead = false;
     let rejected = 0;
@@ -240,7 +240,7 @@ export async function syncOnce(
       }
       await save();
     }
-    if (rejected) console.debug('[UnAlgorithm] sync rejected', rejected);
+    if (rejected) console.debug('[unAlgorithm] sync rejected', rejected);
     return { stale, clockAhead };
   };
 

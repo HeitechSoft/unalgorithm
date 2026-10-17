@@ -209,13 +209,13 @@ describe('page frame', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Admin · Example AI');
     await manage(user, ANA);
     expect(document.body.textContent).toContain(INFO.name);
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
     cleanup();
 
     openAdmin({ session: null });
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
     expect(document.title).toBe('Admin · Example AI');
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
   });
 });
 

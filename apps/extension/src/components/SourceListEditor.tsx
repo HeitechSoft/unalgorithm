@@ -1,6 +1,6 @@
 /**
  * Your own source list for UnEcho Chamber (P3-76, decisions D100, D110): Settings → AI → Edit your list, at
- * `#/ai/sources`. It starts from a copy of UnAlgorithm Cloud's stored list (or of the candidates while the Cloud has no
+ * `#/ai/sources`. It starts from a copy of unAlgorithm Cloud's stored list (or of the candidates while the Cloud has no
  * lean); the person adds, edits and removes outlets and sets the leans, which are theirs and which no one reviews. The
  * balance warnings follow every change. A problem the list has already (two devices each adding an outlet with the same
  * web address, or together going past the caps, through sync) is named at the top, with a way to that outlet; until it is
@@ -305,7 +305,7 @@ export function SourceListEditor({ settings, save }: { settings: Settings; save:
             action={
               fromCloud || candidates
                 ? {
-                    label: fromCloud ? "Start from UnAlgorithm Cloud's list" : 'Start from the candidate list',
+                    label: fromCloud ? "Start from unAlgorithm Cloud's list" : 'Start from the candidate list',
                     onAction: () => void start(),
                   }
                 : undefined

@@ -6,7 +6,7 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 
 1. **Rules only means no network.** The extension's required host permissions are only linkedin.com and
    facebook.com. With AI off, the service worker makes no requests. The one request that doesn't depend on the AI
-   source is UnAlgorithm Cloud's source list, and only while UnEcho Chamber is on
+   source is unAlgorithm Cloud's source list, and only while UnEcho Chamber is on
    ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)).
 2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose.
 3. **Nothing identifying is reported, and little is kept.** Caches, statistics, diagnostics and logs hold no post
@@ -55,17 +55,17 @@ and the E2E AI test checks the body received by the mock server.
 | On this device | Chrome's built-in model, in process | Nobody |
 | Local or self-hosted model (OpenAI-compatible) | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
 | Own key | The provider's API, directly from the browser | The provider, under their terms. OpenAI calls send `store: false` |
-| An UnAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
-| UnAlgorithm Cloud | HeitechSoft's gateway in Canada, then Anthropic | HeitechSoft (nothing logged or stored; the canary test) and Anthropic, under its commercial API terms (zero retention only once that agreement is signed) |
+| An unAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
+| unAlgorithm Cloud | HeitechSoft's gateway in Canada, then Anthropic | HeitechSoft (nothing logged or stored; the canary test) and Anthropic, under its commercial API terms (zero retention only once that agreement is signed) |
 
-For both kinds of UnAlgorithm server, Facebook posts that aren't public are never sent: the background leaves them out
+For both kinds of unAlgorithm server, Facebook posts that aren't public are never sent: the background leaves them out
 (`serverMayReceive`), and a server declines any that reach it without calling a model. The extension names each server
-by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
+by its address; only `https://cloud.unalgorithm.app` is called unAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
 
 ### Fact-check
 
-Fact-check (RM1) runs on the user's own Anthropic key (or on their UnAlgorithm server, below), only when Settings → AI → Fact-check is on, and only
+Fact-check (RM1) runs on the user's own Anthropic key (or on their unAlgorithm server, below), only when Settings → AI → Fact-check is on, and only
 after the user confirms a check of one post. The background (`apps/extension/src/background/factcheck.ts`) checks
 every gate again: Fact-check on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
 author name are dropped, the text is capped at 2,000 characters with the same masking as above), and
@@ -96,7 +96,7 @@ claims all hit sends only the claims call (step 1) and replays the kept verdicts
 costs that call. Expired rows are deleted on the next write. "Clear cache" empties the store; "Erase everything" also
 deletes the key. A `server` source never reads or writes it.
 
-With a `server` source (P3-21), the check runs on the person's UnAlgorithm server instead, and only when that server's
+With a `server` source (P3-21), the check runs on the person's unAlgorithm server instead, and only when that server's
 discovery document offers fact-check (`serverOfferFrom`, `sourceCapabilities(cfg, offer)`) on the source's own origin.
 The same gates apply first (Fact-check on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
 `serverMayReceive`), then `apps/extension/src/background/factcheck-server.ts` sends one `POST /v1/jobs/factcheck` with
@@ -117,7 +117,7 @@ leans are the person's own opinions: stored and synced like their interests and 
 ## UnEcho Chamber's source lists
 
 UnEcho Chamber sorts coverage by the outlets on a source list, and a lean comes only from a list people set, never from
-a model. Every extension reads UnAlgorithm Cloud's published list, whatever its AI source:
+a model. Every extension reads unAlgorithm Cloud's published list, whatever its AI source:
 `apps/extension/src/background/official-list.ts` makes the one request, and nothing else fetches a list.
 
 - **When.** Only while Settings → AI → UnEcho Chamber is on as the switch shows it (`perspectivesSwitchOn`: the
@@ -184,7 +184,7 @@ error, no error answer and no table, after the done, failed and refused comparis
 
 ## What a server stores
 
-An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
+An unAlgorithm server, self-hosted or unAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
 nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database), except
 those a billing module adds of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
@@ -275,9 +275,9 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
 - **Export and deletion:** the account page downloads everything above about the account as JSON: the address, its
   devices, passkeys (label, kind and when added; never the public key or credential id), linked sign-in methods, page
   sessions, daily usage counts and synced settings, with no token, hash or code. Deleting the account removes all of it
-  at once, in one transaction, and signs out every device. A billing module's own records (on UnAlgorithm Cloud, the
+  at once, in one transaction, and signs out every device. A billing module's own records (on unAlgorithm Cloud, the
   credit ledger and the keyed starter-credit hash) follow that module's deletion policy, not this cascade
-  ([What a billing module sees](#what-a-billing-module-sees)). On UnAlgorithm Cloud, the module puts the account's
+  ([What a billing module sees](#what-a-billing-module-sees)). On unAlgorithm Cloud, the module puts the account's
   credit ledger in the download and erases the account's promotional credit records with the account, keeping only the
   keyed starter-credit hash, which no longer names the account.
 
@@ -311,7 +311,7 @@ method, path, status and timing (`requestLog`). Other lines name an event and a 
 - Failures: an error's name, code and top stack frames, with the request id when there is one, never its message.
 
 No line carries a request body, a query string, an IP address or an email address. A web server or proxy in front of a
-server keeps logs of its own, under its operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses
+server keeps logs of its own, under its operator's settings. On unAlgorithm Cloud its access log holds no IP addresses
 or query strings, and its error log can record the IP address and requested address of a request that fails.
 
 **Alerts and metrics** carry server-wide numbers, fixed alert keys and levels, and the server's name and address, never
@@ -331,7 +331,7 @@ PGlite in every `pnpm test` and on Postgres 17 in the CI `server` job.
 ## What a billing module sees
 
 A server started with `BILLING=module` loads a billing module into its own process
-([ARCHITECTURE.md → Billing seam](ARCHITECTURE.md#billing-seam)). UnAlgorithm Cloud runs HeitechSoft's module. A
+([ARCHITECTURE.md → Billing seam](ARCHITECTURE.md#billing-seam)). unAlgorithm Cloud runs HeitechSoft's module. A
 self-hosted server with `BILLING=off`, the default, loads none and keeps no ledger.
 
 What the seam passes to a module:
@@ -376,9 +376,9 @@ the issue before submitting it.
 
 A finished fact-check or UnEcho Chamber result in the side panel links the correction form (P3-69, decisions D88,
 D107): `correctionUrl` sets `template=correction.yml` and four fields only, `feature` (the feature's name), `version`
-(the extension's), `prompt` (the result's prompt version) and, for UnEcho Chamber, `list` ("UnAlgorithm Cloud's list"
+(the extension's), `prompt` (the result's prompt version) and, for UnEcho Chamber, `list` ("unAlgorithm Cloud's list"
 or "My own list"). No date, verdict, claim, source, link, list content or anything from the post or about the person.
-The other links under a result are fixed: the methodology page on the website and UnAlgorithm Cloud's public source
+The other links under a result are fixed: the methodology page on the website and unAlgorithm Cloud's public source
 list (a Cloud result only).
 
 `content/report.ts` and `lib/report-links.ts` are the only places that build a GitHub issue URL.

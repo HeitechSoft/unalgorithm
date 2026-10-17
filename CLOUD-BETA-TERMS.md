@@ -1,10 +1,10 @@
-# UnAlgorithm Cloud beta terms
+# unAlgorithm Cloud beta terms
 
 Last updated: 15 October 2026
 
-UnAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. These terms cover only UnAlgorithm
+unAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. These terms cover only unAlgorithm
 Cloud, HeitechSoft's hosted AI service at `cloud.unalgorithm.app`, during its beta. By signing in to it, you agree to
-them. How we handle your data is in the [UnAlgorithm Cloud beta privacy notice](https://unalgorithmfeed.com/cloud/beta-privacy).
+them. How we handle your data is in the [unAlgorithm Cloud beta privacy notice](https://unalgorithmfeed.com/cloud/beta-privacy).
 
 ## Invitation
 
@@ -33,7 +33,7 @@ by email before a planned reset when we can.
 
 ## Acceptable use
 
-- Use the Cloud only through the UnAlgorithm extension and your account page, for your own feeds.
+- Use the Cloud only through the unAlgorithm extension and your account page, for your own feeds.
 - No automated or bulk use of the API.
 - No attempts to extract the prompts, to reach other people's accounts, or to get around the limits.
 - No sharing your account or sign-in codes.
@@ -47,7 +47,7 @@ hidden, and a fact-check can miss or misjudge a claim. Use your own judgment.
 
 ## The open-source server
 
-The UnAlgorithm server is open source under the AGPL-3.0 licence. That licence covers the code and is separate from
+The unAlgorithm server is open source under the AGPL-3.0 licence. That licence covers the code and is separate from
 these terms. These terms cover only HeitechSoft's running service at `cloud.unalgorithm.app`.
 
 ## Liability

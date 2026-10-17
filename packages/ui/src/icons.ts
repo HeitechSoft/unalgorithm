@@ -1,4 +1,4 @@
-/** The curated Lucide subset UnAlgorithm uses (ISC licence). Import icons from here so the set stays small. */
+/** The curated Lucide subset unAlgorithm uses (ISC licence). Import icons from here so the set stays small. */
 
 export type { LucideIcon } from 'lucide-react';
 export {

@@ -9,7 +9,7 @@ with, each outlet with its name, web addresses and, only where a person set one,
 
 ## What is here
 
-- `SourceList`: the one shape every UnEcho Chamber run reads, whichever list it is: UnAlgorithm Cloud's published
+- `SourceList`: the one shape every UnEcho Chamber run reads, whichever list it is: unAlgorithm Cloud's published
   list (`officialSourceList`, from the protocol's `OfficialListSchema`), a person's own list, or the test fixture. An
   outlet's lean there is its bucket alone; evidence never travels with a run.
 - The list rules (`listProblems`, `listProblemText`): ids are unique; a web address belongs to at most one outlet and
@@ -21,7 +21,7 @@ with, each outlet with its name, web addresses and, only where a person set one,
 
 ## Where leans come from
 
-People only. On UnAlgorithm Cloud's list, its admins set a lean with one approval and evidence (an HTTPS link and a
+People only. On unAlgorithm Cloud's list, its admins set a lean with one approval and evidence (an HTTPS link and a
 note), and every change is published at once with a public change history. On a person's own list, that person sets
 the leans, and every result from it says no one reviewed them. Never a model, never an agent, never inferred from
 anything else.
@@ -36,7 +36,7 @@ with any other value fails to parse.
 
 ## Appeals
 
-A lean on UnAlgorithm Cloud's list, or an outlet's name, web addresses or country there, is appealed to the Cloud's
+A lean on unAlgorithm Cloud's list, or an outlet's name, web addresses or country there, is appealed to the Cloud's
 admins: see [Source list appeals](../../docs/site/corrections.md#source-list-appeals). A person's own list is theirs,
 and is not appealed.
 

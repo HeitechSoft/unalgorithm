@@ -59,7 +59,7 @@ const device = (perspectives: boolean, factcheck = false, aiSource: AISourceConf
   labs: { factcheck, perspectives },
 });
 
-/** UnAlgorithm Cloud's list as the background stored it: the fictional fixture, balanced, two outlets per bucket. */
+/** unAlgorithm Cloud's list as the background stored it: the fictional fixture, balanced, two outlets per bucket. */
 const STORED: StoredOfficialList = { list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 };
 const NOTHING_STORED: StoredOfficialList = { list: null, checkedAt: 0 };
 
@@ -246,7 +246,7 @@ describe('Other perspectives: where it is offered', () => {
       return ids;
     };
     const noLean = { ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
-    // UnAlgorithm Cloud's list (the default choice): offered once its stored copy has a lean.
+    // unAlgorithm Cloud's list (the default choice): offered once its stored copy has a lean.
     expect(await offeredWith({})).toStrictEqual([id(NEWS_LINK)]);
     expect(await offeredWith({ officialList: NOTHING_STORED })).toStrictEqual([]);
     expect(await offeredWith({ officialList: { list: noLean, checkedAt: 1 } })).toStrictEqual([]);
@@ -320,7 +320,7 @@ describe('Other perspectives: the comparison', () => {
     c.stop();
     cleanup();
 
-    // UnAlgorithm Cloud's list, unbalanced: named as the Cloud's, every warning joined.
+    // unAlgorithm Cloud's list, unbalanced: named as the Cloud's, every warning joined.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
     const leftHeavy = {
       ...FIXTURE_OFFICIAL_LIST,
@@ -331,7 +331,7 @@ describe('Other perspectives: the comparison', () => {
     });
     const warnings =
       'No outlets in Leans right. No outlets in Right. Left and Leans left have 4 outlets, Leans right and Right have 0.';
-    expect(screen.getByText(`${PRICE} · UnAlgorithm Cloud's list isn't balanced: ${warnings}`)).toBeTruthy();
+    expect(screen.getByText(`${PRICE} · unAlgorithm Cloud's list isn't balanced: ${warnings}`)).toBeTruthy();
     expect(cloud.b.perspectives).not.toHaveBeenCalled();
     cloud.c.stop();
     cleanup();
@@ -404,7 +404,7 @@ describe('Other perspectives: the comparison', () => {
     vi.mocked(b.openFactcheck).mockResolvedValueOnce(false);
     await user.click(screen.getByRole('button', { name: 'See result' }));
     await flush();
-    expect(screen.getByText('Compared. Open UnAlgorithm from the toolbar to see it.')).toBeTruthy();
+    expect(screen.getByText('Compared. Open unAlgorithm from the toolbar to see it.')).toBeTruthy();
 
     // A failed answer shows its message; Try again asks for the price again.
     const message = 'Anthropic is busy right now. Try again in a minute.';
@@ -422,7 +422,7 @@ describe('Other perspectives: the comparison', () => {
     perspectives.mockRejectedValueOnce(new Error('Extension context invalidated.'));
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();
-    expect(screen.getByText("Couldn't reach UnAlgorithm. Reload the page.")).toBeTruthy();
+    expect(screen.getByText("Couldn't reach unAlgorithm. Reload the page.")).toBeTruthy();
     expect(perspectives).toHaveBeenCalledTimes(3);
     expect(b.factcheck).not.toHaveBeenCalled();
     c.stop();

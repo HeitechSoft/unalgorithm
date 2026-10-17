@@ -41,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-generate-key 'UnAlgorithm server backup' ed25519 cert never
+gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-generate-key 'unAlgorithm server backup' ed25519 cert never
 fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
 [ -n "$fingerprint" ] || {
   echo 'gpg made no key.' >&2

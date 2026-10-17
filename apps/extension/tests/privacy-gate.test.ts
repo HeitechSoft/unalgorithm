@@ -17,7 +17,7 @@ const read = (path: string) => readFileSync(join(REPO_ROOT, path), 'utf8');
 const CLOUD_FLAG = /\bUA_CLOUD\s*(?::\s*|=)(?:"1"|'1'|1(?![\w.]))/;
 
 /** What PRIVACY.md must hold before the flag is set: two headings, each a line of its own, and a permissions row. */
-const REQUIRED_LINES = ['## When you sign in to an UnAlgorithm server', '### Sync between your computers'];
+const REQUIRED_LINES = ['## When you sign in to an unAlgorithm server', '### Sync between your computers'];
 const REQUIRED_ROW = '| Alarms';
 
 /** Why this workflow may not ship with this PRIVACY.md; empty when it may. */
@@ -44,7 +44,7 @@ const WORKFLOW_WITH_FLAG = [
 
 /** PRIVACY.md as it is today: no sign-in or sync sections and no Alarms row. */
 const PRIVACY_WITHOUT_SECTIONS = [
-  '# UnAlgorithm privacy policy',
+  '# unAlgorithm privacy policy',
   '',
   '## When you turn on AI',
   '',
@@ -58,9 +58,9 @@ const PRIVACY_WITHOUT_SECTIONS = [
 
 /** PRIVACY.md as the release that sets the flag has it, with CRLF line ends as a Windows checkout may. */
 const PRIVACY_WITH_SECTIONS = [
-  '# UnAlgorithm privacy policy',
+  '# unAlgorithm privacy policy',
   '',
-  '## When you sign in to an UnAlgorithm server',
+  '## When you sign in to an unAlgorithm server',
   '',
   '### Sync between your computers',
   '',
@@ -84,7 +84,7 @@ describe('release gate', () => {
   it('test_privacy_gate_refuses_cloud_without_sections', () => {
     const problems = privacyGateProblems(WORKFLOW_WITH_FLAG, PRIVACY_WITHOUT_SECTIONS);
     expect(problems).toHaveLength(3);
-    expect(problems.join('\n')).toContain('## When you sign in to an UnAlgorithm server');
+    expect(problems.join('\n')).toContain('## When you sign in to an unAlgorithm server');
     expect(problems.join('\n')).toContain('### Sync between your computers');
     expect(problems.join('\n')).toContain('| Alarms');
     // The flag in each spelling the gate knows, and only the flag: the same workflow without it passes.
@@ -96,7 +96,7 @@ describe('release gate', () => {
     }
     expect(privacyGateProblems(WORKFLOW_WITHOUT_FLAG, PRIVACY_WITHOUT_SECTIONS)).toEqual([]);
     // A heading mentioned inside a paragraph is not the heading.
-    const mentioned = `${PRIVACY_WITHOUT_SECTIONS}See ## When you sign in to an UnAlgorithm server.\n`;
+    const mentioned = `${PRIVACY_WITHOUT_SECTIONS}See ## When you sign in to an unAlgorithm server.\n`;
     expect(privacyGateProblems(WORKFLOW_WITH_FLAG, mentioned)).toHaveLength(3);
   });
 

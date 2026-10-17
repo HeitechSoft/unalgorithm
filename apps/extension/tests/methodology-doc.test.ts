@@ -117,7 +117,7 @@ describe('methodology', () => {
       expect(at, bucket).toBeGreaterThanOrEqual(from);
       from = at + BUCKET_LABELS[bucket].length;
     }
-    expect(leans).toContain("UnAlgorithm Cloud's source list");
+    expect(leans).toContain("unAlgorithm Cloud's source list");
     expect(leans).toContain('your own list');
     expect(leans).toMatch(/\bnever\b[^.]*\bAI\b/i);
     expect(leans).toContain(SOURCE_LIST_PAGE_URL);

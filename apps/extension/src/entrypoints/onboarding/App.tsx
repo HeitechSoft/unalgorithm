@@ -38,11 +38,11 @@ export function App() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: persist and announce only when the step changes
   useEffect(() => {
     const titles: Record<Step, string> = {
-      welcome: 'Welcome to UnAlgorithm',
-      strength: 'Step 1 of 3: Strength · UnAlgorithm setup',
-      interests: 'Step 2 of 3: Interests · UnAlgorithm setup',
-      ai: 'Step 3 of 3: AI · UnAlgorithm setup',
-      done: "You're all set · UnAlgorithm",
+      welcome: 'Welcome to unAlgorithm',
+      strength: 'Step 1 of 3: Strength · unAlgorithm setup',
+      interests: 'Step 2 of 3: Interests · unAlgorithm setup',
+      ai: 'Step 3 of 3: AI · unAlgorithm setup',
+      done: "You're all set · unAlgorithm",
     };
     document.title = titles[step];
     h1.current?.focus();
@@ -92,12 +92,12 @@ export function App() {
         {step === 'welcome' ? (
           <div className="ob-welcome">
             <div>
-              <div className="ob-eyebrow">Welcome to UnAlgorithm</div>
+              <div className="ob-eyebrow">Welcome to unAlgorithm</div>
               <h1 ref={h1} tabIndex={-1}>
                 See the posts you came for.
               </h1>
               <p className="ob-sub">
-                UnAlgorithm quietly folds away ads, suggested posts and other things you didn't ask for on LinkedIn and Facebook.
+                unAlgorithm quietly folds away ads, suggested posts and other things you didn't ask for on LinkedIn and Facebook.
                 No account needed. The rules run entirely in your browser.
               </p>
               <div className="ua-stack" style={{ justifyItems: 'start' }}>
@@ -146,7 +146,7 @@ export function App() {
               />
             </ChoiceCardGroup>
             <div className="ua-hstack ua-wrap" style={{ marginTop: 24, gap: 10 }}>
-              <span className="ua-headline">Use UnAlgorithm on</span>
+              <span className="ua-headline">Use unAlgorithm on</span>
               {(['linkedin', 'facebook'] as const).map((p) => (
                 <Chip
                   key={p}
@@ -220,7 +220,7 @@ export function App() {
               ) : null}
             </div>
             <p className="ua-footnote" style={{ marginTop: 20 }}>
-              Without AI, UnAlgorithm matches related words. With AI, it understands topics.
+              Without AI, unAlgorithm matches related words. With AI, it understands topics.
             </p>
           </>
         ) : null}
@@ -338,11 +338,11 @@ function Done({
             {pinned ? <CircleCheck /> : <Puzzle />}
           </span>
           <div className="ua-grow">
-            <div className="ua-headline">{pinned ? 'Pinned to your toolbar' : 'Pin UnAlgorithm to your toolbar'}</div>
+            <div className="ua-headline">{pinned ? 'Pinned to your toolbar' : 'Pin unAlgorithm to your toolbar'}</div>
             <div className="ua-callout ua-secondary" style={{ marginTop: 2 }}>
               {pinned
                 ? 'You’ll see how many posts are hidden on each page.'
-                : 'Click the puzzle piece in Chrome’s toolbar, then the pin next to UnAlgorithm. It shows how many posts are hidden.'}
+                : 'Click the puzzle piece in Chrome’s toolbar, then the pin next to unAlgorithm. It shows how many posts are hidden.'}
             </div>
           </div>
           {pinned === false ? <Pin size={18} aria-hidden="true" className="ua-tertiary" /> : null}

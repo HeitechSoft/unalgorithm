@@ -38,7 +38,7 @@ export function WebSearchKey({ device }: { device: Device }) {
       setKey('');
       setResult({ ok: true, text: `Connected · ${webSearchName(p)}` });
     } catch {
-      setResult({ ok: false, text: 'UnAlgorithm could not save the key. Reload this page and try again.' });
+      setResult({ ok: false, text: 'unAlgorithm could not save the key. Reload this page and try again.' });
     } finally {
       setBusy(false);
     }
@@ -51,7 +51,7 @@ export function WebSearchKey({ device }: { device: Device }) {
     const denied = () =>
       setResult({
         ok: false,
-        text: `UnAlgorithm needs permission to reach ${new URL(webSearchOrigin(p)).hostname}. That's the only place your web search key and the search words go.`,
+        text: `unAlgorithm needs permission to reach ${new URL(webSearchOrigin(p)).hostname}. That's the only place your web search key and the search words go.`,
       });
     setResult(null);
     void browser.permissions

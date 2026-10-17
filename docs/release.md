@@ -6,7 +6,7 @@ The extension is released from this repository: `vX.Y.Z` tags, built by `.github
 zip on a GitHub Release, then the Chrome Web Store (the steps below).
 
 The server (`apps/server`) is not released from here: no tags, no GitHub Releases and no public images (Tom,
-2026-10-16). It runs UnAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
+2026-10-16). It runs unAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
 repository (ADR 0007, amended; [The server](#the-server)). Its source stays public here. Security fixes follow their
 own rule: see [Security fixes](#security-fixes). Credit prices are dated: a raise is scheduled at least 30 days ahead,
 a cut can start at the next 00:00 UTC, and every part switches on its date: see
@@ -39,9 +39,9 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 The paste-ready listing, permission justifications and data-use answers are in [store-listing.md](store-listing.md),
 and the screenshots and promo tiles in [store/](store/).
 
-- **Name:** UnAlgorithm Feed. It comes from `extName` in `apps/extension/public/_locales/en/messages.json`; never
-  plain "UnAlgorithm" (see [brand.md](brand.md)). Publish from the HeitechSoft developer account, so the listing shows
-  HeitechSoft as the developer, and open the long description with "UnAlgorithm Feed by HeitechSoft".
+- **Name:** unAlgorithm Feed. It comes from `extName` in `apps/extension/public/_locales/en/messages.json`; never
+  plain "unAlgorithm" (see [brand.md](brand.md)). Publish from the HeitechSoft developer account, so the listing shows
+  HeitechSoft as the developer, and open the long description with "unAlgorithm Feed by HeitechSoft".
 - 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tile, short and long descriptions
   with the non-affiliation line. `pnpm --filter @unalgorithm/extension store:screens` remakes the screenshots and
   `node scripts/make-icons.mjs --store` the promo tiles.
@@ -52,22 +52,22 @@ and the screenshots and promo tiles in [store/](store/).
 
 ## Before a store build carries the Cloud card
 
-Store builds show the UnAlgorithm Cloud card only as "Coming soon". The working card, which signs in to UnAlgorithm
-Cloud or another UnAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
+Store builds show the unAlgorithm Cloud card only as "Coming soon". The working card, which signs in to unAlgorithm
+Cloud or another unAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
 `alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
 `apps/extension/wxt.config.ts`; development and e2e builds always have them). A store build may carry them only when
 all nine of these are done:
 
-1. The UnAlgorithm Cloud beta privacy notice and beta terms (`CLOUD-BETA-NOTICE.md`, `CLOUD-BETA-TERMS.md`) are live on
+1. The unAlgorithm Cloud beta privacy notice and beta terms (`CLOUD-BETA-NOTICE.md`, `CLOUD-BETA-TERMS.md`) are live on
    unalgorithmfeed.com at `/cloud/beta-privacy` and `/cloud/beta-terms`.
 2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
    submit with this release.
-3. PRIVACY.md describes the server source (what is sent, to whom, what UnAlgorithm Cloud keeps), in the same release.
-4. The store extension's id is in `EXTENSION_IDS` on UnAlgorithm Cloud, so the Cloud accepts its sign-in.
+3. PRIVACY.md describes the server source (what is sent, to whom, what unAlgorithm Cloud keeps), in the same release.
+4. The store extension's id is in `EXTENSION_IDS` on unAlgorithm Cloud, so the Cloud accepts its sign-in.
 5. Invitees are still limited to the sign-up allowlist (`SIGNUP_ALLOWLIST`) until the public launch.
-6. The privacy impact assessment for UnAlgorithm Cloud (Quebec Law 25) is started, in HeitechSoft's private
+6. The privacy impact assessment for unAlgorithm Cloud (Quebec Law 25) is started, in HeitechSoft's private
    repository.
-7. PRIVACY.md has the sections *When you sign in to an UnAlgorithm server* and *Sync between your computers*, and an
+7. PRIVACY.md has the sections *When you sign in to an unAlgorithm server* and *Sync between your computers*, and an
    *Alarms* row in its permissions table (the text is drafted in HeitechSoft's private repository with the store
    answers). CI's privacy-gate test (`apps/extension/tests/privacy-gate.test.ts`) refuses the release workflow
    otherwise.
@@ -91,7 +91,7 @@ The server version lives in `apps/server/package.json` and follows semver, indep
 changes the server adds a changeset for `@unalgorithm/server` (`pnpm changeset`); the **Version packages** PR bumps the
 version and writes `apps/server/CHANGELOG.md`, the server's history. The server is not tagged or released here.
 
-UnAlgorithm Cloud's private repository pins a commit of this repository's `main`, builds the Cloud image from it
+unAlgorithm Cloud's private repository pins a commit of this repository's `main`, builds the Cloud image from it
 (`apps/server/Dockerfile`, with the repository root as the build context) together with its billing module, and deploys
 it. Before it builds, it checks that no price in effect changed since the commit it last deployed
 (`scripts/check-price-schedule.mjs --base <that commit> --in-effect-only`). A running server reports its `version`
@@ -113,7 +113,7 @@ Credit prices are a dated schedule, `CREDIT_PRICE_SCHEDULE` in `packages/protoco
 price cards apply from its `effectiveFrom` (00:00 UTC of that day) until the next entry's. Each part finds the price in
 effect by itself:
 
-- UnAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
+- unAlgorithm Cloud's billing module prices each request at the instant the server checks it (`checkedAt`).
 - The account page and the extension's "about N posts" use the time they show it.
 - The website is built from `main`: its "How credits work" page (`docs/site/credits.md`) is filled at build time by
   `creditsMarkdown` (`packages/core`), from the entry in effect then and the next dated change. Its examples of buying
@@ -133,7 +133,7 @@ The `price-schedule` CI job enforces them on pull requests and pushes to `main`:
 - A cut may take effect from the next 00:00 UTC, and a scheduled raise may be lowered or cancelled before its date.
 - An entry not yet in effect may be removed, unless that raises a price within the 30 days.
 
-UnAlgorithm Cloud's private build checks the first rule again (`--in-effect-only`) before it builds an image, against
+unAlgorithm Cloud's private build checks the first rule again (`--in-effect-only`) before it builds an image, against
 the commit it last deployed ([The server](#the-server)).
 
 ### Adding a task
@@ -241,7 +241,7 @@ Vulnerabilities are reported privately ([SECURITY.md](../SECURITY.md)), and thei
 released.
 
 - **Extension:** the fix ships in the next `vX.Y.Z` release.
-- **Server:** the fix may reach UnAlgorithm Cloud before it is merged here, as in any coordinated disclosure (ADR
+- **Server:** the fix may reach unAlgorithm Cloud before it is merged here, as in any coordinated disclosure (ADR
   0007). It is merged to `main` within 30 days of the Cloud fix, or at once if the issue is already public.
 - The GitHub security advisory is published when the fix is public and names the commit that fixes the server (and
   the extension release, when the extension changed too).

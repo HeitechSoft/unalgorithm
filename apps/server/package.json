@@ -3,7 +3,7 @@
   "version": "0.3.1",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "Self-hostable server for UnAlgorithm Feed: email sign-in and AI classification for the extension",
+  "description": "Self-hostable server for unAlgorithm Feed: email sign-in and AI classification for the extension",
   "type": "module",
   "engines": {
     "node": "^22.18.0 || >=23.6.0"

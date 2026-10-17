@@ -4,7 +4,7 @@
  * the list's web addresses leaving, the server path (canonical link, the list in the body, cancel on tab close), one run
  * per tab, and the check of every lean against the list sent.
  * Extension storage is the WXT fake browser, API keys fake-indexeddb, Anthropic and OpenAI the mock responders, the
- * compat server, Brave and the UnAlgorithm server stubbed fetches; outlets are the fictional fixture. Nothing real is
+ * compat server, Brave and the unAlgorithm server stubbed fetches; outlets are the fictional fixture. Nothing real is
  * called.
  */
 import { readFileSync } from 'node:fs';
@@ -308,7 +308,7 @@ const doneServer =
 beforeEach(async () => {
   fakeBrowser.reset();
   leans.refuse = false;
-  // UnAlgorithm Cloud's list (the default choice), stored: the fictional fixture.
+  // unAlgorithm Cloud's list (the default choice), stored: the fictional fixture.
   await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockResolvedValue('access-token-1');
@@ -327,7 +327,7 @@ afterEach(() => {
 describe('the chosen list', () => {
   it('test_chosen_list_and_ready', async () => {
     const settings = defaultSettings();
-    // UnAlgorithm Cloud's stored copy (the default choice), or null before the first one.
+    // unAlgorithm Cloud's stored copy (the default choice), or null before the first one.
     expect(chosenList(settings, FIXTURE_OFFICIAL_LIST)).toStrictEqual(FIXTURE_LIST);
     expect(chosenList(settings, null)).toBeNull();
     // The person's own, whatever the Cloud's.
@@ -374,13 +374,13 @@ describe('the chosen list', () => {
 
   it('test_perspectives_refuses_list_not_ready', async () => {
     const refusal = (message: string) => ({ ok: false, error: { code: 'not-available', message } });
-    const CLOUD = "UnAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
+    const CLOUD = "unAlgorithm Cloud's source list has no outlets with a lean yet. You can use your own list in Settings → AI.";
     const OWN = 'Your source list has no outlets with a lean yet. Add some in Settings → AI.';
     const noLean = { ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
     useNetwork({ server: doneServer(fixtureResult()) });
     for (const source of [ANTHROPIC, SERVER]) {
       await setup({ source });
-      // UnAlgorithm Cloud's list chosen (the default): its stored copy has no lean, or none is stored yet.
+      // unAlgorithm Cloud's list chosen (the default): its stored copy has no lean, or none is stored yet.
       await officialListItem.setValue({ list: noLean, checkedAt: 1 });
       expect(await perspectives()).toStrictEqual(refusal(CLOUD));
       await officialListItem.setValue({ list: null, checkedAt: 1 });
@@ -718,7 +718,7 @@ describe('runs', () => {
   });
 
   it('test_perspectives_server_body_carries_wire_list', async () => {
-    // UnAlgorithm Cloud's list (the fixture): its wire list goes, never an outlet's name or id.
+    // unAlgorithm Cloud's list (the fixture): its wire list goes, never an outlet's name or id.
     await setup({ source: SERVER });
     const answer = serverAnswer(FIXTURE_LIST);
     useNetwork({ server: doneServer(answer) });
@@ -858,7 +858,7 @@ describe('docs', () => {
     const privacy = readFileSync(join(REPO_ROOT, 'PRIVACY.md'), 'utf8');
     const paragraph = (start: string) => privacy.split(/\n\n/).find((p) => p.startsWith(start)) ?? '';
     const ownKey = paragraph('**UnEcho Chamber (off by default');
-    const server = paragraph('**UnEcho Chamber on your UnAlgorithm server');
+    const server = paragraph('**UnEcho Chamber on your unAlgorithm server');
     for (const p of [ownKey, server]) {
       expect(p).toContain('UnEcho Chamber');
       expect(p).toMatch(/never the post's text|post's text is never sent/);
@@ -870,7 +870,7 @@ describe('docs', () => {
     const compat = paragraph('**Fact-check and UnEcho Chamber with your own AI server and a web search key');
     expect(compat).toMatch(/only to the AI server address you entered/);
     expect(compat).toMatch(/never sent to Brave or\s+Tavily/);
-    expect(compat).toContain('"UnAlgorithm"');
+    expect(compat).toContain('"unAlgorithm"');
     expect(privacy).toContain('| Optional: access to a web search service |');
   });
 });

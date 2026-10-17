@@ -1,4 +1,4 @@
-# UnAlgorithm Feed Contributor License Agreement (draft)
+# unAlgorithm Feed Contributor License Agreement (draft)
 
 > **Draft pending legal review. Do not sign this version.** This is boilerplate modelled on widely used individual
 > CLAs (the Apache ICLA and the Harmony templates). HeitechSoft will publish reviewed text as `CLA-v1.md` and switch
@@ -10,9 +10,9 @@ pull request, you ("You") agree to the following with HeitechSoft ("HeitechSoft"
 to the Project.
 
 1. **Definitions.**
-   - "Project" means UnAlgorithm Feed, made by HeitechSoft: the repository `github.com/HeitechSoft/unalgorithm` and
-     any other repository HeitechSoft publishes as part of UnAlgorithm Feed. This includes the browser extension,
-     the UnAlgorithm server and web app (`apps/server`, `apps/web`), the website, and the shared packages.
+   - "Project" means unAlgorithm Feed, made by HeitechSoft: the repository `github.com/HeitechSoft/unalgorithm` and
+     any other repository HeitechSoft publishes as part of unAlgorithm Feed. This includes the browser extension,
+     the unAlgorithm server and web app (`apps/server`, `apps/web`), the website, and the shared packages.
    - "Contribution" means any code, documentation, fixture, translation, artwork or other material You submit to the
      Project in any form, for example in a pull request, an issue or a patch, that You do not mark "Not a
      Contribution".
@@ -20,7 +20,7 @@ to the Project.
    worldwide, non-exclusive, no-charge, royalty-free, irrevocable licence to reproduce, prepare derivative works of,
    publicly display, publicly perform, sublicense and distribute Your Contributions and derivative works, **under any
    licence, including the AGPL-3.0 and commercial licences**. This includes combining them with software HeitechSoft
-   does not publish and running them as part of services HeitechSoft hosts, such as UnAlgorithm Cloud.
+   does not publish and running them as part of services HeitechSoft hosts, such as unAlgorithm Cloud.
 3. **Patent licence.** You grant HeitechSoft and recipients a perpetual, worldwide, non-exclusive, no-charge,
    royalty-free, irrevocable patent licence to make, have made, use, sell, offer to sell, import and otherwise
    transfer Your Contributions, for patent claims licensable by You that are necessarily infringed by Your

@@ -1,6 +1,6 @@
 # Corrections and appeals
 
-If a Fact-check or UnEcho Chamber result got something wrong, or an outlet's listing or lean on UnAlgorithm Cloud's
+If a Fact-check or UnEcho Chamber result got something wrong, or an outlet's listing or lean on unAlgorithm Cloud's
 source list looks wrong, tell us. We fix causes, publish what changed and count every request in the transparency
 reports.
 
@@ -24,7 +24,7 @@ Include:
 Use the [correction form](https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml), or email
 hello@heitechsoft.com.
 
-You get an answer within 5 business days and a decision within 30 days. UnAlgorithm keeps no one's results (they live
+You get an answer within 5 business days and a decision within 30 days. unAlgorithm keeps no one's results (they live
 only in your browser), so a correction fixes the cause: a prompt, the blocklist, a bug or a model choice. When the
 mistake can be reproduced, a made-up example of it joins the evaluation set, so every later change is tested against it.
 The outcome is posted on the issue (or answered by email), in the release notes when code changes, and counted in the
@@ -40,7 +40,7 @@ If the result used your own source list, its leans are yours: change them in Set
 
 ## Source list appeals
 
-Anyone may appeal, the outlet included, an outlet's lean, name, web addresses or country on UnAlgorithm Cloud's source
+Anyone may appeal, the outlet included, an outlet's lean, name, web addresses or country on unAlgorithm Cloud's source
 list.
 
 Include the outlet's id, as the [source list page](https://cloud.unalgorithm.app/outlets) shows it; what is wrong;
@@ -49,7 +49,7 @@ public evidence; and whether you represent the outlet.
 Use the [appeal form](https://github.com/HeitechSoft/unalgorithm/issues/new?template=source_list_appeal.yml), or email
 legal@heitechsoft.com.
 
-An UnAlgorithm Cloud admin decides within 30 days. When the Cloud has more than one admin, one who did not make the
+An unAlgorithm Cloud admin decides within 30 days. When the Cloud has more than one admin, one who did not make the
 change appealed decides; while it has one, that admin decides, and the public change history and the quarterly audit
 below are the check.
 
@@ -63,7 +63,7 @@ Own lists belong to the people who made them and are not appealed.
 
 ## Quarterly audit
 
-Every quarter, an UnAlgorithm Cloud admin reviews:
+Every quarter, an unAlgorithm Cloud admin reviews:
 
 - every change made to the source list that quarter, from its public change history;
 - every outlet appealed;

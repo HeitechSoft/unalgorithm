@@ -5,13 +5,13 @@
 
 ## Context
 
-Phase 2 of UnAlgorithm Feed adds a server for accounts, sync and hosted AI. People and organizations want to run
+Phase 2 of unAlgorithm Feed adds a server for accounts, sync and hosted AI. People and organizations want to run
 their own copy, and privacy-minded users want to read the code that handles their posts. HeitechSoft also runs
-UnAlgorithm Cloud, paid for with prepaid credits. The billing code (payments, the credit ledger, abuse controls,
+unAlgorithm Cloud, paid for with prepaid credits. The billing code (payments, the credit ledger, abuse controls,
 reconciliation) and HeitechSoft's operations configuration are of no use to self-hosters and carry business and
 security risk if public.
 
-HeitechSoft holds the copyright in UnAlgorithm, and the [CLA](../../CLA.md) grants it rights to contributions under
+HeitechSoft holds the copyright in unAlgorithm, and the [CLA](../../CLA.md) grants it rights to contributions under
 any licence. The AGPL binds licensees, not the copyright holder, so HeitechSoft can run the open server together with
 code it keeps private.
 
@@ -47,7 +47,7 @@ code it keeps private.
 
 ## Amendment (2026-10-16)
 
-Tom: the server is for UnAlgorithm Cloud and its billing. There are no public server releases: no `server-v*` tags, no
+Tom: the server is for unAlgorithm Cloud and its billing. There are no public server releases: no `server-v*` tags, no
 GitHub Releases and no public image. The private repository builds the Cloud image from a pinned commit of this
 repository (not from a tagged release or a published image), adds the billing module through `BillingProvider`, and
 still never patches the server. The Cloud reports the server version it runs in `/.well-known/unalgorithm.json`, and
