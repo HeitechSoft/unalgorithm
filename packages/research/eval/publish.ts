@@ -3,11 +3,12 @@
  * drift from what runs. Every prompt, example request, answer schema, model, limit, eval item and gate is printed from
  * the code that defines it; nothing is copied by hand. `test/published.test.ts` fails whenever a committed page differs
  * from what this generates. Both pages are pure and deterministic: nothing reads the clock, the environment or the
- * network.
+ * network. The evaluations page's live runs come from `results.json` (decision D81), which `main()` reads and passes in.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { modelLabel, toStrictJsonSchema } from '@unalgorithm/ai';
+import { formatPrice } from '@unalgorithm/core';
 import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
 import {
   EVALS_PAGE,
@@ -53,6 +54,7 @@ import {
 import { FACTCHECK_EVAL_SET } from './factcheck-set.ts';
 import { PERSPECTIVES_TRUST_GATES } from './perspectives-score.ts';
 import { PERSPECTIVES_EVAL_SET } from './perspectives-set.ts';
+import { EVAL_RESULTS_FILE, type EvalRecord, type GateName, parseEvalResults } from './results.ts';
 import { TRUST_GATES } from './score.ts';
 
 /** The nonce every example request shows, the placeholder the system prompts name. */
@@ -287,6 +289,72 @@ function gatesBlocks(): string[] {
   ];
 }
 
+/** Each feature's gates, in the trust gates table's order, with the live runs table's column header for each. */
+const RUN_GATES: Readonly<Record<EvalRecord['task'], readonly (readonly [GateName, string])[]>> = {
+  factcheck: [
+    ['slantFlip', 'Same verdict on twins'],
+    ['provenance', 'Citations traced'],
+    ['liveLinks', 'Cited links live'],
+  ],
+  perspectives: [
+    ['provenance', 'Citations traced'],
+    ['leanIntegrity', 'Leans from the registry'],
+    ['liveLinks', 'Cited links live'],
+  ],
+};
+
+const SEARCH_NAMES = { brave: 'Brave', tavily: 'Tavily' } as const;
+
+function aiName(run: EvalRecord): string {
+  if (run.mode === 'anthropic') return 'Anthropic';
+  if (run.mode === 'openai') return 'OpenAI';
+  return run.searchProvider ? `Your own AI server with ${SEARCH_NAMES[run.searchProvider]}` : 'Your own AI server';
+}
+
+/** "0.98 PASSED", "0.91 FAILED", or "not measured" when the run measured too little to judge the gate. */
+function gateCell(run: EvalRecord, name: GateName): string {
+  const g = run.gates[name];
+  if (!g || g.passed === null) return 'not measured';
+  return `${g.value === null ? 'none' : g.value.toFixed(2)} ${g.passed ? 'PASSED' : 'FAILED'}`;
+}
+
+/** Newest first: by day, and on the same day the entry appended later first. */
+const newestFirst = (runs: readonly EvalRecord[]): EvalRecord[] =>
+  [...runs].reverse().sort((a, b) => (a.ranOn < b.ranOn ? 1 : a.ranOn > b.ranOn ? -1 : 0));
+
+const NO_RUN_YET =
+  'Live runs spend real money, so each one is approved before it runs, and every run is published here, passed or failed.';
+
+function liveRunsBlocks(results: readonly EvalRecord[]): string[] {
+  if (results.length === 0) return ['## Live runs', `No live run has been published yet. ${NO_RUN_YET}`];
+  const tasks = Object.keys(FEATURE_NAMES) as EvalRecord['task'][];
+  return [
+    '## Live runs',
+    `Each row is one run of a whole evaluation set on real AI keys, recorded by \`pnpm eval:trust --live --all --record\`. ${NO_RUN_YET} A gate reads "not measured" when the run measured too little to judge it. Agreement is the share of items whose first verdict was an accepted one (${FACTCHECK}) or whose coverage matched the expected buckets (${PERSPECTIVES}). Mean cost is per item at the AI provider's prices, or "not priced" when the run's models have no known price.`,
+    ...tasks.flatMap((task) => {
+      const runs = newestFirst(results.filter((run) => run.task === task));
+      const name = FEATURE_NAMES[task];
+      if (runs.length === 0) return [`### ${name}`, `No live run of ${name} has been published yet.`];
+      const gates = RUN_GATES[task];
+      return [
+        `### ${name}`,
+        table(
+          ['Date', 'AI', 'Prompt version', 'Items', ...gates.map(([, header]) => header), 'Agreement', 'Mean cost'],
+          runs.map((run) => [
+            markdownCell(run.ranOn),
+            aiName(run),
+            String(run.promptVersion),
+            String(run.items),
+            ...gates.map(([gate]) => gateCell(run, gate)),
+            percent(run.agreement),
+            run.meanCostMicros === null ? 'not priced' : formatPrice(run.meanCostMicros),
+          ]),
+        ),
+      ];
+    }),
+  ];
+}
+
 function factcheckSetBlocks(): string[] {
   const set = FACTCHECK_EVAL_SET;
   const pairs = set.filter((i) => i.pair).length / 2;
@@ -336,25 +404,39 @@ function perspectivesSetBlocks(): string[] {
   ];
 }
 
-/** The published evaluations page (EVALS_PAGE.source), from the eval sets and the trust gates. Pure and deterministic. */
-export function evalsMarkdown(): string {
+/**
+ * The published evaluations page (EVALS_PAGE.source), from the eval sets, the trust gates and the live runs in
+ * `results` (the parsed `results.json`). Pure and deterministic.
+ */
+export function evalsMarkdown(results: readonly EvalRecord[] = []): string {
   return page([
     `# ${EVALS_PAGE.title}`,
     `This is how UnAlgorithm Feed tests ${FACTCHECK} and ${PERSPECTIVES} before a prompt or a model changes: each runs on a fixed set of test items, and the run must pass the trust gates below. Every item is written for testing, with no real post, person or outlet. This page is generated from the code by \`pnpm docs:site\`, and a test fails whenever the page and the code differ.`,
     `The sets are in [\`factcheck-set.ts\`](../../packages/research/eval/factcheck-set.ts) and [\`perspectives-set.ts\`](../../packages/research/eval/perspectives-set.ts).`,
     ...gatesBlocks(),
+    ...liveRunsBlocks(results),
     ...factcheckSetBlocks(),
     ...perspectivesSetBlocks(),
   ]);
 }
 
-/** Writes both pages under the repository root; prints each path written. Exit 0, or 1 when a write fails. */
+/**
+ * Writes both pages under the repository root, the evaluations page with the live runs in `results.json`; prints each
+ * path written. Exit 0, or 1 when the results file is invalid or a write fails.
+ */
 export function main(io: { out(line: string): void; root?: URL } = { out: (line: string) => console.log(line) }): number {
   const given = io.root ?? new URL('../../../', import.meta.url);
   const root = given.href.endsWith('/') ? given : new URL(`${given.href}/`);
+  let results: EvalRecord[];
+  try {
+    results = parseEvalResults(readFileSync(EVAL_RESULTS_FILE, 'utf8'));
+  } catch (e) {
+    console.error(`Could not read packages/research/eval/results.json: ${e instanceof Error ? e.message : String(e)}`);
+    return 1;
+  }
   for (const [source, markdown] of [
     [PROMPTS_PAGE.source, promptsMarkdown()],
-    [EVALS_PAGE.source, evalsMarkdown()],
+    [EVALS_PAGE.source, evalsMarkdown(results)],
   ] as const) {
     const file = new URL(source, root);
     try {

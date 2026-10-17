@@ -1,4 +1,9 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { mockStructuredAnswer } from '@unalgorithm/ai/testing';
+import { mockAnthropicFetch, researchMessage, structuredMessage } from '@unalgorithm/ai/testing/anthropic';
 import {
   mockOpenAIResponsesFetch,
   type ResponsesRequestKind,
@@ -6,11 +11,16 @@ import {
   structuredResponse,
 } from '@unalgorithm/ai/testing/openai-responses';
 import { neutralize } from '@unalgorithm/core';
+import type { Registry } from '@unalgorithm/outlets';
+import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
 import type { LinkStatus } from '@unalgorithm/protocol';
-import type { LinkChecker } from '@unalgorithm/research';
-import { FACTCHECK_EVAL_SET } from '@unalgorithm/research/eval';
+import { FACTCHECK_PROMPT_VERSION, type LinkChecker, PERSPECTIVES_PROMPT_VERSION } from '@unalgorithm/research';
+import { FACTCHECK_EVAL_SET, type FactcheckEvalReport, trustGates } from '@unalgorithm/research/eval';
+import { type PerspectivesEvalReport, perspectivesTrustGates } from '@unalgorithm/research/eval/perspectives';
+import { type EvalRecord, EvalRecordSchema, parseEvalResults } from '@unalgorithm/research/eval/results';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main, NO_REGISTRY, type TrustEvalDeps } from '../src/cli/trust-eval.ts';
+import { SERVER_VERSION } from '../src/config.ts';
 
 /** The egress module with `createEgress` spied: its `checkLinks` answers every URL live, with no DNS or HTTP. */
 const egress = vi.hoisted(() => ({
@@ -21,6 +31,16 @@ vi.mock('../src/net/egress.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/net/egress.ts')>();
   egress.createEgress.mockImplementation(() => ({ checkLinks: egress.checkLinks }));
   return { ...original, createEgress: egress.createEgress };
+});
+
+/** The outlets module with `usableRegistry` answering `outlets.registry` when a test sets one (this build has none). */
+const outlets = vi.hoisted(() => ({ registry: undefined as Registry | undefined }));
+vi.mock('@unalgorithm/outlets', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@unalgorithm/outlets')>();
+  return {
+    ...original,
+    usableRegistry: (...args: Parameters<typeof original.usableRegistry>) => outlets.registry ?? original.usableRegistry(...args),
+  };
 });
 
 const globalFetch = vi.fn(async () => {
@@ -38,6 +58,7 @@ afterEach(() => {
   // test_trust_eval_never_uses_global_fetch (AC 10): no test may reach the network.
   expect(globalFetch).not.toHaveBeenCalled();
   vi.unstubAllGlobals();
+  outlets.registry = undefined;
 });
 
 const NOW = new Date('2026-10-15T12:00:00.000Z');
@@ -111,19 +132,99 @@ const liveChecker = (dead: (url: string) => boolean = () => false): LinkChecker 
   return fn;
 };
 
+/** An empty environment that records every variable read. */
+function watchedEnv(): { env: Record<string, string | undefined>; reads: PropertyKey[] } {
+  const reads: PropertyKey[] = [];
+  const env = new Proxy({} as Record<string, string | undefined>, {
+    get: (_t, key) => {
+      reads.push(key);
+      return undefined;
+    },
+    has: (_t, key) => {
+      reads.push(key);
+      return false;
+    },
+  });
+  return { env, reads };
+}
+
+/**
+ * Anthropic's side of `mockDepsFor`, on `mockAnthropicFetch`: claims tagged `[eval fc-NN]`, one web search finding two
+ * `.example` sources whose cited passages hold the quotes, verdict `expect[0]`. `failFor` answers that item's claims
+ * request with a refused key (a provider error).
+ */
+function anthropicFetch(failFor?: string) {
+  const ok = (body: unknown) => ({ status: 200, body });
+  return mockAnthropicFetch((body, kind) => {
+    const text = JSON.stringify(body);
+    if (kind === 'claims') {
+      const item = fenced.find((f) => text.includes(f.json))?.item;
+      if (!item) throw new Error('claims for a post outside the eval set');
+      if (item.id === failFor) {
+        return { status: 401, body: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } } };
+      }
+      return ok(structuredMessage({ claims: [{ claim: `[eval ${item.id}] The main claim of this post.` }] }));
+    }
+    const id = /\[eval (fc-\d+)\]/.exec(text)?.[1] ?? '';
+    const item = byId.get(id);
+    if (!item) throw new Error(`a ${kind} request outside the eval set`);
+    if (kind === 'research') {
+      const urls = urlsOf(id);
+      return ok(
+        researchMessage({
+          results: urls.map((url, i) => ({ url, title: `Evidence ${i + 1}` })),
+          notes: urls.map((url, i) => ({
+            text: `Source ${i + 1} addresses the claim.`,
+            cites: [{ url, citedText: `Records reviewed for item ${id} address this claim in source ${i + 1}.` }],
+          })),
+        }),
+      );
+    }
+    const citations = ['s1', 's2'].map((sourceId) => ({ sourceId, quote: `Records reviewed for item ${id}` }));
+    const verdicts = [{ claimId: 'c1', verdict: item.expect[0], explanation: 'Mock verdict.', citations }];
+    return ok(structuredMessage({ verdicts }, { model: 'claude-sonnet-5-5' }));
+  });
+}
+
+/** An OpenAI-compatible endpoint (the shared structured mock) and Brave, on one `fetch` that records URLs and tokens. */
+function compatFetch() {
+  const urls: string[] = [];
+  const tokens: (string | null)[] = [];
+  const fn = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = String(input);
+    urls.push(url);
+    const json = (data: unknown) =>
+      new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.startsWith('https://api.search.brave.com/')) {
+      tokens.push(new Headers(init.headers).get('x-subscription-token'));
+      return json({ web: { results: [{ url: 'https://news.example/a', title: 'A', description: 'The record says so.' }] } });
+    }
+    const body = JSON.parse(String(init.body)) as { model: string; messages: { role: string; content: string }[] };
+    const user = body.messages.find((m) => m.role === 'user')?.content ?? '';
+    return json({
+      choices: [{ message: { content: JSON.stringify(mockStructuredAnswer(user).json) }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 100, completion_tokens: 10 },
+      model: body.model,
+    });
+  });
+  return { fetch: fn as unknown as typeof globalThis.fetch, urls, tokens };
+}
+
+/** A results file in a fresh temporary directory, holding `text`. */
+async function resultsFileWith(text: string): Promise<{ url: URL; read: () => Promise<string>; remove: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'unalgorithm-eval-results-'));
+  const file = join(dir, 'results.json');
+  await writeFile(file, text, 'utf8');
+  return {
+    url: pathToFileURL(file),
+    read: () => readFile(file, 'utf8'),
+    remove: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
 describe('trust eval: offline', () => {
   it('test_trust_eval_offline_factcheck', async () => {
-    const reads: PropertyKey[] = [];
-    const env = new Proxy({} as Record<string, string | undefined>, {
-      get: (_t, key) => {
-        reads.push(key);
-        return undefined;
-      },
-      has: (_t, key) => {
-        reads.push(key);
-        return false;
-      },
-    });
+    const { env, reads } = watchedEnv();
     const fetch = vi.fn();
     const { code, out } = await run(['--mode', 'openai'], env, { fetch: fetch as unknown as typeof globalThis.fetch });
 
@@ -191,25 +292,7 @@ describe('trust eval: live on mocked transports', () => {
   });
 
   it('test_trust_eval_live_compat_hosts', async () => {
-    const urls: string[] = [];
-    const tokens: (string | null)[] = [];
-    const fetch = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
-      const url = String(input);
-      urls.push(url);
-      const json = (data: unknown) =>
-        new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
-      if (url.startsWith('https://api.search.brave.com/')) {
-        tokens.push(new Headers(init.headers).get('x-subscription-token'));
-        return json({ web: { results: [{ url: 'https://news.example/a', title: 'A', description: 'The record says so.' }] } });
-      }
-      const body = JSON.parse(String(init.body)) as { model: string; messages: { role: string; content: string }[] };
-      const user = body.messages.find((m) => m.role === 'user')?.content ?? '';
-      return json({
-        choices: [{ message: { content: JSON.stringify(mockStructuredAnswer(user).json) }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 100, completion_tokens: 10 },
-        model: body.model,
-      });
-    });
+    const { fetch, urls, tokens } = compatFetch();
     const env = {
       COMPAT_BASE_URL: 'http://ai.example:11434/v1',
       COMPAT_MODEL: 'llama3.2',
@@ -217,10 +300,7 @@ describe('trust eval: live on mocked transports', () => {
       SEARCH_API_KEY: 'brave-test-token',
     };
     const smoke = FACTCHECK_EVAL_SET.filter((i) => i.smoke).length;
-    const { out } = await run(['--mode', 'compat', '--live'], env, {
-      fetch: fetch as unknown as typeof globalThis.fetch,
-      linkCheck: liveChecker(),
-    });
+    const { out } = await run(['--mode', 'compat', '--live'], env, { fetch, linkCheck: liveChecker() });
 
     expect(out[0]).toBe(
       `Live run: ${smoke} checks on compat: your endpoint's own price, plus up to ${3 * smoke} searches on your Brave key.`,
@@ -293,6 +373,185 @@ describe('trust eval: live on mocked transports', () => {
     expect(egress.createEgress.mock.calls[0]?.[0]).toMatchObject({ publicUrl: 'http://localhost' });
     expect(egress.checkLinks).toHaveBeenCalled();
     for (const [urls] of egress.checkLinks.mock.calls) for (const url of urls) expect(url).toMatch(/\.example\.(com|org)\//);
+  });
+});
+
+const RECORDED = 'Recorded in packages/research/eval/results.json. Run pnpm format and pnpm docs:site, then commit both files.';
+const NOT_RECORDED = 'Not recorded: the run hit provider errors.';
+
+/** A record already in the file: a run appends after it and leaves it as it was. */
+const EARLIER: EvalRecord = {
+  task: 'factcheck',
+  mode: 'openai',
+  ranOn: '2026-10-01',
+  promptVersion: 2,
+  serverVersion: '0.3.0',
+  items: 56,
+  gates: { provenance: { value: 1, min: 1, passed: true } },
+  passed: false,
+  agreement: 0.5,
+  meanCostMicros: null,
+};
+
+describe('trust eval: record', () => {
+  it('test_record_needs_live_all', async () => {
+    const file = await resultsFileWith('[]\n');
+    try {
+      for (const argv of [
+        ['--mode', 'anthropic', '--record'],
+        ['--mode', 'anthropic', '--live', '--record'],
+        ['--mode', 'anthropic', '--all', '--record'],
+        ['--mode', 'openai', '--task', 'perspectives', '--live', '--record'],
+      ]) {
+        const { env, reads } = watchedEnv();
+        const fetch = anthropicFetch();
+        const { code, out, err } = await run(argv, env, { fetch, resultsFile: file.url });
+        expect(code, argv.join(' ')).toBe(2);
+        expect(err.join('\n')).toContain('usage: pnpm eval:trust --mode anthropic|openai|compat');
+        expect(err.join('\n')).toContain('--record');
+        expect(out).toEqual([]);
+        expect(reads).toEqual([]);
+        expect(fetch.bodies).toEqual([]);
+      }
+      expect(await file.read()).toBe('[]\n');
+    } finally {
+      await file.remove();
+    }
+  });
+
+  it('test_record_appends_one_content_free_record', async () => {
+    const file = await resultsFileWith(`${JSON.stringify([EARLIER], null, 2)}\n`);
+    const key = 'sk-ant-test-secret-value';
+    const deadItems = ['fc-01', 'fc-02', 'fc-03'];
+    try {
+      const { code, out } = await run(
+        ['--mode', 'anthropic', '--live', '--all', '--record'],
+        { ANTHROPIC_API_KEY: key },
+        {
+          fetch: anthropicFetch(),
+          linkCheck: liveChecker((u) => deadItems.some((id) => u.startsWith(`https://${id}.`))),
+          resultsFile: file.url,
+          // 23:30 in Toronto on 15 October is 16 October in UTC.
+          now: () => new Date('2026-10-15T23:30:00-04:00'),
+        },
+      );
+      const report = reportOf(out) as unknown as FactcheckEvalReport;
+      const gates = trustGates(report);
+      expect(report).toMatchObject({ total: 56, providerErrors: [], pairsScored: 20 });
+      // A failed run is recorded too, and keeps its exit code.
+      expect(gates.liveLinks.passed).toBe(false);
+      expect(code).toBe(1);
+      expect(out.at(-1)).toBe(RECORDED);
+
+      const text = await file.read();
+      const records = parseEvalResults(text);
+      expect(text).toBe(`${JSON.stringify(records, null, 2)}\n`);
+      expect(records).toHaveLength(2);
+      expect(records[0]).toEqual(EARLIER);
+      expect(EvalRecordSchema.parse(records[1])).toEqual({
+        task: 'factcheck',
+        mode: 'anthropic',
+        ranOn: '2026-10-16',
+        promptVersion: FACTCHECK_PROMPT_VERSION,
+        serverVersion: SERVER_VERSION,
+        items: 56,
+        gates: { slantFlip: gates.slantFlip, provenance: gates.provenance, liveLinks: gates.liveLinks },
+        passed: false,
+        agreement: report.agreement,
+        meanCostMicros: report.meanCostMicros ?? null,
+      });
+      expect(records[1]?.meanCostMicros).toBeGreaterThan(0);
+
+      // Content-free (decision D81): no item, link, key or failure reason.
+      expect(report.failures.length).toBeGreaterThan(0);
+      expect(text).not.toContain('fc-');
+      expect(text).not.toContain('http');
+      expect(text).not.toContain(key);
+      for (const failure of report.failures) {
+        expect(text).not.toContain(failure.id);
+        expect(text).not.toContain(failure.reason);
+      }
+    } finally {
+      await file.remove();
+    }
+  });
+
+  it('test_record_skipped_on_provider_errors', async () => {
+    const file = await resultsFileWith('[]\n');
+    try {
+      const { code, out } = await run(
+        ['--mode', 'anthropic', '--live', '--all', '--record'],
+        { ANTHROPIC_API_KEY: 'sk-ant-test-key' },
+        { fetch: anthropicFetch('fc-05'), linkCheck: liveChecker(), resultsFile: file.url },
+      );
+      expect(reportOf(out).providerErrors).toEqual(['auth']);
+      expect(out.at(-1)).toBe(NOT_RECORDED);
+      expect(out).not.toContain(RECORDED);
+      expect(code).toBe(1);
+      expect(await file.read()).toBe('[]\n');
+    } finally {
+      await file.remove();
+    }
+  });
+
+  it('test_record_compat_and_perspectives_fields', async () => {
+    const file = await resultsFileWith('[]\n');
+    const secrets = {
+      COMPAT_BASE_URL: 'http://ai.example:11434/v1',
+      COMPAT_MODEL: 'private-model-7b',
+      COMPAT_API_KEY: 'compat-secret-key',
+      SEARCH_API_KEY: 'brave-test-token',
+    };
+    const env = { ...secrets, SEARCH_PROVIDER: 'brave' };
+    try {
+      const factcheck = await run(['--mode', 'compat', '--live', '--all', '--record'], env, {
+        fetch: compatFetch().fetch,
+        linkCheck: liveChecker(),
+        resultsFile: file.url,
+      });
+      expect(factcheck.out.at(-1)).toBe(RECORDED);
+
+      outlets.registry = FIXTURE_REGISTRY;
+      const perspectives = await run(['--mode', 'compat', '--task', 'perspectives', '--live', '--all', '--record'], env, {
+        fetch: compatFetch().fetch,
+        linkCheck: liveChecker(),
+        resultsFile: file.url,
+      });
+      expect(perspectives.out.at(-1)).toBe(RECORDED);
+
+      const text = await file.read();
+      const records = parseEvalResults(text);
+      expect(records).toHaveLength(2);
+      expect(records[0]).toMatchObject({
+        task: 'factcheck',
+        mode: 'compat',
+        searchProvider: 'brave',
+        promptVersion: FACTCHECK_PROMPT_VERSION,
+        items: 56,
+      });
+      expect(records[0]).not.toHaveProperty('registryVersion');
+      const report = reportOf(perspectives.out) as unknown as PerspectivesEvalReport;
+      const gates = perspectivesTrustGates(report);
+      expect(records[1]).toEqual({
+        task: 'perspectives',
+        mode: 'compat',
+        searchProvider: 'brave',
+        ranOn: '2026-10-15',
+        promptVersion: PERSPECTIVES_PROMPT_VERSION,
+        registryVersion: FIXTURE_REGISTRY.meta.version,
+        serverVersion: SERVER_VERSION,
+        items: 10,
+        gates: { provenance: gates.provenance, leanIntegrity: gates.leanIntegrity, liveLinks: gates.liveLinks },
+        passed: gates.passed,
+        agreement: report.coverageMatch,
+        meanCostMicros: report.meanCostMicros ?? null,
+      });
+      for (const value of Object.values(secrets)) expect(text).not.toContain(value);
+      expect(text).not.toContain('ai.example');
+      expect(text).not.toContain('pv-');
+    } finally {
+      await file.remove();
+    }
   });
 });
 

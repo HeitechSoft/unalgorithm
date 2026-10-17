@@ -9,10 +9,14 @@
  * - `--live`: the mode's real client on keys from the environment, the smoke items (`--all`: the whole set). This spends
  *   real money on the operator's accounts: typing `--live` is that choice (decision D16); it never prompts. Run it only
  *   with the key owner's approval (decision D50).
+ * - `--record` (only with `--live --all`; a smoke or offline run is not a measurement): appends the run, passed or
+ *   failed, to `packages/research/eval/results.json` as one content-free record (decision D81), for the evaluations
+ *   page. A run that hit provider errors measured the provider, not the feature, so it is not recorded.
  *
  * Output names items by id and short codes, never post text, a link or a key. Exit 0 when the run passed, 1 when it did
  * not, 2 for a usage or environment error.
  */
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type AIClient, anthropicClient, memoryCapabilities, openaiClient, openaiCompatibleClient } from '@unalgorithm/ai';
 import { formatPrice } from '@unalgorithm/core';
@@ -26,9 +30,11 @@ import {
 } from '@unalgorithm/protocol';
 import {
   createSearchProvider,
+  FACTCHECK_PROMPT_VERSION,
   factcheckDepsForMode,
   type LinkChecker,
   type OwnKeyMode,
+  PERSPECTIVES_PROMPT_VERSION,
   perspectivesDepsForMode,
   type SearchProvider,
 } from '@unalgorithm/research';
@@ -39,6 +45,14 @@ import {
   perspectivesTrustGates,
   runPerspectivesEval,
 } from '@unalgorithm/research/eval/perspectives';
+import {
+  EVAL_RESULTS_FILE,
+  type EvalRecord,
+  factcheckRecord,
+  parseEvalResults,
+  perspectivesRecord,
+  type RecordMeta,
+} from '@unalgorithm/research/eval/results';
 import { SERVER_VERSION } from '../config.ts';
 import { createEgress } from '../net/egress.ts';
 
@@ -49,8 +63,10 @@ export interface TrustEvalDeps {
   linkCheck?: LinkChecker;
   out?: (line: string) => void;
   err?: (line: string) => void;
-  /** The pipeline's clock on a live run. Default: the pipeline's own. */
+  /** The pipeline's clock on a live run, and the recorded run's day. Default: the pipeline's own / the system clock. */
   now?: () => Date;
+  /** Where `--record` appends. Default: EVAL_RESULTS_FILE (`packages/research/eval/results.json`). */
+  resultsFile?: URL;
 }
 
 type Mode = 'anthropic' | 'openai' | 'compat';
@@ -58,13 +74,17 @@ type Task = 'factcheck' | 'perspectives';
 type Env = Record<string, string | undefined>;
 
 export const USAGE = [
-  'usage: pnpm eval:trust --mode anthropic|openai|compat [--task factcheck|perspectives] [--live [--all]]',
+  'usage: pnpm eval:trust --mode anthropic|openai|compat [--task factcheck|perspectives] [--live [--all [--record]]]',
   '  --live env: anthropic  ANTHROPIC_API_KEY',
   '              openai     OPENAI_API_KEY',
   '              compat     COMPAT_BASE_URL, COMPAT_MODEL, [COMPAT_API_KEY], SEARCH_PROVIDER=brave|tavily, SEARCH_API_KEY',
+  '  --record    appends the full run, passed or failed, to packages/research/eval/results.json',
 ].join('\n');
 
 export const NO_REGISTRY = `${FEATURE_NAMES.perspectives} needs a reviewed outlet registry; this build has none.`;
+export const RECORDED =
+  'Recorded in packages/research/eval/results.json. Run pnpm format and pnpm docs:site, then commit both files.';
+export const NOT_RECORDED = 'Not recorded: the run hit provider errors.';
 
 const MODES: readonly Mode[] = ['anthropic', 'openai', 'compat'];
 const TASKS: readonly Task[] = ['factcheck', 'perspectives'];
@@ -74,6 +94,7 @@ interface Args {
   task: Task;
   live: boolean;
   all: boolean;
+  record: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Args | null {
@@ -81,10 +102,12 @@ function parseArgs(argv: readonly string[]): Args | null {
   let task: Task = 'factcheck';
   let live = false;
   let all = false;
+  let record = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--live') live = true;
     else if (arg === '--all') all = true;
+    else if (arg === '--record') record = true;
     else if (arg === '--mode') {
       const value = argv[++i];
       if (!MODES.includes(value as Mode)) return null;
@@ -95,8 +118,8 @@ function parseArgs(argv: readonly string[]): Args | null {
       task = value as Task;
     } else return null;
   }
-  if (!mode || (all && !live)) return null;
-  return { mode, task, live, all };
+  if (!mode || (all && !live) || (record && !(live && all))) return null;
+  return { mode, task, live, all, record };
 }
 
 class EnvError extends Error {}
@@ -115,6 +138,8 @@ interface LiveSetup {
   ownKey: OwnKeyMode;
   /** The spend line's tail after `on <mode>`. */
   spend: (n: number, task: Task) => string;
+  /** compat: which search key the run uses (recorded; the endpoint and model never are). */
+  searchProvider?: keyof typeof PROVIDER_NAME;
 }
 
 function liveSetup(mode: Mode, env: Env, doFetch: typeof fetch | undefined): LiveSetup {
@@ -148,13 +173,22 @@ function liveSetup(mode: Mode, env: Env, doFetch: typeof fetch | undefined): Liv
       // Research searches 3 times per check; perspectives once per lean bucket.
       const spend = (n: number, task: Task) =>
         `: your endpoint's own price, plus up to ${n * (task === 'factcheck' ? 3 : 5)} searches on your ${PROVIDER_NAME[provider]} key.`;
-      return { client, ownKey: { kind: 'openai-compatible', model, search }, spend };
+      return { client, ownKey: { kind: 'openai-compatible', model, search }, spend, searchProvider: provider };
     }
   }
 }
 
 function fixed(value: number | null): string {
   return value === null ? 'none' : value.toFixed(2);
+}
+
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : 'error');
+
+/** Appends `record` to the results file, written as the CLI always writes it (`pnpm format` then normalises it). */
+function appendRecord(file: URL, record: EvalRecord): void {
+  const records = parseEvalResults(readFileSync(file, 'utf8'));
+  records.push(record);
+  writeFileSync(file, `${JSON.stringify(records, null, 2)}\n`, 'utf8');
 }
 
 /** One gate line: measured → PASSED/FAILED; offline → never either; else why it was not measured. */
@@ -182,6 +216,17 @@ export async function main(argv: readonly string[], env: Env, deps: TrustEvalDep
     return 2;
   }
 
+  // A run that could not be recorded must not spend: the results file is checked before any key is read.
+  const resultsFile = deps.resultsFile ?? EVAL_RESULTS_FILE;
+  if (args.record) {
+    try {
+      parseEvalResults(readFileSync(resultsFile, 'utf8'));
+    } catch (e) {
+      err(`Cannot record: ${errorText(e)}`);
+      return 2;
+    }
+  }
+
   let setup: LiveSetup | null = null;
   if (live) {
     try {
@@ -203,6 +248,34 @@ export async function main(argv: readonly string[], env: Env, deps: TrustEvalDep
   const why = (fallback: string) => (smoke ? 'smoke run' : fallback);
   const linksWhy = why('too few links answered');
 
+  /** What the record says about the run besides its report; the day is the one the run ended on. */
+  const meta = (promptVersion: number, registryVersion?: string): RecordMeta => ({
+    mode,
+    ...(setup?.searchProvider ? { searchProvider: setup.searchProvider } : {}),
+    ranOn: deps.now?.() ?? new Date(),
+    promptVersion,
+    ...(registryVersion === undefined ? {} : { registryVersion }),
+    serverVersion: SERVER_VERSION,
+  });
+  /**
+   * `--record`, after the gates: appends the run's record, passed or failed, unless provider errors left items
+   * unmeasured. False when the file could not be read or written.
+   */
+  const save = (providerErrors: number, build: () => EvalRecord): boolean => {
+    if (providerErrors > 0) {
+      out(NOT_RECORDED);
+      return true;
+    }
+    try {
+      appendRecord(resultsFile, build());
+    } catch (e) {
+      err(`Not recorded: ${errorText(e)}`);
+      return false;
+    }
+    out(RECORDED);
+    return true;
+  };
+
   if (factcheck) {
     const items = all || !live ? FACTCHECK_EVAL_SET : FACTCHECK_EVAL_SET.filter((i) => i.smoke);
     if (setup) out(`Live run: ${items.length} checks on ${mode}${setup.spend(items.length, task)}`);
@@ -213,6 +286,8 @@ export async function main(argv: readonly string[], env: Env, deps: TrustEvalDep
     out(gateLine('slant flip', gates.slantFlip, true, why('too few pairs scored'), offline));
     out(gateLine('provenance', gates.provenance, false, why('too few citations shown'), offline));
     out(gateLine('live links', gates.liveLinks, true, linksWhy, offline));
+    const recorded = () => factcheckRecord(report, gates, meta(FACTCHECK_PROMPT_VERSION));
+    if (args.record && !save(report.providerErrors.length, recorded)) return 2;
     if (report.providerErrors.length > 0) return 1;
     return live && all ? (gates.passed ? 0 : 1) : report.provenance === 1 ? 0 : 1;
   }
@@ -229,6 +304,8 @@ export async function main(argv: readonly string[], env: Env, deps: TrustEvalDep
   out(gateLine('provenance', gates.provenance, false, why('too few citations shown'), offline));
   out(gateLine('lean integrity', gates.leanIntegrity, false, why('too few sources shown'), offline));
   out(gateLine('live links', gates.liveLinks, true, linksWhy, offline));
+  const recorded = () => perspectivesRecord(report, gates, meta(PERSPECTIVES_PROMPT_VERSION, registry?.meta.version));
+  if (args.record && !save(report.providerErrors.length, recorded)) return 2;
   if (report.providerErrors.length > 0) return 1;
   if (live && all) return gates.passed ? 0 : 1;
   return report.provenance === 1 && report.leanIntegrity === 1 ? 0 : 1;

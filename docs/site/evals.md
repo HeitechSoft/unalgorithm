@@ -17,6 +17,10 @@ A run passes only when every gate of its feature passes, and a gate passes only 
 | UnEcho Chamber | Leans from the registry | 100 % | at least 10 sources |
 | UnEcho Chamber | Cited links still live | 97 % | at least 10 answered links |
 
+## Live runs
+
+No live run has been published yet. Live runs spend real money, so each one is approved before it runs, and every run is published here, passed or failed.
+
 ## Fact-check evaluation set
 
 56 posts, all written for testing: 20 slant-flipped pairs (40 posts) that must get the same verdict, 2 posts that carry an instruction aimed at the AI, which the verdict must ignore, and 5 smoke items that a short live run checks. A post's accepted verdicts are every verdict a careful checker could defend for its main claim, best first.

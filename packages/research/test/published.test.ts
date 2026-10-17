@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { toStrictJsonSchema } from '@unalgorithm/ai';
+import { formatPrice } from '@unalgorithm/core';
 import {
   EVALS_PAGE,
   markdownCell,
@@ -15,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FACTCHECK_EVAL_SET } from '../eval/factcheck-set.ts';
 import { PERSPECTIVES_EVAL_SET } from '../eval/perspectives-set.ts';
 import { evalsMarkdown, main, promptsMarkdown } from '../eval/publish.ts';
+import { EVAL_RESULTS_FILE, type EvalRecord, parseEvalResults } from '../eval/results.ts';
 import { BLOCKLIST, type BlockedDomain } from '../src/blocklist.ts';
 import { FACTCHECK_RETRIEVAL } from '../src/factcheck.ts';
 import {
@@ -72,6 +74,61 @@ const COVERAGE: RetrievedCoverageSource = {
   outletId: 'fx-left-a',
   outlet: 'Fixture Left A',
   bucket: 'left',
+};
+
+/** The committed live results, as `pnpm docs:site` reads them. */
+const committedResults = (): EvalRecord[] => parseEvalResults(readFileSync(EVAL_RESULTS_FILE, 'utf8'));
+
+/** Made-up records for the live runs section: never written to results.json. */
+const OLDER_RUN: EvalRecord = {
+  task: 'factcheck',
+  mode: 'openai',
+  ranOn: '2026-11-02',
+  promptVersion: 2,
+  serverVersion: '0.3.1',
+  items: 56,
+  gates: {
+    slantFlip: { value: 0.98, min: 0.95, passed: true },
+    provenance: { value: 1, min: 1, passed: true },
+    liveLinks: { value: 0.91, min: 0.97, passed: false },
+  },
+  passed: false,
+  agreement: 0.875,
+  meanCostMicros: 90_000,
+};
+const NEWER_RUN: EvalRecord = {
+  task: 'factcheck',
+  mode: 'compat',
+  searchProvider: 'tavily',
+  ranOn: '2026-11-20',
+  promptVersion: 2,
+  serverVersion: '0.3.2',
+  items: 56,
+  gates: {
+    slantFlip: { value: 1, min: 0.95, passed: true },
+    provenance: { value: 1, min: 1, passed: true },
+    liveLinks: { value: null, min: 0.97, passed: null },
+  },
+  passed: false,
+  agreement: 1,
+  meanCostMicros: null,
+};
+const PERSPECTIVES_RUN: EvalRecord = {
+  task: 'perspectives',
+  mode: 'anthropic',
+  ranOn: '2026-12-01',
+  promptVersion: 1,
+  registryVersion: '1.0.0',
+  serverVersion: '0.4.0',
+  items: 10,
+  gates: {
+    provenance: { value: 1, min: 1, passed: true },
+    leanIntegrity: { value: 1, min: 1, passed: true },
+    liveLinks: { value: 0.99, min: 0.97, passed: true },
+  },
+  passed: true,
+  agreement: 0.9,
+  meanCostMicros: 41_000,
 };
 
 /** Each Markdown table's rows (header first), as written: consecutive lines that start with `|`. */
@@ -139,7 +196,9 @@ describe('drift', () => {
   });
 
   it('test_published_evals_match_the_code', () => {
-    expect(committed(EVALS_PAGE.source), `${EVALS_PAGE.source} is out of date: run pnpm docs:site`).toBe(evalsMarkdown());
+    expect(committed(EVALS_PAGE.source), `${EVALS_PAGE.source} is out of date: run pnpm docs:site`).toBe(
+      evalsMarkdown(committedResults()),
+    );
   });
 });
 
@@ -271,7 +330,12 @@ describe('content', () => {
     const pipes: BlockedDomain[] = [
       { domain: 'a|b.example', category: 'content-farm', evidence: 'https://a.example/x|y (z)', addedOn: '2026-10-01' },
     ];
-    for (const page of [promptsMarkdown(), promptsMarkdown({ blocklist: pipes }), evalsMarkdown()]) {
+    for (const page of [
+      promptsMarkdown(),
+      promptsMarkdown({ blocklist: pipes }),
+      evalsMarkdown(),
+      evalsMarkdown([OLDER_RUN, NEWER_RUN, PERSPECTIVES_RUN]),
+    ]) {
       for (const [header, delimiter, ...rows] of tables(page)) {
         expect(header && delimiter).toBeTruthy();
         const width = cells(header ?? '').length;
@@ -304,6 +368,72 @@ describe('content', () => {
   });
 });
 
+describe('results', () => {
+  it('test_parse_eval_results_rejects_bad_records', () => {
+    expect(parseEvalResults('[]')).toEqual([]);
+    expect(parseEvalResults(` [${JSON.stringify(OLDER_RUN)}]\r\n`)).toEqual([OLDER_RUN]);
+    expect(() => parseEvalResults('[{"task":"factcheck"}]')).toThrow(/\[0\]\.mode/);
+    expect(() => parseEvalResults('not json')).toThrow(/not JSON/);
+    expect(() => parseEvalResults('{}')).toThrow(Error);
+    // Content-free by schema: no field beyond decision D81's, and every value inside its range.
+    const bad: [string, unknown][] = [
+      ['failures', { ...OLDER_RUN, failures: [{ id: 'fc-01', reason: 'dead link s1' }] }],
+      ['url', { ...OLDER_RUN, url: 'https://ai.example/v1' }],
+      ['ranOn', { ...OLDER_RUN, ranOn: '2026-11-02T10:00:00Z' }],
+      ['agreement', { ...OLDER_RUN, agreement: 1.5 }],
+      ['gates.fluency', { ...OLDER_RUN, gates: { fluency: { value: 1, min: 1, passed: true } } }],
+      ['gates.provenance.note', { ...OLDER_RUN, gates: { provenance: { value: 1, min: 1, passed: true, note: 'x' } } }],
+      ['mode', { ...OLDER_RUN, mode: 'gemini' }],
+      ['meanCostMicros', { ...OLDER_RUN, meanCostMicros: 1.5 }],
+    ];
+    for (const [what, record] of bad) {
+      expect(() => parseEvalResults(JSON.stringify([OLDER_RUN, record])), what).toThrow(/\[1\]/);
+    }
+  });
+
+  it('test_evals_page_live_runs_section', () => {
+    const empty = evalsMarkdown([]);
+    expect(evalsMarkdown()).toBe(empty);
+    const none = section(empty, '## Live runs');
+    expect(none).toContain('No live run has been published yet.');
+    expect(none).toContain('every run is published here, passed or failed');
+    expect(tables(none)).toHaveLength(0);
+    // After the gates, before the sets.
+    expect(empty.indexOf('## Trust gates')).toBeLessThan(empty.indexOf('## Live runs'));
+    expect(empty.indexOf('## Live runs')).toBeLessThan(empty.indexOf('## Fact-check evaluation set'));
+
+    const page = evalsMarkdown([OLDER_RUN, NEWER_RUN]);
+    const live = section(page, '## Live runs');
+    expect(live).not.toContain('No live run has been published yet.');
+    expect(tables(live)).toEqual([
+      [
+        '| Date | AI | Prompt version | Items | Same verdict on twins | Citations traced | Cited links live | Agreement | Mean cost |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| 2026-11-20 | Your own AI server with Tavily | 2 | 56 | 1.00 PASSED | 1.00 PASSED | not measured | 100 % | not priced |',
+        `| 2026-11-02 | OpenAI | 2 | 56 | 0.98 PASSED | 1.00 PASSED | 0.91 FAILED | 88 % | ${formatPrice(90_000)} |`,
+      ],
+    ]);
+    expect(formatPrice(90_000)).toBe('$0.09');
+    expect(section(page, '### Fact-check')).toContain('| 2026-11-20 |');
+    expect(section(page, '### UnEcho Chamber')).toContain('No live run of UnEcho Chamber has been published yet.');
+    // Newest first whatever the file's order; on the same day the later entry comes first.
+    expect(evalsMarkdown([NEWER_RUN, OLDER_RUN])).toBe(page);
+    const sameDay = { ...OLDER_RUN, mode: 'anthropic' as const };
+    const rows = tables(section(evalsMarkdown([OLDER_RUN, sameDay]), '## Live runs'))[0] ?? [];
+    expect(rows.slice(2).map((row) => cells(row)[1])).toEqual(['Anthropic', 'OpenAI']);
+
+    const both = section(evalsMarkdown([PERSPECTIVES_RUN, OLDER_RUN]), '## Live runs');
+    const [factcheck, perspectives] = tables(both);
+    expect(factcheck).toHaveLength(3);
+    expect(perspectives).toEqual([
+      '| Date | AI | Prompt version | Items | Citations traced | Leans from the registry | Cited links live | Agreement | Mean cost |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      `| 2026-12-01 | Anthropic | 1 | 10 | 1.00 PASSED | 1.00 PASSED | 0.99 PASSED | 90 % | ${formatPrice(41_000)} |`,
+    ]);
+    expect(both.indexOf('### Fact-check')).toBeLessThan(both.indexOf('### UnEcho Chamber'));
+  });
+});
+
 describe('cli', () => {
   it('test_publish_main_writes_both_pages', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'unalgorithm-docs-site-'));
@@ -316,7 +446,7 @@ describe('cli', () => {
       expect(prompts.split('\n')[0]).toBe('# Published prompts');
       expect(evals.split('\n')[0]).toBe('# Evaluations and trust gates');
       expect(prompts).toBe(promptsMarkdown());
-      expect(evals).toBe(evalsMarkdown());
+      expect(evals).toBe(evalsMarkdown(committedResults()));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
