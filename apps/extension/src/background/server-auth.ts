@@ -189,10 +189,12 @@ const rediscovering = new Map<string, Promise<void>>();
 const rediscoveredAt = new Map<string, number>();
 
 /**
- * Reads the discovery document of the account at `origin` again and keeps it in the account: an account that signed in
- * before its server advertised billing (every CL1-era Cloud account) still has `billing: false` stored. One attempt per
- * server at a time and at most one per `REDISCOVER_MIN_INTERVAL_MS`. Only `info` changes (the next token refresh checks
- * the new `tokenPath` through `tokenEndpoint`), and any failure leaves the account as it was. Never rejects.
+ * Reads the discovery document of the account at `origin` again and keeps it in the account. The stored one is from
+ * sign-in or the last read: an account that signed in before its server advertised billing (every CL1-era Cloud
+ * account) still has `billing: false` stored, and a billing server's prices (`classifyPrice`, `jobPrices`) change when
+ * its admin saves new ones. The classify path asks on every answer that carries a balance and on every 402. One attempt
+ * per server at a time and at most one per `REDISCOVER_MIN_INTERVAL_MS`. Only `info` changes (the next token refresh
+ * checks the new `tokenPath` through `tokenEndpoint`), and any failure leaves the account as it was. Never rejects.
  */
 export function refreshServerInfo(origin: string, deps: Partial<AuthDeps> = {}): Promise<void> {
   const d = withDefaults(deps);

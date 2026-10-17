@@ -209,7 +209,9 @@ describe('recording', () => {
   it('test_settlement_is_stored', async () => {
     await serverAccountItem.setValue(account());
     const s = fakeServer();
-    const outcome = await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens() });
+    // Reading discovery again has its own tests (test_billing_answer_rediscovers_server and after).
+    const rediscover = vi.fn(async () => undefined);
+    const outcome = await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens(), rediscover });
 
     expect(codes(outcome)).toStrictEqual(['ok']);
     expect(await serverBalanceItem.getValue()).toStrictEqual({
@@ -219,17 +221,20 @@ describe('recording', () => {
       source: 'classify',
       updatedAt: NOW,
     });
+    expect(rediscover).toHaveBeenCalledExactlyOnceWith(ORIGIN);
 
     // An answer without `billing` (a self-hosted server) stores nothing.
+    rediscover.mockClear();
     await serverBalanceItem.setValue(null);
     const free = fakeServer({ classify: (req) => json(answer(req)) });
-    await classifyViaServer(CFG, await posts(), OPTS, { fetch: free.fetch, getAccessToken: tokens() });
+    await classifyViaServer(CFG, await posts(), OPTS, { fetch: free.fetch, getAccessToken: tokens(), rediscover });
     expect(await serverBalanceItem.getValue()).toBeNull();
 
     // Nobody signed in to this server: nothing to record it for.
     await serverAccountItem.setValue(account({ origin: 'https://ai.example.org' }));
-    await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens() });
+    await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens(), rediscover });
     expect(await serverBalanceItem.getValue()).toBeNull();
+    expect(rediscover).not.toHaveBeenCalled();
 
     // A caller that read the account already passes it, and replaceable recorders get the account's device.
     const settlement = vi.fn(async () => undefined);
@@ -239,6 +244,7 @@ describe('recording', () => {
       getAccessToken: tokens(),
       account: account({ deviceId: DEVICE_B }),
       noteBalance: { settlement, refused },
+      rediscover,
     });
     expect(settlement).toHaveBeenCalledExactlyOnceWith(ORIGIN, DEVICE_B, BILLING);
     expect(refused).not.toHaveBeenCalled();
@@ -246,21 +252,24 @@ describe('recording', () => {
     // A storage failure never fails the posts.
     vi.spyOn(serverBalanceItem, 'setValue').mockRejectedValue(new Error('Session storage is gone.'));
     await serverAccountItem.setValue(account());
-    const kept = await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens() });
+    const kept = await classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens(), rediscover });
     expect(codes(kept)).toStrictEqual(['ok']);
   });
 
   it('test_refusal_stores_zero', async () => {
     const empty = () => json({ code: 'insufficient-credits', message: 'Top up at example.com.' }, 402);
     const s = fakeServer({ classify: empty });
-    const run = async () => classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens() });
+    const rediscover = vi.fn(async () => undefined);
+    const run = async () => classifyViaServer(CFG, await posts(), OPTS, { fetch: s.fetch, getAccessToken: tokens(), rediscover });
 
     // Without an account nothing is recorded: the posts fail exactly as they always did.
     const before = await run();
     expect(await serverBalanceItem.getValue()).toBeNull();
+    expect(rediscover).not.toHaveBeenCalled();
 
     await serverAccountItem.setValue(account());
     const after = await run();
+    expect(rediscover).toHaveBeenCalledExactlyOnceWith(ORIGIN);
     expect(await serverBalanceItem.getValue()).toStrictEqual({
       origin: ORIGIN,
       deviceId: DEVICE_A,
@@ -416,10 +425,12 @@ describe('refresh', () => {
     expect(await serverAccountItem.getValue()).toStrictEqual({ ...old, info: INFO });
     expect(await getSecret(REFRESH_KEY)).toBe('refresh-token-1-0123456789abcdef');
     expect((await aiStatus()).balance).toMatchObject({ balanceMicros: 999_700, empty: false });
-    // Now advertised: the next answers leave discovery alone.
+    // Now advertised: answers still read it again (its prices can change, PA-07), within the interval asking nothing.
     rediscover.mockClear();
     await classify();
-    expect(rediscover).not.toHaveBeenCalled();
+    await pending;
+    expect(rediscover).toHaveBeenCalledExactlyOnceWith(ORIGIN);
+    expect(s.discoveryCalls()).toHaveLength(4);
 
     // Someone signs in as another account while the server answers: the document isn't stored for them.
     later();
@@ -433,6 +444,64 @@ describe('refresh', () => {
     late.open(json(INFO));
     await pending;
     expect(await serverAccountItem.getValue()).toStrictEqual(other);
+  });
+
+  it('test_billing_account_follows_server_price', async () => {
+    // Its own stretch of time, after test_billing_answer_rediscovers_server's, so its discovery throttles nothing here.
+    let clock = NOW + 180 * MINUTE;
+    const later = () => {
+      clock += REDISCOVER_MIN_INTERVAL_MS + MINUTE;
+      vi.setSystemTime(clock);
+    };
+    later();
+    const priced = (microsPer1000Posts: number, typicalMicros: number): ServerInfo => ({
+      ...INFO,
+      jobPrices: { factcheck: { typicalMicros, maxMicros: typicalMicros * 4 } },
+      classifyPrice: { microsPer1000Posts },
+    });
+    let document = priced(146_000, 6_000);
+    const s = fakeServer({ info: () => json(document) });
+    vi.stubGlobal('fetch', s.fetch);
+    let pending: Promise<void> | undefined;
+    const rediscover = vi.fn((origin: string) => (pending = refreshServerInfo(origin)));
+    const classify = async (fetch = s.fetch) => {
+      await classifyViaServer(CFG, await posts(), OPTS, { fetch, getAccessToken: tokens(), rediscover });
+      await pending;
+    };
+    const price = async () =>
+      (await balanceStatus(CFG, await serverAccountItem.getValue(), { fetch: s.fetch }))?.microsPer1000Posts;
+
+    // Signed in before the server sent a price (before PA-04): the bundled schedule, until an answer reads discovery.
+    const before = account({ info: INFO });
+    await serverAccountItem.setValue(before);
+    await serverBalanceItem.setValue(stored({ updatedAt: clock }));
+    expect(await price()).toBeNull();
+    await classify();
+    expect(rediscover).toHaveBeenCalledExactlyOnceWith(ORIGIN);
+    expect(s.discoveryCalls()).toHaveLength(1);
+    expect(await serverAccountItem.getValue()).toStrictEqual({ ...before, info: document });
+    expect(await price()).toBe(146_000);
+
+    // The admin schedules 2.5×; it takes effect. An answer within the interval asks nothing, so the price stays.
+    document = priced(182_500, 7_500);
+    await classify();
+    expect(s.discoveryCalls()).toHaveLength(1);
+    expect(await price()).toBe(146_000);
+
+    // The next answer after it reads discovery again: the estimate and the job prices follow, nothing else changes.
+    later();
+    await classify();
+    expect(s.discoveryCalls()).toHaveLength(2);
+    expect(await serverAccountItem.getValue()).toStrictEqual({ ...before, info: document });
+    expect(await price()).toBe(182_500);
+    expect((await aiStatus()).balance).toMatchObject({ balanceMicros: 999_700, microsPer1000Posts: 182_500 });
+
+    // A 402 reads it too: a server that stops sending a price falls back to the bundled schedule.
+    later();
+    document = INFO;
+    await classify(fakeServer({ classify: () => json({ code: 'insufficient-credits', message: 'Empty.' }, 402) }).fetch);
+    expect(s.discoveryCalls()).toHaveLength(3);
+    expect(await price()).toBeNull();
   });
 
   it('test_refresh_failures_keep_value', async () => {
@@ -727,7 +796,8 @@ describe('status', () => {
         return json(answer(req, { chargedMicros: 300, balanceMicros: 1_000 }));
       },
     });
-    await classifyViaServer(CFG, await posts(), OPTS, { fetch: swap.fetch, getAccessToken: tokens() });
+    const rediscover = async () => undefined;
+    await classifyViaServer(CFG, await posts(), OPTS, { fetch: swap.fetch, getAccessToken: tokens(), rediscover });
     expect(await serverBalanceItem.getValue()).toMatchObject({ deviceId: DEVICE_A, balanceMicros: 1_000 });
     const next = await aiStatus();
     expect(next.balance?.balanceMicros).not.toBe(1_000);

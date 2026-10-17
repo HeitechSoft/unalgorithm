@@ -126,8 +126,10 @@ An entry's price cards apply from its `effectiveFrom` (00:00 UTC of that day) un
 the price in effect by itself, in the server's book, and reads the book at each use, so a save applies without a
 restart:
 
-- The server's offers and discovery (`jobPrices` and `classifyPrice` in `/.well-known/unalgorithm.json`), and so the
-  extension's price lines and its "about N posts", at the time they show them.
+- The server's offers and discovery (`jobPrices` and `classifyPrice` in `/.well-known/unalgorithm.json`), at the time
+  they answer. The extension keeps the discovery document it last read and reads it again at most every 5 minutes
+  while the server classifies for it, so its price lines and its "about N posts" follow a change within about 5
+  minutes of the extension's next use of the server, not at the instant it takes effect.
 - The account page, from the server's `/prices.json`, read with the account, at the time it shows it.
 - The billing module, through the billing host (`host.prices`): it prices each request at the instant the server
   checks it (`checkedAt`), grants the starter credit, and checks purchases and automatic purchases from the same book.

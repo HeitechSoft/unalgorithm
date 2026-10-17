@@ -41,7 +41,8 @@ export interface PublicBalance {
   accountUrl: string | null;
   /**
    * The server's price of 1,000 classified posts, from its discovery document when the extension last read it
-   * (`classifyPrice`, PA-04); null when it sends none or the stored document doesn't parse. "About N posts" uses it.
+   * (`classifyPrice`, PA-04; read again at most every 5 minutes while the server answers, `refreshServerInfo`); null
+   * when it sends none or the stored document doesn't parse. "About N posts" uses it.
    */
   microsPer1000Posts: number | null;
   updatedAt: number;
