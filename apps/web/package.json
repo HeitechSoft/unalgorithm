@@ -1,6 +1,6 @@
 {
   "name": "@unalgorithm/web",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Sign-in and account pages an unAlgorithm server serves on its own origin for the unAlgorithm Feed extension",

@@ -1,5 +1,12 @@
 # @unalgorithm/web
 
+## 0.0.3
+
+### Patch Changes
+
+- [#29](https://github.com/HeitechSoft/unalgorithm/pull/29) [`7c240dd`](https://github.com/HeitechSoft/unalgorithm/commit/7c240dd79dfbd2277194a5ceb3750b436a837a07) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The name is now written unAlgorithm, with a lowercase u: in Chrome ("unAlgorithm Feed"), the toolbar, onboarding,
+  Settings, messages, the sign-in and account pages, and the wordmark.
+
 ## 0.0.2
 
 ### Patch Changes

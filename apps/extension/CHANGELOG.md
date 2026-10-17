@@ -1,5 +1,31 @@
 # @unalgorithm/extension
 
+## 0.3.0
+
+### Minor Changes
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Fact-check is out of Labs. Turn it on in Settings → AI. It still runs only when you click, on public posts, and shows the price first.
+
+- [#27](https://github.com/HeitechSoft/unalgorithm/pull/27) [`553babb`](https://github.com/HeitechSoft/unalgorithm/commit/553babbde368378fcfc4871cf93d12bf4946b623) Thanks [@TomHeiber](https://github.com/TomHeiber)! - UnEcho Chamber and fact-check on unAlgorithm Cloud are priced from 18 October 2026 (00:00 UTC), at the same prices as
+  announced: a comparison costs about $0.27 at 2× and at most $0.50, a check about $0.24 at 2× and at most $0.40. The price
+  schedule prices both in one entry from 2026-10-18, which replaces the 2026-11-01 and 2026-12-01 entries before either
+  took effect. The classify price is unchanged.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - While UnEcho Chamber is on, unAlgorithm downloads unAlgorithm Cloud's source list once a day, with nothing about you.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Keep your own source list for UnEcho Chamber in Settings → AI: start from unAlgorithm Cloud's list or the candidates, and set leans yourself.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - UnEcho Chamber runs on unAlgorithm Cloud's source list or your own, with warnings when a list isn't balanced. The comparison request carries the list.
+
+### Patch Changes
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - A finished fact-check or UnEcho Chamber result links to how it works and to a form for reporting a mistake. The form is filled in with versions only, never anything from the post.
+
+- [#29](https://github.com/HeitechSoft/unalgorithm/pull/29) [`7c240dd`](https://github.com/HeitechSoft/unalgorithm/commit/7c240dd79dfbd2277194a5ceb3750b436a837a07) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The name is now written unAlgorithm, with a lowercase u: in Chrome ("unAlgorithm Feed"), the toolbar, onboarding,
+  Settings, messages, the sign-in and account pages, and the wordmark.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives is now called UnEcho Chamber. Only its name changed.
+
 ## 0.2.3
 
 ### Patch Changes
