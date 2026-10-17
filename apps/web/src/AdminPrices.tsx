@@ -9,6 +9,9 @@
  * browser's), says why in the rules' own plain words, and keeps "Save" disabled while they refuse. The preview is
  * `taskPriceLines`: the account page's, the website's and the extension's own wording. Every save is followed by the
  * page loading again; a refusal is said in the server's words (400) or the page's (404, 409).
+ *
+ * After the task prices come the starter credit, buying credit and auto-reload sections, then the history of every
+ * change (PA-06, `AdminPriceSettings.tsx`); their saves go through the same handler, one open form at a time.
  */
 import { priceIssuesText, REFERENCE_MODEL_LABELS, TASK_PRICE_NAMES, taskPriceLines } from '@unalgorithm/core';
 import {
@@ -36,6 +39,14 @@ import {
 import { Banner, Button, ListGroup, ListRow, TextField } from '@unalgorithm/ui';
 import { type FormEvent, Fragment, type ReactNode, useId, useState } from 'react';
 import { AdminGate, useAdminSession } from './Admin.tsx';
+import {
+  AutoReloadSection,
+  PriceHistory,
+  PurchaseSection,
+  type SettingsPart,
+  type SettingsSectionProps,
+  StarterCreditSection,
+} from './AdminPriceSettings.tsx';
 import { ApiError, adminPrices, changePrices } from './api.ts';
 import { dollarsInput, fromUtcDayInput, parseDollars, parseMultiplier, utcDayInput } from './money.ts';
 import { Page } from './Page.tsx';
@@ -62,8 +73,11 @@ const day = (iso: string): string => DATE.format(new Date(iso));
 type Card = Readonly<CreditPriceCard>;
 const isJob = (task: CreditTask): task is Exclude<CreditTask, 'classify'> => task !== 'classify';
 
-/** What the page has open, one at a time: a task's form, or a scheduled change's move or cancel step. */
-type Open = { kind: 'form'; task: CreditTask } | { kind: 'move' | 'cancel'; task: CreditTask; effectiveFrom: string };
+/** What the page has open, one at a time: a task's form, a scheduled change's move or cancel step, or a section's form. */
+type Open =
+  | { kind: 'form'; task: CreditTask }
+  | { kind: 'move' | 'cancel'; task: CreditTask; effectiveFrom: string }
+  | { kind: SettingsPart };
 /** What the page says after a refused change; `reload` adds "Reload". */
 type Notice = { title: string; reload?: boolean };
 
@@ -153,6 +167,16 @@ export function AdminPrices() {
     if (await refresh()) setNotice(null);
   }
 
+  function onOpen(next: Open) {
+    setNotice(null);
+    setOpen(next);
+  }
+
+  function onClose() {
+    setOpen(null);
+    setNotice(null);
+  }
+
   const noticeBanner = notice ? (
     <Banner
       tone="danger"
@@ -160,6 +184,20 @@ export function AdminPrices() {
       action={notice.reload ? { label: 'Reload', onAction: () => void onReload() } : undefined}
     />
   ) : null;
+
+  /** A section's props: its form open or not, and its save sent with the page's handler. */
+  const settings = (part: SettingsPart): SettingsSectionProps => ({
+    book,
+    version: prices.version,
+    now,
+    open: open?.kind === part,
+    idle: pending === null && open === null,
+    busy: pending === part,
+    notice: open?.kind === part ? noticeBanner : null,
+    onOpen: () => onOpen({ kind: part }),
+    onClose,
+    onSend: (req) => send(part, req),
+  });
 
   return (
     <Page info={info} heading={heading} intro={INTRO} wide>
@@ -171,16 +209,14 @@ export function AdminPrices() {
         open={open}
         pending={pending}
         notice={noticeBanner}
-        onOpen={(next) => {
-          setNotice(null);
-          setOpen(next);
-        }}
-        onClose={() => {
-          setOpen(null);
-          setNotice(null);
-        }}
+        onOpen={onOpen}
+        onClose={onClose}
         onSend={send}
       />
+      <StarterCreditSection {...settings('starter')} />
+      <PurchaseSection {...settings('purchase')} />
+      <AutoReloadSection {...settings('auto-reload')} />
+      <PriceHistory changes={step.data.changes} />
     </Page>
   );
 }
@@ -214,7 +250,7 @@ function TaskPrices({ book, version, now, open, pending, notice, onOpen, onClose
       {CREDIT_TASKS.map((task) => {
         const name = TASK_PRICE_NAMES[task];
         const current = taskPriceAt(now, task, book.schedule);
-        const opened = open?.task === task ? open : null;
+        const opened = open !== null && 'task' in open && open.task === task ? open : null;
         return (
           <Fragment key={task}>
             {opened ? notice : null}
