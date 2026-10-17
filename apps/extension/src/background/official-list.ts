@@ -1,15 +1,16 @@
 /**
  * UnAlgorithm Cloud's published source list (decision D98): every extension reads it for UnEcho Chamber, whatever its AI
- * source, and only while UnEcho Chamber is on. At most one request a day, counted from the last request whether it was
- * answered or not; anonymous (no cookie, no referrer, no header but Accept, nothing about the person); and a copy is
- * kept only when it passes the schema and the list rules, so any failure keeps the last good copy. E2E builds use the
- * fixture (`storedOfficialList`) and never reach the real Cloud. No host permission: the Cloud answers CORS for any
- * origin (D96).
+ * source, and only while UnEcho Chamber is on as Settings → AI shows it (`perspectivesSwitchOn`: the switch on and a
+ * source that can compare; the stored flag alone is not enough). At most one request a day, counted from the last
+ * request whether it was answered or not; anonymous (no cookie, no referrer, no header but Accept, nothing about the
+ * person); and a copy is kept only when it passes the schema and the list rules, so any failure keeps the last good
+ * copy. E2E builds use the fixture (`storedOfficialList`) and never reach the real Cloud. No host permission: the Cloud
+ * answers CORS for any origin (D96).
  */
-import { createLock, type Device } from '@unalgorithm/core';
+import { createLock, type Device, perspectivesSwitchOn, type ServerOffer } from '@unalgorithm/core';
 import { CLOUD_ORIGIN, OUTLETS_JSON_PATH } from '@unalgorithm/protocol';
 import { validOfficialList } from '../lib/outlets.ts';
-import { officialListItem, readDevice, watchDevice } from '../lib/storage.ts';
+import { officialListItem, readDevice, serverOfferItem, watchDevice } from '../lib/storage.ts';
 import { readBoundedJson } from './bounded-body.ts';
 
 export const OFFICIAL_LIST_URL = `${CLOUD_ORIGIN}${OUTLETS_JSON_PATH}`;
@@ -21,13 +22,15 @@ export interface OfficialListDeps {
   fetch: typeof fetch;
   now: () => number;
   device: () => Promise<Device>;
+  /** What the signed-in server offers: a server source can compare only when it offers UnEcho Chamber. */
+  offer: () => Promise<ServerOffer | null>;
 }
 
 const withLock = createLock();
 
 /**
- * Asks for the Cloud's list when UnEcho Chamber is on and the last request is at least a day old. Keeps the stored copy
- * on any failure. Never throws; logs nothing about the list or the answer.
+ * Asks for the Cloud's list when UnEcho Chamber is on (`perspectivesSwitchOn`) and the last request is at least a day
+ * old. Keeps the stored copy on any failure. Never throws; logs nothing about the list or the answer.
  */
 export async function refreshOfficialList(deps: Partial<OfficialListDeps> = {}): Promise<'skipped' | 'updated' | 'kept'> {
   if (import.meta.env.MODE === 'e2e') return 'skipped';
@@ -35,12 +38,13 @@ export async function refreshOfficialList(deps: Partial<OfficialListDeps> = {}):
     fetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
     device: readDevice,
+    offer: () => serverOfferItem.getValue(),
     ...deps,
   };
   // One at a time: a second wake waits, then finds this request's `checkedAt` and skips.
   return withLock(async () => {
     try {
-      if (!(await d.device()).labs.perspectives) return 'skipped';
+      if (!perspectivesSwitchOn(await d.device(), await d.offer())) return 'skipped';
       const stored = await officialListItem.getValue();
       const now = d.now();
       // A last request more than a day in the future (a clock set wrong, then put right) doesn't hold the list back.
@@ -76,12 +80,30 @@ export async function refreshOfficialList(deps: Partial<OfficialListDeps> = {}):
 }
 
 /**
- * At start (each service-worker start) and whenever UnEcho Chamber is turned on. Returns the function that stops
- * watching (tests).
+ * At start (each service-worker start) and whenever UnEcho Chamber comes on: its switch turned on, or, with the switch
+ * left on, a source that can compare chosen, a web search key added or the server's offer arriving. Returns the function
+ * that stops watching (tests).
  */
 export function startOfficialListUpdates(): () => void {
   void refreshOfficialList();
-  return watchDevice((device, previous) => {
-    if (device.labs.perspectives && !previous?.labs.perspectives) void refreshOfficialList();
+  const stopDevice = watchDevice((device, previous) => {
+    void serverOfferItem
+      .getValue()
+      .then((offer) => {
+        if (perspectivesSwitchOn(device, offer) && !(previous && perspectivesSwitchOn(previous, offer)))
+          void refreshOfficialList();
+      })
+      .catch(() => undefined);
   });
+  const stopOffer = serverOfferItem.watch((offer, previous) => {
+    void readDevice()
+      .then((device) => {
+        if (perspectivesSwitchOn(device, offer) && !perspectivesSwitchOn(device, previous)) void refreshOfficialList();
+      })
+      .catch(() => undefined);
+  });
+  return () => {
+    stopDevice();
+    stopOffer();
+  };
 }

@@ -262,6 +262,37 @@ describe('Settings → AI: Fact-check and UnEcho Chamber', () => {
   });
 });
 
+describe('Settings → AI: a source list that needs fixing', () => {
+  it('test_ai_pane_shows_own_list_problems', async () => {
+    // Synced in from two devices: two outlets (uuidv7 keys) with one web address. UnEcho Chamber can't use the list,
+    // and the pane says why, naming the outlet, never its id.
+    const user = setupUser();
+    const DAILY = '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3e';
+    const settings = defaultSettings();
+    settings.perspectives.list = 'own';
+    settings.perspectives.outlets = {
+      '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3d': { name: 'FX News', domains: ['fx-news.example'], bucket: 'center', addedAt: 1 },
+      [DAILY]: { name: 'FX Daily', domains: ['fx-news.example'], bucket: 'right', addedAt: 2 },
+    };
+    const anthropic = device({ kind: 'anthropic', model: null });
+    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={anthropic} saveDevice={vi.fn(async () => {})} />);
+    const title = "Your list needs fixing, so UnEcho Chamber can't use it.";
+    const notice = within(screen.getByText(title).closest('.ua-banner') as HTMLElement);
+    expect(notice.getByText('FX Daily: another outlet already lists one of its web addresses.')).toBeTruthy();
+    expect(document.body.textContent).not.toContain(DAILY);
+    await user.click(notice.getByRole('button', { name: 'Fix your list' }));
+    expect(location.hash).toBe('#/ai/sources');
+    cleanup();
+
+    // The Cloud's list chosen: the own list's problem isn't this list's, so nothing is said.
+    settings.perspectives.list = 'cloud';
+    await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 });
+    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={anthropic} saveDevice={vi.fn(async () => {})} />);
+    expect(await screen.findByText('Version 1, 10 outlets with a lean')).toBeTruthy();
+    expect(screen.queryByText(title)).toBeNull();
+  });
+});
+
 describe('Settings navigation', () => {
   const sidebarItems = () =>
     [...screen.getByRole('navigation', { name: 'Settings' }).querySelectorAll('.sidebar-item:not(.sidebar-identity)')].map(

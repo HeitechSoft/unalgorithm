@@ -32,7 +32,15 @@ import {
   sourceId,
   type WebSearchKey,
 } from '@unalgorithm/core';
-import { outletForHost, outletsIn, ownSourceList, type SourceList, sourceListFromWire, wireList } from '@unalgorithm/outlets';
+import {
+  type ListedOutlet,
+  outletForHost,
+  outletsIn,
+  ownSourceList,
+  type SourceList,
+  sourceListFromWire,
+  wireList,
+} from '@unalgorithm/outlets';
 import { FIXTURE_LIST, FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import {
   AUTHORIZE_PAGE_PATH,
@@ -58,7 +66,7 @@ import { type ServerAccount, serverAccountItem } from '../src/background/server-
 import { forgetTab } from '../src/background/tabs.ts';
 import { handlers } from '../src/entrypoints/background.ts';
 import type { BgRequest } from '../src/lib/messages.ts';
-import { chosenList, listReady, matchLeans } from '../src/lib/outlets.ts';
+import { chosenList, listReady, matchLeans, namedListProblems } from '../src/lib/outlets.ts';
 import { deviceItem, type FactcheckEntry, factcheckItem, officialListItem, settingsItem, usageItem } from '../src/lib/storage.ts';
 
 /** `refuse`: the leans check refuses every result (an own-key mismatch, which the real pipeline can't produce). */
@@ -337,6 +345,24 @@ describe('the chosen list', () => {
     expect(listReady({ ...FIXTURE_LIST, outlets: FIXTURE_LIST.outlets.map((o) => ({ ...o, lean: null })) })).toBe(false);
     expect(listReady(ownSourceList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') }))).toBe(false);
 
+    // A list's problems name the outlet by its name, keeping its id to reach it; a cap names none, and a repeated id
+    // is about the id itself.
+    expect(
+      namedListProblems(ownSourceList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') })),
+    ).toEqual([
+      {
+        code: 'domain-taken',
+        outletId: 'my-zz-copy',
+        name: 'My Copy',
+        text: 'My Copy: another outlet already lists one of its web addresses.',
+      },
+    ]);
+    const [first] = FIXTURE_LIST.outlets;
+    expect(
+      namedListProblems({ outlets: [...FIXTURE_LIST.outlets, { ...(first as ListedOutlet), domains: ['twin.example'] }] }),
+    ).toEqual([{ code: 'duplicate-id', outletId: first?.id, name: first?.name, text: `Two outlets have the id ${first?.id}.` }]);
+    expect(namedListProblems(FIXTURE_LIST)).toEqual([]);
+
     // E2E builds read the fixture as the Cloud's list, and never fetch.
     expect(import.meta.env.MODE).not.toBe('e2e');
     vi.stubEnv('MODE', 'e2e');
@@ -364,11 +390,11 @@ describe('the chosen list', () => {
       expect(await perspectives()).toStrictEqual(refusal(OWN));
       await chooseOwnList({ 'my-a': own('My A', ['a.example'], null) });
       expect(await perspectives()).toStrictEqual(refusal(OWN));
-      // A web address in two of your outlets: what to fix, naming the outlet.
+      // A web address in two of your outlets: what to fix, naming the outlet by its name, never its id.
       await chooseOwnList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') });
       expect(await perspectives()).toStrictEqual(
         refusal(
-          'Your source list needs fixing in Settings → AI: my-zz-copy: another outlet already lists one of its web addresses.',
+          'Your source list needs fixing in Settings → AI: My Copy: another outlet already lists one of its web addresses.',
         ),
       );
       await settingsItem.removeValue();

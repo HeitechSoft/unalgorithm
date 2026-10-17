@@ -10,7 +10,7 @@ import {
   webSearchName,
   webSearchOrigin,
 } from '@unalgorithm/core';
-import { listBalance, listProblems, listProblemText, type SourceList, wireList } from '@unalgorithm/outlets';
+import { listBalance, type SourceList, wireList } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
   FEATURE_NAMES,
@@ -33,7 +33,7 @@ import {
 } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
 import type { BgError, BgResponses } from '../lib/messages.ts';
-import { chosenList, listReady, matchLeans, storedOfficialList } from '../lib/outlets.ts';
+import { chosenList, listReady, matchLeans, namedListProblems, storedOfficialList } from '../lib/outlets.ts';
 import { type FactcheckEntry, factcheckItem, officialListItem, readDevice, readSettings } from '../lib/storage.ts';
 import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
 import { deviceClaimCache } from './claim-cache.ts';
@@ -314,12 +314,12 @@ const CLOUD_LIST_EMPTY =
 
 /**
  * Why UnEcho Chamber can't run on `list`, one that isn't `listReady` (decision D103): its first problem (an own list's:
- * the Cloud's stored copy passed the list rules), else that it has no outlet with a lean. No list at all is the Cloud's,
- * not downloaded yet.
+ * the Cloud's stored copy passed the list rules), naming the outlet by its name (an own list's ids are uuidv7s), else
+ * that it has no outlet with a lean. No list at all is the Cloud's, not downloaded yet.
  */
 function listRefusal(list: SourceList | null): Refusal {
-  const [problem] = list ? listProblems(list.outlets) : [];
-  if (problem) return refuse('not-available', `Your source list needs fixing in Settings → AI: ${listProblemText(problem)}`);
+  const [problem] = list ? namedListProblems(list) : [];
+  if (problem) return refuse('not-available', `Your source list needs fixing in Settings → AI: ${problem.text}`);
   return refuse('not-available', list?.kind === 'own' ? OWN_LIST_EMPTY : CLOUD_LIST_EMPTY);
 }
 

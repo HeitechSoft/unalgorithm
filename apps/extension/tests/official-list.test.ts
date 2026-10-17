@@ -1,11 +1,11 @@
 /**
- * UnAlgorithm Cloud's source list in the extension (P3-75, decision D98): fetched only while UnEcho Chamber is on, at
- * most once a day counted from the last request, anonymous (no cookie, no referrer, no header but Accept), and kept only
+ * UnAlgorithm Cloud's source list in the extension (P3-75, decision D98): fetched only while UnEcho Chamber is on (its
+ * switch, and an AI source that can compare, as Settings → AI shows it), at most once a day counted from the last request, anonymous (no cookie, no referrer, no header but Accept), and kept only
  * when it passes the schema and the list rules, so any failure keeps the last good copy. The network is a fake fetch,
  * the clock fixed, extension storage the WXT fake browser; every list is the fictional `.example` fixture or a copy of
  * it. Nothing real is called.
  */
-import { type Device, defaultDevice } from '@unalgorithm/core';
+import { type AISourceConfig, type Device, defaultDevice, type ServerOffer } from '@unalgorithm/core';
 import { FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import type { OfficialList } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ import {
   startOfficialListUpdates,
 } from '../src/background/official-list.ts';
 import { storedOfficialList } from '../src/lib/outlets.ts';
-import { deviceItem, officialListItem } from '../src/lib/storage.ts';
+import { deviceItem, officialListItem, serverOfferItem } from '../src/lib/storage.ts';
 
 const NOW = Date.UTC(2026, 9, 17, 9);
 const MINUTE = 60_000;
@@ -32,9 +32,28 @@ const NO_LEAN: OfficialList = {
   outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })),
 };
 
+const ANTHROPIC: AISourceConfig = { kind: 'anthropic', model: null };
+const OLLAMA: AISourceConfig = {
+  kind: 'openai-compatible',
+  preset: 'ollama',
+  baseUrl: 'http://localhost:11434/v1',
+  auth: 'none',
+  model: null,
+};
+const SERVER: AISourceConfig = { kind: 'server', baseUrl: 'https://ai.example.org' };
+const SERVER_OFFER: ServerOffer = {
+  origin: 'https://ai.example.org',
+  billing: false,
+  factcheck: false,
+  factcheckPrice: null,
+  perspectives: true,
+  perspectivesPrice: null,
+};
+
+/** A device with UnEcho Chamber's switch at `perspectives`, on an own Anthropic key unless `patch` says otherwise. */
 function device(perspectives: boolean, patch: Partial<Device> = {}): Device {
   const d = defaultDevice('0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3d');
-  return { ...d, ...patch, labs: { ...d.labs, perspectives } };
+  return { ...d, aiSource: ANTHROPIC, ...patch, labs: { ...d.labs, perspectives } };
 }
 
 const json = (body: unknown, status = 200) =>
@@ -78,6 +97,38 @@ describe('fetch', () => {
     expect(await refreshOfficialList({ fetch: cloud.fetch, now: () => NOW })).toBe('skipped');
     expect(cloud.calls).toHaveLength(0);
     expect(await officialListItem.getValue()).toStrictEqual({ list: null, checkedAt: 0 });
+  });
+
+  it('test_official_list_skipped_when_source_cant_compare', async () => {
+    // The switch stays stored as on, but Settings → AI shows it off (and disabled) on a source that can't compare: no AI,
+    // on-device, Ollama with no web search key, a server that doesn't offer it or isn't signed in.
+    const cloud = fakeCloud();
+    const cases: Array<[string, Partial<Device>, ServerOffer | null]> = [
+      ['AI off', { aiSource: null }, null],
+      ['on-device', { aiSource: { kind: 'on-device' } }, null],
+      ['Ollama, no web search key', { aiSource: OLLAMA, webSearch: null }, null],
+      ['server, no offer', { aiSource: SERVER }, null],
+      ['server, offer without it', { aiSource: SERVER }, { ...SERVER_OFFER, perspectives: false }],
+    ];
+    for (const [name, patch, offer] of cases) {
+      const deps = { fetch: cloud.fetch, now: () => NOW, device: async () => device(true, patch), offer: async () => offer };
+      expect(await refreshOfficialList(deps), name).toBe('skipped');
+    }
+    // As stored: the flag on, AI off, no offer.
+    await deviceItem.setValue(device(true, { aiSource: null }));
+    expect(await refreshOfficialList({ fetch: cloud.fetch, now: () => NOW })).toBe('skipped');
+    expect(cloud.calls).toHaveLength(0);
+    expect(await officialListItem.getValue()).toStrictEqual({ list: null, checkedAt: 0 });
+
+    // A source that can compare: one request. A server reads the stored offer.
+    await deviceItem.setValue(device(true, { aiSource: SERVER }));
+    await serverOfferItem.setValue(SERVER_OFFER);
+    expect(await refreshOfficialList({ fetch: cloud.fetch, now: () => NOW })).toBe('updated');
+    expect(cloud.calls).toHaveLength(1);
+    await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 0 });
+    const ollama = device(true, { aiSource: OLLAMA, webSearch: { provider: 'brave' } });
+    expect(await refreshOfficialList({ fetch: cloud.fetch, now: () => NOW, device: async () => ollama })).toBe('updated');
+    expect(cloud.calls).toHaveLength(2);
   });
 
   it('test_official_list_request_is_anonymous', async () => {
@@ -219,6 +270,43 @@ describe('wiring', () => {
     await settle();
     expect(cloud.calls).toHaveLength(3);
     restart();
+  });
+
+  it('test_official_list_refreshes_when_source_can_compare', async () => {
+    // The switch was left on while the source couldn't compare: nothing asked at start, nor while it stays that way.
+    const cloud = fakeCloud();
+    vi.stubGlobal('fetch', cloud.fetch);
+    await deviceItem.setValue(device(true, { aiSource: null }));
+    const stop = startOfficialListUpdates();
+    await settle();
+    await deviceItem.setValue(device(true, { aiSource: OLLAMA }));
+    await settle();
+    await deviceItem.setValue(device(true, { aiSource: SERVER }));
+    await settle();
+    expect(cloud.calls).toHaveLength(0);
+
+    // The server's offer arrives (signed in): UnEcho Chamber shows on, so one refresh.
+    await serverOfferItem.setValue(SERVER_OFFER);
+    await vi.waitFor(() => expect(cloud.calls).toHaveLength(1));
+
+    // Turning AI off, then back to a source that can compare (switch still on): one more.
+    await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 0 });
+    await deviceItem.setValue(device(true, { aiSource: null }));
+    await settle();
+    expect(cloud.calls).toHaveLength(1);
+    await deviceItem.setValue(device(true, { aiSource: ANTHROPIC }));
+    await vi.waitFor(() => expect(cloud.calls).toHaveLength(2));
+
+    // A web search key makes Ollama able to compare: one more.
+    await officialListItem.setValue({ list: FIXTURE_OFFICIAL_LIST, checkedAt: 0 });
+    await deviceItem.setValue(device(true, { aiSource: OLLAMA }));
+    await settle();
+    expect(cloud.calls).toHaveLength(2);
+    await deviceItem.setValue(device(true, { aiSource: OLLAMA, webSearch: { provider: 'tavily' } }));
+    await vi.waitFor(() => expect(cloud.calls).toHaveLength(3));
+    await settle();
+    expect(cloud.calls).toHaveLength(3);
+    stop();
   });
 
   it('test_official_list_e2e_uses_fixture', async () => {

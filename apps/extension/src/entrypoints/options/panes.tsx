@@ -13,6 +13,7 @@ import {
   type PersonRule,
   type PlatformSettings,
   type Preset,
+  perspectivesSwitchOn,
   presetOf,
   presetSummary,
   type Settings,
@@ -36,6 +37,7 @@ import {
   Download,
   ExternalLink,
   ListGroup,
+  ListProblemsNotice,
   ListRow,
   Logo,
   Plus,
@@ -55,7 +57,7 @@ import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
-import { listName, storedOfficialList } from '../../lib/outlets.ts';
+import { listName, namedListProblems, storedOfficialList } from '../../lib/outlets.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
 import { learnedItem, officialListItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
@@ -825,7 +827,7 @@ export function CheckSettings({
           }
           control={
             <Switch
-              checked={can.perspectives && device.labs.perspectives}
+              checked={perspectivesSwitchOn(device, offer)}
               disabled={!can.perspectives}
               label={FEATURE_NAMES.perspectives}
               onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
@@ -846,8 +848,8 @@ function withLean(list: SourceList): string {
 
 /**
  * Which source list UnEcho Chamber uses (decision D100): UnAlgorithm Cloud's, as last downloaded, or the person's own,
- * with a status line under the chosen one, that list's balance, and the way to the editor (`#/ai/sources`). Copy is a
- * draft (D110).
+ * with a status line under the chosen one, that list's problems (an own list can get one through sync, and then
+ * UnEcho Chamber can't use it) and balance, and the way to the editor (`#/ai/sources`). Copy is a draft (D110).
  */
 function SourceListChoice({ settings, save }: { settings: Settings; save: Save }) {
   const official = storedOfficialList(useStorageItem(officialListItem, { list: null, checkedAt: 0 }));
@@ -862,6 +864,10 @@ function SourceListChoice({ settings, save }: { settings: Settings; save: Save }
   const ownStatus = own.outlets.length === 0 ? 'Empty' : withLean(own);
   const shown = chosen === 'own' ? own : cloud;
   const balance = shown ? listBalance(shown) : null;
+  const problems = shown ? namedListProblems(shown) : [];
+  const openEditor = () => {
+    location.hash = '#/ai/sources';
+  };
   return (
     <>
       <ListRow title="Source list" />
@@ -879,15 +885,15 @@ function SourceListChoice({ settings, save }: { settings: Settings; save: Save }
             <span className="ua-footnote">{ownStatus}</span>
           </ChoiceCard>
         </ChoiceCardGroup>
+        <ListProblemsNotice
+          name={listName(chosen)}
+          problems={problems.map((p) => ({ id: `${p.code} ${p.outletId}`, text: p.text }))}
+          // Only an own list can have one: the Cloud's stored copy passed the list rules.
+          action={chosen === 'own' ? { label: 'Fix your list', onAction: openEditor } : undefined}
+        />
         {balance ? <BalanceNotice name={listName(chosen)} empty={balance.empty} warnings={balance.warnings} /> : null}
       </div>
-      <ListRow
-        title="Edit your list"
-        accessory="chevron"
-        onSelect={() => {
-          location.hash = '#/ai/sources';
-        }}
-      />
+      <ListRow title="Edit your list" accessory="chevron" onSelect={openEditor} />
     </>
   );
 }

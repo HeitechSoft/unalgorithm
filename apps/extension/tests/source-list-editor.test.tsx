@@ -219,6 +219,55 @@ describe('Your source list', () => {
     expect(shownRows()).toEqual(['FX Northern']);
   });
 
+  it('test_editor_shows_synced_in_problems', async () => {
+    // Two devices each added an outlet with the same web address while offline (uuidv7 keys); sync kept both. The list
+    // has a problem no form brought, and UnEcho Chamber can't use it: the notice names the outlet, never its id.
+    const NEWS = '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3d';
+    const DAILY = '0199d6a4-3f1e-7c2a-9b5d-2e8f4a6c1b3e';
+    await seed({
+      'fx-alpha': own('FX Alpha', 'alpha.example', 'left'),
+      [NEWS]: own('FX News', 'fx-news.example', 'center'),
+      [DAILY]: own('FX Daily', 'fx-news.example', 'right'),
+    });
+    const user = setupUser();
+    const saves = await renderEditor();
+    const title = "Your list needs fixing, so UnEcho Chamber can't use it.";
+    const notice = within(screen.getByText(title).closest('.ua-banner') as HTMLElement);
+    expect(notice.getByText('FX Daily: another outlet already lists one of its web addresses.')).toBeTruthy();
+    expect(document.body.textContent).not.toContain(DAILY);
+    expect(document.body.textContent).not.toContain(NEWS);
+
+    // Its button opens that outlet's form, even when the filter hides the row, and puts the cursor in it.
+    await user.type(screen.getByRole('searchbox', { name: 'Find an outlet' }), 'alpha');
+    expect(shownRows()).toEqual(['FX Alpha']);
+    await user.click(notice.getByRole('button', { name: 'Edit FX Daily' }));
+    const edit = within(await screen.findByRole('form', { name: 'Edit FX Daily' }));
+    expect(document.activeElement).toBe(edit.getByLabelText('Name'));
+    expect((screen.getByRole('searchbox', { name: 'Find an outlet' }) as HTMLInputElement).value).toBe('');
+
+    // Fixed: the notice goes.
+    await user.clear(edit.getByLabelText('Web addresses'));
+    await user.type(edit.getByLabelText('Web addresses'), 'fx-daily.example');
+    await user.click(edit.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await stored()).perspectives.outlets[DAILY]?.domains).toEqual(['fx-daily.example']));
+    expect(saves).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+    cleanup();
+
+    // Two devices together went past MAX_LIST_OUTLETS: said, with no outlet to point at; removing one fixes it.
+    await seed(
+      Object.fromEntries(
+        Array.from({ length: MAX_LIST_OUTLETS + 1 }, (_, i) => [`fx-${i}`, own(`Fixture ${i}`, `outlet-${i}.example`, null)]),
+      ),
+    );
+    await renderEditor();
+    const over = within(screen.getByText(title).closest('.ua-banner') as HTMLElement);
+    expect(over.getByText('The list has more than 300 outlets.')).toBeTruthy();
+    expect(over.queryByRole('button')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Remove Fixture 0' }));
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+  });
+
   it('test_editor_balance_notice_live', async () => {
     // Two outlets in every bucket but Right.
     await seed(

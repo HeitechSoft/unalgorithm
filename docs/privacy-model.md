@@ -120,11 +120,15 @@ UnEcho Chamber sorts coverage by the outlets on a source list, and a lean comes 
 a model. Every extension reads UnAlgorithm Cloud's published list, whatever its AI source:
 `apps/extension/src/background/official-list.ts` makes the one request, and nothing else fetches a list.
 
-- **When.** Only while Settings → AI → UnEcho Chamber is on (`device.labs.perspectives`): checked at each
-  service-worker start and when the switch goes from off to on. At most one request per 24 hours, counted from the last
-  request whether it was answered or not: `checkedAt` is written before the request, so a crash, a failure or a second
-  wake within the day never asks again, and requests are serialised (`createLock`), so two wakes at once make one. No
-  retry sooner after a failure. E2E builds never make it: they use the fictional fixture.
+- **When.** Only while Settings → AI → UnEcho Chamber is on as the switch shows it (`perspectivesSwitchOn`: the
+  device-local `device.labs.perspectives` and an AI source that can compare). The flag stays stored when the source
+  changes, but with AI off, on-device AI, an OpenAI-compatible source with no web search key, or a server that doesn't
+  offer UnEcho Chamber, the switch shows off and nothing is asked. Checked at each service-worker start and whenever it
+  comes on: the switch turned on, or, with the switch left on, a source that can compare chosen, a web search key added
+  or the server's offer arriving. At most one request per 24 hours, counted from the last request whether it was
+  answered or not: `checkedAt` is written before the request, so a crash, a failure or a second wake within the day
+  never asks again, and requests are serialised (`createLock`), so two wakes at once make one. No retry sooner after a
+  failure. E2E builds never make it: they use the fictional fixture.
 - **The request.** `GET https://cloud.unalgorithm.app/outlets.json` (`CLOUD_ORIGIN` + `OUTLETS_JSON_PATH`), a fixed
   address with no query; never another server's list. Its options, and why:
   - `credentials: 'omit'`: no cookie. The Cloud's account page keeps a session cookie on the same host, and it stays

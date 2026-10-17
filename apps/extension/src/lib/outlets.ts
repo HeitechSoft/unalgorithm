@@ -5,8 +5,10 @@
  */
 import type { Settings } from '@unalgorithm/core';
 import {
+  type ListProblem,
   listBalance,
   listProblems,
+  listProblemText,
   officialSourceList,
   outletForHost,
   ownSourceList,
@@ -50,6 +52,26 @@ export function chosenList(settings: Pick<Settings, 'perspectives'>, official: O
  */
 export function listReady(list: SourceList | null): list is SourceList {
   return list !== null && !listBalance(list).empty && listProblems(list.outlets).length === 0 && wireList(list) !== null;
+}
+
+/** One of a list's `listProblems`, with the outlet's name on the list (null for a cap) and the words people read. */
+export interface NamedListProblem extends ListProblem {
+  name: string | null;
+  text: string;
+}
+
+/**
+ * `list`'s problems in words that name each outlet by its name. `listProblemText` names it by id, and an own list's ids
+ * are uuidv7s that mean nothing to the person; a repeated id is about the id itself, so its words keep it. Each keeps
+ * its outlet's id, the way to that outlet in the editor.
+ */
+export function namedListProblems(list: Pick<SourceList, 'outlets'>): NamedListProblem[] {
+  const names = new Map(list.outlets.map((o) => [o.id, o.name]));
+  return listProblems(list.outlets).map((p) => {
+    const name = p.outletId === null ? null : (names.get(p.outletId) ?? null);
+    const text = listProblemText(name === null || p.code === 'duplicate-id' ? p : { ...p, outletId: name });
+    return { ...p, name, text };
+  });
 }
 
 /** "Your list", "UnAlgorithm Cloud's list": a list's name in a balance notice. */

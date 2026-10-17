@@ -2,7 +2,9 @@
  * Your own source list for UnEcho Chamber (P3-76, decisions D100, D110): Settings → AI → Edit your list, at
  * `#/ai/sources`. It starts from a copy of UnAlgorithm Cloud's stored list (or of the candidates while the Cloud has no
  * lean); the person adds, edits and removes outlets and sets the leans, which are theirs and which no one reviews. The
- * balance warnings follow every change. Every write is one `save` of `perspectives.outlets`, which syncs entry by entry
+ * balance warnings follow every change. A problem the list has already (two devices each adding an outlet with the same
+ * web address, or together going past the caps, through sync) is named at the top, with a way to that outlet; until it is
+ * fixed UnEcho Chamber can't use the list. Every write is one `save` of `perspectives.outlets`, which syncs entry by entry
  * with the rest of the settings. Copy is a draft (D110).
  */
 import { OwnOutletSchema, type Settings } from '@unalgorithm/core';
@@ -25,10 +27,19 @@ import {
   MAX_OUTLET_DOMAINS,
   uuidv7,
 } from '@unalgorithm/protocol';
-import { BalanceNotice, Button, ChevronLeft, EmptyState, ListGroup, ListRow, TextField } from '@unalgorithm/ui';
-import { type FormEvent, useId, useState } from 'react';
+import {
+  BalanceNotice,
+  Button,
+  ChevronLeft,
+  EmptyState,
+  ListGroup,
+  ListProblemsNotice,
+  ListRow,
+  TextField,
+} from '@unalgorithm/ui';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { useStorageItem } from '../lib/hooks.ts';
-import { storedOfficialList } from '../lib/outlets.ts';
+import { namedListProblems, storedOfficialList } from '../lib/outlets.ts';
 import { officialListItem, type StoredOfficialList } from '../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
@@ -83,6 +94,7 @@ function OutletForm({
   initial,
   submitLabel,
   atLimit = false,
+  focusOnOpen = false,
   onSubmit,
   onCancel,
 }: {
@@ -93,6 +105,8 @@ function OutletForm({
   initial?: OutletDraft;
   submitLabel: string;
   atLimit?: boolean;
+  /** Puts the cursor in Name once shown: an edit replaces the button that opened it. */
+  focusOnOpen?: boolean;
   onSubmit(draft: OutletDraft): Promise<void>;
   onCancel?(): void;
 }) {
@@ -102,6 +116,10 @@ function OutletForm({
   const [bucket, setBucket] = useState<LeanBucket | ''>(initial?.bucket ?? '');
   const [addressesLeft, setAddressesLeft] = useState(false);
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (focusOnOpen) formRef.current?.querySelector('input')?.focus();
+  }, [focusOnOpen]);
 
   const entries = addresses
     .split(',')
@@ -135,7 +153,14 @@ function OutletForm({
   }
 
   return (
-    <form aria-label={label} className="ua-stack" style={{ padding: 12 }} noValidate onSubmit={(e) => void submit(e)}>
+    <form
+      ref={formRef}
+      aria-label={label}
+      className="ua-stack"
+      style={{ padding: 12 }}
+      noValidate
+      onSubmit={(e) => void submit(e)}
+    >
       <TextField label="Name" autoComplete="off" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
       <TextField
         label="Web addresses"
@@ -196,7 +221,9 @@ export function SourceListEditor({ settings, save }: { settings: Settings; save:
   const [newId, setNewId] = useState(uuidv7);
 
   const ids = Object.keys(outlets);
-  const balance = listBalance(ownSourceList(outlets));
+  const list = ownSourceList(outlets);
+  const balance = listBalance(list);
+  const problems = namedListProblems(list);
   const fromCloud = official?.outlets.some((o) => o.lean !== null) ?? false;
   const candidates = bundledCandidates();
   const q = filter.trim().toLowerCase();
@@ -226,6 +253,11 @@ export function SourceListEditor({ settings, save }: { settings: Settings; save:
       if (entry) entry.bucket = bucket;
     });
   const remove = (id: string) => void save((s) => void delete s.perspectives.outlets[id]);
+  // From the problems notice: the outlet's form in place of its row, shown whatever the filter.
+  const openEdit = (id: string) => {
+    setFilter('');
+    setEditing(id);
+  };
 
   return (
     <>
@@ -248,6 +280,19 @@ export function SourceListEditor({ settings, save }: { settings: Settings; save:
         {FEATURE_NAMES.perspectives} searches the outlets you give a lean and shows each under that lean. This list is yours: no
         one reviews it. With sync on, it is kept with your settings.
       </p>
+      {problems.length > 0 ? (
+        <div style={{ marginBottom: 24 }}>
+          <ListProblemsNotice
+            name="Your list"
+            problems={problems.map(({ code, outletId, name, text }) => ({
+              id: `${code} ${outletId}`,
+              text,
+              // A problem about one outlet (a cap is about the whole list): the way to its form.
+              ...(outletId !== null && name !== null ? { fix: { label: `Edit ${name}`, onFix: () => openEdit(outletId) } } : {}),
+            }))}
+          />
+        </div>
+      ) : null}
       {ids.length > 0 && (balance.empty || balance.warnings.length > 0) ? (
         <div style={{ marginBottom: 24 }}>
           <BalanceNotice name="Your list" empty={balance.empty} warnings={balance.warnings} />
@@ -300,6 +345,7 @@ export function SourceListEditor({ settings, save }: { settings: Settings; save:
                 outlets={outlets}
                 initial={o}
                 submitLabel="Save"
+                focusOnOpen
                 onSubmit={(draft) => edit(id, draft)}
                 onCancel={() => setEditing(null)}
               />

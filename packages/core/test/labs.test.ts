@@ -11,6 +11,7 @@ import {
   migrateDevice,
   type PostData,
   perspectivesOffered,
+  perspectivesSwitchOn,
   type ServerOffer,
   serverOfferFrom,
   sourceCapabilities,
@@ -265,6 +266,25 @@ describe('Other perspectives', () => {
     expect(sourceCapabilities(SERVER, null).perspectives).toBe(false);
     // Each task needs its own price on a billing server.
     expect(sourceCapabilities(SERVER, { ...P_PAID, factcheck: true }).factcheck).toBe(false);
+  });
+
+  it('test_perspectives_switch_on_needs_flag_and_capable_source', () => {
+    // As Settings → AI shows the switch: the stored flag alone isn't enough once the source can't compare.
+    const on = (aiSource: AISourceConfig | null, webSearch: Device['webSearch'] = null) => ({
+      aiSource,
+      labs: { factcheck: false, perspectives: true },
+      webSearch,
+    });
+    expect(perspectivesSwitchOn(on(ANTHROPIC))).toBe(true);
+    expect(perspectivesSwitchOn(on(OPENAI))).toBe(true);
+    expect(perspectivesSwitchOn(on(SOURCES['openai-compatible'] ?? null, { provider: 'brave' }))).toBe(true);
+    expect(perspectivesSwitchOn(on(SERVER), P_FREE)).toBe(true);
+    expect(perspectivesSwitchOn({ ...on(ANTHROPIC), labs: { factcheck: true, perspectives: false } })).toBe(false);
+    expect(perspectivesSwitchOn(on(null))).toBe(false);
+    expect(perspectivesSwitchOn(on({ kind: 'on-device' }))).toBe(false);
+    expect(perspectivesSwitchOn(on(SOURCES['openai-compatible'] ?? null))).toBe(false);
+    expect(perspectivesSwitchOn(on(SERVER))).toBe(false);
+    expect(perspectivesSwitchOn(on(SERVER), { ...P_FREE, perspectives: false })).toBe(false);
   });
 
   it('test_server_offer_from_perspectives_fields', () => {

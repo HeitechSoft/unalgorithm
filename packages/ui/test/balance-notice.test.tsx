@@ -1,8 +1,11 @@
-/** The balance notice (P3-72): one wording for every list, from `listBalance`'s plain-words warnings. */
-import { cleanup, render, screen, within } from '@testing-library/react';
+/**
+ * The balance notice (P3-72): one wording for every list, from `listBalance`'s plain-words warnings. The list problems
+ * notice: a list UnEcho Chamber can't use until it is fixed, with each problem in plain words and a way to it.
+ */
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { FEATURE_NAMES, LEAN_BUCKETS, BUCKET_LABELS as PROTOCOL_BUCKET_LABELS } from '@unalgorithm/protocol';
-import { afterEach, describe, expect, it } from 'vitest';
-import { BalanceNotice, BUCKET_LABELS } from '../src/index.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BalanceNotice, BUCKET_LABELS, ListProblemsNotice } from '../src/index.ts';
 
 afterEach(cleanup);
 
@@ -31,6 +34,43 @@ describe('balance notice', () => {
       within(empty).getByText(`Your list has no outlets with a lean, so ${FEATURE_NAMES.perspectives} can't use it.`),
     ).toBeTruthy();
     expect(within(empty).queryByRole('list')).toBeNull();
+  });
+
+  it('test_list_problems_notice', () => {
+    const none = render(<ListProblemsNotice name="Your list" problems={[]} />);
+    expect(none.container.innerHTML).toBe('');
+    none.unmount();
+
+    const onFix = vi.fn();
+    const onAction = vi.fn();
+    render(
+      <ListProblemsNotice
+        name="Your list"
+        problems={[
+          {
+            id: 'domain-taken b',
+            text: 'FX Daily: another outlet already lists one of its web addresses.',
+            fix: { label: 'Edit FX Daily', onFix },
+          },
+          { id: 'too-many-outlets', text: 'The list has more than 300 outlets.' },
+        ]}
+        action={{ label: 'Fix your list', onAction }}
+      />,
+    );
+    const notice = screen.getByRole('status');
+    expect(notice.className).toContain('ua-banner--warning');
+    expect(within(notice).getByText(`Your list needs fixing, so ${FEATURE_NAMES.perspectives} can't use it.`)).toBeTruthy();
+    const items = within(notice).getAllByRole('listitem');
+    expect(items.map((li) => li.firstChild?.textContent)).toEqual([
+      'FX Daily: another outlet already lists one of its web addresses.',
+      'The list has more than 300 outlets.',
+    ]);
+    // Only a problem about one outlet has a way to it.
+    expect(within(items[1] as HTMLElement).queryByRole('button')).toBeNull();
+    fireEvent.click(within(items[0] as HTMLElement).getByRole('button', { name: 'Edit FX Daily' }));
+    expect(onFix).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(notice).getByRole('button', { name: 'Fix your list' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
   });
 
   it('test_bucket_labels_in_protocol', () => {

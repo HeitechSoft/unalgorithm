@@ -58,8 +58,21 @@ function sharesWebLink(post: Pick<PostData, 'sharedLink'>): boolean {
 }
 
 /**
- * The one offer rule for UnEcho Chamber: its switch on (`labs.perspectives`), a source that can compare, the chosen
- * source list is usable (`listReady`, decided by the extension: `listReady(chosenList(…))`, decision D103), the
+ * UnEcho Chamber is on as Settings → AI shows its switch: the device-local flag (`labs.perspectives`) on and a source
+ * that can compare. The flag stays stored when the source changes, and the switch then shows off and can't be changed,
+ * so nothing of UnEcho Chamber may run on the flag alone: not the offer, and not the download of UnAlgorithm Cloud's
+ * source list (`official-list.ts`, decision D98). `serverOffer` as for `perspectivesOffered`.
+ */
+export function perspectivesSwitchOn(
+  device: Pick<Device, 'aiSource' | 'labs' | 'webSearch'>,
+  serverOffer: ServerOffer | null = null,
+): boolean {
+  return device.labs.perspectives === true && sourceCapabilities(device.aiSource, serverOffer, device.webSearch).perspectives;
+}
+
+/**
+ * The one offer rule for UnEcho Chamber: its switch on with a source that can compare (`perspectivesSwitchOn`), the
+ * chosen source list is usable (`listReady`, decided by the extension: `listReady(chosenList(…))`, decision D103), the
  * classifier flagged the post as news, the post shares an http(s) link, and the post is public (decision D38).
  */
 export function perspectivesOffered(i: {
@@ -71,8 +84,7 @@ export function perspectivesOffered(i: {
 }): boolean {
   const { device, post, classification, serverOffer = null, listReady } = i;
   return (
-    device.labs.perspectives === true &&
-    sourceCapabilities(device.aiSource, serverOffer, device.webSearch).perspectives &&
+    perspectivesSwitchOn(device, serverOffer) &&
     listReady &&
     classification?.isNews === true &&
     sharesWebLink(post) &&
