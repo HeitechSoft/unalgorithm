@@ -1,5 +1,6 @@
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
-import type { CreditPriceSchedule } from '@unalgorithm/protocol';
+import { type CreditPriceSchedule, DEFAULT_PRICE_BOOK, type PriceBook } from '@unalgorithm/protocol';
+import { openPriceStore } from '../../src/admin/prices.ts';
 import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingModule, createBillingHost } from '../../src/billing/host.ts';
@@ -56,7 +57,12 @@ export interface TestAppOptions {
   billingModule?: BillingModule;
   /** The module's `BILLING_*` variables (`host.env`). Default: none. */
   billingEnv?: Record<string, string>;
-  /** The billing host's `priceSchedule`. Default: `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks. */
+  /** The price book's seed: the book in use until an admin saves (`prices`). Default: `DEFAULT_PRICE_BOOK`. */
+  priceBook?: PriceBook;
+  /**
+   * The billing host's `priceSchedule`, and shorthand for a `priceBook` of `{ ...DEFAULT_PRICE_BOOK, schedule }`.
+   * Default: `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks.
+   */
   priceSchedule?: CreditPriceSchedule;
   /**
    * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
@@ -100,11 +106,11 @@ export interface TestAppOptions {
 
 /**
  * The real app on a fresh migrated PGlite database (or the caller's `db`), logging into memory: `lines` and `events()`
- * hold what it wrote (`deps.errors` counts its error lines, as the server's window does), and `outbox` every email it
- * sent. Its classify route (`route`) is the app's own mock AI provider
- * (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's billing, and `host` and
- * `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs never start). Call
- * `close()` when done. Tests add routes of their own to `app` when they need one.
+ * hold what it wrote (`deps.errors` counts its error lines, as the server's window does), `outbox` every email it
+ * sent, and `prices` the price book's store on its database (`deps.prices`). Its classify route (`route`) is the app's
+ * own mock AI provider (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's
+ * billing, and `host` and `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs
+ * never start). Call `close()` when done. Tests add routes of their own to `app` when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
   if (overrides.billing && overrides.billingModule) throw new TypeError('Pass billing or billingModule, not both.');
@@ -122,6 +128,9 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
     const log = capture.log;
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: overrides.authRateLimit ?? false });
     const jobs = createJobRegistry();
+    const { priceSchedule } = overrides;
+    const seed = overrides.priceBook ?? (priceSchedule ? { ...DEFAULT_PRICE_BOOK, schedule: priceSchedule } : DEFAULT_PRICE_BOOK);
+    const prices = await openPriceStore(db.db, { seed });
     const host = createBillingHost({
       config,
       db,
@@ -130,7 +139,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       jobs,
       mailer,
       env: overrides.billingEnv ?? {},
-      priceSchedule: overrides.priceSchedule,
+      priceSchedule: priceSchedule ?? overrides.priceBook?.schedule,
     });
     const provider = overrides.billingModule
       ? await overrides.billingModule.createBillingProvider(host)
@@ -142,6 +151,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       billing: provider,
       auth,
       ai: overrides.ai ?? { clientFor: (r) => clientForRoute(r, config) },
+      prices,
       classifyDeadlineMs: overrides.classifyDeadlineMs,
       syncAccess: overrides.syncAccess,
       syncNotifier: overrides.syncNotifier,
@@ -158,7 +168,20 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       ...(overrides.claimCache !== undefined ? { claimCache: overrides.claimCache } : {}),
     };
     const app = createApp(deps);
-    return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };
+    return {
+      app,
+      deps,
+      mock,
+      route,
+      outbox,
+      lines: capture.lines,
+      events: capture.events,
+      host,
+      jobs,
+      provider,
+      prices,
+      close,
+    };
   } catch (err) {
     await close();
     throw err;

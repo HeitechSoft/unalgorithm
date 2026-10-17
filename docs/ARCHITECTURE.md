@@ -207,6 +207,7 @@ always show or hide (`sync_items`).
 | `claim_cache` | The shared claim cache: per checked public claim, a keyed hash of the normalized claim, the verdict, its explanation (≤ 280 characters, null when it repeats 6 consecutive words of the post), 2–4 validated public sources (URL, domain, title, a quote of 25 words at most) and when it was checked and expires, both to the hour; never a claim, post text or any user, device or post id; deleted hourly once past its 24 hours |
 | `outlets` | The server's published source list for UnEcho Chamber: each outlet's name, web addresses, country, lean bucket and evidence |
 | `outlet_changes` | Every change to it: what changed, when, and which admin; the admin is never published and is cleared when that account is deleted |
+| `price_changes` | The server's prices (task prices, starter credit, buying credit, auto-reload caps) as admins set them: every change, when, and which admin; the newest row's book is in use; the admin is never published and is cleared when that account is deleted |
 
 A billing module keeps tables of its own in its `billing` schema ([Billing seam](#billing-seam)), and graphile-worker
 keeps its queue in the `graphile_worker` schema ([Jobs](#jobs)).

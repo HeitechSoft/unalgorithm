@@ -36,6 +36,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { PriceStore } from '../admin/prices.ts';
 import { claimCacheSecret, pgClaimCache } from '../ai/claim-cache.ts';
 import { searchProviderFor } from '../ai/factcheck.ts';
 import { createRateLimiter, type LimitDeps } from '../ai/limits.ts';
@@ -57,6 +58,7 @@ import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
 import { outletAdminRoutes, outletPublicRoutes } from '../routes/outlets.ts';
 import { perspectivesRoutes } from '../routes/perspectives.ts';
+import { priceAdminRoutes } from '../routes/prices.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
 import type { AccessResolver } from '../sync/spaces.ts';
@@ -101,6 +103,11 @@ export interface AppDeps {
   search?: SearchProvider | null;
   /** The egress link check (P3-13); default: none (every source counts as live). */
   linkCheck?: LinkChecker;
+  /**
+   * The server's price book (`openPriceStore`): the stored book in use, or the code defaults until an admin first saves.
+   * The Pricing page's admin routes read and change it.
+   */
+  prices: PriceStore;
   /** Default CREDIT_PRICE_SCHEDULE; tests pass TEST_PRICE_SCHEDULE (the same object the billing host gets). */
   priceSchedule?: CreditPriceSchedule;
   /** Default: createJobStore({ ttlMs: FACTCHECK_JOB_TTL_MS, maxRunning: 8, maxKeptPerUser: 5 }). */
@@ -268,6 +275,7 @@ export function createApp(deps: AppDeps): App {
   adminRoutes(app, deps);
   outletPublicRoutes(app, deps);
   outletAdminRoutes(app, deps);
+  priceAdminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);
 
