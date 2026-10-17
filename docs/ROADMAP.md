@@ -28,10 +28,9 @@ UnAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
 - **Fact-check** on posts with checkable claims: claims, verdicts and sources, with "AI can be wrong, open the
   sources". Price shown before running.
 - **UnEcho Chamber** for shared news links: how outlets across the spectrum covered the same
-  story, what they agree on, what differs, with links to every source. Outlet leanings come from an open,
-  reviewable registry, never from the model.
-- The **methodology**, the outlet registry, corrections and regular **transparency reports** are published on the
-  website.
+  story, what they agree on, what differs, with links to every source. Outlet leanings come from UnAlgorithm Cloud's
+  public source list, set by people with evidence, or from your own list, never from the model.
+- The **methodology**, the source list, corrections and regular **transparency reports** are published on the website.
 
 ## Phase 4: more places
 

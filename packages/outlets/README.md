@@ -34,6 +34,12 @@ left out. No source page was opened while preparing it, so its web addresses are
 outlets are sorted by id. Its schema (`CandidatesSchema`) allows no lean at all: every `lean` is `null`, and a file
 with any other value fails to parse.
 
+## Appeals
+
+A lean on UnAlgorithm Cloud's list, or an outlet's name, web addresses or country there, is appealed to the Cloud's
+admins: see [Source list appeals](../../docs/site/corrections.md#source-list-appeals). A person's own list is theirs,
+and is not appealed.
+
 ## The balance rule
 
 `listBalance` counts the outlets with a lean in each bucket and warns, in plain words, when:

@@ -75,6 +75,29 @@ export const EVALS_PAGE = {
 } as const satisfies SiteDocument;
 
 /**
+ * "How Fact-check and UnEcho Chamber work" (F29, P3-68): the methodology, written by hand. Every number it states is
+ * pinned to the code by the extension's `methodology-doc.test.ts`. It links the generated pages above and UnAlgorithm
+ * Cloud's source list (`SOURCE_LIST_PAGE_URL`), which is not a site document: it lives on the Cloud (decision D97).
+ */
+export const METHODOLOGY_PAGE = {
+  source: 'docs/site/methodology.md',
+  path: '/methodology',
+  title: 'How Fact-check and UnEcho Chamber work',
+  linkText: 'Methodology',
+} as const satisfies SiteDocument;
+
+/** "Corrections and appeals" (F30, P3-68): how to ask for a correction or appeal a source list entry, and the audit. */
+export const CORRECTIONS_PAGE = {
+  source: 'docs/site/corrections.md',
+  path: '/corrections',
+  title: 'Corrections and appeals',
+  linkText: 'Corrections and appeals',
+} as const satisfies SiteDocument;
+
+/** The website footer's "How checks work" links, in order (P3-70 appends the transparency reports). */
+export const METHODOLOGY_DOCUMENTS: readonly SiteDocument[] = [METHODOLOGY_PAGE, PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE];
+
+/**
  * Text for one cell of a Markdown table in a generated site page: line breaks become spaces; \ | * _ ` [ ] < > are
  * escaped. The one escape every generated page uses, so text from a set or a source list can never add a cell, a link, a
  * tag or emphasis. Not for a code span, where a backslash shows as itself.

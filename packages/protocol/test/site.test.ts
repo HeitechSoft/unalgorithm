@@ -5,9 +5,12 @@ import {
   CLOUD_BETA_NOTICE,
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
+  CORRECTIONS_PAGE,
   CREDITS_PAGE,
   EVALS_PAGE,
   FEATURE_NAMES,
+  METHODOLOGY_DOCUMENTS,
+  METHODOLOGY_PAGE,
   PRICING_FOOTER_LINK,
   PRICING_REDIRECT,
   PROMPTS_PAGE,
@@ -29,6 +32,11 @@ const flat = (text: string): string => text.replace(/\s+/g, ' ');
 const notice = read(CLOUD_BETA_NOTICE.source);
 const terms = read(CLOUD_BETA_TERMS.source);
 
+/** P3-68: what a correction or an appeal must never carry, said the same way on the page and on both forms. */
+const NEVER_SEND = "Use your own words: never the post, a screenshot of it, a link to it, or anyone's name.";
+const CORRECTION_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml';
+const APPEAL_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=source_list_appeal.yml';
+
 describe('site documents', () => {
   it('test_site_documents_match_their_sources', () => {
     expect(CLOUD_BETA_DOCUMENTS.map((doc) => doc.source)).toEqual(['CLOUD-BETA-NOTICE.md', 'CLOUD-BETA-TERMS.md']);
@@ -36,11 +44,55 @@ describe('site documents', () => {
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
     expect(read(CREDITS_PAGE.source).split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
-    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`).
-    for (const doc of [PROMPTS_PAGE, EVALS_PAGE]) {
+    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`); P3-68: the methodology and corrections.
+    for (const doc of [PROMPTS_PAGE, EVALS_PAGE, METHODOLOGY_PAGE, CORRECTIONS_PAGE]) {
       expect(existsSync(new URL(doc.source, REPO_ROOT)), doc.source).toBe(true);
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
+    for (const name of Object.values(FEATURE_NAMES)) expect(METHODOLOGY_PAGE.title).toContain(name);
+    // Decision D109: the website footer's "How checks work" column (P3-70 appends the transparency reports).
+    expect(METHODOLOGY_DOCUMENTS).toStrictEqual([METHODOLOGY_PAGE, PROMPTS_PAGE, EVALS_PAGE, CORRECTIONS_PAGE]);
+  });
+
+  it('test_corrections_page_required_wording', () => {
+    const md = read(CORRECTIONS_PAGE.source);
+    const text = flat(md);
+    const headings = md.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual([
+      '## What never to send',
+      '## Ask for a correction',
+      '## Source list appeals',
+      '## Quarterly audit',
+    ]);
+    expect(text).toContain(NEVER_SEND);
+    for (const phrase of [
+      'never the post',
+      CORRECTION_FORM_URL,
+      APPEAL_FORM_URL,
+      'hello@heitechsoft.com',
+      'legal@heitechsoft.com',
+      '5 business days',
+      '30 days',
+      '10 %',
+      '12 months',
+      'did not make',
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+    // Decision D86: corrections go to one address, appeals (which outlets may send) to the other.
+    const section = (from: string, to?: string) => flat(md.slice(md.indexOf(from), to ? md.indexOf(to) : undefined));
+    const corrections = section('## Ask for a correction', '## Source list appeals');
+    expect(corrections).toContain('hello@heitechsoft.com');
+    expect(corrections).toContain(CORRECTION_FORM_URL);
+    const appeals = section('## Source list appeals', '## Quarterly audit');
+    expect(appeals).toContain('legal@heitechsoft.com');
+    expect(appeals).toContain(APPEAL_FORM_URL);
+    expect(appeals).toContain('did not make the change');
+    const audit = section('## Quarterly audit');
+    for (const phrase of ['10 %', 'at least 10', '12 months', 'did not make them', 'transparency report']) {
+      expect(audit, phrase).toContain(phrase);
+    }
+    expect(text).not.toMatch(/panel|registry/i);
   });
 
   it('test_site_urls', () => {
@@ -56,6 +108,10 @@ describe('site documents', () => {
       ['https://unalgorithmfeed.com/methodology/prompts', 'Published prompts', 'Prompts'],
       ['https://unalgorithmfeed.com/methodology/evals', 'Evaluations and trust gates', 'Evaluations'],
     ]);
+    expect([METHODOLOGY_PAGE, CORRECTIONS_PAGE].map((doc) => [siteUrl(doc), doc.title, doc.linkText])).toEqual([
+      ['https://unalgorithmfeed.com/methodology', 'How Fact-check and UnEcho Chamber work', 'Methodology'],
+      ['https://unalgorithmfeed.com/corrections', 'Corrections and appeals', 'Corrections and appeals'],
+    ]);
   });
 
   it('test_footer_links_credits', () => {
@@ -64,6 +120,46 @@ describe('site documents', () => {
       ['Beta terms', '/cloud/beta-terms'],
       ['How credits work', '/credits'],
     ]);
+  });
+});
+
+describe('issue forms (P3-68)', () => {
+  const form = (name: string) => read(`.github/ISSUE_TEMPLATE/${name}`);
+  const ids = (yml: string) => [...yml.matchAll(/^\s+id: (\w+)$/gm)].map((m) => m[1]);
+  /** A dropdown's options: the `- ` items under `options:` in the field whose id is `id`. */
+  const options = (yml: string, id: string): string[] => {
+    const start = yml.indexOf(`id: ${id}\n`);
+    expect(start, id).toBeGreaterThan(-1);
+    const end = yml.indexOf('\n  - type:', start);
+    const field = yml.slice(start, end === -1 ? undefined : end);
+    const list = field.slice(field.indexOf('options:\n'));
+    return [...list.matchAll(/^ +- (.+)$/gm)].map((m) => (m[1] ?? '').replace(/^(["'])(.*)\1$/, '$2'));
+  };
+
+  it('test_issue_forms_warn_and_have_field_ids', () => {
+    const correction = form('correction.yml');
+    const appeal = form('source_list_appeal.yml');
+    for (const [yml, label] of [
+      [correction, 'correction'],
+      [appeal, 'source-list-appeal'],
+    ] as const) {
+      expect(yml, label).toContain(NEVER_SEND);
+      expect(yml.split('\n'), label).toContain(`labels: [${label}, triage]`);
+    }
+    expect(correction).toContain('https://unalgorithmfeed.com/corrections/');
+    expect(appeal).toContain('Outlets may appeal by email instead: legal@heitechsoft.com.');
+
+    expect(ids(correction)).toEqual(expect.arrayContaining(['feature', 'claim', 'version', 'prompt', 'list']));
+    expect(options(correction, 'feature')).toStrictEqual(Object.values(FEATURE_NAMES));
+    expect(options(correction, 'list')).toStrictEqual(["UnAlgorithm Cloud's list", 'My own list']);
+    expect(ids(appeal)).toEqual(expect.arrayContaining(['outlet', 'what', 'version']));
+    for (const yml of [correction, appeal]) expect(new Set(ids(yml)).size).toBe(ids(yml).length);
+  });
+
+  it('test_issue_config_links_corrections', () => {
+    const config = form('config.yml');
+    expect(config).toMatch(/^blank_issues_enabled: false$/m);
+    expect(config).toContain('url: https://unalgorithmfeed.com/corrections/');
   });
 });
 

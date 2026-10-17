@@ -1,0 +1,64 @@
+name: Correction
+description: A fact-check or UnEcho Chamber result got something wrong.
+title: "[Correction] "
+labels: [correction, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **What never to send.** Use your own words: never the post, a screenshot of it, a link to it, or anyone's name.
+
+        Your GitHub username is public on this issue. To ask privately, email hello@heitechsoft.com instead.
+
+        How corrections work: https://unalgorithmfeed.com/corrections/
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Feature
+      options:
+        - Fact-check
+        - UnEcho Chamber
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: The claim or story, in your own words
+      description: Not the post's text.
+    validations:
+      required: true
+  - type: input
+    id: shown
+    attributes:
+      label: What UnAlgorithm showed
+      placeholder: Disputed
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's wrong
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Public sources
+      description: Links to public pages. Not a link to the post.
+  - type: input
+    id: version
+    attributes:
+      label: UnAlgorithm version
+      description: Settings → About
+  - type: input
+    id: prompt
+    attributes:
+      label: Prompt version
+      description: Filled in when you open this form from a result.
+  - type: dropdown
+    id: list
+    attributes:
+      label: Source list (UnEcho Chamber only)
+      options:
+        - UnAlgorithm Cloud's list
+        - My own list
+    validations:
+      required: false

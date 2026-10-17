@@ -8,6 +8,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import {
   BUCKET_LABELS,
+  CORRECTIONS_PAGE,
   FEATURE_NAMES,
   type OfficialList,
   type OfficialOutlet,
@@ -15,7 +16,7 @@ import {
   OUTLETS_JSON_PATH,
   type OutletChange,
   SERVER_INFO_PATH,
-  WEBSITE_ORIGIN,
+  siteUrl,
 } from '@unalgorithm/protocol';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -118,9 +119,7 @@ describe('page', () => {
     expect(screen.getByText(/^To appeal a listing or a lean/).textContent).toBe(
       'To appeal a listing or a lean, see Corrections and appeals.',
     );
-    expect(screen.getByRole('link', { name: 'Corrections and appeals' }).getAttribute('href')).toBe(
-      `${WEBSITE_ORIGIN}/corrections`,
-    );
+    expect(screen.getByRole('link', { name: 'Corrections and appeals' }).getAttribute('href')).toBe(siteUrl(CORRECTIONS_PAGE));
 
     // Balanced: no warning, and the counts per bucket in order.
     expect(screen.queryByText(NOT_BALANCED)).toBeNull();

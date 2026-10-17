@@ -11,6 +11,7 @@
 import { listBalance } from '@unalgorithm/outlets';
 import {
   BUCKET_LABELS,
+  CORRECTIONS_PAGE,
   FEATURE_NAMES,
   LEAN_BUCKETS,
   MAX_LISTED_CHANGES,
@@ -19,7 +20,7 @@ import {
   OUTLETS_JSON_PATH,
   type OutletChange,
   type ServerInfo,
-  WEBSITE_ORIGIN,
+  siteUrl,
 } from '@unalgorithm/protocol';
 import { BalanceNotice, Banner, EmptyState } from '@unalgorithm/ui';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
@@ -33,8 +34,8 @@ const INTRO =
 const UNREACHABLE = "Couldn't load the source list.";
 const NOT_LABELLED = 'Not labelled';
 const LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/';
-/** The website's corrections and appeals page; P3-68 names it `CORRECTIONS_PAGE` (the address stays). */
-const APPEALS_URL = `${WEBSITE_ORIGIN}/corrections`;
+/** The website's corrections and appeals page, where source list appeals are explained (P3-68). */
+const APPEALS_URL = siteUrl(CORRECTIONS_PAGE);
 
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 /** A UTC day (`2026-01-15`) or time, as a date in words. */
