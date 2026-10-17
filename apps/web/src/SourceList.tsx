@@ -39,7 +39,8 @@ const APPEALS_URL = `${WEBSITE_ORIGIN}/corrections`;
 const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 /** A UTC day (`2026-01-15`) or time, as a date in words. */
 const date = (iso: string) => DATE.format(new Date(iso));
-const COUNTRY_LABELS: Readonly<Record<OfficialOutlet['country'], string>> = { US: 'US', CA: 'Canada' };
+/** Each country in words: the table's, and the source control page's form (P3-74). */
+export const COUNTRY_LABELS: Readonly<Record<OfficialOutlet['country'], string>> = { US: 'US', CA: 'Canada' };
 const ACTION_LABELS: Readonly<Record<OutletChange['action'], string>> = {
   import: 'Imported',
   add: 'Added',

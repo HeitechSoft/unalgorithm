@@ -11,6 +11,7 @@ import type { SourceList } from '@unalgorithm/outlets';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
   CREDIT_PRICE_SCHEDULE,
@@ -298,10 +299,10 @@ export function createApp(deps: AppDeps): App {
 }
 
 /**
- * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account`, `/setup`, `/admin` and
- * `/outlets` answer its `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build
- * those pages answer 503 and the log says so once. The build is looked up per request, so one made after the server
- * started is served.
+ * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account`, `/setup`, `/admin`,
+ * `/admin/sources` and `/outlets` answer its `index.html`, and `/assets/*` the files Vite built, named by their content
+ * hash. Without a build those pages answer 503 and the log says so once. The build is looked up per request, so one made
+ * after the server started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
   const page = async (c: Context<AppEnv>) => {
@@ -316,6 +317,8 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get(ACCOUNT_PAGE_PATH, page);
   app.get(SETUP_PAGE_PATH, page);
   app.get(ADMIN_PAGE_PATH, page);
+  // The source control page (P3-74): public as `/admin`; its admin routes check the origin, the session and the role.
+  app.get(ADMIN_SOURCES_PAGE_PATH, page);
   // Public: the source list as published, read from `/outlets.json` (P3-67).
   app.get(OUTLETS_PAGE_PATH, page);
 

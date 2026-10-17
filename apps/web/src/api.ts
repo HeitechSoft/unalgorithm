@@ -2,11 +2,12 @@
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
  * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
- * accounts and the changes an admin makes to one, its invites and the server's usage overview; and the public source
- * list with its history, which need no session. All same-origin, so the browser sends the session cookie and the
- * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all) and
- * the error body's `code` when it has one, except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`,
- * and its other errors keep their name.
+ * accounts and the changes an admin makes to one, its invites and the server's usage overview; the source control
+ * page's list with who made each change, an admin's change to one outlet and the import of the candidate list; and the
+ * public source list with its history, which need no session. All same-origin, so the browser sends the session cookie
+ * and the `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at
+ * all) and the error body's `code` and `message` when it has them, except the browser's passkey prompt: a cancelled one
+ * is `PasskeyCancelled`, and its other errors keep their name.
  */
 import {
   type AuthenticationResponseJSON,
@@ -25,10 +26,14 @@ import {
   AccountExportSchema,
   ADMIN_INVITE_REMOVE_PATH,
   ADMIN_INVITES_PATH,
+  ADMIN_OUTLETS_IMPORT_PATH,
+  ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
   AdminOkSchema,
+  type AdminOutlets,
+  AdminOutletsSchema,
   type AdminOverview,
   AdminOverviewSchema,
   type AdminRole,
@@ -47,6 +52,9 @@ import {
   OkResponseSchema,
   OUTLET_CHANGES_JSON_PATH,
   OUTLETS_JSON_PATH,
+  type OutletChanged,
+  OutletChangedSchema,
+  type OutletChangeRequest,
   type OutletChanges,
   OutletChangesSchema,
   SERVER_INFO_PATH,
@@ -120,13 +128,25 @@ export class ApiError extends Error {
   readonly status: number;
   /** The error body's `code`: Better Auth's (such as `BANNED_USER`) or the server's own `AIErrorCode`. */
   readonly code?: string;
+  /**
+   * The error body's `message`, for a page that shows the server's own words: the source list's admin routes name the
+   * rule a change would break and the outlet. `message` stays the status line.
+   */
+  readonly serverMessage?: string;
 
-  constructor(status: number, code?: string) {
+  constructor(status: number, code?: string, serverMessage?: string) {
     super(status ? `The server answered ${status}.` : 'The server could not be reached.');
     this.name = 'ApiError';
     this.status = status;
     if (code !== undefined) this.code = code;
+    if (serverMessage !== undefined) this.serverMessage = serverMessage;
   }
+}
+
+/** A string field of an error body, if it has one. */
+function bodyText(failure: unknown, name: 'code' | 'message'): string | undefined {
+  const value = typeof failure === 'object' && failure !== null ? (failure as Record<string, unknown>)[name] : undefined;
+  return typeof value === 'string' ? value : undefined;
 }
 
 /** A GET, or a JSON POST when there is a body; the answer must match `schema`. */
@@ -145,8 +165,7 @@ async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown): P
   }
   if (!res.ok) {
     const failure: unknown = await res.json().catch(() => undefined);
-    const code = typeof failure === 'object' && failure !== null ? (failure as { code?: unknown }).code : undefined;
-    throw new ApiError(res.status, typeof code === 'string' ? code : undefined);
+    throw new ApiError(res.status, bodyText(failure, 'code'), bodyText(failure, 'message'));
   }
   const parsed = schema.safeParse(await res.json().catch(() => undefined));
   if (!parsed.success) throw new ApiError(res.status);
@@ -342,4 +361,26 @@ export async function addInvite(email: string): Promise<void> {
 export async function removeInvite(email: string): Promise<void> {
   const body: InviteRequest = { email };
   await request(ADMIN_INVITE_REMOVE_PATH, AdminOkSchema, body);
+}
+
+/**
+ * The source list as published and its latest changes, newest first, each with the address of the admin who made it
+ * (null once that account is deleted); 401 without a session, 403 for a non-admin.
+ */
+export async function adminOutlets(): Promise<AdminOutlets> {
+  return request(ADMIN_OUTLETS_PATH, AdminOutletsSchema);
+}
+
+/**
+ * Adds, edits or removes one outlet, published at once; answers the list's version now. 400 with the server's message
+ * for a change that breaks a rule of the list, 404 for an outlet no longer listed, 409 when the list changed since
+ * `baseVersion`.
+ */
+export async function changeOutlet(req: OutletChangeRequest): Promise<OutletChanged> {
+  return request(ADMIN_OUTLETS_PATH, OutletChangedSchema, req);
+}
+
+/** Imports the candidate list, with no lean, into an empty list; 400 when the list isn't empty. */
+export async function importCandidates(): Promise<OutletChanged> {
+  return request(ADMIN_OUTLETS_IMPORT_PATH, OutletChangedSchema, {});
 }

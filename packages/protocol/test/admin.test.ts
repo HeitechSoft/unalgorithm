@@ -7,6 +7,7 @@ import {
   ADMIN_OVERVIEW_PATH,
   ADMIN_PAGE_PATH,
   ADMIN_SETUP_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
   ADMIN_USER_ACCESS_ROUTE,
   ADMIN_USER_CAP_ROUTE,
   ADMIN_USER_ROLE_ROUTE,
@@ -86,6 +87,7 @@ describe('admin paths', () => {
     expect({
       SETUP_PAGE_PATH,
       ADMIN_PAGE_PATH,
+      ADMIN_SOURCES_PAGE_PATH,
       ADMIN_SETUP_PATH,
       ADMIN_OVERVIEW_PATH,
       ADMIN_USERS_PATH,
@@ -97,6 +99,7 @@ describe('admin paths', () => {
     }).toEqual({
       SETUP_PAGE_PATH: '/setup',
       ADMIN_PAGE_PATH: '/admin',
+      ADMIN_SOURCES_PAGE_PATH: '/admin/sources',
       ADMIN_SETUP_PATH: '/v1/admin/setup',
       ADMIN_OVERVIEW_PATH: '/v1/admin/overview',
       ADMIN_USERS_PATH: '/v1/admin/users',

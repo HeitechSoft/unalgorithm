@@ -3,6 +3,7 @@ import './web.css';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
   AUTHORIZE_PAGE_PATH,
   OUTLETS_PAGE_PATH,
   SETUP_PAGE_PATH,
@@ -13,6 +14,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
 import { Admin } from './Admin.tsx';
+import { AdminSources } from './AdminSources.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
 import { Page } from './Page.tsx';
@@ -64,6 +66,8 @@ if (root) {
           <Setup />
         ) : pathname === ADMIN_PAGE_PATH ? (
           <Admin />
+        ) : pathname === ADMIN_SOURCES_PAGE_PATH ? (
+          <AdminSources />
         ) : pathname === OUTLETS_PAGE_PATH ? (
           <SourceList />
         ) : (

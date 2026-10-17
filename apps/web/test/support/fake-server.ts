@@ -14,7 +14,13 @@
  *
  * The public source list (`sourceList`) and its history (`outletChanges`) are answered as given, with or without a
  * session, as P3-67's routes are: by default an empty list that was never changed.
+ *
+ * The source control page's routes (P3-73) keep their own copy of that list and history, for an admin only: a change
+ * is checked as the server checks it (the version the page showed, an id already listed or gone, the list rules) and,
+ * when it is accepted, changes the next list and adds a history line by the signed-in address at `OUTLET_CHANGED_AT`;
+ * the import adds `CANDIDATES` to an empty list. The public routes keep answering as given.
  */
+import { type CandidateOutlet, listProblems, listProblemText } from '@unalgorithm/outlets';
 import {
   ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
@@ -24,17 +30,23 @@ import {
   type AccountExport,
   ADMIN_INVITE_REMOVE_PATH,
   ADMIN_INVITES_PATH,
+  ADMIN_OUTLETS_IMPORT_PATH,
+  ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
+  type AdminOutletChange,
   type AdminOverview,
   type AdminUsers,
   AUTHORIZE_API_PATH,
   adminUserActionPath,
   chromiumRedirectUri,
   type OfficialList,
+  type OfficialOutlet,
   OUTLET_CHANGES_JSON_PATH,
   OUTLETS_JSON_PATH,
+  type OutletChangeAction,
+  OutletChangeRequestSchema,
   type OutletChanges,
   SERVER_INFO_PATH,
   type ServerInfo,
@@ -172,6 +184,31 @@ export const SETUP_REFUSED = {
 export const EMPTY_SOURCE_LIST: OfficialList = { v: 1, version: '0', updatedAt: null, license: 'CC-BY-4.0', outlets: [] };
 export const NO_OUTLET_CHANGES: OutletChanges = { v: 1, changes: [] };
 
+/** When the fake server's source control routes make a change. */
+export const OUTLET_CHANGED_AT = '2026-10-16T12:00:00.000Z';
+/** The candidate list the fake server's import adds: fictional `.example` outlets, never a lean (as the real one). */
+export const CANDIDATES: readonly CandidateOutlet[] = [
+  { id: 'fx-candidate-b', name: 'Fixture Candidate B', domains: ['candidate-b.example'], country: 'CA', lean: null },
+  {
+    id: 'fx-candidate-a',
+    name: 'Fixture Candidate A',
+    domains: ['candidate-a.example', 'candidate-a-news.example'],
+    country: 'US',
+    lean: null,
+  },
+];
+/** What P3-73's routes answer for a change made on a list that changed since the page showed it. */
+export const LIST_CHANGED = {
+  status: 409,
+  body: { code: 'bad-request', message: 'The list changed since you opened it. Reload it and try again.' },
+};
+/** What they answer for an edit or a removal of an id the list doesn't have. */
+export const OUTLET_GONE = { status: 404, body: { code: 'not-found', message: 'Not found.' } };
+const ID_TAKEN = { status: 400, body: { code: 'bad-request', message: 'An outlet with this id already exists.' } };
+const LIST_NOT_EMPTY = { status: 400, body: { code: 'bad-request', message: "The source list isn't empty." } };
+const NOT_VALID = { status: 400, body: { code: 'bad-request', message: 'The request was not valid.' } };
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 export const INFO: ServerInfo = {
   v: 1,
   name: 'Example AI',
@@ -253,6 +290,28 @@ export function fakeServer({
   let passkeyList = [...passkeys];
   let setupClaimed = false;
   let accounts = structuredClone(adminUsers);
+  /** The source control routes' list and history (newest first), from the public ones; a history line keeps its `by`. */
+  let outletList = structuredClone(sourceList);
+  let outletHistory: AdminOutletChange[] = structuredClone(outletChanges.changes).map((c) => ({ by: null, ...c }));
+  /** Publishes `outlets` as the next version, with one history line per change, as P3-73's `outlet_changes` does. */
+  function publish(
+    outlets: OfficialOutlet[],
+    made: { action: OutletChangeAction; before: OfficialOutlet | null; after: OfficialOutlet | null }[],
+  ) {
+    let seq = Number(outletList.version);
+    const lines = made.map(({ action, before, after }) => ({
+      seq: ++seq,
+      at: OUTLET_CHANGED_AT,
+      action,
+      outletId: (after ?? before)?.id ?? '',
+      before,
+      after,
+      by: current,
+    }));
+    outletList = { ...outletList, version: String(seq), updatedAt: OUTLET_CHANGED_AT, outlets: [...outlets].sort(byId) };
+    outletHistory = [...lines.reverse(), ...outletHistory];
+    return { status: 200, body: { ok: true, version: outletList.version } };
+  }
   /** `answer` with a session, 401 without one. */
   const withSession =
     (answer: (call: Call) => Answer): Reply =>
@@ -337,6 +396,33 @@ export function fakeServer({
       const email = field(call, 'email')?.trim().toLowerCase();
       accounts = { ...accounts, invites: accounts.invites.filter((i) => i.email !== email) };
       return { status: 200, body: { ok: true } };
+    }),
+    [`GET ${ADMIN_OUTLETS_PATH}`]: asAdmin(() => ({ status: 200, body: { list: outletList, changes: outletHistory } })),
+    [`POST ${ADMIN_OUTLETS_PATH}`]: asAdmin((call) => {
+      const parsed = OutletChangeRequestSchema.safeParse(call.body);
+      if (!parsed.success) return NOT_VALID;
+      const req = parsed.data;
+      if (req.baseVersion !== outletList.version) return LIST_CHANGED;
+      const id = req.action === 'remove' ? req.id : req.outlet.id;
+      const before = outletList.outlets.find((o) => o.id === id) ?? null;
+      if (req.action === 'add' && before) return ID_TAKEN;
+      if (req.action !== 'add' && !before) return OUTLET_GONE;
+      const after = req.action === 'remove' ? null : { ...req.outlet, changedOn: OUTLET_CHANGED_AT.slice(0, 10) };
+      const rest = outletList.outlets.filter((o) => o.id !== id);
+      const outlets = after ? [...rest, after] : rest;
+      const [problem] = listProblems(outlets);
+      if (problem) return { status: 400, body: { code: 'bad-request', message: listProblemText(problem) } };
+      return publish(outlets, [{ action: req.action, before, after }]);
+    }),
+    [`POST ${ADMIN_OUTLETS_IMPORT_PATH}`]: asAdmin((call) => {
+      const body = call.body;
+      if (typeof body !== 'object' || body === null || Object.keys(body).length > 0) return NOT_VALID;
+      if (outletList.outlets.length > 0) return LIST_NOT_EMPTY;
+      const imported = CANDIDATES.map((c) => ({ ...c, domains: [...c.domains], changedOn: OUTLET_CHANGED_AT.slice(0, 10) }));
+      return publish(
+        imported,
+        [...imported].sort(byId).map((after) => ({ action: 'import' as const, before: null, after })),
+      );
     }),
     ...Object.fromEntries(
       adminUsers.users.flatMap(({ id, email }) => {

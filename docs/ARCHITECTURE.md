@@ -294,8 +294,9 @@ same machine) and `tools` (the one-off `keygen`).
 - **Admins.** The `setup-link` command prints a one-time link to `/setup`, its secret in the URL fragment and only its
   hash stored (`setup_tokens`); signing in there with the address it was made for makes that account an admin (Better
   Auth's admin plugin's `role` column; none of the plugin's own routes is mounted). Admins use `/admin` and the
-  `/v1/admin/*` routes to invite people (`signup_invites`), set caps and roles, and remove access. `--recover` makes a
-  link that works although the server already has an admin.
+  `/v1/admin/*` routes to invite people (`signup_invites`), set caps and roles, and remove access, and `/admin/sources`
+  to keep the server's source list (`outlets`): add, edit and remove outlets, each lean with evidence, or import the
+  candidate list into an empty list. `--recover` makes a link that works although the server already has an admin.
 
 ## Testing
 
