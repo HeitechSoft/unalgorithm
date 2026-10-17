@@ -460,6 +460,29 @@ describe('price', () => {
     expect(await shows(added, OCT_20)).toBe('From Dec 1, 2026 (UTC): about $0.18 per 1,000 posts.');
   });
 
+  it('test_credits_every_later_change', async () => {
+    // A cut from Dec 2 saved after a raise from Dec 3 (the rules allow both on Nov 2): the cut never hides the raise.
+    const schedule: CreditPriceSchedule = [
+      { effectiveFrom: '2026-10-01T00:00:00Z', cards: { classify: card(2) } },
+      { effectiveFrom: '2026-12-02T00:00:00Z', cards: { classify: card(1.5) } },
+      { effectiveFrom: '2026-12-03T00:00:00Z', cards: { classify: card(2.5) } },
+    ];
+    const fromLines = async (at: string) => {
+      cleanup();
+      clockAt(new Date(at));
+      renderCredits(schedule);
+      return within(await loadedCredits())
+        .queryAllByText(/^From /)
+        .map((line) => line.textContent);
+    };
+    expect(await fromLines('2026-11-02T12:00:00Z')).toEqual([
+      'From Dec 2, 2026 (UTC): about $0.11 per 1,000 posts.',
+      'From Dec 3, 2026 (UTC): about $0.18 per 1,000 posts.',
+    ]);
+    expect(await fromLines('2026-12-02T00:00:00Z')).toEqual(['From Dec 3, 2026 (UTC): about $0.18 per 1,000 posts.']);
+    expect(await fromLines('2026-12-03T00:00:00Z')).toEqual([]);
+  });
+
   it('test_credits_price_from_server_prices', async () => {
     clockAt(NOW);
     // The server's book prices classify at 2.5× since before the account's answer (73,000 × 2.5 = 182,500): its price,

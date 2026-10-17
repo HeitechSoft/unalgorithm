@@ -14,10 +14,12 @@ import {
   jobPriceAt,
   PRICE_CARDS,
   type PriceBook,
+  priceBookChangeIssues,
   priceCardsAt,
   REFERENCE_MODELS,
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
+  withTaskCard,
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
@@ -139,6 +141,64 @@ describe('credit facts', () => {
     // Only classify priced, now and later.
     expect(creditFacts(book([LAUNCH]), OCT_14).labsPrices).toBe(
       'Fact-check and UnEcho Chamber are not offered on unAlgorithm Cloud yet.',
+    );
+  });
+
+  it('test_credit_facts_every_later_change', () => {
+    // A change saved before a raise already scheduled never hides the raise: every later change of a task is shown,
+    // dated, until it takes effect. Two saves on 2026-11-02, as the Pricing page makes them, both allowed by the rules:
+    // Fact-check at 3× with a $0.50 cap from Dec 3, then a cut of its cap to $0.30 from Dec 2.
+    const NOV_2 = new Date('2026-11-02T12:00:00Z');
+    const DEC_2 = '2026-12-02T00:00:00Z';
+    const DEC_3 = '2026-12-03T00:00:00Z';
+    const pv = priceCardsAt(new Date('2026-10-18T00:00:00Z'));
+    const factcheck = pv.cards.factcheck ?? LAUNCH_CLASSIFY;
+    const tripled = { ...factcheck, multiplier: 3, maxChargeMicros: 500_000 };
+    const base = book([LAUNCH, pv]);
+    const raised = book(withTaskCard(base.schedule, 'factcheck', DEC_3, tripled));
+    expect(priceBookChangeIssues(base, raised, NOV_2)).toEqual([]);
+    const cut = book(withTaskCard(raised.schedule, 'factcheck', DEC_2, { ...factcheck, maxChargeMicros: 300_000 }));
+    expect(priceBookChangeIssues(raised, cut, NOV_2)).toEqual([]);
+
+    const now = '- **Fact-check**: 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more';
+    const raise =
+      'From Dec 3, 2026 (UTC): 3× our AI cost, typically about $0.36 per check, and never more than $0.50 for one check.';
+    const factcheckLine = (prices: PriceBook, at: Date) => creditFacts(prices, at).labsPrices.split('\n')[0];
+    expect(factcheckLine(raised, NOV_2)).toBe(
+      `${now} than $0.40 for one check. That price applies until Dec 3, 2026 (UTC). ${raise}`,
+    );
+    expect(factcheckLine(cut, NOV_2)).toBe(
+      `${now} than $0.40 for one check. That price applies until Dec 2, 2026 (UTC). From Dec 2, 2026 (UTC): 2× our AI cost, typically about $0.24 per check, and never more than $0.30 for one check. ${raise}`,
+    );
+    // On Dec 2 the cut is in effect and the raise still dated; on Dec 3 the raise is the price, undated.
+    expect(factcheckLine(cut, new Date(DEC_2))).toBe(
+      `${now} than $0.30 for one check. That price applies until Dec 3, 2026 (UTC). ${raise}`,
+    );
+    expect(factcheckLine(cut, new Date(DEC_3))).toBe(
+      '- **Fact-check**: 3× our AI cost, typically about $0.36 per check on Claude Sonnet 5.5, and never more than $0.50 for one check.',
+    );
+    // UnEcho Chamber, unchanged, stays undated.
+    expect(creditFacts(cut, NOV_2).labsPrices.split('\n')[1]).toBe(
+      '- **UnEcho Chamber**: 2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
+    );
+    // A task not offered yet: its first price, then each later change, dated.
+    const offered = withTaskCard([LAUNCH], 'factcheck', DEC_2, factcheck);
+    expect(factcheckLine(book(withTaskCard(offered, 'factcheck', DEC_3, tripled)), NOV_2)).toBe(
+      `- **Fact-check**: from Dec 2, 2026 (UTC), 2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check. ${raise}`,
+    );
+
+    // Classify: a neutral change (the reference model only) saved before a raise already scheduled. The model is named
+    // where it changes, so the neutral change never reads as the same sentence as the price before it.
+    const S3: CreditPriceSchedule = [LAUNCH, at25(DEC_3)];
+    const neutral = book(withTaskCard(S3, 'classify', DEC_2, { ...LAUNCH_CLASSIFY, referenceModel: 'claude-sonnet-5-5' }));
+    expect(priceBookChangeIssues(book(S3), neutral, NOV_2)).toEqual([]);
+    const facts = creditFacts(neutral, NOV_2);
+    expect(facts.priceChange).toBe(
+      'That price applies until Dec 2, 2026 (UTC). From Dec 2, 2026 (UTC): 2× our AI cost, about $0.15 per thousand posts on Claude Sonnet 5.5. From Dec 3, 2026 (UTC): 2.5× our AI cost, about $0.18 per thousand posts on Claude Haiku 5.5.',
+    );
+    expect(facts.examples.split('\n')[0]).toBe('At the price until Dec 2, 2026 (UTC).');
+    expect(creditFacts(neutral, new Date(DEC_2)).priceChange).toBe(
+      'That price applies until Dec 3, 2026 (UTC). From Dec 3, 2026 (UTC): 2.5× our AI cost, about $0.18 per thousand posts on Claude Haiku 5.5.',
     );
   });
 
@@ -425,6 +485,26 @@ describe('pricing: credit calculator (CL5-09)', () => {
     expect(before).toMatchObject({ ok: true, days: Math.floor(postsAt(OCT_14) / 150) });
     expect(after).toMatchObject({ ok: true, days: Math.floor(postsAt(new Date(NOV_3)) / 150) });
     expect((before as { days: number }).days).toBeGreaterThan((after as { days: number }).days);
+  });
+
+  it('test_calculator_data_covers_every_later_change', () => {
+    // A cut from Dec 2 saved after a raise from Dec 3: the page built on Nov 2 carries both, so from Dec 3 the
+    // calculator uses the raise, never the cut, without a rebuild.
+    const NOV_2 = new Date('2026-11-02T12:00:00Z');
+    const DEC_2 = '2026-12-02T00:00:00Z';
+    const DEC_3 = '2026-12-03T00:00:00Z';
+    const schedule = withTaskCard([LAUNCH, at25(DEC_3)], 'classify', DEC_2, { ...LAUNCH_CLASSIFY, multiplier: 1.5 });
+    const per1000 = (at: string) => retailMicrosPer1000Posts(new Date(at), 'classify', schedule);
+    const data = calculatorData(book(schedule), NOV_2);
+    expect(data.prices).toEqual([
+      { from: LAUNCH.effectiveFrom, microsPer1000Posts: per1000(LAUNCH.effectiveFrom) },
+      { from: DEC_2, microsPer1000Posts: per1000(DEC_2) },
+      { from: DEC_3, microsPer1000Posts: per1000(DEC_3) },
+    ]);
+    const days = (at: string) => Math.floor(estimatePosts(10_000_000, new Date(at), 'classify', schedule) / 150);
+    expect(calculatorResult(data, '10', '150', new Date(DEC_2))).toMatchObject({ ok: true, days: days(DEC_2) });
+    expect(calculatorResult(data, '10', '150', new Date(DEC_3))).toMatchObject({ ok: true, days: days(DEC_3) });
+    expect(days(DEC_2)).toBeGreaterThan(days(DEC_3));
   });
 });
 

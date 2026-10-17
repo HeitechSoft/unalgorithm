@@ -2,7 +2,6 @@ import {
   CREDIT_TASKS,
   type CreditPriceCard,
   type CreditPriceSchedule,
-  type CreditPriceScheduleEntry,
   type CreditTask,
   DEFAULT_PRICE_BOOK,
   estimatePosts,
@@ -77,18 +76,42 @@ function samePrice(a: Readonly<CreditPriceCard> | undefined, b: Readonly<CreditP
   );
 }
 
-/** The first entry after `at` whose card for `task` differs from the one in effect at `at` (or first prices it). */
-function nextCardChange(
-  at: Date,
-  task: CreditTask,
-  schedule: CreditPriceSchedule,
-): { entry: Readonly<CreditPriceScheduleEntry>; card: Readonly<CreditPriceCard> } | null {
-  const now = priceCardsAt(at, schedule).cards[task];
+interface CardChange {
+  /** When the card starts: its entry's `effectiveFrom`. */
+  from: string;
+  card: Readonly<CreditPriceCard>;
+  /** The card before it: the one in effect at `at`, or the previous change's; undefined while the task is not offered. */
+  before: Readonly<CreditPriceCard> | undefined;
+}
+
+/**
+ * Every entry after `at` whose card for `task` differs from the card before it (or first prices `task`), in date order.
+ * All of them, never only the first: a change saved after one already scheduled but dated before it (a cut the day
+ * before a raise) must not hide the later one, whose notice runs from when it was published.
+ */
+function laterCardChanges(at: Date, task: CreditTask, schedule: CreditPriceSchedule): CardChange[] {
+  const changes: CardChange[] = [];
+  let before = priceCardsAt(at, schedule).cards[task];
   for (const entry of schedule) {
     const card = entry.cards[task];
-    if (Date.parse(entry.effectiveFrom) > at.getTime() && card && !samePrice(card, now)) return { entry, card };
+    if (!(Date.parse(entry.effectiveFrom) > at.getTime()) || !card || samePrice(card, before)) continue;
+    changes.push({ from: entry.effectiveFrom, card, before });
+    before = card;
   }
-  return null;
+  return changes;
+}
+
+/**
+ * " From Dec 3, 2026 (UTC): …" for each change, in order; `sentence` names the reference model where it changes, so a
+ * change of the model alone never reads as the price before it.
+ */
+function fromClauses(changes: readonly CardChange[], sentence: (change: CardChange, withModel: boolean) => string): string {
+  return changes
+    .map((change) => {
+      const withModel = change.card.referenceModel !== change.before?.referenceModel;
+      return ` From ${day(change.from)} (UTC): ${sentence(change, withModel)}`;
+    })
+    .join('');
 }
 
 /**
@@ -133,29 +156,28 @@ export function taskPriceLines(schedule: CreditPriceSchedule, task: CreditTask, 
 }
 
 /**
- * One bullet per job task (Fact-check, UnEcho Chamber) priced at `at` or by a later entry; each dated where it is not
- * yet in effect. The name `labsPrices` is kept from when both were Labs features (it is the page's placeholder).
+ * One bullet per job task (Fact-check, UnEcho Chamber) priced at `at` or by a later entry: the price in effect (or the
+ * first one, dated), then every later change, each dated. The name `labsPrices` is kept from when both were Labs
+ * features (it is the page's placeholder).
  */
 function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
   const lines: string[] = [];
   for (const task of CREDIT_TASKS) {
     if (task === 'classify') continue;
     const label = `- **${FEATURE_NAMES[task]}**:`;
-    const next = nextCardChange(at, task, schedule);
+    const changes = laterCardChanges(at, task, schedule);
+    const later = (shown: readonly CardChange[]) =>
+      fromClauses(shown, ({ from }, withModel) => jobPriceText(task, new Date(from), schedule, withModel));
+    const [first, ...rest] = changes;
     if (!priceCardsAt(at, schedule).cards[task]) {
-      if (next) {
-        const from = new Date(next.entry.effectiveFrom);
-        lines.push(`${label} from ${day(next.entry.effectiveFrom)} (UTC), ${jobPriceText(task, from, schedule, true)}`);
+      if (first) {
+        const offered = jobPriceText(task, new Date(first.from), schedule, true);
+        lines.push(`${label} from ${day(first.from)} (UTC), ${offered}${later(rest)}`);
       }
       continue;
     }
-    let line = `${label} ${jobPriceText(task, at, schedule, true)}`;
-    if (next) {
-      const d = day(next.entry.effectiveFrom);
-      const later = jobPriceText(task, new Date(next.entry.effectiveFrom), schedule, false);
-      line += ` That price applies until ${d} (UTC). From ${d} (UTC): ${later}`;
-    }
-    lines.push(line);
+    const until = first ? ` That price applies until ${day(first.from)} (UTC).` : '';
+    lines.push(`${label} ${jobPriceText(task, at, schedule, true)}${until}${later(changes)}`);
   }
   return lines.length > 0
     ? lines.join('\n')
@@ -164,7 +186,7 @@ function labsPrices(at: Date, schedule: CreditPriceSchedule): string {
 
 /**
  * The page's figures at `at` (the build time) from `prices`: all computed, none typed by hand. The task prices come from
- * its schedule, where only the next change of a card is shown, dated (an entry that only adds a task leaves classify's
+ * its schedule, where every later change of a card is shown, dated (an entry that only adds a task leaves classify's
  * sentence and the examples undated); the starter credit is the one an account created at `at` gets; the amounts are
  * its buying credit rules.
  */
@@ -172,22 +194,24 @@ export function creditFacts(prices: PriceBook = DEFAULT_PRICE_BOOK, at: Date = n
   const { schedule, purchase } = prices;
   const starter = starterCreditAt(at, prices);
   const card = priceCardsAt(at, schedule).cards.classify;
-  const next = nextCardChange(at, 'classify', schedule);
-  const until = next ? day(next.entry.effectiveFrom) : '';
+  const changes = laterCardChanges(at, 'classify', schedule);
+  const until = changes[0] ? day(changes[0].from) : '';
   const per1000 = (when: Date) => formatPrice(retailMicrosPer1000Posts(when, 'classify', schedule));
+  const later = fromClauses(changes, ({ from, card: next }, withModel) => {
+    const model = withModel ? ` on ${modelName(next.referenceModel)}` : '';
+    return `${times(next)} our AI cost, about ${per1000(new Date(from))} per thousand posts${model}.`;
+  });
   const rows = EXAMPLE_AMOUNTS_MICROS.map(
     (amount) => `| ${formatBalance(amount)} | ${formatPostsEstimate(estimatePosts(amount, at, 'classify', schedule))} |`,
   );
   const table = ['| Credit | Classifies |', '|---|---|', ...rows].join('\n');
   /** A table at the card in effect at `at`, dated when classify's card changes later. */
-  const dated = (md: string): string => (next ? `At the price until ${until} (UTC).\n\n${md}` : md);
+  const dated = (md: string): string => (until ? `At the price until ${until} (UTC).\n\n${md}` : md);
   return {
     classifyMultiplier: times(card),
     classifyPer1000: per1000(at),
     referenceModel: modelName(card.referenceModel),
-    priceChange: next
-      ? `That price applies until ${until} (UTC). From ${until} (UTC): ${times(next.card)} our AI cost, about ${per1000(new Date(next.entry.effectiveFrom))} per thousand posts.`
-      : '',
+    priceChange: until ? `That price applies until ${until} (UTC).${later}` : '',
     labsPrices: labsPrices(at, schedule),
     examples: dated(table),
     starterAmount: formatBalance(starter.amountMicros),
@@ -214,13 +238,12 @@ function amountsTable(at: Date, schedule: CreditPriceSchedule, presetsMicros: re
 /**
  * The calculator's data (CL5-09), computed at build time so the island ships no pricing code: `prices`' buying credit
  * rules in whole dollars, and the price of 1,000 classified posts under the classify card in effect at `at`, then under
- * its next change, if any, from that change's `effectiveFrom`.
+ * each later change, from that change's `effectiveFrom`.
  */
 export function calculatorData(prices: PriceBook = DEFAULT_PRICE_BOOK, at: Date = new Date()): CalculatorData {
   const { schedule, purchase } = prices;
   const cards = [{ from: priceCardsAt(at, schedule).effectiveFrom, at }];
-  const next = nextCardChange(at, 'classify', schedule);
-  if (next) cards.push({ from: next.entry.effectiveFrom, at: new Date(next.entry.effectiveFrom) });
+  for (const { from } of laterCardChanges(at, 'classify', schedule)) cards.push({ from, at: new Date(from) });
   return {
     amount: {
       minDollars: purchase.minMicros / MICROS_PER_DOLLAR,

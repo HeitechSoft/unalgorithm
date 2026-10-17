@@ -138,7 +138,8 @@ restart:
   A server with `BILLING=off` charges nothing and publishes none.
 - The website, at its build: its "How credits work" page (`docs/site/credits.md`, filled by `creditsMarkdown` in
   `packages/core`) and the calculator's data (`calculatorData`) come from unAlgorithm Cloud's `/prices.json`: the
-  entry in effect then, the next dated change, and the amount rules.
+  entry in effect then, every later change, each dated (a change dated before one already scheduled never hides it),
+  and the amount rules.
 
 ### unAlgorithm Cloud's procedure
 

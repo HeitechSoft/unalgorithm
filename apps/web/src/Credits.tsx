@@ -1,8 +1,8 @@
 /**
  * The account page's Credits section, on a server that advertises billing: the balance and about how many posts it
  * classifies, the promotional credit with the starter credit's state, the purchased credit, the history newest first,
- * the links the server gives (adding credit, auto-reload, how credits work, the refund policy), and the price in effect with the next
- * scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
+ * the links the server gives (adding credit, auto-reload, how credits work, the refund policy), and the price in effect with
+ * every later scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
  * extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product; its price lines and the
  * amount range are this server's published prices (`/prices.json`, PA-04), read with the account.
  */
@@ -16,7 +16,6 @@ import {
   type CreditTask,
   estimatePosts,
   FEATURE_NAMES,
-  nextPriceChange,
   type PriceBook,
   type PurchaseRules,
   retailMicrosPer1000Posts,
@@ -99,16 +98,21 @@ export function Credits({ onSignedOut }: CreditsProps) {
 }
 
 /**
- * The first later entry whose classify price per 1,000 posts differs from the one in effect at `at`, or null. Scans past
- * entries that change only other tasks (a new perspectives card), so they never hide a classify raise's notice.
+ * Every later entry whose classify price per 1,000 posts differs from the price before it, in date order. Skips entries
+ * that change only other tasks (a new perspectives card), and never stops at the first change: a cut saved after a
+ * raise but dated before it must not hide the raise's notice.
  */
-function nextClassifyPriceChange(at: Date, schedule: CreditPriceSchedule) {
-  const now = retailMicrosPer1000Posts(at, 'classify', schedule);
-  let next = nextPriceChange(at, schedule);
-  while (next && retailMicrosPer1000Posts(new Date(next.effectiveFrom), 'classify', schedule) === now) {
-    next = nextPriceChange(new Date(next.effectiveFrom), schedule);
+function laterClassifyPriceChanges(at: Date, schedule: CreditPriceSchedule): Date[] {
+  const changes: Date[] = [];
+  let before = retailMicrosPer1000Posts(at, 'classify', schedule);
+  for (const { effectiveFrom } of schedule) {
+    const from = new Date(effectiveFrom);
+    if (!(from.getTime() > at.getTime())) continue;
+    const price = retailMicrosPer1000Posts(from, 'classify', schedule);
+    if (price !== before) changes.push(from);
+    before = price;
   }
-  return next;
+  return changes;
 }
 
 function CreditDetails({
@@ -121,7 +125,7 @@ function CreditDetails({
   prices: PriceBook;
 }) {
   const promotional = promotionalLine(balance);
-  const next = nextClassifyPriceChange(at, schedule);
+  const later = laterClassifyPriceChanges(at, schedule);
   return (
     <>
       <div className="web-balance">
@@ -138,13 +142,12 @@ function CreditDetails({
         ) : null}
         {balance.starter === 'active' ? null : <p className="ua-footnote">{STARTER[balance.starter]}</p>}
         <p className="ua-footnote">AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</p>
-        {next ? (
-          // In UTC, as the change starts at 00:00 UTC: west of UTC it is the previous evening.
-          <p className="ua-footnote">
-            From {DATE.format(new Date(next.effectiveFrom))} (UTC): about {per1000Posts(new Date(next.effectiveFrom), schedule)}{' '}
-            per 1,000 posts.
+        {later.map((from) => (
+          // In UTC, as a change starts at 00:00 UTC: west of UTC it is the previous evening.
+          <p className="ua-footnote" key={from.toISOString()}>
+            From {DATE.format(from)} (UTC): about {per1000Posts(from, schedule)} per 1,000 posts.
           </p>
-        ) : null}
+        ))}
       </div>
       <ListGroup header="History">
         {history.length === 0 ? (
