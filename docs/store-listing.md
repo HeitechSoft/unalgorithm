@@ -104,7 +104,7 @@ results before committing: fonts come from the machine that renders them.
 ### Single purpose
 
 ```text
-UnAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Fact-check, off by default, is a feed feature too: it checks the claims in a public post the user picks in their feed.
+UnAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away the posts the user didn't ask for (ads, suggested posts, network activity, groups they haven't joined, people and pages they don't follow), explains each fold with Why?, and highlights the posts that match the user's interests, in the feed and in Highlights in the side panel. Its optional AI classifies the same feed posts more finely (off-topic posts, engagement bait, rage bait). Fact-check and UnEcho Chamber, off by default, are feed features too: Fact-check checks the claims in a public post the user picks in their feed, and UnEcho Chamber shows how outlets across the spectrum covered the news story a public post in their feed links to.
 ```
 
 ### Permission justifications
@@ -121,7 +121,7 @@ Keeps the user's settings, interests, exceptions ("always show/hide"), feedback 
 **sidePanel**
 
 ```text
-Shows Highlights in Chrome's side panel: the posts picked for the user and the posts folded away on the current LinkedIn or Facebook page, each with a link to go to it, and the results of the fact-checks the user asked for. The user opens it from the popup, or from a fact-check result in the feed.
+Shows Highlights in Chrome's side panel: the posts picked for the user and the posts folded away on the current LinkedIn or Facebook page, each with a link to go to it, and the results of the fact-checks and UnEcho Chamber comparisons the user asked for. The user opens it from the popup, or from a fact-check or comparison result in the feed.
 ```
 
 **scripting**

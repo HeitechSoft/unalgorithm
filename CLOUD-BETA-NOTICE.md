@@ -30,9 +30,11 @@ The Cloud handles these fields in memory to classify the posts, answers, and dis
 interest profiles, classification results, prompts and AI answers are never logged or stored. An automated test runs
 the server with marker text in every field and fails if the marker shows up in any log or database table.
 
-If you use Fact-check or UnEcho Chamber through the Cloud, the one post you chose is sent the same way,
-without your interests. The Cloud asks Anthropic to search the web for the claims in the post, or for the story's
-search words. The job is kept in memory only, and is gone at most 10 minutes after it ends.
+If you use Fact-check through the Cloud, the one post you chose is sent the same way, without your interests. If you
+use UnEcho Chamber, the post's text is not sent: only the link it shares and that link's title, the platform (and, on
+Facebook, who can see the post), and the web addresses and leans of the source list you chose. The Cloud asks Anthropic
+to search the web for the claims in the post, or for the story's search words. The job, with the source list it
+carries, is kept in memory only, and is gone at most 10 minutes after it ends.
 
 ## 3. What the Cloud stores
 
