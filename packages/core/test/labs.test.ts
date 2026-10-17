@@ -13,6 +13,7 @@ import {
   perspectivesOffered,
   perspectivesSwitchOn,
   type ServerOffer,
+  serverJobPriceLabel,
   serverOfferFrom,
   sourceCapabilities,
   webSearchOrigin,
@@ -213,6 +214,14 @@ describe('Price label', () => {
     expect(factcheckPriceLabel(SERVER, { ...FREE_OFFER, factcheck: false })).toBeNull();
     expect(factcheckPriceLabel(SERVER, { ...PAID_OFFER, factcheckPrice: null })).toBeNull();
     expect(factcheckPriceLabel(ANTHROPIC, PAID_OFFER)).toBe('About $0.12 on your Anthropic account');
+  });
+
+  it('test_server_job_price_label', () => {
+    // The server branch of `jobPriceLabel`, on its own: the Pricing page's preview shows it (PA-05).
+    expect(serverJobPriceLabel({ typicalMicros: 240_000, maxMicros: 400_000 })).toBe('About $0.24, at most $0.40');
+    expect(serverJobPriceLabel({ typicalMicros: 270_000, maxMicros: 500_000 })).toBe('About $0.27, at most $0.50');
+    const price = PAID_OFFER.factcheckPrice;
+    expect(price && serverJobPriceLabel(price)).toBe(factcheckPriceLabel(SERVER, PAID_OFFER));
   });
 });
 

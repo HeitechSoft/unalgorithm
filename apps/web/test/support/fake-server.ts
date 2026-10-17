@@ -19,7 +19,15 @@
  * is checked as the server checks it (the version the page showed, an id already listed or gone, the list rules) and,
  * when it is accepted, changes the next list and adds a history line by the signed-in address at `OUTLET_CHANGED_AT`;
  * the import adds `CANDIDATES` to an empty list. The public routes keep answering as given.
+ *
+ * The Pricing page's routes (PA-03) keep a price book (`DEFAULT_PRICE_BOOK` unless a test passes its own), its version
+ * and its history, for an admin only, and answer with the server's clock at `PRICES_NOW` and `billing` as the discovery
+ * document says. A change is checked as the server checks it, with the same functions: the version the page showed
+ * (409), PA-01's edits (404 for a cancel or a move of a change that isn't scheduled) and PA-02's
+ * `priceBookChangeIssues` at `PRICES_NOW` (400 with `priceIssuesText`). An accepted change replaces the book and adds a
+ * history line by the signed-in address, after a `seed` line the first time, as the server's `price_changes` does.
  */
+import { priceIssuesText } from '@unalgorithm/core';
 import { type CandidateOutlet, listProblems, listProblemText } from '@unalgorithm/outlets';
 import {
   ACCOUNT_DELETE_PATH,
@@ -33,6 +41,7 @@ import {
   ADMIN_OUTLETS_IMPORT_PATH,
   ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
+  ADMIN_PRICES_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
   type AdminOutletChange,
@@ -40,7 +49,10 @@ import {
   type AdminUsers,
   AUTHORIZE_API_PATH,
   adminUserActionPath,
+  cancelTaskChange,
   chromiumRedirectUri,
+  DEFAULT_PRICE_BOOK,
+  moveTaskChange,
   type OfficialList,
   type OfficialOutlet,
   OUTLET_CHANGES_JSON_PATH,
@@ -48,8 +60,19 @@ import {
   type OutletChangeAction,
   OutletChangeRequestSchema,
   type OutletChanges,
+  type PriceBook,
+  type PriceChange,
+  type PriceChangeRequest,
+  PriceChangeRequestSchema,
+  type PriceChangeValue,
+  priceBookChangeIssues,
   SERVER_INFO_PATH,
   type ServerInfo,
+  scheduledTaskChanges,
+  starterCreditAt,
+  taskPriceAt,
+  withStarterCredit,
+  withTaskCard,
 } from '@unalgorithm/protocol';
 import { vi } from 'vitest';
 import {
@@ -209,6 +232,62 @@ const LIST_NOT_EMPTY = { status: 400, body: { code: 'bad-request', message: "The
 const NOT_VALID = { status: 400, body: { code: 'bad-request', message: 'The request was not valid.' } };
 const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+/** The server's clock in every answer of the fake Pricing routes (PA-05): the 2026-10-18 prices are in effect. */
+export const PRICES_NOW = '2026-11-02T12:00:00Z';
+/** What PA-03's routes answer for a change made on a book that changed since the page showed it. */
+export const PRICES_CHANGED = {
+  status: 409,
+  body: { code: 'bad-request', message: 'The prices changed since you opened this page. Reload it and try again.' },
+};
+/** What they answer for a cancel or a move of a change that isn't scheduled. */
+export const PRICE_CHANGE_GONE = {
+  status: 404,
+  body: { code: 'bad-request', message: 'That scheduled change is no longer on the list.' },
+};
+
+/** The book a price change makes, and what it changed (the history's `before` and `after`). */
+interface PriceEdit {
+  head: PriceBook;
+  before: PriceChangeValue;
+  after: PriceChangeValue;
+  movedTo: string | null;
+}
+
+/**
+ * The book `req` makes from `book` at `now`, with PA-01's edits and PA-02's starter credit step, as the server's
+ * `editOf` does; null for a cancel or a move of a change `book` doesn't schedule.
+ */
+function priceEdit(book: PriceBook, req: PriceChangeRequest, now: Date): PriceEdit | null {
+  switch (req.action) {
+    case 'schedule': {
+      const price = taskPriceAt(new Date(req.effectiveFrom), req.task, book.schedule);
+      const schedule = withTaskCard(book.schedule, req.task, req.effectiveFrom, req.card);
+      return { head: { ...book, schedule }, before: price.offered ? price.card : null, after: req.card, movedTo: null };
+    }
+    case 'cancel':
+    case 'move': {
+      const schedule =
+        req.action === 'cancel'
+          ? cancelTaskChange(book.schedule, req.task, req.effectiveFrom)
+          : moveTaskChange(book.schedule, req.task, req.effectiveFrom, req.to);
+      const since = new Date(Date.parse(req.effectiveFrom) - 1);
+      const change = scheduledTaskChanges(book.schedule, req.task, since).find((c) => c.effectiveFrom === req.effectiveFrom);
+      if (schedule === null || change === undefined) return null;
+      const head = { ...book, schedule };
+      if (req.action === 'cancel') return { head, before: change.card, after: change.before, movedTo: null };
+      return { head, before: change.card, after: change.card, movedTo: req.to };
+    }
+    case 'starter': {
+      const before = starterCreditAt(now, book).amountMicros;
+      return { head: withStarterCredit(book, req.amountMicros, now), before, after: req.amountMicros, movedTo: null };
+    }
+    case 'purchase':
+      return { head: { ...book, purchase: req.purchase }, before: book.purchase, after: req.purchase, movedTo: null };
+    case 'auto-reload':
+      return { head: { ...book, autoReload: req.autoReload }, before: book.autoReload, after: req.autoReload, movedTo: null };
+  }
+}
+
 export const INFO: ServerInfo = {
   v: 1,
   name: 'Example AI',
@@ -267,6 +346,9 @@ export function fakeServer({
   adminOverview = OVERVIEW,
   sourceList = EMPTY_SOURCE_LIST,
   outletChanges = NO_OUTLET_CHANGES,
+  priceBook = DEFAULT_PRICE_BOOK,
+  priceVersion = '0',
+  priceChanges = [],
   info = INFO,
   devices = [],
   passkeys = [],
@@ -279,6 +361,10 @@ export function fakeServer({
   adminOverview?: AdminOverview;
   sourceList?: OfficialList;
   outletChanges?: OutletChanges;
+  /** The Pricing routes' book, its version ('0': the code defaults, never saved) and history (newest first). */
+  priceBook?: PriceBook;
+  priceVersion?: string;
+  priceChanges?: readonly PriceChange[];
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -311,6 +397,17 @@ export function fakeServer({
     outletList = { ...outletList, version: String(seq), updatedAt: OUTLET_CHANGED_AT, outlets: [...outlets].sort(byId) };
     outletHistory = [...lines.reverse(), ...outletHistory];
     return { status: 200, body: { ok: true, version: outletList.version } };
+  }
+  /** The Pricing routes' book, its version and newest change, and its history (newest first). */
+  let book = priceBook;
+  let bookVersion = Number(priceVersion);
+  let bookUpdatedAt: string | null = priceChanges[0]?.at ?? null;
+  let bookHistory: PriceChange[] = structuredClone([...priceChanges]);
+  /** Adds one accepted change's history lines (a `seed` line first, the first time), each the next version. */
+  function recordPriceChange(lines: Omit<PriceChange, 'seq' | 'at' | 'by'>[]) {
+    const made = lines.map((line) => ({ ...line, seq: ++bookVersion, at: PRICES_NOW, by: current }));
+    bookHistory = [...made.reverse(), ...bookHistory];
+    bookUpdatedAt = PRICES_NOW;
   }
   /** `answer` with a session, 401 without one. */
   const withSession =
@@ -423,6 +520,42 @@ export function fakeServer({
         imported,
         [...imported].sort(byId).map((after) => ({ action: 'import' as const, before: null, after })),
       );
+    }),
+    [`GET ${ADMIN_PRICES_PATH}`]: asAdmin(() => ({
+      status: 200,
+      body: {
+        prices: { v: 1, version: String(bookVersion), updatedAt: bookUpdatedAt, ...book },
+        changes: bookHistory,
+        now: PRICES_NOW,
+        billing: info.billing,
+      },
+    })),
+    [`POST ${ADMIN_PRICES_PATH}`]: asAdmin((call) => {
+      const parsed = PriceChangeRequestSchema.safeParse(call.body);
+      if (!parsed.success) return NOT_VALID;
+      const req = parsed.data;
+      if (req.baseVersion !== String(bookVersion)) return PRICES_CHANGED;
+      const now = new Date(PRICES_NOW);
+      const edit = priceEdit(book, req, now);
+      if (!edit) return PRICE_CHANGE_GONE;
+      const issues = priceBookChangeIssues(book, edit.head, now);
+      if (issues.length > 0) return { status: 400, body: { code: 'bad-request', message: priceIssuesText(issues) } };
+      const scheduled = req.action === 'schedule' || req.action === 'cancel' || req.action === 'move';
+      const { before, after, movedTo } = edit;
+      const seed = { action: 'seed' as const, task: null, effectiveFrom: null, movedTo: null, before: null, after: null };
+      recordPriceChange([
+        ...(bookVersion === 0 ? [seed] : []),
+        {
+          action: req.action,
+          task: scheduled ? req.task : null,
+          effectiveFrom: scheduled ? req.effectiveFrom : null,
+          movedTo,
+          before,
+          after,
+        },
+      ]);
+      book = edit.head;
+      return { status: 200, body: { ok: true, version: String(bookVersion) } };
     }),
     ...Object.fromEntries(
       adminUsers.users.flatMap(({ id, email }) => {

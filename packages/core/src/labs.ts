@@ -1,6 +1,7 @@
 import {
   type Classification,
   FACTCHECK_TYPICAL_COST_MICROS,
+  type JobPrice,
   LEAN_BUCKETS,
   MAX_FACTCHECK_CLAIMS,
   OPENAI_FACTCHECK_TYPICAL_COST_MICROS,
@@ -125,7 +126,15 @@ export function jobPriceLabel(
   if (cfg.kind !== 'server' || !offer) return null;
   if (!offer.billing) return 'Free on this server';
   const price = offerPrice(task, offer);
-  return price ? `About ${formatPrice(price.typicalMicros)}, at most ${formatPrice(price.maxMicros)}` : null;
+  return price ? serverJobPriceLabel(price) : null;
+}
+
+/**
+ * A billing server's price for a check or a comparison, as the extension shows it before the job runs: "About $0.27, at
+ * most $0.50". The Pricing page's preview shows the same line (PA-05).
+ */
+export function serverJobPriceLabel(price: JobPrice): string {
+  return `About ${formatPrice(price.typicalMicros)}, at most ${formatPrice(price.maxMicros)}`;
 }
 
 /**

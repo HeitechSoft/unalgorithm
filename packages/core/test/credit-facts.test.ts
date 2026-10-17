@@ -10,6 +10,7 @@ import {
   DEFAULT_CREDIT_AMOUNT,
   estimatePosts,
   FEATURE_NAMES,
+  jobPriceAt,
   PRICE_CARDS,
   priceCardsAt,
   REFERENCE_MODELS,
@@ -18,6 +19,7 @@ import {
 } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  balanceLine,
   CALCULATOR_INPUT_ERROR,
   CREDITS_PLACEHOLDERS,
   calculatorAmountError,
@@ -27,7 +29,11 @@ import {
   creditsMarkdown,
   EXAMPLE_AMOUNTS_MICROS,
   fillPlaceholders,
+  formatPrice,
+  jobPriceText,
   REFERENCE_MODEL_LABELS,
+  serverJobPriceLabel,
+  taskPriceLines,
 } from '../src/index.ts';
 
 /**
@@ -368,5 +374,45 @@ describe('pricing: credit calculator (CL5-09)', () => {
     expect(before).toMatchObject({ ok: true, days: Math.floor(postsAt(OCT_14) / 150) });
     expect(after).toMatchObject({ ok: true, days: Math.floor(postsAt(new Date(NOV_3)) / 150) });
     expect((before as { days: number }).days).toBeGreaterThan((after as { days: number }).days);
+  });
+});
+
+describe('task price lines', () => {
+  /** The Pricing page's fixed instant (PA-05): the 2026-10-18 entry is in effect. */
+  const PRICES_NOW = new Date('2026-11-02T12:00:00Z');
+
+  it('test_task_price_lines', () => {
+    // The default schedule at PRICES_NOW: the account page's line and the extension's balance line for $5 (classify),
+    // the website's sentence and the extension's price label (each job task).
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'classify', PRICES_NOW)).toEqual([
+      'AI costs about $0.15 per 1,000 posts.',
+      '$5.00 left · about 34,000 posts',
+    ]);
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'factcheck', PRICES_NOW)).toEqual([
+      '2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check.',
+      'About $0.24, at most $0.40',
+    ]);
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'perspectives', PRICES_NOW)).toEqual([
+      '2× our AI cost, typically about $0.27 per comparison on Claude Sonnet 5.5, and never more than $0.50 for one comparison.',
+      'About $0.27, at most $0.50',
+    ]);
+    // The same functions those surfaces call, so the preview is their wording, never a copy.
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'classify', PRICES_NOW)[1]).toBe(
+      balanceLine(5_000_000, PRICES_NOW, CREDIT_PRICE_SCHEDULE),
+    );
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'factcheck', PRICES_NOW)[0]).toBe(
+      jobPriceText('factcheck', PRICES_NOW, CREDIT_PRICE_SCHEDULE, true),
+    );
+    const price = jobPriceAt(PRICES_NOW, 'perspectives', CREDIT_PRICE_SCHEDULE);
+    expect(price && serverJobPriceLabel(price)).toBe('About $0.27, at most $0.50');
+
+    // A task not offered at that instant (before 2026-10-18) has no lines.
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'factcheck', OCT_14)).toEqual([]);
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'perspectives', OCT_14)).toEqual([]);
+    expect(taskPriceLines(CREDIT_PRICE_SCHEDULE, 'classify', OCT_14)).toHaveLength(2);
+    // Another schedule's prices: S has 2.5× from 2026-11-15.
+    expect(taskPriceLines(S, 'classify', NOV_15)[0]).toBe(
+      `AI costs about ${formatPrice(retailMicrosPer1000Posts(NOV_15, 'classify', S))} per 1,000 posts.`,
+    );
   });
 });

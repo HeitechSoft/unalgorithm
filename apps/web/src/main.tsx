@@ -3,6 +3,7 @@ import './web.css';
 import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
+  ADMIN_PRICES_PAGE_PATH,
   ADMIN_SOURCES_PAGE_PATH,
   AUTHORIZE_PAGE_PATH,
   OUTLETS_PAGE_PATH,
@@ -14,6 +15,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
 import { Admin } from './Admin.tsx';
+import { AdminPrices } from './AdminPrices.tsx';
 import { AdminSources } from './AdminSources.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
@@ -68,6 +70,8 @@ if (root) {
           <Admin />
         ) : pathname === ADMIN_SOURCES_PAGE_PATH ? (
           <AdminSources />
+        ) : pathname === ADMIN_PRICES_PAGE_PATH ? (
+          <AdminPrices />
         ) : pathname === OUTLETS_PAGE_PATH ? (
           <SourceList />
         ) : (

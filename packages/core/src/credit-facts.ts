@@ -16,9 +16,11 @@ import {
   retailMicrosPer1000Posts,
   STARTER_CREDIT,
   TASK_UNITS,
+  taskPriceAt,
 } from '@unalgorithm/protocol';
 import type { CalculatorData } from './credit-calculator.ts';
-import { formatBalance, formatPostsEstimate, formatPrice } from './usage.ts';
+import { serverJobPriceLabel } from './labs.ts';
+import { balanceLine, formatBalance, formatPostsEstimate, formatPrice } from './usage.ts';
 
 /**
  * "How credits work" on the website (R30, CL2-14): the figures its Markdown (`CREDITS_PAGE.source`) leaves as
@@ -91,8 +93,12 @@ function nextCardChange(
   return null;
 }
 
-/** "2× our AI cost, typically about $0.24 per check on Claude Sonnet 5.5, and never more than $0.40 for one check." */
-function jobPriceText(
+/**
+ * The website's sentence for a job task's price at `at`: "2× our AI cost, typically about $0.24 per check on Claude
+ * Sonnet 5.5, and never more than $0.40 for one check." (`withModel` false leaves out "on Claude Sonnet 5.5"); '' when
+ * the task is not offered at `at`.
+ */
+export function jobPriceText(
   task: Exclude<CreditTask, 'classify'>,
   at: Date,
   schedule: CreditPriceSchedule,
@@ -104,6 +110,28 @@ function jobPriceText(
   const unit = TASK_UNITS[task];
   const model = withModel ? ` on ${modelName(card.referenceModel)}` : '';
   return `${times(card)} our AI cost, typically about ${formatPrice(price.typicalMicros)} per ${unit}${model}, and never more than ${formatPrice(price.maxMicros)} for one ${unit}.`;
+}
+
+/** The balance the Pricing page's preview prices for classify: the extension's balance line for $5. */
+const PREVIEW_BALANCE_MICROS = 5_000_000;
+
+/**
+ * What people are shown for `task`'s price at `at` under `schedule`, in the published wording, never a copy (the Pricing
+ * page's preview, PA-05). Classify: the account page's line, "AI costs about $0.15 per 1,000 posts.", and the
+ * extension's balance line for $5, "$5.00 left · about 34,000 posts". A job task: the website's sentence
+ * (`jobPriceText`) and the extension's price label (`serverJobPriceLabel`), "About $0.24, at most $0.40". `[]` when
+ * the task is not offered at `at`.
+ */
+export function taskPriceLines(schedule: CreditPriceSchedule, task: CreditTask, at: Date): string[] {
+  if (!taskPriceAt(at, task, schedule).offered) return [];
+  if (task === 'classify') {
+    return [
+      `AI costs about ${formatPrice(retailMicrosPer1000Posts(at, 'classify', schedule))} per 1,000 posts.`,
+      balanceLine(PREVIEW_BALANCE_MICROS, at, schedule),
+    ];
+  }
+  const price = jobPriceAt(at, task, schedule);
+  return price ? [jobPriceText(task, at, schedule, true), serverJobPriceLabel(price)] : [];
 }
 
 /**
