@@ -70,6 +70,14 @@ export const OutletChangeSchema = z.object({
   before: OfficialOutletSchema.nullable(),
   after: OfficialOutletSchema.nullable(),
 });
+/**
+ * The public change history (`OUTLET_CHANGES_JSON_PATH`, decision D94): the latest changes, newest first, without who
+ * made them. Not strict, as `OfficialListSchema`.
+ */
+export const OutletChangesSchema = z.object({
+  v: z.literal(1),
+  changes: z.array(OutletChangeSchema).max(MAX_LISTED_CHANGES),
+});
 /** The admin page's view: who made each change (their address; null once that account is deleted). */
 export const AdminOutletChangeSchema = OutletChangeSchema.extend({ by: z.string().max(254).nullable() });
 export const AdminOutletsSchema = z.object({
@@ -82,6 +90,7 @@ export type OutletChangeAction = (typeof OUTLET_CHANGE_ACTIONS)[number];
 export type OutletInput = z.infer<typeof OutletInputSchema>;
 export type OutletChangeRequest = z.infer<typeof OutletChangeRequestSchema>;
 export type OutletChange = z.infer<typeof OutletChangeSchema>;
+export type OutletChanges = z.infer<typeof OutletChangesSchema>;
 export type AdminOutletChange = z.infer<typeof AdminOutletChangeSchema>;
 export type AdminOutlets = z.infer<typeof AdminOutletsSchema>;
 export type OutletChanged = z.infer<typeof OutletChangedSchema>;

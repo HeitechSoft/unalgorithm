@@ -2,7 +2,8 @@
  * The page's calls to its own server: the discovery document, Better Auth's sign-in (an emailed code, Google or a
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
  * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
- * accounts and the changes an admin makes to one, its invites and the server's usage overview. All same-origin, so the browser sends the session cookie and the
+ * accounts and the changes an admin makes to one, its invites and the server's usage overview; and the public source
+ * list with its history, which need no session. All same-origin, so the browser sends the session cookie and the
  * `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at all) and
  * the error body's `code` when it has one, except the browser's passkey prompt: a cancelled one is `PasskeyCancelled`,
  * and its other errors keep their name.
@@ -41,7 +42,13 @@ import {
   type CreditAccount,
   CreditAccountSchema,
   type InviteRequest,
+  type OfficialList,
+  OfficialListSchema,
   OkResponseSchema,
+  OUTLET_CHANGES_JSON_PATH,
+  OUTLETS_JSON_PATH,
+  type OutletChanges,
+  OutletChangesSchema,
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
@@ -149,6 +156,16 @@ async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown): P
 /** This server's discovery document: its name and the link to its source. */
 export async function serverInfo(): Promise<ServerInfo> {
   return request(SERVER_INFO_PATH, ServerInfoSchema);
+}
+
+/** This server's source list as published (P3-67): public, the same for everyone, signed in or not. */
+export async function publicSourceList(): Promise<OfficialList> {
+  return request(OUTLETS_JSON_PATH, OfficialListSchema);
+}
+
+/** The source list's latest changes, newest first, without who made them. */
+export async function publicChanges(): Promise<OutletChanges> {
+  return request(OUTLET_CHANGES_JSON_PATH, OutletChangesSchema);
 }
 
 /** Who is signed in on this page, if anyone, and their role (`admin` for an admin of this server). */

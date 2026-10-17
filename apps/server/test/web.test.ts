@@ -1,11 +1,11 @@
 /**
- * The server serves its web app (apps/web) from its own origin: `/`, `/authorize`, `/account`, `/setup` and `/admin` answer the
- * built `index.html` under a strict CSP, `/assets/*` the built files, and a server without a build says so instead.
+ * The server serves its web app (apps/web) from its own origin: `/`, `/authorize`, `/account`, `/setup`, `/admin` and
+ * `/outlets` answer the built `index.html` under a strict CSP, `/assets/*` the built files, and a server without a build says so instead.
  */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, SETUP_PAGE_PATH } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, OUTLETS_PAGE_PATH, SETUP_PAGE_PATH } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
@@ -151,6 +151,27 @@ describe('pages', { timeout: PGLITE_TIMEOUT }, () => {
     // Without a build, the same answer as the other pages.
     const none = await webApp(join(await tempDir(), 'dist'));
     const missing = await none.app.request(ADMIN_PAGE_PATH);
+    expect(missing.status).toBe(503);
+    expect(await missing.text()).toBe('Build apps/web first');
+  });
+
+  it('test_outlets_page_served_with_csp', async () => {
+    const dist = await tempDir();
+    await writeFile(join(dist, 'index.html'), INDEX_HTML);
+    const t = await webApp(dist);
+
+    // Public: no session, no cookie; the page reads the public list (P3-67).
+    const page = await t.app.request(OUTLETS_PAGE_PATH);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toMatch(/^text\/html/);
+    expect(page.headers.get('content-security-policy')).toBe(CSP);
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    expect(page.headers.getSetCookie()).toEqual([]);
+    expect(await page.text()).toBe(INDEX_HTML);
+
+    // Without a build, the same answer as the other pages.
+    const none = await webApp(join(await tempDir(), 'dist'));
+    const missing = await none.app.request(OUTLETS_PAGE_PATH);
     expect(missing.status).toBe(503);
     expect(await missing.text()).toBe('Build apps/web first');
   });

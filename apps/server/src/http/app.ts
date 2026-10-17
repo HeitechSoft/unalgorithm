@@ -20,6 +20,7 @@ import {
   type FactcheckResult,
   GOOGLE_METHOD,
   MAX_POSTS_PER_REQUEST,
+  OUTLETS_PAGE_PATH,
   PASSKEY_METHOD,
   type PerspectivesResult,
   SERVER_INFO_PATH,
@@ -54,7 +55,7 @@ import { classifyRoutes } from '../routes/classify.ts';
 import { factcheckOffer, factcheckRoutes } from '../routes/factcheck.ts';
 import { metricsRoutes } from '../routes/metrics.ts';
 import { NOT_FOUND } from '../routes/openapi.ts';
-import { outletAdminRoutes } from '../routes/outlets.ts';
+import { outletAdminRoutes, outletPublicRoutes } from '../routes/outlets.ts';
 import { perspectivesRoutes } from '../routes/perspectives.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
@@ -272,6 +273,7 @@ export function createApp(deps: AppDeps): App {
     limits,
   );
   adminRoutes(app, deps);
+  outletPublicRoutes(app, deps);
   outletAdminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);
@@ -296,9 +298,10 @@ export function createApp(deps: AppDeps): App {
 }
 
 /**
- * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account` and `/setup` answer its
- * `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build those pages answer
- * 503 and the log says so once. The build is looked up per request, so one made after the server started is served.
+ * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account`, `/setup`, `/admin` and
+ * `/outlets` answer its `index.html`, and `/assets/*` the files Vite built, named by their content hash. Without a build
+ * those pages answer 503 and the log says so once. The build is looked up per request, so one made after the server
+ * started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
   const page = async (c: Context<AppEnv>) => {
@@ -313,6 +316,8 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get(ACCOUNT_PAGE_PATH, page);
   app.get(SETUP_PAGE_PATH, page);
   app.get(ADMIN_PAGE_PATH, page);
+  // Public: the source list as published, read from `/outlets.json` (P3-67).
+  app.get(OUTLETS_PAGE_PATH, page);
 
   // Made once the folder exists: serveStatic writes to the console, outside the log, when its root is missing.
   let assets: MiddlewareHandler | undefined;

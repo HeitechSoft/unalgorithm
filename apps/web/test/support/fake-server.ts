@@ -11,6 +11,9 @@
  * do, and changing the signed-in admin's own access or role answers 400. Inviting an address (CL4-06) adds it, as the
  * server keeps it (trimmed, lower case), to the next list's invites at `INVITED_AT`, or answers 400 when an account has
  * it; removing one takes it off. The overview (`adminOverview`) is answered as given.
+ *
+ * The public source list (`sourceList`) and its history (`outletChanges`) are answered as given, with or without a
+ * session, as P3-67's routes are: by default an empty list that was never changed.
  */
 import {
   ACCOUNT_DELETE_PATH,
@@ -29,6 +32,10 @@ import {
   AUTHORIZE_API_PATH,
   adminUserActionPath,
   chromiumRedirectUri,
+  type OfficialList,
+  OUTLET_CHANGES_JSON_PATH,
+  OUTLETS_JSON_PATH,
+  type OutletChanges,
   SERVER_INFO_PATH,
   type ServerInfo,
 } from '@unalgorithm/protocol';
@@ -161,6 +168,10 @@ export const SETUP_REFUSED = {
   body: { code: 'permission', message: "This setup link doesn't work. Ask for a new one." },
 };
 
+/** A server whose source list was never changed (P3-67): what the public routes answer unless a test passes its own. */
+export const EMPTY_SOURCE_LIST: OfficialList = { v: 1, version: '0', updatedAt: null, license: 'CC-BY-4.0', outlets: [] };
+export const NO_OUTLET_CHANGES: OutletChanges = { v: 1, changes: [] };
+
 export const INFO: ServerInfo = {
   v: 1,
   name: 'Example AI',
@@ -217,6 +228,8 @@ export function fakeServer({
   role = null,
   adminUsers = NO_ADMIN_USERS,
   adminOverview = OVERVIEW,
+  sourceList = EMPTY_SOURCE_LIST,
+  outletChanges = NO_OUTLET_CHANGES,
   info = INFO,
   devices = [],
   passkeys = [],
@@ -227,6 +240,8 @@ export function fakeServer({
   role?: string | null;
   adminUsers?: AdminUsers;
   adminOverview?: AdminOverview;
+  sourceList?: OfficialList;
+  outletChanges?: OutletChanges;
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -254,6 +269,8 @@ export function fakeServer({
   };
   const all: Record<string, Reply> = {
     [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: info },
+    [`GET ${OUTLETS_JSON_PATH}`]: { status: 200, body: sourceList },
+    [`GET ${OUTLET_CHANGES_JSON_PATH}`]: { status: 200, body: outletChanges },
     [`GET ${SESSION_PATH}`]: () => ({
       status: 200,
       body: current ? { session: { userId: 'u1' }, user: { email: current, role } } : null,

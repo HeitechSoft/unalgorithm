@@ -13,6 +13,8 @@ export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom', 'zod'] },
   build: { outDir: 'dist' },
   server: {
-    proxy: Object.fromEntries(['/api/auth', '/v1', '/.well-known'].map((path) => [path, server])),
+    proxy: Object.fromEntries(
+      ['/api/auth', '/v1', '/.well-known', '/outlets.json', '/outlets/changes.json'].map((path) => [path, server]),
+    ),
   },
 });
