@@ -1,6 +1,6 @@
 import { AIError, memoryCapabilities, openaiCompatibleClient } from '@unalgorithm/ai';
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import { costMicros, LEAN_BUCKETS, PerspectivesResultSchema, type SharedLink, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { fakeSearcher, MOCK_NONCE, MOCK_NOW, mockClient, userText } from '../eval/perspectives-score.ts';
@@ -27,7 +27,7 @@ function systemText(body: Record<string, unknown>): string {
 }
 
 function deps(client: PerspectivesDeps['client'], searcher: BucketSearcher, over: Partial<PerspectivesDeps> = {}) {
-  return { client, searcher, registry: FIXTURE_REGISTRY, now: () => NOW, nonce: NONCE, ...over } satisfies PerspectivesDeps;
+  return { client, searcher, registry: FIXTURE_LIST, now: () => NOW, nonce: NONCE, ...over } satisfies PerspectivesDeps;
 }
 
 async function rejection(p: Promise<unknown>): Promise<unknown> {
@@ -129,12 +129,27 @@ describe('runPerspectives: pipeline', () => {
       v: 1,
       checkedAt: NOW.toISOString(),
       model: 'claude-sonnet-5-5',
-      registryVersion: FIXTURE_REGISTRY.meta.version,
+      registryVersion: FIXTURE_LIST.version,
       story: { url: LINK.url, query: 'council bridge vote', from: '2026-10-11T00:00:00.000Z', to: NOW.toISOString() },
     });
     expect(run.result.agreed).toHaveLength(1);
     expect(run.stats.comparison?.tooFewBuckets).toBe(false);
     for (const call of searcher.calls) expect(call).toMatchObject({ query: 'council bridge vote', nonce: NONCE });
+  });
+
+  it('test_perspectives_result_names_its_list', async () => {
+    const run = await runPerspectives(LINK, deps(mockClient().client, fakeSearcher({ buckets: ['left', 'center', 'right'] })));
+    expect(run.result).toMatchObject({ list: 'cloud', registryVersion: '1' });
+    expect(PerspectivesResultSchema.parse(run.result)).toEqual(run.result);
+
+    // A person's own list: its kind and version, whatever its outlets.
+    const own = { ...FIXTURE_LIST, kind: 'own' as const, version: '7' };
+    const empty = await runPerspectives(LINK, deps(mockClient().client, fakeSearcher(), { registry: own }));
+    expect(empty.result).toMatchObject({ list: 'own', registryVersion: '7', sources: [] });
+
+    expect(PerspectivesResultSchema.safeParse({ ...run.result, list: 'panel' }).success).toBe(false);
+    const { list: _list, ...unnamed } = run.result;
+    expect(PerspectivesResultSchema.safeParse(unnamed).success).toBe(false);
   });
 
   it('test_perspectives_no_coverage_skips_comparison', async () => {

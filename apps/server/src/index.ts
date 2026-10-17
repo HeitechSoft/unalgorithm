@@ -9,7 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { AIError } from '@unalgorithm/ai';
-import { bundledRegistry, type Registry, usableRegistry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import { FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
 import { logSetupNeeded } from './admin/setup.ts';
 import { registerClaimCacheJobs } from './ai/claim-cache.ts';
@@ -61,10 +61,10 @@ export interface StartOptions {
    */
   errors?: ErrorWindow;
   /**
-   * The outlet registry perspectives compares across; null: not offered. Default: `usableRegistry(bundledRegistry())`.
-   * Only the test entry (`test/support/fixture-outlets-entry.ts`) passes the fixture registry.
+   * The source list UnEcho Chamber compares across; null (the default): not offered, since nothing bundled holds a lean.
+   * Only the test entry (`test/support/fixture-outlets-entry.ts`) passes the fixture list. P3-77 removes it.
    */
-  outlets?: Registry | null;
+  outlets?: SourceList | null;
 }
 
 export interface RunningServer {
@@ -93,7 +93,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     maxRunning: 4,
     maxKeptPerUser: 5,
   });
-  const outlets = opts.outlets === undefined ? usableRegistry(bundledRegistry()) : opts.outlets;
+  const outlets = opts.outlets ?? null;
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
     await logSetupNeeded(db.db, log);

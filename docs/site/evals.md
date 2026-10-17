@@ -14,7 +14,7 @@ A run passes only when every gate of its feature passes, and a gate passes only 
 | Fact-check | Citations traced to a source found in that run | 100 % | at least 20 citations |
 | Fact-check | Cited links still live | 97 % | at least 20 answered links |
 | UnEcho Chamber | Citations traced to a source found in that run | 100 % | at least 10 citations |
-| UnEcho Chamber | Leans from the registry | 100 % | at least 10 sources |
+| UnEcho Chamber | Leans from the source list | 100 % | at least 10 sources |
 | UnEcho Chamber | Cited links still live | 97 % | at least 10 answered links |
 
 ## Live runs

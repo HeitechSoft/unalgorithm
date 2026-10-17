@@ -1,12 +1,13 @@
 import { type AISourceConfig, canonicalText } from '@unalgorithm/core';
-import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, CLOUD_ORIGIN } from '@unalgorithm/protocol';
 
 /**
  * How a `server` AI source is named on screen (R25, docs/brand.md). The same server code runs HeitechSoft's Cloud and
  * anyone's self-hosted copy, so "UnAlgorithm Cloud" is earned by the origin alone, never by what a server says about
- * itself. This module is the only place that knows the pinned origin.
+ * itself. The pinned origin is the protocol's `CLOUD_ORIGIN` (one source; UnAlgorithm Cloud's source list page is
+ * there too), and this module is the only place in the extension that names it.
  */
-export const PINNED_CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
+export const PINNED_CLOUD_ORIGIN = CLOUD_ORIGIN;
 
 const CLOUD = 'UnAlgorithm Cloud';
 const MAX_SERVER_NAME = 80;

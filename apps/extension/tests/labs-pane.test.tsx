@@ -16,10 +16,10 @@ import { serverOfferItem } from '../src/lib/storage.ts';
 /** Whether this build has a usable registry (the fictional fixture); none by default, as in store builds today. */
 const registry = vi.hoisted(() => ({ ready: false }));
 vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_REGISTRY } = await import('@unalgorithm/outlets/testing');
+  const { FIXTURE_LIST } = await import('@unalgorithm/outlets/testing');
   return {
     ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (registry.ready ? FIXTURE_REGISTRY : null),
+    perspectivesRegistry: () => (registry.ready ? FIXTURE_LIST : null),
   };
 });
 

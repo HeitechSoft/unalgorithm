@@ -11,15 +11,14 @@ import {
   structuredResponse,
 } from '@unalgorithm/ai/testing/openai-responses';
 import { neutralize } from '@unalgorithm/core';
-import type { Registry } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST, FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import type { LinkStatus } from '@unalgorithm/protocol';
 import { FACTCHECK_PROMPT_VERSION, type LinkChecker, PERSPECTIVES_PROMPT_VERSION } from '@unalgorithm/research';
 import { FACTCHECK_EVAL_SET, type FactcheckEvalReport, trustGates } from '@unalgorithm/research/eval';
 import { type PerspectivesEvalReport, perspectivesTrustGates } from '@unalgorithm/research/eval/perspectives';
 import { type EvalRecord, EvalRecordSchema, parseEvalResults } from '@unalgorithm/research/eval/results';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { main, NO_REGISTRY, type TrustEvalDeps } from '../src/cli/trust-eval.ts';
+import { BAD_LIST, EMPTY_LIST, main, NO_REGISTRY, type TrustEvalDeps } from '../src/cli/trust-eval.ts';
 import { SERVER_VERSION } from '../src/config.ts';
 
 /** The egress module with `createEgress` spied: its `checkLinks` answers every URL live, with no DNS or HTTP. */
@@ -31,16 +30,6 @@ vi.mock('../src/net/egress.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/net/egress.ts')>();
   egress.createEgress.mockImplementation(() => ({ checkLinks: egress.checkLinks }));
   return { ...original, createEgress: egress.createEgress };
-});
-
-/** The outlets module with `usableRegistry` answering `outlets.registry` when a test sets one (this build has none). */
-const outlets = vi.hoisted(() => ({ registry: undefined as Registry | undefined }));
-vi.mock('@unalgorithm/outlets', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@unalgorithm/outlets')>();
-  return {
-    ...original,
-    usableRegistry: (...args: Parameters<typeof original.usableRegistry>) => outlets.registry ?? original.usableRegistry(...args),
-  };
 });
 
 const globalFetch = vi.fn(async () => {
@@ -58,7 +47,6 @@ afterEach(() => {
   // test_trust_eval_never_uses_global_fetch (AC 10): no test may reach the network.
   expect(globalFetch).not.toHaveBeenCalled();
   vi.unstubAllGlobals();
-  outlets.registry = undefined;
 });
 
 const NOW = new Date('2026-10-15T12:00:00.000Z');
@@ -222,6 +210,14 @@ async function resultsFileWith(text: string): Promise<{ url: URL; read: () => Pr
   };
 }
 
+/** A saved copy of a server's `/outlets.json` (by default the fictional fixture's) in a fresh temporary directory. */
+async function listFileWith(content: unknown = FIXTURE_OFFICIAL_LIST): Promise<{ path: string; remove: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'unalgorithm-eval-list-'));
+  const path = join(dir, 'outlets.json');
+  await writeFile(path, typeof content === 'string' ? content : JSON.stringify(content), 'utf8');
+  return { path, remove: () => rm(dir, { recursive: true, force: true }) };
+}
+
 describe('trust eval: offline', () => {
   it('test_trust_eval_offline_factcheck', async () => {
     const { env, reads } = watchedEnv();
@@ -351,19 +347,107 @@ describe('trust eval: live on mocked transports', () => {
     expect(code).toBe(0);
   });
 
-  it('test_trust_eval_perspectives_needs_reviewed_registry', async () => {
-    const fetch = openaiFetch();
-    const { code, err } = await run(
-      ['--mode', 'openai', '--task', 'perspectives', '--live'],
-      { OPENAI_API_KEY: 'sk-k' },
-      {
-        fetch,
-      },
+  it('test_trust_eval_perspectives_needs_a_list', async () => {
+    expect(NO_REGISTRY).toBe(
+      "UnEcho Chamber needs a source list with leans: pass --list <file>, a saved copy of a server's /outlets.json.",
     );
-    expect(code).toBe(2);
-    expect(err).toEqual([NO_REGISTRY]);
-    expect(NO_REGISTRY).toBe('UnEcho Chamber needs a reviewed outlet registry; this build has none.');
-    expect(fetch.spy).not.toHaveBeenCalled();
+    for (const mode of ['anthropic', 'openai']) {
+      const { env, reads } = watchedEnv();
+      const fetch = openaiFetch();
+      const { code, out, err } = await run(['--mode', mode, '--task', 'perspectives', '--live'], env, { fetch });
+      expect(code, mode).toBe(2);
+      expect(err).toEqual([NO_REGISTRY]);
+      expect(out).toEqual([]);
+      // Before any key is read or anything is sent.
+      expect(reads).toEqual([]);
+      expect(fetch.spy).not.toHaveBeenCalled();
+    }
+  });
+
+  it('test_trust_eval_reads_list_file', async () => {
+    // The fixture without its Right outlets, at a version of its own: the run uses exactly what the file holds.
+    const noRight = {
+      ...FIXTURE_OFFICIAL_LIST,
+      version: '42',
+      outlets: FIXTURE_OFFICIAL_LIST.outlets.filter((o) => o.lean?.bucket !== 'right'),
+    };
+    const list = await listFileWith(noRight);
+    const env = {
+      COMPAT_BASE_URL: 'http://ai.example:11434/v1',
+      COMPAT_MODEL: 'm',
+      SEARCH_PROVIDER: 'brave',
+      SEARCH_API_KEY: 'k',
+    };
+    try {
+      const compat = compatFetch();
+      const { code, out, err } = await run(['--mode', 'compat', '--task', 'perspectives', '--live', '--list', list.path], env, {
+        fetch: compat.fetch,
+        linkCheck: liveChecker(),
+      });
+      expect(err).toEqual([]);
+      expect(code).not.toBe(2);
+      // The balance warnings come before the run.
+      expect(out[0]).toBe("The source list isn't balanced: No outlets in Right.");
+      expect(out[1]).toMatch(/^Live run: \d+ comparisons on compat/);
+      const queries = compat.urls
+        .filter((u) => u.startsWith('https://api.search.brave.com/'))
+        .map((u) => new URL(u).searchParams.get('q') ?? '');
+      expect(queries.length).toBeGreaterThan(0);
+      expect(queries.some((q) => q.includes('site:left-a.example'))).toBe(true);
+      expect(queries.some((q) => q.includes('site:right-'))).toBe(false);
+    } finally {
+      await list.remove();
+    }
+
+    // A file that isn't a sound list with a lean: refused before any key is read.
+    const [first, second] = FIXTURE_OFFICIAL_LIST.outlets;
+    if (!first || !second) throw new Error('the fixture has outlets');
+    for (const [content, message] of [
+      ['not json', BAD_LIST],
+      [{ ...FIXTURE_OFFICIAL_LIST, v: 2 }, BAD_LIST],
+      [
+        { ...FIXTURE_OFFICIAL_LIST, outlets: [first, { ...second, id: first.id }] },
+        "The --list file's source list needs fixing: Two outlets have the id fx-left-a.",
+      ],
+      [{ ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) }, EMPTY_LIST],
+    ] as const) {
+      const bad = await listFileWith(content);
+      try {
+        const { env: watched, reads } = watchedEnv();
+        const fetch = openaiFetch();
+        const { code, out, err } = await run(
+          ['--mode', 'openai', '--task', 'perspectives', '--live', '--list', bad.path],
+          watched,
+          {
+            fetch,
+          },
+        );
+        expect(code).toBe(2);
+        expect(err).toEqual([message]);
+        expect(out).toEqual([]);
+        expect(reads).toEqual([]);
+        expect(fetch.spy).not.toHaveBeenCalled();
+      } finally {
+        await bad.remove();
+      }
+    }
+    const missing = await run(
+      ['--mode', 'openai', '--task', 'perspectives', '--live', '--list', join(tmpdir(), 'no-such-list.json')],
+      {},
+    );
+    expect(missing.code).toBe(2);
+    expect(missing.err).toEqual([BAD_LIST]);
+
+    // `--list` is for live UnEcho Chamber runs only.
+    for (const argv of [
+      ['--mode', 'openai', '--live', '--list', 'outlets.json'],
+      ['--mode', 'openai', '--task', 'perspectives', '--list', 'outlets.json'],
+      ['--mode', 'openai', '--task', 'perspectives', '--live', '--list'],
+    ]) {
+      const { code, err } = await run(argv, {});
+      expect(code, argv.join(' ')).toBe(2);
+      expect(err.join('\n')).toContain('usage: pnpm eval:trust');
+    }
   });
 
   it('test_trust_eval_uses_egress_link_check', async () => {
@@ -503,6 +587,7 @@ describe('trust eval: record', () => {
       SEARCH_API_KEY: 'brave-test-token',
     };
     const env = { ...secrets, SEARCH_PROVIDER: 'brave' };
+    const list = await listFileWith();
     try {
       const factcheck = await run(['--mode', 'compat', '--live', '--all', '--record'], env, {
         fetch: compatFetch().fetch,
@@ -511,12 +596,11 @@ describe('trust eval: record', () => {
       });
       expect(factcheck.out.at(-1)).toBe(RECORDED);
 
-      outlets.registry = FIXTURE_REGISTRY;
-      const perspectives = await run(['--mode', 'compat', '--task', 'perspectives', '--live', '--all', '--record'], env, {
-        fetch: compatFetch().fetch,
-        linkCheck: liveChecker(),
-        resultsFile: file.url,
-      });
+      const perspectives = await run(
+        ['--mode', 'compat', '--task', 'perspectives', '--live', '--all', '--record', '--list', list.path],
+        env,
+        { fetch: compatFetch().fetch, linkCheck: liveChecker(), resultsFile: file.url },
+      );
       expect(perspectives.out.at(-1)).toBe(RECORDED);
 
       const text = await file.read();
@@ -538,7 +622,7 @@ describe('trust eval: record', () => {
         searchProvider: 'brave',
         ranOn: '2026-10-15',
         promptVersion: PERSPECTIVES_PROMPT_VERSION,
-        registryVersion: FIXTURE_REGISTRY.meta.version,
+        registryVersion: FIXTURE_LIST.version,
         serverVersion: SERVER_VERSION,
         items: 10,
         gates: { provenance: gates.provenance, leanIntegrity: gates.leanIntegrity, liveLinks: gates.liveLinks },
@@ -551,6 +635,7 @@ describe('trust eval: record', () => {
       expect(text).not.toContain('pv-');
     } finally {
       await file.remove();
+      await list.remove();
     }
   });
 });

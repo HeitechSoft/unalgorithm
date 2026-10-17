@@ -1,6 +1,6 @@
 import { type AIClient, AIError } from '@unalgorithm/ai';
 import { clipText } from '@unalgorithm/core';
-import { outletForHost, outletsIn, type Registry } from '@unalgorithm/outlets';
+import { outletForHost, outletsIn, type SourceList } from '@unalgorithm/outlets';
 import {
   LEAN_BUCKETS,
   type LeanBucket,
@@ -14,10 +14,10 @@ import { BUCKET_SEARCH_SYSTEM, buildBucketSearchUser } from './perspectives-prom
 import { cleanSnippet, hitUrl, type SearchProvider } from './search.ts';
 
 /**
- * The bucket search for UnEcho Chamber (RM3): one search per lean bucket, restricted to that bucket's registry
- * outlets and to a date window. The spread is enforced here, in code, whatever a model or a search provider returns:
- * a hit is kept only when its host is a labelled outlet of the bucket searched and its date falls in the window, and
- * its outlet and bucket come from the registry, never from a model.
+ * The bucket search for UnEcho Chamber (RM3): one search per lean bucket, restricted to that bucket's outlets on the
+ * source list and to a date window. The spread is enforced here, in code, whatever a model or a search provider
+ * returns: a hit is kept only when its host is an outlet of the bucket searched and its date falls in the window, and
+ * its outlet and bucket come from the source list, never from a model.
  */
 
 export interface BucketSearchRequest {
@@ -154,7 +154,7 @@ export function publishedAt(published: string | null, url: string, now: Date): D
 export interface CoverageSearch {
   /** Ids s1..sN, bucket order then hit order. */
   sources: RetrievedCoverageSource[];
-  /** Buckets with no labelled outlet (never searched) or whose search failed: shown as gaps. */
+  /** Buckets with no outlet on the source list (never searched) or whose search failed: shown as gaps. */
   unsearched: LeanBucket[];
   failed: LeanBucket[];
   dropped: { offDomain: number; offDate: number; undated: number; noText: number; duplicate: number; excluded: number };
@@ -162,12 +162,12 @@ export interface CoverageSearch {
 
 const withoutFragment = (href: string): string => href.replace(/#.*$/s, '');
 
-/** One search per bucket of LEAN_BUCKETS on its registry outlets, then the domain and date rules enforced on every hit. */
+/** One search per bucket of LEAN_BUCKETS on its source list outlets, then the domain and date rules enforced on every hit. */
 export async function searchBuckets(input: {
   query: string;
   from: Date;
   to: Date;
-  registry: Registry;
+  registry: SourceList;
   searcher: BucketSearcher;
   nonce: string;
   now: Date;

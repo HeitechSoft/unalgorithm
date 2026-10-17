@@ -4,9 +4,15 @@
  * link them in its legal footer; the extension links the same URLs. `test/site.test.ts` keeps each `source` real and its
  * first heading equal to `title`.
  */
+import { OUTLETS_PAGE_PATH } from './outlets.ts';
 
 /** The product website. `cloud.unalgorithm.app` is UnAlgorithm Cloud, never the website. */
 export const WEBSITE_ORIGIN = 'https://unalgorithmfeed.com';
+
+/** UnAlgorithm Cloud, HeitechSoft's server: the one origin the extension names "UnAlgorithm Cloud". */
+export const CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
+/** UnAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
+export const SOURCE_LIST_PAGE_URL = `${CLOUD_ORIGIN}${OUTLETS_PAGE_PATH}`;
 
 export interface SiteDocument {
   /** The Markdown file, relative to this repo's root. */
@@ -70,7 +76,7 @@ export const EVALS_PAGE = {
 
 /**
  * Text for one cell of a Markdown table in a generated site page: line breaks become spaces; \ | * _ ` [ ] < > are
- * escaped. The one escape every generated page uses, so text from a set or a registry can never add a cell, a link, a
+ * escaped. The one escape every generated page uses, so text from a set or a source list can never add a cell, a link, a
  * tag or emphasis. Not for a code span, where a backslash shows as itself.
  */
 export function markdownCell(text: string): string {

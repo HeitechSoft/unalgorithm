@@ -1,7 +1,7 @@
 /**
  * The perspectives job endpoints (P3-35): start, poll and cancel on the job kit, link only. Runs on the mock
  * OpenAI-compatible provider and a mock SearXNG answering dated hits on the fictional fixture registry's domains; the
- * registry reaches the app only as `outlets: FIXTURE_REGISTRY`. Nothing here calls a real model or search service.
+ * registry reaches the app only as `outlets: FIXTURE_LIST`. Nothing here calls a real model or search service.
  */
 
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,7 @@ import {
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   FACTCHECK_JOB_TTL_MS,
   FACTCHECK_JOBS_PATH,
@@ -103,7 +103,7 @@ async function perspectivesApp(opts: AppOptions = {}) {
   const searx = await startMockSearxng({ hits: fixtureHits });
   cleanup.push(() => searx.close());
   const config = testConfig({ ...ON, SEARCH_PROVIDER: 'searxng', SEARCH_URL: searx.url, ...env });
-  const t = await createTestApp({ config, outlets: FIXTURE_REGISTRY, ...options });
+  const t = await createTestApp({ config, outlets: FIXTURE_LIST, ...options });
   cleanup.push(t.close);
   await seedPassingRoute(t.deps.db.db, {
     task: 'synthesis',
@@ -178,7 +178,7 @@ async function billedApp(reply: Responder = happy, opts: AppOptions = {}) {
   const t = await createTestApp({
     config,
     ai,
-    outlets: FIXTURE_REGISTRY,
+    outlets: FIXTURE_LIST,
     billingModule: fixtureModule,
     priceSchedule: TEST_PRICE_SCHEDULE,
     ...options,
@@ -322,12 +322,12 @@ describe('perspectives jobs: run', { timeout: PGLITE_TIMEOUT }, () => {
     expect(job.billing).toBeUndefined();
     const result = PerspectivesResultSchema.parse(job.result);
     expect(result.story.url).toBe(LINK.url);
-    expect(result.registryVersion).toBe(FIXTURE_REGISTRY.meta.version);
+    expect(result.registryVersion).toBe(FIXTURE_LIST.version);
 
     // One search per bucket, each limited to that bucket's fixture domains.
     expect(t.searx.queries).toHaveLength(LEAN_BUCKETS.length);
     for (const bucket of LEAN_BUCKETS) {
-      const domains = FIXTURE_REGISTRY.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
+      const domains = FIXTURE_LIST.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
       const query = t.searx.queries.find((q) => q.includes(`site:${domains[0]}`)) ?? '';
       const sites = [...query.matchAll(/site:([a-z0-9.-]+)/g)].map((m) => m[1]);
       expect(sites.sort(), bucket).toEqual([...domains].sort());
@@ -485,7 +485,7 @@ describe('perspectives jobs: lifecycle', { timeout: PGLITE_TIMEOUT }, () => {
     const jobs = createJobStore<never>({ ttlMs: 1, maxRunning: 1, maxKeptPerUser: 1 });
     perspectivesRoutes(
       app,
-      { ...t.deps, priceSchedule: TEST_PRICE_SCHEDULE, perspectivesJobs: jobs, outlets: FIXTURE_REGISTRY },
+      { ...t.deps, priceSchedule: TEST_PRICE_SCHEDULE, perspectivesJobs: jobs, outlets: FIXTURE_LIST },
       {} as LimitDeps,
     );
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'test', version: '1' } });

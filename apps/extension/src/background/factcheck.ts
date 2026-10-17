@@ -10,7 +10,7 @@ import {
   webSearchName,
   webSearchOrigin,
 } from '@unalgorithm/core';
-import type { Registry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import {
   type AIErrorCode,
   FEATURE_NAMES,
@@ -310,7 +310,7 @@ const LEANS_MISMATCH = "This server's outlet list doesn't match this version of 
  * UnEcho Chamber for one shared link in a feed tab, on the person's own key (as fact-check) or on their
  * UnAlgorithm server. Every gate is checked again here, and each refusal returns before anything is sent. Only the link
  * leaves the browser, canonicalised first (tracking and per-click ids removed, decision D35); a result is kept only when
- * every lean in it is this build's own registry's (`leansMatchRegistry`).
+ * every lean in it is this build's own source list's (`leansMatchRegistry`).
  */
 export async function runPerspectivesForTab(
   tabId: number,
@@ -357,7 +357,12 @@ export async function runPerspectivesForTab(
 }
 
 /** The pipeline on the person's key: no `resolveLink` (the extension never fetches a link), no ceiling (own key). */
-async function compareOwnKey(link: SharedLink, registry: Registry, cfg: OwnKey, mode: OwnKeyMode): Promise<PerspectivesResponse> {
+async function compareOwnKey(
+  link: SharedLink,
+  registry: SourceList,
+  cfg: OwnKey,
+  mode: OwnKeyMode,
+): Promise<PerspectivesResponse> {
   // Every call's spend is in the ledger before the answer goes back, as fact-check's.
   const spends: Promise<void>[] = [];
   try {

@@ -6,6 +6,7 @@ export * from './errors.ts';
 export * from './factcheck.ts';
 export * from './hlc.ts';
 export * from './ids.ts';
+export * from './outlets.ts';
 export * from './perspectives.ts';
 export * from './platform.ts';
 export * from './server.ts';

@@ -118,7 +118,7 @@ const PERSPECTIVES_RUN: EvalRecord = {
   mode: 'anthropic',
   ranOn: '2026-12-01',
   promptVersion: 1,
-  registryVersion: '1.0.0',
+  registryVersion: '12',
   serverVersion: '0.4.0',
   items: 10,
   gates: {
@@ -314,7 +314,7 @@ describe('content', () => {
       '| Fact-check | Citations traced to a source found in that run | 100 % | at least 20 citations |',
       '| Fact-check | Cited links still live | 97 % | at least 20 answered links |',
       '| UnEcho Chamber | Citations traced to a source found in that run | 100 % | at least 10 citations |',
-      '| UnEcho Chamber | Leans from the registry | 100 % | at least 10 sources |',
+      '| UnEcho Chamber | Leans from the source list | 100 % | at least 10 sources |',
       '| UnEcho Chamber | Cited links still live | 97 % | at least 10 answered links |',
     ]) {
       expect(gates).toContain(row);
@@ -365,6 +365,15 @@ describe('content', () => {
       expect(page.endsWith('\n\n')).toBe(false);
       expect(page).not.toContain('\r');
     }
+  });
+
+  it('test_published_pages_say_source_list', () => {
+    // Leans come from a source list (P3-72): no page a person reads says "registry", with or without live runs.
+    for (const page of [promptsMarkdown(), evalsMarkdown(), evalsMarkdown([PERSPECTIVES_RUN])]) {
+      expect(page).not.toMatch(/registry/i);
+    }
+    expect(promptsMarkdown()).toContain('from the source list');
+    expect(evalsMarkdown()).toContain('Leans from the source list');
   });
 });
 
@@ -426,7 +435,7 @@ describe('results', () => {
     const [factcheck, perspectives] = tables(both);
     expect(factcheck).toHaveLength(3);
     expect(perspectives).toEqual([
-      '| Date | AI | Prompt version | Items | Citations traced | Leans from the registry | Cited links live | Agreement | Mean cost |',
+      '| Date | AI | Prompt version | Items | Citations traced | Leans from the source list | Cited links live | Agreement | Mean cost |',
       '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
       `| 2026-12-01 | Anthropic | 1 | 10 | 1.00 PASSED | 1.00 PASSED | 0.99 PASSED | 90 % | ${formatPrice(41_000)} |`,
     ]);

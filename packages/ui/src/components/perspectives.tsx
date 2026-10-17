@@ -1,7 +1,7 @@
 import {
+  BUCKET_LABELS,
   type DIFFERENCE_KINDS,
   FEATURE_NAMES,
-  type LeanBucket,
   type PerspectivesResult,
   type PerspectivesSource,
 } from '@unalgorithm/protocol';
@@ -11,14 +11,8 @@ import { IconButton } from './controls.tsx';
 import { CitationFigure } from './factcheck.tsx';
 import { Badge, Banner, EmptyState } from './feedback.tsx';
 
-/** Each lean bucket in words (never colour alone). Leans come only from the reviewed outlet registry. */
-export const BUCKET_LABELS: Record<LeanBucket, string> = {
-  left: 'Left',
-  'lean-left': 'Leans left',
-  center: 'Center',
-  'lean-right': 'Leans right',
-  right: 'Right',
-};
+/** Each lean bucket in words (never colour alone), from the protocol: one map for the sheet and every list page. */
+export { BUCKET_LABELS };
 
 export const DIFFERENCE_LABELS: Record<(typeof DIFFERENCE_KINDS)[number], string> = {
   emphasis: 'Emphasis',

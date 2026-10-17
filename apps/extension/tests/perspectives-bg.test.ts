@@ -23,8 +23,8 @@ import {
   researchResponse,
 } from '@unalgorithm/ai/testing/openai-responses';
 import { type AISourceConfig, dayUsage, defaultDevice, sourceId, type WebSearchKey } from '@unalgorithm/core';
-import type { Registry } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import type { SourceList } from '@unalgorithm/outlets';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   AUTHORIZE_PAGE_PATH,
   LEAN_BUCKETS,
@@ -51,7 +51,7 @@ import { leansMatchRegistry } from '../src/lib/outlets.ts';
 import { deviceItem, type FactcheckEntry, factcheckItem, usageItem } from '../src/lib/storage.ts';
 
 /** `leans`: what the leans check answers instead of the real one (undefined: the real one). */
-const reg = vi.hoisted(() => ({ value: null as Registry | null, leans: undefined as boolean | undefined }));
+const reg = vi.hoisted(() => ({ value: null as SourceList | null, leans: undefined as boolean | undefined }));
 vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/outlets.ts')>();
   return {
@@ -207,7 +207,7 @@ function perspectives(over: Partial<PerspectivesMsg> & Record<string, unknown> =
 }
 const entries = async (tabId = TAB) => (await factcheckItem(tabId).getValue()).entries;
 
-const outletName = (id: string) => FIXTURE_REGISTRY.outlets.find((o) => o.id === id)?.name ?? '';
+const outletName = (id: string) => FIXTURE_LIST.outlets.find((o) => o.id === id)?.name ?? '';
 /** A valid result naming one fixture outlet per bucket. */
 function fixtureResult(): PerspectivesResult {
   return {
@@ -215,7 +215,8 @@ function fixtureResult(): PerspectivesResult {
     checkedAt: '2026-10-15T09:00:00.000Z',
     model: 'claude-sonnet-5-5',
     promptVersion: 1,
-    registryVersion: FIXTURE_REGISTRY.meta.version,
+    registryVersion: FIXTURE_LIST.version,
+    list: 'cloud',
     story: {
       url: LINK.url,
       query: 'city bridge reopens',
@@ -255,7 +256,7 @@ const doneServer =
 
 beforeEach(async () => {
   fakeBrowser.reset();
-  reg.value = FIXTURE_REGISTRY;
+  reg.value = FIXTURE_LIST;
   reg.leans = undefined;
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockResolvedValue('access-token-1');
@@ -269,7 +270,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-  vi.doUnmock('@unalgorithm/outlets');
 });
 
 describe('registry', () => {
@@ -279,20 +279,13 @@ describe('registry', () => {
       const mod = await vi.importActual<typeof import('../src/lib/outlets.ts')>('../src/lib/outlets.ts');
       return mod.perspectivesRegistry();
     };
-    // The shipped draft, in this (non-e2e) mode.
+    // No source list with a lean in this (non-e2e) mode: the bundled candidates hold none.
     expect(import.meta.env.MODE).not.toBe('e2e');
     expect(await load()).toBeNull();
 
     vi.stubEnv('MODE', 'e2e');
-    expect(await load()).toStrictEqual(FIXTURE_REGISTRY);
+    expect(await load()).toStrictEqual(FIXTURE_LIST);
     vi.unstubAllEnvs();
-
-    const ready: Registry = { ...FIXTURE_REGISTRY, meta: { ...FIXTURE_REGISTRY.meta, status: 'reviewed' } };
-    vi.doMock('@unalgorithm/outlets', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('@unalgorithm/outlets')>()),
-      bundledRegistry: () => ready,
-    }));
-    expect(await load()).toBe(ready);
   });
 });
 
@@ -306,7 +299,7 @@ describe('gates', () => {
     await setup();
     reg.value = null;
     expect(await perspectives()).toStrictEqual(refusal('not-available', "UnEcho Chamber isn't available yet."));
-    reg.value = FIXTURE_REGISTRY;
+    reg.value = FIXTURE_LIST;
 
     expect(await perspectives({ link: { url: 'javascript:alert(1)' } })).toStrictEqual(
       refusal('bad-request', "This link can't be compared."),
@@ -607,12 +600,12 @@ describe('runs', () => {
   it('test_perspectives_bg_server_leans_checked_against_own_registry', async () => {
     const valid = fixtureResult();
     expect(PerspectivesResultSchema.safeParse(valid).success).toBe(true);
-    expect(leansMatchRegistry(valid, FIXTURE_REGISTRY)).toBe(true);
+    expect(leansMatchRegistry(valid, FIXTURE_LIST)).toBe(true);
 
     const changed = (edit: (r: PerspectivesResult) => void) => {
       const r = structuredClone(valid);
       edit(r);
-      return leansMatchRegistry(r, FIXTURE_REGISTRY);
+      return leansMatchRegistry(r, FIXTURE_LIST);
     };
     const first = (r: PerspectivesResult) => r.sources[0] as PerspectivesResult['sources'][number];
     expect(changed((r) => void (first(r).bucket = 'right'))).toBe(false);
@@ -620,9 +613,9 @@ describe('runs', () => {
     expect(changed((r) => void (first(r).domain = 'nowhere.example'))).toBe(false);
     expect(changed((r) => void (first(r).url = 'https://nowhere.example/news/bridge'))).toBe(false);
     expect(changed((r) => void ((r.coverage[0] as { sourceIds: string[] }).sourceIds = ['s2']))).toBe(false);
-    const unlabelled: Registry = {
-      ...FIXTURE_REGISTRY,
-      outlets: FIXTURE_REGISTRY.outlets.map((o) => (o.id === 'fx-left-a' ? { ...o, lean: null } : o)),
+    const unlabelled: SourceList = {
+      ...FIXTURE_LIST,
+      outlets: FIXTURE_LIST.outlets.map((o) => (o.id === 'fx-left-a' ? { ...o, lean: null } : o)),
     };
     expect(leansMatchRegistry(valid, unlabelled)).toBe(false);
     // Another outlet's name beside this outlet's lean.
@@ -634,7 +627,7 @@ describe('runs', () => {
     (repeated.coverage[0] as Row).sourceIds = [];
     (repeated.coverage[4] as Row).sourceIds = ['s1'];
     expect(PerspectivesResultSchema.safeParse(repeated).success).toBe(true);
-    expect(leansMatchRegistry(repeated, FIXTURE_REGISTRY)).toBe(false);
+    expect(leansMatchRegistry(repeated, FIXTURE_LIST)).toBe(false);
 
     // A server whose result carries a lean this build's registry doesn't hold: failed, nothing stored.
     await setup({ source: SERVER });

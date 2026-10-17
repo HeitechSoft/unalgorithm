@@ -33,6 +33,7 @@ const RESULT: PerspectivesResult = {
   model: 'claude-sonnet-5-5',
   promptVersion: 1,
   registryVersion: 'fixture-1',
+  list: 'cloud',
   story: { url: 'https://news.example.com/a', query: 'Fixture story', from: '2026-10-12T12:00:00Z', to: AT },
   coverage: LEAN_BUCKETS.map((bucket, i) => ({ bucket, sourceIds: i === 4 ? [] : [`s${i + 1}`] })),
   agreed: [point('All outlets report the vote.')],

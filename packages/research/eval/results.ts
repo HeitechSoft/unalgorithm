@@ -19,7 +19,7 @@ export const EvalRecordSchema = z.strictObject({
   searchProvider: z.enum(['brave', 'tavily']).optional(),
   ranOn: z.iso.date(),
   promptVersion: z.number().int().min(1),
-  /** perspectives only: the reviewed registry's version. */
+  /** perspectives only: the version of the source list the run used. */
   registryVersion: z.string().max(40).optional(),
   serverVersion: z.string().max(40),
   items: z.number().int().min(1),

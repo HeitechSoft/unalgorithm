@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bundledRegistry, usableRegistry } from '@unalgorithm/outlets';
 import { FEATURE_NAMES } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestFor } from '../wxt.config.ts';
@@ -104,8 +103,8 @@ describe('Chrome Web Store material', () => {
   });
 
   it('test_store_listing_names_unecho_chamber_only_with_a_usable_registry', () => {
-    // D79: a listing must not describe a feature the build hides. Store builds show UnEcho Chamber only with a reviewed,
-    // usable bundled registry; add it back to the listing in the release that ships one.
-    if (usableRegistry(bundledRegistry()) === null) expect(listing()).not.toContain(FEATURE_NAMES.perspectives);
+    // D79: a listing must not describe a feature the build hides. Store builds have no source list with a lean until the
+    // extension reads UnAlgorithm Cloud's (P3-75, P3-77), so UnEcho Chamber stays hidden; P3-77 adds it to the listing.
+    expect(listing()).not.toContain(FEATURE_NAMES.perspectives);
   });
 });

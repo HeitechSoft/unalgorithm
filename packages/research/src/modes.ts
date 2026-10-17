@@ -1,5 +1,5 @@
 import { type AIClient, AIError } from '@unalgorithm/ai';
-import type { Registry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import { aiBucketSearcher, providerBucketSearcher } from './coverage.ts';
 import { FACTCHECK_MODELS, type FactcheckDeps } from './factcheck.ts';
 import { PERSPECTIVES_MODELS, type PerspectivesDeps } from './perspectives.ts';
@@ -70,7 +70,7 @@ export function factcheckDepsForMode(client: AIClient, mode: OwnKeyMode): Factch
   }
 }
 
-export function perspectivesDepsForMode(client: AIClient, mode: OwnKeyMode, registry: Registry): PerspectivesDeps {
+export function perspectivesDepsForMode(client: AIClient, mode: OwnKeyMode, registry: SourceList): PerspectivesDeps {
   switch (mode.kind) {
     case 'anthropic':
       return { client, searcher: aiBucketSearcher(client, PERSPECTIVES_MODELS.search), registry };

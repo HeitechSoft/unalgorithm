@@ -1,58 +1,73 @@
 /**
- * The shipped draft seed (`data/registry.json`): candidate outlets for the review panel, no labels, facts only with an
- * opened source. Other tests use the fictional fixture; this file checks the shipped data itself.
+ * The shipped candidate list (`data/candidates.json`): outlets an agent listed by name, web address and country, for a
+ * source list's admins to start from. It can never hold a lean (only people set leans). Other tests use the fictional
+ * fixture; this file checks the shipped data itself.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { main } from '../src/cli.ts';
-import { type Registry, RegistrySchema, registryProblems, registryReady, usableRegistry } from '../src/index.ts';
+import { bundledCandidates, CandidatesSchema, listBalance, listProblems } from '../src/index.ts';
 
-const FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'registry.json');
-const raw: unknown = JSON.parse(readFileSync(FILE, 'utf8'));
-const seed: Registry = RegistrySchema.parse(raw);
+const FILE = new URL('../data/candidates.json', import.meta.url);
+const raw = JSON.parse(readFileSync(FILE, 'utf8')) as { meta: unknown; outlets: Record<string, unknown>[] };
 
-describe('Draft seed', () => {
-  it('test_seed_is_sound_and_passes_gate', async () => {
-    expect(registryProblems(raw)).toEqual([]);
-    const lines: string[] = [];
-    expect(await main(['check', '--file', FILE], { out: (l) => lines.push(l) })).toBe(0);
+/** `data/registry.json` on c17f91b, as [id, name, domains, country] per outlet, hashed: the same outlets, in order. */
+const OUTLETS_ON_C17F91B = '1ea0f5c8a182b0d99cd9e4528c6f3bb8315cca04372ec9070aa050959496b9b3';
+
+describe('candidates', () => {
+  it('test_candidates_never_hold_a_lean', () => {
+    expect(CandidatesSchema.parse(raw)).toEqual(raw);
+    for (const o of raw.outlets) expect(o.lean, String(o.id)).toBeNull();
+
+    const first = raw.outlets[0] ?? {};
+    const leaned = { ...first, lean: { bucket: 'center' } };
+    expect(CandidatesSchema.safeParse({ ...raw, outlets: [leaned] }).success).toBe(false);
+    const evidenced = { ...first, lean: { bucket: 'center', evidence: [{ url: 'https://evidence.example/a', note: 'n' }] } };
+    expect(CandidatesSchema.safeParse({ ...raw, outlets: [evidenced] }).success).toBe(false);
+    expect(CandidatesSchema.safeParse({ ...raw, outlets: [{ ...first, lean: 'center' }] }).success).toBe(false);
+    // Strict: no field the old registry had, and nothing new.
+    expect(CandidatesSchema.safeParse({ ...raw, outlets: [{ ...first, verified: false }] }).success).toBe(false);
+    expect(CandidatesSchema.safeParse({ ...raw, outlets: [{ ...first, facts: [] }] }).success).toBe(false);
+    expect(CandidatesSchema.safeParse({ ...raw, meta: { ...(raw.meta as object), status: 'draft' } }).success).toBe(false);
+
+    const candidates = bundledCandidates();
+    expect(candidates).not.toBeNull();
+    expect(listProblems(candidates?.outlets ?? [])).toEqual([]);
+    expect(listBalance(candidates ?? { outlets: [] })).toMatchObject({ empty: true, warnings: [] });
+    expect(candidates?.meta).toEqual({
+      license: 'CC-BY-4.0',
+      updatedOn: '2026-10-15',
+      notice: 'Candidate outlets for a source list: name, web addresses and country only. No leans: only people set leans.',
+    });
   });
 
-  it('test_seed_is_draft_without_labels', () => {
-    expect(seed.meta.status).toBe('draft');
-    expect(seed.meta.version).toBe('0.0.0-draft');
-    expect(seed.meta.panel).toEqual([]);
-    for (const o of seed.outlets) expect(o.lean, o.id).toBeNull();
-    const ids = seed.outlets.map((o) => o.id);
+  it('test_candidates_same_outlets_as_before', () => {
+    const outlets = bundledCandidates()?.outlets ?? [];
+    expect(outlets).toHaveLength(169);
+    expect(outlets.filter((o) => o.country === 'US')).toHaveLength(114);
+    expect(outlets.filter((o) => o.country === 'CA')).toHaveLength(55);
+    const ids = outlets.map((o) => o.id);
     expect(ids).toEqual([...ids].sort());
-  });
+    expect(new Set(ids).size).toBe(ids.length);
 
-  it('test_seed_facts_only_with_sources', () => {
-    const updatedOn = seed.meta.updatedOn;
-    for (const o of seed.outlets) {
-      if (!o.verified) {
-        expect(o.facts, o.id).toEqual([]);
-        continue;
-      }
-      expect(o.facts.length, o.id).toBeGreaterThan(0);
-      for (const f of o.facts) {
-        expect(new URL(f.source).protocol, o.id).toBe('https:');
-        expect(f.checkedOn <= updatedOn, o.id).toBe(true);
-      }
-    }
-  });
+    const pick = (id: string) => outlets.find((o) => o.id === id);
+    expect(pick('associated-press')).toEqual({
+      id: 'associated-press',
+      name: 'Associated Press',
+      domains: ['apnews.com'],
+      country: 'US',
+      lean: null,
+    });
+    expect(pick('le-devoir')).toEqual({
+      id: 'le-devoir',
+      name: 'Le Devoir',
+      domains: ['ledevoir.com'],
+      country: 'CA',
+      lean: null,
+    });
+    expect(pick('ms-now')).toEqual({ id: 'ms-now', name: 'MS NOW', domains: ['ms.now', 'msnbc.com'], country: 'US', lean: null });
 
-  it('test_seed_countries_and_size', () => {
-    for (const o of seed.outlets) expect(['US', 'CA'], o.id).toContain(o.country);
-    expect(seed.outlets.length).toBeGreaterThanOrEqual(100);
-    expect(seed.outlets.filter((o) => o.country === 'US').length).toBeGreaterThanOrEqual(30);
-    expect(seed.outlets.filter((o) => o.country === 'CA').length).toBeGreaterThanOrEqual(30);
-  });
-
-  it('test_seed_keeps_perspectives_hidden', () => {
-    expect(registryReady(seed)).toBe(false);
-    expect(usableRegistry(seed, { allowFixture: true })).toBeNull();
+    const tuples = JSON.stringify(outlets.map((o) => [o.id, o.name, o.domains, o.country]));
+    expect(createHash('sha256').update(tuples).digest('hex')).toBe(OUTLETS_ON_C17F91B);
   });
 });

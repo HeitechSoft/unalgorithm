@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type AIClient, AIError, type ResearchRequest } from '@unalgorithm/ai';
-import { bundledRegistry, usableRegistry } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import { CREDIT_PRICE_SCHEDULE, ZERO_USAGE } from '@unalgorithm/protocol';
 import type { SearchProvider } from '@unalgorithm/research';
 import { describe, expect, it } from 'vitest';
@@ -21,7 +20,7 @@ const ANTHROPIC: Record<string, string | undefined> = {
   AI_DATA_POLICY: undefined,
 };
 const NOW = new Date('2026-10-15T12:00:00Z');
-const FIXTURE = usableRegistry(FIXTURE_REGISTRY, { allowFixture: true });
+const FIXTURE = FIXTURE_LIST;
 const ON = { perspectives: { enabled: true } };
 
 function configError(env: Record<string, string | undefined>): ConfigError {
@@ -109,16 +108,11 @@ describe('setting', () => {
 describe('offer', () => {
   it('test_perspectives_offer_needs_registry', () => {
     const config = testConfig({ ...ANTHROPIC, FACTCHECK: 'on', PERSPECTIVES: 'on' });
+    // A real server has no source list (the bundled candidates hold no lean): UnEcho Chamber stays hidden.
     expect(perspectivesOffer(config, TEST_PRICE_SCHEDULE, null, NOW)).toEqual({ offered: false });
-    // The bundled draft registry is not usable: perspectives stays hidden on a real server.
-    expect(usableRegistry(bundledRegistry())).toBeNull();
-    expect(perspectivesOffer(config, TEST_PRICE_SCHEDULE, usableRegistry(bundledRegistry()), NOW)).toEqual({
-      offered: false,
-    });
   });
 
   it('test_perspectives_offer_free_server', () => {
-    expect(FIXTURE).not.toBeNull();
     const config = testConfig({ ...ANTHROPIC, FACTCHECK: 'on', PERSPECTIVES: 'on' });
     expect(config.billing).toBe('off');
     expect(perspectivesOffer(config, CREDIT_PRICE_SCHEDULE, FIXTURE, NOW)).toEqual({
@@ -144,7 +138,6 @@ describe('offer', () => {
 
 describe('deps', () => {
   it('test_perspectives_deps_routes_and_models', async () => {
-    if (!FIXTURE) throw new Error('fixture registry not usable');
     const resolveLink = async () => null;
 
     // Anthropic: searches on the research route's client, at the classify model; the rest on synthesis.
@@ -194,7 +187,7 @@ describe('deps', () => {
 describe('image', () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-  it('test_dockerfile_copies_outlets_and_runs_gate', () => {
+  it('test_dockerfile_copies_outlets_and_runs_no_gate', () => {
     const dockerfile = read('../Dockerfile');
     const stages = dockerfile.split(/^FROM /m).slice(1);
     const stage = (name: string) => stages.find((s) => s.split('\n')[0]?.includes(` AS ${name}`)) ?? '';
@@ -203,17 +196,20 @@ describe('image', () => {
     const prod = lines(stage('prod'));
 
     for (const s of [build, prod]) expect(s).toContain('COPY packages/outlets/package.json packages/outlets/');
-    const gate = build.indexOf('RUN node packages/outlets/src/cli.ts check');
-    expect(gate).toBeGreaterThan(build.indexOf('COPY packages/ packages/'));
-    expect(build.indexOf('COPY packages/ packages/')).toBeGreaterThan(-1);
+    expect(build).toContain('COPY packages/ packages/');
+    // The server imports the candidate list (the admins' import, P3-73): the image keeps the source and the data.
     expect(prod).toContain('COPY packages/outlets/src packages/outlets/src');
     expect(prod).toContain('COPY packages/outlets/data packages/outlets/data');
-    expect(prod.join('\n')).not.toContain('cli.ts check');
+    // No outlets check in any stage: nothing bundled can carry a lean (decision D99).
+    expect(stages.length).toBeGreaterThanOrEqual(3);
+    for (const s of stages) {
+      expect(s).not.toContain('cli.ts');
+      expect(s).not.toContain('outlets:check');
+    }
 
+    // Key files stay out of the build context; the outlets package never had one, so no rule names it.
     const ignore = lines(read('../../../.dockerignore'));
-    const pem = ignore.indexOf('**/*.pem');
-    expect(pem).toBeGreaterThan(-1);
-    // The panel's public key is `keys/panel-ed25519.pub`: no ignore rule may need to know about it.
-    expect(ignore.filter((l) => l.includes('panel-ed25519'))).toStrictEqual([]);
+    expect(ignore).toContain('**/*.pem');
+    expect(ignore.filter((l) => /panel|outlets/.test(l))).toStrictEqual([]);
   });
 });

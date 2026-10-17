@@ -30,10 +30,10 @@ vi.mock('@unalgorithm/research', async (importOriginal) => ({
 }));
 
 vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_REGISTRY } = await import('@unalgorithm/outlets/testing');
+  const { FIXTURE_LIST } = await import('@unalgorithm/outlets/testing');
   return {
     ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (mocks.registry.ready ? FIXTURE_REGISTRY : null),
+    perspectivesRegistry: () => (mocks.registry.ready ? FIXTURE_LIST : null),
   };
 });
 

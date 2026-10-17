@@ -1,6 +1,6 @@
 import { type AIClient, AIError, toStrictJsonSchema } from '@unalgorithm/ai';
 import { canonicalText, clipText, makeNonce } from '@unalgorithm/core';
-import type { Registry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import {
   LEAN_BUCKETS,
   type LeanBucket,
@@ -26,8 +26,8 @@ import { type ComparisonStats, validateComparison } from './validate-perspective
 /**
  * UnEcho Chamber (RM3): the one pipeline the extension (own key) and the server both run. From a shared link only
  * (URL and link-card title, never post text): canonical URL and ± 3-day window, a neutral story query from a small
- * model, one search per lean bucket on registry outlets, a comparison of the matched coverage with no tools, and the
- * validator. Lean labels come only from the registry the caller passes; no model is told about sides.
+ * model, one search per lean bucket on the source list's outlets, a comparison of the matched coverage with no tools, and
+ * the validator. Lean labels come only from the source list the caller passes; no model is told about sides.
  */
 
 export const PERSPECTIVES_MODELS = {
@@ -49,8 +49,8 @@ export interface PerspectivesDeps {
   /** The story query and the comparison (structured, no tools). */
   client: AIClient;
   searcher: BucketSearcher;
-  /** A registry already accepted by `usableRegistry`. */
-  registry: Registry;
+  /** The source list the run reads (the field keeps its name): its leans, its kind and its version go in the result. */
+  registry: SourceList;
   models?: Partial<Record<keyof typeof PERSPECTIVES_MODELS, string>>;
   /** The server's canonical-URL resolution (P3-32); default none (the browser never fetches a link). Never throws. */
   resolveLink?: (url: string, signal: AbortSignal) => Promise<string | null>;
@@ -208,7 +208,8 @@ export async function runPerspectives(
       v: 1 as const,
       checkedAt: at.toISOString(),
       promptVersion: PERSPECTIVES_PROMPT_VERSION,
-      registryVersion: registry.meta.version,
+      registryVersion: registry.version,
+      list: registry.kind,
       story: { url, query, from: from.toISOString(), to: to.toISOString() },
     };
 

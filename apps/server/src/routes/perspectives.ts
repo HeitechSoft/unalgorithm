@@ -1,11 +1,11 @@
 /**
- * UnEcho Chamber jobs (F22, F18): one shared link in, a comparison of its coverage across the registry's lean
+ * UnEcho Chamber jobs (F22, F18): one shared link in, a comparison of its coverage across the source list's lean
  * buckets out, on the job kit (`routes/jobs.ts`), which owns the lifecycle, the holds, the usage row and the no-content
  * logging. The request is the link alone (URL and link-card title) with the platform and audience: the schema is strict,
  * so a body carrying post text or any other field is refused, never stripped. The link is never logged or stored.
  */
 import { AIError } from '@unalgorithm/ai';
-import type { Registry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import {
   type CreditPriceSchedule,
   FEATURE_NAMES,
@@ -32,8 +32,8 @@ export function perspectivesRoutes(
   deps: AppDeps & {
     priceSchedule: CreditPriceSchedule;
     perspectivesJobs: JobStore<PerspectivesResult>;
-    /** A usable registry, or null: then perspectives is not offered. */
-    outlets: Registry | null;
+    /** The source list, or null: then UnEcho Chamber is not offered. */
+    outlets: SourceList | null;
   },
   limits: LimitDeps,
 ): void {
@@ -66,8 +66,8 @@ export function perspectivesRoutes(
       },
       limits: (account) => checkJobLimits(limits, account),
       prepare: async (maxCostMicros, req) => {
-        // `offer` refused without a registry, so it is here.
-        const registry = outlets as Registry;
+        // `offer` refused without a source list, so it is here.
+        const registry = outlets as SourceList;
         const routes = await resolveFactcheckRoutes(db.db, config, log);
         const pDeps = perspectivesDepsFor(routes, {
           ai,

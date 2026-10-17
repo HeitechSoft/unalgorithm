@@ -9,7 +9,7 @@ import {
   researchMessage,
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_MARKER } from '@unalgorithm/outlets/testing';
 import { LEAN_BUCKETS } from '@unalgorithm/protocol';
 import {
   answerAnthropicModels,
@@ -45,7 +45,7 @@ import {
 
 /**
  * UnEcho Chamber end to end on the person's own Anthropic key (P3-41, RM3): the real extension in Chromium, built
- * in e2e mode (so `perspectivesRegistry()` is the fictional fixture registry), goes from the public Facebook link share
+ * in e2e mode (so `perspectivesRegistry()` is the fictional fixture list), goes from the public Facebook link share
  * to the comparison in the side panel, with nothing but a mocked api.anthropic.com answered through `context.route`.
  * Every other request is aborted by the fixtures. No server, no Docker.
  */
@@ -252,13 +252,9 @@ test('test_e2e_perspectives_only_link_leaves', async ({ context, extensionId }) 
 
 test('test_e2e_store_build_has_no_fixture_registry', () => {
   test.skip(!existsSync(STORE_BUILD), 'no store build in .output/chrome-mv3 (CI builds it with `pnpm zip`)');
-  // The fixture's domains are built at run time, so its version and notice mark it in a bundle; the e2e build, which
-  // holds the fixture, shows the markers find it.
-  const markers = [
-    FIXTURE_REGISTRY.meta.version,
-    FIXTURE_REGISTRY.meta.notice,
-    ...FIXTURE_REGISTRY.outlets.flatMap((o) => [o.name, ...o.domains]),
-  ];
+  // The fixture's names and domains are built at run time, so the marker in its evidence notes marks it in a bundle;
+  // the e2e build, which holds the fixture, shows the marker finds it.
+  const markers = [FIXTURE_MARKER];
   const holding = (dir: string) => files(dir).filter((file) => markers.some((m) => readFileSync(file, 'latin1').includes(m)));
   expect(holding(EXTENSION_PATH).length).toBeGreaterThan(0);
   expect(holding(STORE_BUILD)).toEqual([]);

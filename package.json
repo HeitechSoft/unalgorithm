@@ -22,7 +22,6 @@
     "docs:site": "node packages/research/eval/publish.ts",
     "eval:factcheck": "node packages/research/eval/cli.ts",
     "eval:trust": "node apps/server/src/cli/trust-eval.ts",
-    "outlets:check": "node packages/outlets/src/cli.ts check",
     "changeset": "changeset",
     "fixtures:check": "node scripts/check-fixtures.mjs",
     "scan:public": "node scripts/scan-public-repo.mjs",

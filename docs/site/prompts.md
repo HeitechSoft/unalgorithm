@@ -230,7 +230,7 @@ Prompt version 1.
 | Step 2: one search per lean bucket | Claude Haiku 5.5 | gpt-5-mini |
 | Step 3: the comparison | Claude Sonnet 5.5 | gpt-5 |
 
-No prompt names a side. Code picks the outlet sites each search may use, the dates (± 3 days around the link's date) and each source's lean bucket, from the outlet registry; no model is told a bucket or a lean. On your own AI server, every step uses that server's model, and with a search key (or a server's search provider) step 2 has no AI call: the story query is sent as one search per lean bucket.
+No prompt names a side. Code picks the outlet sites each search may use, the dates (± 3 days around the link's date) and each source's lean bucket, from the source list; no model is told a bucket or a lean. On your own AI server, every step uses that server's model, and with a search key (or a server's search provider) step 2 has no AI call: the story query is sent as one search per lean bucket.
 
 The example requests are built by the same code as real ones, from the evaluation link `pv-01`, with one made-up source from a fictional outlet.
 

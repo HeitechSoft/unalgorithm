@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { modelLabel, toStrictJsonSchema } from '@unalgorithm/ai';
 import { formatPrice } from '@unalgorithm/core';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   EVALS_PAGE,
   FACTCHECK_VERDICTS,
@@ -172,8 +172,8 @@ function perspectivesSteps(): Step<keyof typeof PERSPECTIVES_MODELS>[] {
   // The window a run on this link computes the day after the link's date (2026-10-14 ± the window).
   const { from, to } = storyWindow(link.url, new Date('2026-10-17T00:00:00Z'));
   const host = new URL(link.url).hostname;
-  const outlet = FIXTURE_REGISTRY.outlets.find((o) => o.domains.includes(host));
-  if (!outlet?.lean) throw new Error(`The fixture registry has no labelled outlet for ${host}.`);
+  const outlet = FIXTURE_LIST.outlets.find((o) => o.domains.includes(host));
+  if (!outlet?.lean) throw new Error(`The fixture list has no outlet with a lean for ${host}.`);
   const source: RetrievedCoverageSource = {
     id: 's1',
     url: link.url,
@@ -257,7 +257,7 @@ export function promptsMarkdown(opts: { blocklist?: readonly BlockedDomain[] } =
     `## ${PERSPECTIVES}`,
     `Prompt version ${PERSPECTIVES_PROMPT_VERSION}.`,
     modelsTable(perspectives, PERSPECTIVES_MODELS, OPENAI_PERSPECTIVES_MODELS),
-    `No prompt names a side. Code picks the outlet sites each search may use, the dates (± ${PERSPECTIVES_WINDOW_DAYS} days around the link's date) and each source's lean bucket, from the outlet registry; no model is told a bucket or a lean. On your own AI server, every step uses that server's model, and with a search key (or a server's search provider) step 2 has no AI call: the story query is sent as one search per lean bucket.`,
+    `No prompt names a side. Code picks the outlet sites each search may use, the dates (± ${PERSPECTIVES_WINDOW_DAYS} days around the link's date) and each source's lean bucket, from the source list; no model is told a bucket or a lean. On your own AI server, every step uses that server's model, and with a search key (or a server's search provider) step 2 has no AI call: the story query is sent as one search per lean bucket.`,
     'The example requests are built by the same code as real ones, from the evaluation link `pv-01`, with one made-up source from a fictional outlet.',
     ...perspectives.flatMap(stepBlocks),
   ]);
@@ -282,7 +282,7 @@ function gatesBlocks(): string[] {
         [FACTCHECK, traced, percent(fc.provenance), `at least ${fc.minCited} citations`],
         [FACTCHECK, live, percent(fc.liveLinks), `at least ${fc.minCited} answered links`],
         [PERSPECTIVES, traced, percent(pv.provenance), `at least ${pv.minCited} citations`],
-        [PERSPECTIVES, 'Leans from the registry', percent(pv.leanIntegrity), `at least ${pv.minCited} sources`],
+        [PERSPECTIVES, 'Leans from the source list', percent(pv.leanIntegrity), `at least ${pv.minCited} sources`],
         [PERSPECTIVES, live, percent(pv.liveLinks), `at least ${pv.minCited} answered links`],
       ],
     ),
@@ -298,7 +298,7 @@ const RUN_GATES: Readonly<Record<EvalRecord['task'], readonly (readonly [GateNam
   ],
   perspectives: [
     ['provenance', 'Citations traced'],
-    ['leanIntegrity', 'Leans from the registry'],
+    ['leanIntegrity', 'Leans from the source list'],
     ['liveLinks', 'Cited links live'],
   ],
 };

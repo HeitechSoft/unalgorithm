@@ -4,7 +4,7 @@
  * query and the searches on the classify route's model and the comparison on the synthesis route.
  */
 import { type AIClient, AIError } from '@unalgorithm/ai';
-import type { Registry } from '@unalgorithm/outlets';
+import type { SourceList } from '@unalgorithm/outlets';
 import { type CreditPriceSchedule, PERSPECTIVES_COST_CEILING_MICROS } from '@unalgorithm/protocol';
 import {
   aiBucketSearcher,
@@ -18,11 +18,11 @@ import { type JobOffer, jobOffer } from '../routes/jobs.ts';
 import type { FactcheckRoutes } from './factcheck.ts';
 import type { AiRoute } from './routes.ts';
 
-/** Not offered without a usable registry (decision D27); otherwise P3-33's rule for the `perspectives` task. */
+/** Not offered without a source list; otherwise P3-33's rule for the `perspectives` task. */
 export function perspectivesOffer(
   config: Pick<Config, 'perspectives' | 'billing'>,
   schedule: CreditPriceSchedule,
-  registry: Registry | null,
+  registry: SourceList | null,
   now: Date = new Date(),
 ): JobOffer {
   if (!registry) return { offered: false };
@@ -44,7 +44,7 @@ export function perspectivesDepsFor(
   rt: {
     ai: { clientFor(route: AiRoute): AIClient };
     search: SearchProvider | null;
-    registry: Registry;
+    registry: SourceList;
     resolveLink?: (url: string, signal: AbortSignal) => Promise<string | null>;
     maxCostMicros?: number;
   },

@@ -39,6 +39,7 @@ function result(overrides: Partial<PerspectivesResult> = {}): PerspectivesResult
     model: 'claude-sonnet-5-5',
     promptVersion: 1,
     registryVersion: 'fixture-1',
+    list: 'cloud',
     story: {
       url: 'https://story.example/harbour-bridge',
       query: 'Harbour bridge reopens after repairs',

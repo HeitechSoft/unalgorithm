@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { format } from 'node:util';
 import { describeError } from '@unalgorithm/ai';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import {
   CLASSIFY_PATH,
   ClassifyResponseSchema,
@@ -263,7 +263,7 @@ async function runCanary(open: OpenDatabase): Promise<CanaryRun> {
     cleanup.push(() => database.close());
     const searx = await startMockSearxng({ hits: canaryHits });
     cleanup.push(() => searx.close());
-    const t = await createTestApp({ config: configFor(searx.url), db: database.handle, outlets: FIXTURE_REGISTRY });
+    const t = await createTestApp({ config: configFor(searx.url), db: database.handle, outlets: FIXTURE_LIST });
     cleanup.push(t.close);
     await seedPassingRoute(database.handle.db, {
       task: 'synthesis',

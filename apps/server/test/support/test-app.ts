@@ -90,7 +90,7 @@ export interface TestAppOptions {
   linkCheck?: AppDeps['linkCheck'];
   /** The fact-check job store, such as one on a test clock. Default: the app's own. */
   factcheckJobs?: AppDeps['factcheckJobs'];
-  /** The perspectives registry: `FIXTURE_REGISTRY`, or null. Default: the app's own (the bundled registry if usable). */
+  /** The perspectives source list: `FIXTURE_LIST`, or null. Default: the app's own (none). */
   outlets?: AppDeps['outlets'];
   /** The perspectives job store. Default: the app's own. */
   perspectivesJobs?: AppDeps['perspectivesJobs'];

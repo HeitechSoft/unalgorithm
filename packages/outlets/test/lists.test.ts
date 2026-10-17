@@ -1,0 +1,153 @@
+/**
+ * Source lists (P3-72): the one runtime shape, the list rules, the lookups and the fictional fixture. Every outlet here
+ * is on `.example`: no real outlet, no real lean.
+ */
+import { existsSync, readFileSync } from 'node:fs';
+import { LEAN_BUCKETS, MAX_LIST_DOMAINS, MAX_LIST_OUTLETS, OfficialListSchema } from '@unalgorithm/protocol';
+import { describe, expect, it } from 'vitest';
+import {
+  bundledCandidates,
+  domainFromInput,
+  type ListProblem,
+  listProblems,
+  listProblemText,
+  officialSourceList,
+  outletForHost,
+  outletIdFromName,
+  outletsIn,
+} from '../src/index.ts';
+import { FIXTURE_LIST, FIXTURE_MARKER, FIXTURE_OFFICIAL_LIST } from '../src/testing/fixture.ts';
+
+const REPO_ROOT = new URL('../../../', import.meta.url);
+const read = (path: string) => readFileSync(new URL(path, REPO_ROOT), 'utf8');
+
+const outlet = (id: string, ...domains: string[]) => ({ id, domains });
+/** `n` outlets with one domain each, then `extra` more domains on the first. */
+function sized(n: number, extra = 0) {
+  return Array.from({ length: n }, (_, i) =>
+    outlet(`fx-${i}`, `outlet-${i}.example`, ...(i === 0 ? Array.from({ length: extra }, (_, j) => `extra-${j}.example`) : [])),
+  );
+}
+
+describe('list rules', () => {
+  it('test_list_problems_each_rule', () => {
+    expect(listProblems(FIXTURE_LIST.outlets)).toEqual([]);
+    expect(listProblems(FIXTURE_OFFICIAL_LIST.outlets)).toEqual([]);
+    const candidates = bundledCandidates();
+    expect(candidates).not.toBeNull();
+    expect(listProblems(candidates?.outlets ?? [])).toEqual([]);
+    expect(listProblems([])).toEqual([]);
+
+    const problems = (outlets: { id: string; domains: string[] }[]): ListProblem[] => listProblems(outlets);
+    expect(problems([outlet('fx-a', 'a.example'), outlet('fx-a', 'b.example')])).toEqual([
+      { code: 'duplicate-id', outletId: 'fx-a' },
+    ]);
+    expect(problems([outlet('fx-a', 'a.example'), outlet('fx-b', 'b.example', 'a.example')])).toEqual([
+      { code: 'domain-taken', outletId: 'fx-b' },
+    ]);
+    // An outlet may list the same address twice; only another outlet's address is a problem.
+    expect(problems([outlet('fx-a', 'a.example', 'a.example')])).toEqual([]);
+    expect(problems([outlet('fx-a', 'a.example'), outlet('fx-b', 'news.a.example')])).toEqual([
+      { code: 'domain-nested', outletId: 'fx-b' },
+    ]);
+    // Nesting inside its own address is fine.
+    expect(problems([outlet('fx-a', 'a.example', 'news.a.example')])).toEqual([]);
+
+    expect(problems(sized(MAX_LIST_OUTLETS))).toEqual([]);
+    expect(problems(sized(MAX_LIST_OUTLETS + 1))).toEqual([{ code: 'too-many-outlets', outletId: null }]);
+    expect(problems(sized(200, MAX_LIST_DOMAINS - 200))).toEqual([]);
+    expect(problems(sized(200, MAX_LIST_DOMAINS - 199))).toEqual([{ code: 'too-many-domains', outletId: null }]);
+  });
+
+  it('test_list_problem_text', () => {
+    expect(listProblemText({ code: 'duplicate-id', outletId: 'fx-a' })).toBe('Two outlets have the id fx-a.');
+    expect(listProblemText({ code: 'domain-taken', outletId: 'fx-b' })).toBe(
+      'fx-b: another outlet already lists one of its web addresses.',
+    );
+    expect(listProblemText({ code: 'domain-nested', outletId: 'fx-b' })).toBe(
+      "fx-b: one of its web addresses is inside another outlet's.",
+    );
+    expect(listProblemText({ code: 'too-many-outlets', outletId: null })).toBe('The list has more than 300 outlets.');
+    expect(listProblemText({ code: 'too-many-domains', outletId: null })).toBe('The list has more than 400 web addresses.');
+  });
+});
+
+describe('source lists', () => {
+  it('test_official_source_list_and_lookups', () => {
+    expect(OfficialListSchema.parse(FIXTURE_OFFICIAL_LIST)).toEqual(FIXTURE_OFFICIAL_LIST);
+    const list = officialSourceList(FIXTURE_OFFICIAL_LIST);
+    expect(list).toEqual(FIXTURE_LIST);
+    expect(list.kind).toBe('cloud');
+    expect(list.version).toBe('1');
+    expect(list.outlets).toHaveLength(10);
+    expect(list.outlets[0]).toEqual({
+      id: 'fx-left-a',
+      name: 'Fixture Left A',
+      domains: ['left-a.example'],
+      lean: { bucket: 'left' },
+    });
+    // The run's list carries the bucket and nothing else of a lean: no evidence, no country, no day.
+    expect(JSON.stringify(list)).not.toContain('evidence');
+    expect(JSON.stringify(list)).not.toContain('changedOn');
+
+    expect(outletForHost(FIXTURE_LIST, 'www.left-a.example')?.id).toBe('fx-left-a');
+    expect(outletForHost(FIXTURE_LIST, 'news.right-b.example')?.id).toBe('fx-right-b');
+    expect(outletForHost(FIXTURE_LIST, 'left-a.example.')?.id).toBe('fx-left-a');
+    expect(outletForHost(FIXTURE_LIST, 'elsewhere.example')).toBeNull();
+    expect(outletForHost(FIXTURE_LIST, '')).toBeNull();
+    expect(outletsIn(FIXTURE_LIST, 'left').map((o) => o.id)).toEqual(['fx-left-a', 'fx-left-b']);
+    for (const bucket of LEAN_BUCKETS) {
+      expect(outletsIn(FIXTURE_LIST, bucket).map((o) => o.id)).toEqual([`fx-${bucket}-a`, `fx-${bucket}-b`]);
+    }
+    // Outlets with no lean are in no bucket; the caller's outlet type comes back.
+    const unlabelled = { outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
+    expect(outletsIn(unlabelled, 'left')).toEqual([]);
+    expect(outletForHost(FIXTURE_OFFICIAL_LIST, 'center-b.example')?.changedOn).toBe('2026-01-15');
+  });
+
+  it('test_domain_and_id_from_input', () => {
+    expect(domainFromInput('https://www.NYTimes.com/section?x=1')).toBe('nytimes.com');
+    expect(domainFromInput('  apnews.com ')).toBe('apnews.com');
+    expect(domainFromInput('www.ledevoir.com/politique')).toBe('ledevoir.com');
+    expect(domainFromInput('news.example.')).toBe('news.example');
+    expect(domainFromInput('not a site')).toBeNull();
+    expect(domainFromInput('localhost')).toBeNull();
+    expect(domainFromInput('ftp://files.example')).toBeNull();
+    expect(domainFromInput('')).toBeNull();
+
+    expect(outletIdFromName('Le Devoir')).toBe('le-devoir');
+    expect(outletIdFromName('À')).toBe('');
+    expect(outletIdFromName('  The   Globe & Mail ')).toBe('the-globe-mail');
+    expect(outletIdFromName('Radio-Canada Info')).toBe('radio-canada-info');
+    expect(outletIdFromName('x'.repeat(50))).toBe('x'.repeat(40));
+    expect(outletIdFromName(`${'a'.repeat(39)} b`)).toBe('a'.repeat(39));
+  });
+
+  it('test_fixture_names_only_example_hosts', () => {
+    const hosts = FIXTURE_OFFICIAL_LIST.outlets.flatMap((o) => [
+      ...o.domains,
+      ...(o.lean?.evidence.map((e) => new URL(e.url).hostname) ?? []),
+    ]);
+    expect(hosts.length).toBeGreaterThan(10);
+    for (const host of hosts) expect(host.endsWith('.example'), host).toBe(true);
+    for (const o of FIXTURE_OFFICIAL_LIST.outlets) {
+      expect(o.lean, o.id).not.toBeNull();
+      for (const e of o.lean?.evidence ?? []) expect(e.note, o.id).toContain(FIXTURE_MARKER);
+    }
+    expect(FIXTURE_MARKER).toBe('UA-FIXTURE-OUTLETS-DO-NOT-SHIP');
+  });
+});
+
+describe('no registry gate', () => {
+  it('test_no_registry_gate_left', () => {
+    for (const file of ['package.json', 'apps/extension/package.json', '.github/workflows/ci.yml']) {
+      const text = read(file);
+      expect(text, file).not.toContain('outlets:check');
+      expect(text, file).not.toContain('outlets/src/cli.ts');
+    }
+    expect(existsSync(new URL('packages/outlets/src/sign.ts', REPO_ROOT))).toBe(false);
+    expect(existsSync(new URL('packages/outlets/src/cli.ts', REPO_ROOT))).toBe(false);
+    const pkg = JSON.parse(read('packages/outlets/package.json')) as { exports: Record<string, string> };
+    expect(Object.keys(pkg.exports)).toEqual(['.', './testing']);
+  });
+});

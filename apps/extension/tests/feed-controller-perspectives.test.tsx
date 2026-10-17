@@ -25,10 +25,10 @@ import type { BgResponses, ClassifyItem } from '../src/lib/messages.ts';
 /** Whether this build has a usable registry: the fictional fixture, or none. */
 const registry = vi.hoisted(() => ({ ready: true }));
 vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_REGISTRY } = await import('@unalgorithm/outlets/testing');
+  const { FIXTURE_LIST } = await import('@unalgorithm/outlets/testing');
   return {
     ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (registry.ready ? FIXTURE_REGISTRY : null),
+    perspectivesRegistry: () => (registry.ready ? FIXTURE_LIST : null),
   };
 });
 

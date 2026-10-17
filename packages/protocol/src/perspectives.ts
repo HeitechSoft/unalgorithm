@@ -1,7 +1,8 @@
 /**
  * UnEcho Chamber: the wire contract every RM3 piece shares (pipeline, server endpoint, extension, side panel).
  * The only part of a post a comparison sends anywhere is its shared link (`SharedLinkSchema`); lean labels come only
- * from the reviewed outlet registry (packages/outlets), never from a model.
+ * from a source list that people set (packages/outlets), never from a model. The published list's own contract is
+ * `outlets.ts`, which builds on the field schemas here.
  */
 import { z } from 'zod';
 import { AUDIENCES, MAX_MODEL_CHARS } from './classify.ts';
@@ -14,9 +15,30 @@ import {
 } from './factcheck.ts';
 import { PlatformIdSchema } from './platform.ts';
 
-/** Lean buckets, in display order (decision D24). Labels come only from the reviewed registry (packages/outlets). */
+/** Lean buckets, in display order (decision D24). Labels come only from a source list people set (packages/outlets). */
 export const LEAN_BUCKETS = ['left', 'lean-left', 'center', 'lean-right', 'right'] as const;
 export type LeanBucket = (typeof LEAN_BUCKETS)[number];
+/** Each lean bucket in words (never colour alone): the one map the sheet, the balance warnings and the pages read. */
+export const BUCKET_LABELS: Readonly<Record<LeanBucket, string>> = Object.freeze({
+  left: 'Left',
+  'lean-left': 'Leans left',
+  center: 'Center',
+  'lean-right': 'Leans right',
+  right: 'Right',
+});
+export const OutletIdSchema = z.string().regex(/^[a-z0-9-]{2,40}$/);
+/** A host without `www.`, lowercased: `apnews.com`. */
+export const OutletDomainSchema = z
+  .string()
+  .max(253)
+  .regex(/^(?!www\.)(?:[a-z0-9-]+\.)+[a-z]{2,}$/);
+/** Which list a UnEcho Chamber run used: UnAlgorithm Cloud's published list, or the person's own. */
+export const LIST_KINDS = ['cloud', 'own'] as const;
+export type ListKind = (typeof LIST_KINDS)[number];
+export const MAX_LIST_OUTLETS = 300;
+/** All outlets' domains together; keeps a perspectives request with its list under the server's 128 KB body limit. */
+export const MAX_LIST_DOMAINS = 400;
+export const MAX_OUTLET_DOMAINS = 10;
 export const PERSPECTIVES_WINDOW_DAYS = 3;
 export const MAX_SOURCES_PER_BUCKET = 4;
 export const MAX_PERSPECTIVES_POINTS = 6;
@@ -37,13 +59,13 @@ export const SharedLinkSchema = z.strictObject({
 export type SharedLink = z.infer<typeof SharedLinkSchema>;
 
 export const PerspectivesSourceSchema = FactcheckSourceSchema.extend({
-  outletId: z.string().regex(/^[a-z0-9-]{2,40}$/),
+  outletId: OutletIdSchema,
   outlet: z.string().max(120),
   bucket: z.enum(LEAN_BUCKETS),
 });
 export type PerspectivesSource = z.infer<typeof PerspectivesSourceSchema>;
 
-/** A source as found by a bucket search, before validation; outlet and bucket set by code from the registry. */
+/** A source as found by a bucket search, before validation; outlet and bucket set by code from the source list. */
 export interface RetrievedCoverageSource extends RetrievedSource {
   outletId: string;
   outlet: string;
@@ -61,7 +83,10 @@ export const PerspectivesResultSchema = z
     checkedAt: z.iso.datetime(),
     model: z.string().max(MAX_MODEL_CHARS),
     promptVersion: z.number().int(),
+    /** The version of the source list the run used (the name is a code identifier, kept from the registry). */
     registryVersion: z.string().max(40),
+    /** Which list the run used (decision D104). */
+    list: z.enum(LIST_KINDS),
     story: z.object({ url: HttpUrl, query: z.string().max(200), from: z.iso.datetime(), to: z.iso.datetime() }),
     /** One entry per LEAN_BUCKETS member, in that order; empty sourceIds = no coverage found (a gap). */
     coverage: z
