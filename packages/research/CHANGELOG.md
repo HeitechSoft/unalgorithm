@@ -1,5 +1,15 @@
 # @unalgorithm/research
 
+## 0.0.3
+
+### Patch Changes
+
+- Updated dependencies [[`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8)]:
+  - @unalgorithm/protocol@0.2.0
+  - @unalgorithm/core@0.2.0
+  - @unalgorithm/ai@0.0.3
+  - @unalgorithm/outlets@0.0.2
+
 ## 0.0.2
 
 ### Patch Changes
