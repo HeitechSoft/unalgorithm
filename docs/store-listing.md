@@ -150,7 +150,8 @@ Not granted at install. Asked for only if the user clicks "Fix it for me" becaus
 ### Remote code
 
 **No, I am not using remote code.** All JavaScript ships in the extension package. The AI and search services the
-user chooses answer with data (JSON), which is never run as code.
+user chooses answer with data (JSON), which is never run as code. UnAlgorithm Cloud's published source list is JSON
+data, never run as code.
 
 ### Data usage
 
@@ -164,7 +165,8 @@ What user data does UnAlgorithm Feed collect? Tick only **Website content**; lea
 With each classification, the AI service also receives the user's interests, the optional "About you" note and, if
 the user turned on learning from ratings, short AI-written summaries of up to 4 posts they rated. These are the user's
 own settings for the same feed, sent to the service the user chose, not one of the categories above. If a reviewer
-asks, point to *When you turn on AI* in the privacy policy.
+asks, point to *When you turn on AI* in the privacy policy. While UnEcho Chamber is on, the extension downloads
+UnAlgorithm Cloud's public source list at most once a day; the request carries no user data.
 
 Tick all three certifications:
 

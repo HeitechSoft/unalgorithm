@@ -77,6 +77,7 @@ that page (fail open). The toolbar icon says so, and the popup shows a banner wi
 | `storage.local` `serverAccount` | The UnAlgorithm server the user signed in to: its origin and discovery answer, the email address, the device id, when it signed in, and whether it needs a new sign-in. No tokens. Removed on sign-out and on Erase everything | Never |
 | `storage.session` `serverAccess` | That server's 15-minute access token. Memory only, closed to content scripts | Never |
 | `storage.session` `serverBalance` | The signed-in account's latest credit balance, from a classify answer, a 402 or the balance endpoint, with the server's origin and the device id it belongs to. Only for a server that advertises billing. Memory only, closed to content scripts, cleared on Erase everything | Never |
+| `storage.local` `officialList` | UnAlgorithm Cloud's published source list (outlets, web addresses, leans, evidence) and when it was last asked for | Never |
 | IndexedDB `secrets` | API keys, and the server's refresh token under `server-refresh:<origin>` | **Never**; not exported, not in diagnostics |
 | IndexedDB `classifications` | Cached verdicts keyed by post + input hash + profile hash + source:model + prompt version; no text, no names | Never |
 

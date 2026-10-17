@@ -5,7 +5,9 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 ## Principles
 
 1. **Rules only means no network.** The extension's required host permissions are only linkedin.com and
-   facebook.com. With AI off, the service worker makes no requests.
+   facebook.com. With AI off, the service worker makes no requests. The one request that doesn't depend on the AI
+   source is UnAlgorithm Cloud's source list, and only while UnEcho Chamber is on
+   ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)).
 2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose.
 3. **Nothing identifying is reported, and little is kept.** Caches, statistics, diagnostics and logs hold no post
    text and no names. Names are stored only where the user asked for them (always show/hide exceptions) and in the
@@ -109,6 +111,43 @@ whether it bills, whether it offers fact-check and its price: no email, device i
 
 Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
 keys.
+
+## UnEcho Chamber's source lists
+
+UnEcho Chamber sorts coverage by the outlets on a source list, and a lean comes only from a list people set, never from
+a model. Every extension reads UnAlgorithm Cloud's published list, whatever its AI source:
+`apps/extension/src/background/official-list.ts` makes the one request, and nothing else fetches a list.
+
+- **When.** Only while Settings → AI → UnEcho Chamber is on (`device.labs.perspectives`): checked at each
+  service-worker start and when the switch goes from off to on. At most one request per 24 hours, counted from the last
+  request whether it was answered or not: `checkedAt` is written before the request, so a crash, a failure or a second
+  wake within the day never asks again, and requests are serialised (`createLock`), so two wakes at once make one. No
+  retry sooner after a failure. E2E builds never make it: they use the fictional fixture.
+- **The request.** `GET https://cloud.unalgorithm.app/outlets.json` (`CLOUD_ORIGIN` + `OUTLETS_JSON_PATH`), a fixed
+  address with no query; never another server's list. Its options, and why:
+  - `credentials: 'omit'`: no cookie. The Cloud's account page keeps a session cookie on the same host, and it stays
+    off this request.
+  - `referrerPolicy: 'no-referrer'`: no `Referer`.
+  - `headers: { Accept: 'application/json' }` and no other header: never the device id, a token, the server account
+    or anything from settings or the feeds.
+  - `redirect: 'error'`: a redirect fails the request instead of taking it to another address.
+  - `cache: 'no-cache'`: the browser revalidates its copy with the ETag the Cloud sent, so an unchanged list costs a
+    304 and no body.
+  - `signal: AbortSignal.timeout(15_000)`: 15 seconds at most.
+
+  No host permission is needed: the endpoint answers `Access-Control-Allow-Origin: *`. Like any web request it comes
+  from the person's IP address; the Cloud logs it as its standard request line, without the IP address, and a failed
+  request can reach the web server's error log, kept 14 days ([CLOUD-BETA-NOTICE.md](../CLOUD-BETA-NOTICE.md) §3).
+- **What is kept.** Only a 200 whose body, read up to 1 MB (`readBoundedText` stops reading past the cap), is JSON,
+  passes `OfficialListSchema` (fields it doesn't know are dropped) and has no `listProblems`. Anything else (a network error,
+  the timeout, any other status, a larger body, bad JSON, a schema or list-rule failure) keeps the last good copy. A
+  valid list with no lean is a good copy and replaces the old one: it is what the Cloud publishes now. Nothing about the
+  list or the answer is logged.
+- **Where it lives.** `storage.local` `officialList` (`{ list, checkedAt }`), on this device only: never synced,
+  exported or sent anywhere. It is public data, with nothing about the person but when UnEcho Chamber last asked.
+  Content scripts can write `storage.local` (ADR 0005), so every reader takes the list through `storedOfficialList()`
+  (`apps/extension/src/lib/outlets.ts`), which checks it against the schema and the list rules again (and answers the
+  fixture in e2e builds).
 
 ## What a server stores
 

@@ -105,6 +105,33 @@ describe('Chrome Web Store material', () => {
   it('test_store_listing_names_unecho_chamber_only_with_a_usable_registry', () => {
     // D79: a listing must not describe a feature the build hides. Store builds have no source list with a lean until the
     // extension reads UnAlgorithm Cloud's (P3-75, P3-77), so UnEcho Chamber stays hidden; P3-77 adds it to the listing.
-    expect(listing()).not.toContain(FEATURE_NAMES.perspectives);
+    // The one mention before then is P3-75's note under *Data usage*, for whoever fills in the store's form: when the
+    // source list is downloaded. It describes a request, not the feature, and is never pasted into the store.
+    const md = listing();
+    const dataUsage = section(md, 'Data usage');
+    expect(md.replace(dataUsage, '')).not.toContain(FEATURE_NAMES.perspectives);
+    expect(dataUsage.split(FEATURE_NAMES.perspectives)).toHaveLength(2);
+    expect(dataUsage.replace(/\s+/g, ' ')).toContain(`While ${FEATURE_NAMES.perspectives} is on, the extension downloads`);
+  });
+
+  it('test_privacy_and_listing_describe_source_list_fetch', () => {
+    // P3-75 (D98): the one request every extension makes while UnEcho Chamber is on, disclosed in the same change.
+    const oneLine = (text: string) => text.replace(/\s+/g, ' ');
+    const privacy = oneLine(read('PRIVACY.md'));
+    for (const phrase of [
+      'at most once a day',
+      'cloud.unalgorithm.app',
+      'no account, cookie or sign-in',
+      'never your IP address',
+    ]) {
+      expect(privacy, phrase).toContain(phrase);
+    }
+    const md = listing();
+    expect(oneLine(section(md, 'Remote code'))).toContain(
+      "UnAlgorithm Cloud's published source list is JSON data, never run as code.",
+    );
+    expect(oneLine(section(md, 'Data usage'))).toContain(
+      "downloads UnAlgorithm Cloud's public source list at most once a day; the request carries no user data.",
+    );
   });
 });

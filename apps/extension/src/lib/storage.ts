@@ -11,7 +11,7 @@ import {
   type TabState,
   type UsageLedger,
 } from '@unalgorithm/core';
-import { type FactcheckResult, type PerspectivesResult, type PostKey, uuid } from '@unalgorithm/protocol';
+import { type FactcheckResult, type OfficialList, type PerspectivesResult, type PostKey, uuid } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from './messages.ts';
 
@@ -42,6 +42,20 @@ export const lowBalanceNoticeItem = storage.defineItem<string | null>('local:low
  * device id or token). Null without an account or while it needs signing in again.
  */
 export const serverOfferItem = storage.defineItem<ServerOffer | null>('local:serverOffer', { fallback: null });
+
+/** UnAlgorithm Cloud's published source list, the last copy that passed validation, and when it was last asked for. */
+export interface StoredOfficialList {
+  list: OfficialList | null;
+  /** Epoch ms of the last request, answered or not: the daily limit counts from here. */
+  checkedAt: number;
+}
+/**
+ * Written only by the background (`background/official-list.ts`); public data, never synced or exported. Content scripts
+ * can write `storage.local` too (ADR 0005), so readers take the list only through `storedOfficialList()`.
+ */
+export const officialListItem = storage.defineItem<StoredOfficialList>('local:officialList', {
+  fallback: { list: null, checkedAt: 0 },
+});
 
 /** Why the last sync run failed: a code only, never the server's message. */
 export type SyncProblem = 'auth' | 'network' | 'quota' | 'clock' | 'server' | 'unavailable';
@@ -133,6 +147,7 @@ export function watchSettings(cb: (s: Settings) => void): () => void {
   return settingsItem.watch((raw) => cb(migrateSettings(raw)));
 }
 
-export function watchDevice(cb: (d: Device) => void): () => void {
-  return deviceItem.watch((raw) => cb(migrateDevice(raw, uuid)));
+/** `cb` gets the device as changed and as it was before (null when there was none). */
+export function watchDevice(cb: (d: Device, previous: Device | null) => void): () => void {
+  return deviceItem.watch((raw, oldRaw) => cb(migrateDevice(raw, uuid), oldRaw == null ? null : migrateDevice(oldRaw, uuid)));
 }

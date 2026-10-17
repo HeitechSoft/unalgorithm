@@ -89,6 +89,13 @@ author, your interests or anything else about you. Lean labels come only from Un
 never from the AI. The result stays in this browser's temporary session storage for that tab, as a fact-check's does,
 and nothing goes to HeitechSoft.
 
+**UnEcho Chamber's source list.** While UnEcho Chamber is on, UnAlgorithm downloads UnAlgorithm Cloud's published
+source list (the outlets and their leans) from `cloud.unalgorithm.app` at most once a day, whatever AI option you use.
+The request carries no account, cookie or sign-in and nothing about you, your feeds or your settings; like any web
+request it comes from your IP address. The Cloud's logs record the time and the address asked for, never your IP
+address; if a request fails, its web server's error log can keep your IP address for up to 14 days. UnAlgorithm keeps
+the last good copy in this browser.
+
 **Fact-check and UnEcho Chamber with your own AI server and a web search key.** If your AI option is a local or
 self-hosted AI server (or another OpenAI-compatible service) and you saved a Brave or Tavily key in Settings → AI,
 a fact-check sends the post (with the same fields and masking as above) and UnEcho Chamber sends the link and
