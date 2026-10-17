@@ -259,7 +259,7 @@ jobs:
 
   price-schedule:
     # A price in effect never changes, a raise gives PRICE_NOTICE_DAYS of notice, and a cut may start at the next
-    # 00:00 UTC (docs/release.md → Changing a price card). Compares the schedule with the base commit's, read from this
+    # 00:00 UTC (docs/release.md → Prices). Compares the schedule with the base commit's, read from this
     # checkout's git history.
     runs-on: ubuntu-latest
     steps:

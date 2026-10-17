@@ -47,9 +47,9 @@ export const CLOUD_BETA_DOCUMENTS: readonly SiteDocument[] = [CLOUD_BETA_NOTICE,
 
 /**
  * "How credits work" (R30, CL2-14). Its source is a template: the website fills its `{{name}}` placeholders with
- * `creditsMarkdown(source, CREDIT_PRICE_SCHEDULE, buildTime)` from `@unalgorithm/core`, which fails on an unknown or
- * left-over placeholder, so every figure on the page comes from the price schedule the Cloud charges by. The `pricingUrl`
- * the Cloud sends is `siteUrl(CREDITS_PAGE)`.
+ * `creditsMarkdown(source, prices, buildTime)` from `@unalgorithm/core`, where `prices` is the Cloud's `/prices.json`
+ * (PA-10). It fails on an unknown or left-over placeholder, so every figure on the page comes from the price book the
+ * Cloud charges by. The `pricingUrl` the Cloud sends is `siteUrl(CREDITS_PAGE)`.
  */
 export const CREDITS_PAGE = {
   source: 'docs/site/credits.md',

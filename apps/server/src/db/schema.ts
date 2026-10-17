@@ -13,7 +13,14 @@
  * committed migration. A branch that rebases onto someone else's migration deletes its own generated files and runs
  * `db:generate` again.
  */
-import { HLC_ZERO, type LeanBucket, type OfficialOutlet, type OutletChangeAction } from '@unalgorithm/protocol';
+import {
+  type CreditTask,
+  HLC_ZERO,
+  type LeanBucket,
+  type OfficialOutlet,
+  type OutletChangeAction,
+  type PriceChangeAction,
+} from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -364,4 +371,37 @@ export const outletChanges = pgTable(
     changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('outlet_changes_at').on(table.changedAt)],
+);
+
+/*
+ * The server's prices (PA-03, decisions PD2, PD9): the price book admins set on the Pricing page, with an append-only
+ * history. No personal data except which admin made each change.
+ */
+
+/**
+ * Every change to the price book, never updated or deleted, except that `changed_by` empties when that account is
+ * deleted. The newest row's book is the one in use; with no row the server uses its code defaults (`DEFAULT_PRICE_BOOK`)
+ * and writes nothing until an admin first saves. Written only by `admin/prices.ts`, under its advisory lock.
+ */
+export const priceChanges = pgTable(
+  'price_changes',
+  {
+    /** The book's version after this change. */
+    seq: bigint('seq', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** A PRICE_CHANGE_ACTIONS member. */
+    action: text('action').$type<PriceChangeAction>().notNull(),
+    /** schedule, cancel, move: the task and the entry's date (move: the date it left); null otherwise. */
+    task: text('task').$type<CreditTask>(),
+    effectiveFrom: text('effective_from'),
+    movedTo: text('moved_to'),
+    /** What changed, before and after (PriceChangeValueSchema); null for seed. */
+    before: jsonb('before'),
+    after: jsonb('after'),
+    /** The whole price book after this change (PriceBookSchema). */
+    book: jsonb('book').notNull(),
+    /** The admin; null for a deleted account. Never published (decision PD9). */
+    changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('price_changes_at').on(table.changedAt)],
 );

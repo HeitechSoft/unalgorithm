@@ -4,7 +4,8 @@
  * one, or the database of a `createTestApp`), with the test server's config, a logger into memory and a mailer into
  * `outbox`.
  */
-import type { CreditPriceSchedule } from '@unalgorithm/protocol';
+import type { CreditPriceSchedule, PriceBook } from '@unalgorithm/protocol';
+import { openPriceStore, type PriceStore } from '../../src/admin/prices.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingHost, createBillingHost } from '../../src/billing/host.ts';
 import type { DbHandle } from '../../src/db/client.ts';
@@ -12,19 +13,21 @@ import { createJobRegistry, type JobRegistry } from '../../src/jobs/worker.ts';
 import { type MailMessage, memoryMailer } from '../../src/mail/mailer.ts';
 import { createTestDb } from './db.ts';
 import { captureLog } from './log.ts';
-import { testConfig } from './test-app.ts';
+import { priceSeed, testConfig } from './test-app.ts';
 
 /**
  * A host on `opts.db`, or on a fresh migrated PGlite database that `close()` closes. A given database is never closed
- * here: its owner closes it. `opts.env` becomes `host.env` and `opts.priceSchedule` `host.priceSchedule` (default
- * `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks); `lines` holds what the host logged, `outbox` every email its
- * auth and `host.mail` sent, and `jobs` is the registry the host hands out.
+ * here: its owner closes it. `opts.env` becomes `host.env`. `prices` is a price store opened on the database, whose
+ * book `host.prices` reads: its seed is `opts.priceBook`, else the defaults with `opts.priceSchedule` (as
+ * `createTestApp`'s; `TEST_PRICE_SCHEDULE` prices checks), else `DEFAULT_PRICE_BOOK`. `lines` holds what the host
+ * logged, `outbox` every email its auth and `host.mail` sent, and `jobs` is the registry the host hands out.
  */
 export async function createTestHost(
-  opts: { env?: Record<string, string>; db?: DbHandle; priceSchedule?: CreditPriceSchedule } = {},
+  opts: { env?: Record<string, string>; db?: DbHandle; priceBook?: PriceBook; priceSchedule?: CreditPriceSchedule } = {},
 ): Promise<{
   host: BillingHost;
   db: DbHandle;
+  prices: PriceStore;
   jobs: JobRegistry;
   lines: string[];
   outbox: MailMessage[];
@@ -41,17 +44,9 @@ export async function createTestHost(
     // The rate limit off, as in `createTestApp`: without a socket every test request counts as one address.
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: false });
     const jobs = createJobRegistry();
-    const host = createBillingHost({
-      config,
-      db,
-      log,
-      auth,
-      jobs,
-      mailer,
-      env: opts.env,
-      priceSchedule: opts.priceSchedule,
-    });
-    return { host, db, jobs, lines, outbox, close };
+    const prices = await openPriceStore(db.db, { seed: priceSeed(opts) });
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: opts.env, prices });
+    return { host, db, prices, jobs, lines, outbox, close };
   } catch (err) {
     await close();
     throw err;

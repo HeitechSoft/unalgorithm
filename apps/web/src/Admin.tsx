@@ -4,14 +4,14 @@
  * against its daily spend limit with its content-free status (`AdminUsage`). Everything it shows comes from the admin routes, which answer only an admin of this
  * server (CL4-05, CL4-06): the page is the same for everyone, and tells a signed-in non-admin so. It names the server
  * only by its discovery document. The page keeps the accounts list and hands its sections a way to ask for it again; a
- * section that finds the session gone sends the person back to the sign-in, saying so. A link leads to the source
- * control page (`/admin/sources`, P3-74).
+ * section that finds the session gone sends the person back to the sign-in, saying so. Links lead to the source
+ * control page (`/admin/sources`, P3-74) and the Pricing page (`/admin/prices`, PA-05).
  *
- * `useAdminSession` and `AdminGate` are the admin pages' shared session flow (this page's and the source control
- * page's): the discovery document, who is signed in, the page's own data that only an admin gets, and every step before
+ * `useAdminSession` and `AdminGate` are the admin pages' shared session flow (this page's, the source control page's
+ * and the Pricing page's): the discovery document, who is signed in, the page's own data that only an admin gets, and every step before
  * that data has loaded.
  */
-import { ADMIN_PAGE_PATH, ADMIN_SOURCES_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { ADMIN_PAGE_PATH, ADMIN_PRICES_PAGE_PATH, ADMIN_SOURCES_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { AdminInvites } from './AdminInvites.tsx';
@@ -192,7 +192,7 @@ export function Admin() {
   return (
     <Page info={info} heading={heading} intro={INTRO} wide>
       <p className="web-status">
-        <a href={ADMIN_SOURCES_PAGE_PATH}>Source list</a>
+        <a href={ADMIN_SOURCES_PAGE_PATH}>Source list</a> · <a href={ADMIN_PRICES_PAGE_PATH}>Pricing</a>
       </p>
       <div className="web-admin">
         <div className="web-admin-column">

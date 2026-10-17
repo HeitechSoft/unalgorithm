@@ -23,8 +23,7 @@ const REAL_SOURCE = readFileSync(join(REPO_ROOT, SCHEDULE_FILE), 'utf8');
 
 const NOW = new Date('2026-10-14T12:00:00Z');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
-const CLOSING =
-  "Prices in effect never change, and a price raise needs 30 days' notice: see docs/release.md → Changing a price card.";
+const CLOSING = "Prices in effect never change, and a price raise needs 30 days' notice: see docs/release.md → Prices.";
 
 function entry(effectiveFrom: string, multiplier: number): CreditPriceScheduleEntry {
   return {
@@ -143,7 +142,7 @@ describe('cli', () => {
       code: 1,
       lines: [
         '2026-11-15T00:00:00Z: this price is in effect and cannot be removed',
-        'Prices in effect never change: see docs/release.md → Changing a price card.',
+        'Prices in effect never change: see docs/release.md → Prices.',
       ],
     });
   });
@@ -212,7 +211,7 @@ describe('ci', () => {
 describe('docs', () => {
   it('test_release_doc_describes_dated_prices', () => {
     const doc = readFileSync(join(REPO_ROOT, 'docs/release.md'), 'utf8').replaceAll('\r\n', '\n');
-    const start = doc.indexOf('\n## Changing a price card\n');
+    const start = doc.indexOf('\n## Prices\n');
     expect(start).toBeGreaterThanOrEqual(0);
     const end = doc.indexOf('\n## ', start + 1);
     const section = (end < 0 ? doc.slice(start) : doc.slice(start, end)).toLowerCase();

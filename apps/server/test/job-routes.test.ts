@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { OpenAPIHono, z } from '@hono/zod-openapi';
 import { AIError } from '@unalgorithm/ai';
-import { CREDIT_PRICE_SCHEDULE, costMicros, jobSchemaFor, ZERO_USAGE } from '@unalgorithm/protocol';
+import { costMicros, jobSchemaFor, ZERO_USAGE } from '@unalgorithm/protocol';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LimitDeps } from '../src/ai/limits.ts';
@@ -278,7 +278,7 @@ describe('the fact-check routes on the kit', () => {
       // Only the fact-check routes: the whole app's document is not what this compares.
       const app = new OpenAPIHono<AppEnv>();
       const jobs = createJobStore<never>({ ttlMs: 1, maxRunning: 1, maxKeptPerUser: 1 });
-      factcheckRoutes(app, { ...t.deps, priceSchedule: CREDIT_PRICE_SCHEDULE, factcheckJobs: jobs }, {} as LimitDeps);
+      factcheckRoutes(app, { ...t.deps, factcheckJobs: jobs }, {} as LimitDeps);
       const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'test', version: '1' } });
       const fixture = JSON.parse(readFileSync(new URL('./fixtures/openapi/factcheck-paths.json', import.meta.url), 'utf8'));
       expect(JSON.parse(JSON.stringify(doc.paths))).toEqual(fixture);

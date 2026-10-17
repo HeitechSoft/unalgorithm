@@ -35,23 +35,24 @@ import { ownPageOnly, requireWebSession } from '../auth/web-session.ts';
 import type { App, AppDeps, AppEnv } from '../http/app.ts';
 import { errorResponse, json } from './openapi.ts';
 
-const JSON_UTF8 = { 'Content-Type': 'application/json; charset=utf-8' };
+/** The public JSON answers' type (`/prices.json` too). */
+export const JSON_UTF8 = { 'Content-Type': 'application/json; charset=utf-8' };
 
 /** The list's strong ETag: its version names exactly one list. */
 const listTag = (version: string) => `"outlets-${version}"`;
 
 /**
  * Whether `If-None-Match` matches `tag`: `*`, or a comma-separated list holding it. `W/` is ignored, since a GET's
- * conditional compares weakly (RFC 9110, 13.1.2).
+ * conditional compares weakly (RFC 9110, 13.1.2). `/prices.json` uses it too.
  */
-function noneMatchHolds(header: string | undefined, tag: string): boolean {
+export function noneMatchHolds(header: string | undefined, tag: string): boolean {
   if (header === undefined) return false;
   if (header.trim() === '*') return true;
   return header.split(',').some((part) => part.trim().replace(/^W\//, '') === tag);
 }
 
-/** What both public answers carry, a 304 included. */
-function publicHeaders(c: Context<AppEnv>): void {
+/** What every public answer carries (these two and `/prices.json`), a 304 included. */
+export function publicHeaders(c: Context<AppEnv>): void {
   c.header('Access-Control-Allow-Origin', '*');
   c.header('Cache-Control', 'public, max-age=300');
 }

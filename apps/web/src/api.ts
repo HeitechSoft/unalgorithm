@@ -3,8 +3,9 @@
  * passkey), the authorize endpoint that hands the extension a single-use code, the account's credits where the server
  * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
  * accounts and the changes an admin makes to one, its invites and the server's usage overview; the source control
- * page's list with who made each change, an admin's change to one outlet and the import of the candidate list; and the
- * public source list with its history, which need no session. All same-origin, so the browser sends the session cookie
+ * page's list with who made each change, an admin's change to one outlet and the import of the candidate list; the
+ * Pricing page's price book with its history and an admin's change to it; and the public source list with its history,
+ * which need no session. All same-origin, so the browser sends the session cookie
  * and the `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at
  * all) and the error body's `code` and `message` when it has them, except the browser's passkey prompt: a cancelled one
  * is `PasskeyCancelled`, and its other errors keep their name.
@@ -29,6 +30,7 @@ import {
   ADMIN_OUTLETS_IMPORT_PATH,
   ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
+  ADMIN_PRICES_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
   AdminOkSchema,
@@ -36,6 +38,8 @@ import {
   AdminOutletsSchema,
   type AdminOverview,
   AdminOverviewSchema,
+  type AdminPrices,
+  AdminPricesSchema,
   type AdminRole,
   type AdminUsers,
   AdminUsersSchema,
@@ -57,6 +61,13 @@ import {
   type OutletChangeRequest,
   type OutletChanges,
   OutletChangesSchema,
+  PRICES_JSON_PATH,
+  type PriceChanged,
+  PriceChangedSchema,
+  type PriceChangeRequest,
+  type PublishedPrices,
+  PublishedPricesSchema,
+  priceBookIssues,
   SERVER_INFO_PATH,
   type ServerInfo,
   ServerInfoSchema,
@@ -259,6 +270,17 @@ export async function creditAccount(): Promise<CreditAccount> {
   return request(CREDIT_ACCOUNT_PATH, CreditAccountSchema);
 }
 
+/** A published book the page can price with: one the server could have saved (`priceBookIssues`). */
+const SoundPricesSchema = PublishedPricesSchema.refine((prices) => priceBookIssues(prices).length === 0);
+
+/**
+ * This server's prices as published (PA-04): public, the same for everyone. Only a server that advertises billing
+ * publishes them. A book that isn't sound is an answer that can't be used.
+ */
+export async function publicPrices(): Promise<PublishedPrices> {
+  return request(PRICES_JSON_PATH, SoundPricesSchema);
+}
+
 /** The devices signed in to the account now, most recently used first. */
 export async function listDevices(): Promise<AccountDevice[]> {
   return (await request(ACCOUNT_DEVICES_PATH, AccountDevicesResponseSchema)).devices;
@@ -383,4 +405,21 @@ export async function changeOutlet(req: OutletChangeRequest): Promise<OutletChan
 /** Imports the candidate list, with no lean, into an empty list; 400 when the list isn't empty. */
 export async function importCandidates(): Promise<OutletChanged> {
   return request(ADMIN_OUTLETS_IMPORT_PATH, OutletChangedSchema, {});
+}
+
+/**
+ * The server's price book as published, its latest changes (newest first, each with the admin's address), the server's
+ * clock and whether it charges (PA-03); 401 without a session, 403 for a non-admin.
+ */
+export async function adminPrices(): Promise<AdminPrices> {
+  return request(ADMIN_PRICES_PATH, AdminPricesSchema);
+}
+
+/**
+ * Schedules, cancels or moves one task's price change (or changes another part of the book); answers the book's
+ * version now. 400 with the server's message for a change that breaks a price rule, 404 for a scheduled change that is
+ * no longer there, 409 when the book changed since `baseVersion`.
+ */
+export async function changePrices(req: PriceChangeRequest): Promise<PriceChanged> {
+  return request(ADMIN_PRICES_PATH, PriceChangedSchema, req);
 }

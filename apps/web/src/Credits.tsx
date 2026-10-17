@@ -1,17 +1,14 @@
 /**
  * The account page's Credits section, on a server that advertises billing: the balance and about how many posts it
  * classifies, the promotional credit with the starter credit's state, the purchased credit, the history newest first,
- * the links the server gives (adding credit, auto-reload, how credits work, the refund policy), and the price in effect with the next
- * scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
- * extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product; its price line is the
- * published schedule of the release this server runs.
+ * the links the server gives (adding credit, auto-reload, how credits work, the refund policy), and the price in effect with
+ * every later scheduled change. Every figure on the account is the server's answer (`CreditAccountSchema`); the wording is the
+ * extension's (`@unalgorithm/core`), so both say the same thing, and the page names no product; its price lines and the
+ * amount range are this server's published prices (`/prices.json`, PA-04), read with the account.
  */
 import { formatBalance, formatCreditAmount, formatPostsEstimate, formatPrice } from '@unalgorithm/core';
 import {
   type AutoReloadSummary,
-  CREDIT_AMOUNT_MAX_MICROS,
-  CREDIT_AMOUNT_MIN_MICROS,
-  CREDIT_PRICE_SCHEDULE,
   type CreditAccount,
   type CreditBalance,
   type CreditHistoryItem,
@@ -19,12 +16,13 @@ import {
   type CreditTask,
   estimatePosts,
   FEATURE_NAMES,
-  nextPriceChange,
+  type PriceBook,
+  type PurchaseRules,
   retailMicrosPer1000Posts,
 } from '@unalgorithm/protocol';
 import { Banner, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useId, useState } from 'react';
-import { ApiError, creditAccount } from './api.ts';
+import { ApiError, creditAccount, publicPrices } from './api.ts';
 
 const PAUSED = 'AI is paused while the balance is empty. Filters and results already saved keep working.';
 const LOAD_FAILED = "Couldn't load your credits.";
@@ -52,31 +50,35 @@ const DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: '
 const COUNT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 /** Whole dollars, as the amount rules have them: "$5", "$500". */
 const wholeDollars = (micros: number): string => `$${COUNT.format(micros / 1_000_000)}`;
-/** "Any amount from $5 to $500.": the rules a purchase on the server's page follows (`creditAmount`). Draft copy (D21). */
-const AMOUNT_RANGE = `Any amount from ${wholeDollars(CREDIT_AMOUNT_MIN_MICROS)} to ${wholeDollars(CREDIT_AMOUNT_MAX_MICROS)}.`;
+/**
+ * "Any amount from $5 to $500.": the rules a purchase on the server's page follows (`creditAmount`), from its published
+ * prices. Draft copy (D21).
+ */
+const amountRange = ({ minMicros, maxMicros }: PurchaseRules) =>
+  `Any amount from ${wholeDollars(minMicros)} to ${wholeDollars(maxMicros)}.`;
 
-/** `at`: when the account answer arrived, the instant the price and the estimate are read at. */
-type State = { name: 'loading' } | { name: 'failed' } | { name: 'loaded'; account: CreditAccount; at: Date };
+/** `at`: when both answers had arrived, the instant the price and the estimate are read at. */
+type State = { name: 'loading' } | { name: 'failed' } | { name: 'loaded'; account: CreditAccount; prices: PriceBook; at: Date };
 
 export interface CreditsProps {
   /** Called when the server no longer knows the session (401): the page goes back to sign-in. Keep it stable. */
   onSignedOut(): void;
-  /** The price schedule shown; the page passes none (the bundled `CREDIT_PRICE_SCHEDULE`), tests pass a stub. */
-  schedule?: CreditPriceSchedule;
 }
 
-export function Credits({ onSignedOut, schedule = CREDIT_PRICE_SCHEDULE }: CreditsProps) {
+export function Credits({ onSignedOut }: CreditsProps) {
   const [state, setState] = useState<State>({ name: 'loading' });
   const headingId = useId();
 
   const load = useCallback(async () => {
     setState({ name: 'loading' });
-    try {
-      const account = await creditAccount();
-      setState({ name: 'loaded', account, at: new Date() });
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) onSignedOut();
-      else setState({ name: 'failed' });
+    // Both at once; a 401 from the account goes back to sign-in whatever the prices answered.
+    const [account, prices] = await Promise.allSettled([creditAccount(), publicPrices()]);
+    if (account.status === 'rejected' && account.reason instanceof ApiError && account.reason.status === 401) {
+      onSignedOut();
+    } else if (account.status === 'fulfilled' && prices.status === 'fulfilled') {
+      setState({ name: 'loaded', account: account.value, prices: prices.value, at: new Date() });
+    } else {
+      setState({ name: 'failed' });
     }
   }, [onSignedOut]);
 
@@ -90,35 +92,40 @@ export function Credits({ onSignedOut, schedule = CREDIT_PRICE_SCHEDULE }: Credi
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      {state.name === 'loaded' ? <CreditDetails account={state.account} at={state.at} schedule={schedule} /> : null}
+      {state.name === 'loaded' ? <CreditDetails account={state.account} at={state.at} prices={state.prices} /> : null}
     </section>
   );
 }
 
 /**
- * The first later entry whose classify price per 1,000 posts differs from the one in effect at `at`, or null. Scans past
- * entries that change only other tasks (a new perspectives card), so they never hide a classify raise's notice.
+ * Every later entry whose classify price per 1,000 posts differs from the price before it, in date order. Skips entries
+ * that change only other tasks (a new perspectives card), and never stops at the first change: a cut saved after a
+ * raise but dated before it must not hide the raise's notice.
  */
-function nextClassifyPriceChange(at: Date, schedule: CreditPriceSchedule) {
-  const now = retailMicrosPer1000Posts(at, 'classify', schedule);
-  let next = nextPriceChange(at, schedule);
-  while (next && retailMicrosPer1000Posts(new Date(next.effectiveFrom), 'classify', schedule) === now) {
-    next = nextPriceChange(new Date(next.effectiveFrom), schedule);
+function laterClassifyPriceChanges(at: Date, schedule: CreditPriceSchedule): Date[] {
+  const changes: Date[] = [];
+  let before = retailMicrosPer1000Posts(at, 'classify', schedule);
+  for (const { effectiveFrom } of schedule) {
+    const from = new Date(effectiveFrom);
+    if (!(from.getTime() > at.getTime())) continue;
+    const price = retailMicrosPer1000Posts(from, 'classify', schedule);
+    if (price !== before) changes.push(from);
+    before = price;
   }
-  return next;
+  return changes;
 }
 
 function CreditDetails({
   account: { balance, history, addCreditPath, autoReload, pricingUrl, refundPolicyUrl },
   at,
-  schedule,
+  prices: { schedule, purchase },
 }: {
   account: CreditAccount;
   at: Date;
-  schedule: CreditPriceSchedule;
+  prices: PriceBook;
 }) {
   const promotional = promotionalLine(balance);
-  const next = nextClassifyPriceChange(at, schedule);
+  const later = laterClassifyPriceChanges(at, schedule);
   return (
     <>
       <div className="web-balance">
@@ -135,13 +142,12 @@ function CreditDetails({
         ) : null}
         {balance.starter === 'active' ? null : <p className="ua-footnote">{STARTER[balance.starter]}</p>}
         <p className="ua-footnote">AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</p>
-        {next ? (
-          // In UTC, as the change starts at 00:00 UTC: west of UTC it is the previous evening.
-          <p className="ua-footnote">
-            From {DATE.format(new Date(next.effectiveFrom))} (UTC): about {per1000Posts(new Date(next.effectiveFrom), schedule)}{' '}
-            per 1,000 posts.
+        {later.map((from) => (
+          // In UTC, as a change starts at 00:00 UTC: west of UTC it is the previous evening.
+          <p className="ua-footnote" key={from.toISOString()}>
+            From {DATE.format(from)} (UTC): about {per1000Posts(from, schedule)} per 1,000 posts.
           </p>
-        ) : null}
+        ))}
       </div>
       <ListGroup header="History">
         {history.length === 0 ? (
@@ -165,7 +171,7 @@ function CreditDetails({
             <a className="ua-button ua-button--primary" href={addCreditPath}>
               Add credit
             </a>
-            <p className="ua-footnote">{AMOUNT_RANGE}</p>
+            <p className="ua-footnote">{amountRange(purchase)}</p>
           </>
         ) : (
           <p className="ua-footnote">Adding credit isn't available yet.</p>

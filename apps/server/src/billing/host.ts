@@ -12,8 +12,8 @@
  * flag and account creation time (`accounts`); device id, request id, model, token usage, cost and posts counted, and
  * the instant the server checked the request (`checkedAt`) (`BillingProvider`); the signed-in person's id and email on a
  * page request (`auth.webUser`); the module's own message text to an account's address, which the host resolves
- * (`mail`). Pages it renders (`pages.render`) get the server's frame, stylesheet and CSP around
- * HTML escaped by `html`, with no script. What the host does not offer: the
+ * (`mail`); the server's prices (`prices`). Pages it renders (`pages.render`) get the server's frame, stylesheet and CSP
+ * around HTML escaped by `html`, with no script. What the host does not offer: the
  * server's Drizzle schema, `AppDeps`, the AI clients, the classify request body or any post field. No post text, prompt or interest reaches a module, because the server
  * neither stores nor passes them (ADR 0007). Adding to `BillingHost` is a reviewed public change.
  *
@@ -26,6 +26,7 @@ import * as protocol from '@unalgorithm/protocol';
 import { eq, type SQL, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
+import type { PriceStore } from '../admin/prices.ts';
 import { costByDay, type DayModelCost } from '../ai/metering.ts';
 import { type DeviceEnv, requireDevice } from '../auth/bearer.ts';
 import type { Auth } from '../auth/better-auth.ts';
@@ -62,16 +63,21 @@ export type AccountMailResult = 'sent' | 'no-account';
 
 export interface BillingHost {
   /**
-   * The running release's `@unalgorithm/protocol`: the dated price schedule (`CREDIT_PRICE_SCHEDULE`, `priceCardsAt`),
-   * schemas and paths. A module never bundles its own.
+   * The running release's `@unalgorithm/protocol`: the price rules (`taskPriceAt`, `starterCreditAt`, `creditAmount`),
+   * schemas and paths. A module never bundles its own. Its `CREDIT_PRICE_SCHEDULE` is only the code default: a module
+   * prices from `prices`.
    */
   readonly protocol: typeof protocol;
   /**
-   * The schedule this server prices with: `CREDIT_PRICE_SCHEDULE` in production. A module reads cards from it
-   * (`protocol.taskPriceAt(checkedAt, task, host.priceSchedule)`) so it and the server always agree; tests pass one
-   * that prices checks.
+   * The prices this server charges and publishes now: the stored price book (the admins' Pricing page), or the code
+   * defaults (`DEFAULT_PRICE_BOOK`) while none is stored. Read it at each use: a saved change applies without a
+   * restart, and a scheduled price starts by itself at its date. Never keep a copy. Charge from
+   * `protocol.taskPriceAt(checkedAt, task, host.prices.current().schedule)`; grant the starter credit from
+   * `protocol.starterCreditAt(account.createdAt, host.prices.current())`; check amounts with
+   * `protocol.creditAmount(amount, host.prices.current().purchase)`; cap automatic purchases with
+   * `host.prices.current().autoReload`.
    */
-  readonly priceSchedule: protocol.CreditPriceSchedule;
+  readonly prices: Readonly<{ current(): protocol.PriceBook }>;
   readonly db: BillingSql;
   /**
    * Applies the module's Drizzle-format migrations, recorded in `billing.__drizzle_migrations`, under the module's own
@@ -145,8 +151,11 @@ export interface BillingHostDeps {
   mailer: Mailer;
   /** Becomes `host.env`; default `{}`. CL2-05 passes `config.billingEnv`. */
   env?: Readonly<Record<string, string>>;
-  /** Becomes `host.priceSchedule`, frozen; default `CREDIT_PRICE_SCHEDULE`. Tests pass one that prices checks. */
-  priceSchedule?: protocol.CreditPriceSchedule;
+  /**
+   * The server's one price store (`openPriceStore`), the one the app reads: `host.prices.current()` reads its book.
+   * The module never gets the store itself, so it can neither refresh it nor read its seed.
+   */
+  prices: PriceStore;
 }
 
 /** The schema a module's tables and its migrations' bookkeeping live in. */
@@ -173,7 +182,7 @@ export function createBillingHost(deps: BillingHostDeps): BillingHost {
 
   return Object.freeze({
     protocol,
-    priceSchedule: deps.priceSchedule ? frozenSchedule(deps.priceSchedule) : protocol.CREDIT_PRICE_SCHEDULE,
+    prices: Object.freeze({ current: () => deps.prices.current() }),
     db: billingSql(db.db),
     async migrate(migrationsFolder: string) {
       await runMigrations(db, {
@@ -241,20 +250,6 @@ function checkAccountMail(userId: unknown, message: { subject: unknown; text: un
     throw new TypeError(`mail.toAccount: text must be 1 to ${MAIL_TEXT_MAX} characters`);
   }
   return { subject, text };
-}
-
-/** A frozen copy of `schedule`: its entries, their cards and each card. */
-function frozenSchedule(schedule: protocol.CreditPriceSchedule): protocol.CreditPriceSchedule {
-  return Object.freeze(
-    schedule.map((entry) =>
-      Object.freeze({
-        effectiveFrom: entry.effectiveFrom,
-        cards: Object.freeze(
-          Object.fromEntries(Object.entries(entry.cards).map(([task, card]) => [task, Object.freeze({ ...card })])),
-        ) as protocol.CreditPriceScheduleEntry['cards'],
-      }),
-    ),
-  );
 }
 
 /** The SQL facade over the server's database, or over one transaction on it. */

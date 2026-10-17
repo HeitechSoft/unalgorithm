@@ -1,15 +1,16 @@
 /**
- * The server process. `startServer` opens the database, applies migrations, brings the AI route in line with the
- * configuration, loads the billing module if one is configured, starts the background jobs, and serves the app; run
- * directly (`node apps/server/src/index.ts`, or `pnpm start`), this module reads the configuration from the environment,
- * starts the server, and stops it gracefully on SIGTERM or SIGINT.
+ * The server process. `startServer` opens the database, applies migrations, loads the price book, brings the AI route in
+ * line with the configuration, loads the billing module if one is configured, starts the background jobs, and serves
+ * the app; run directly (`node apps/server/src/index.ts`, or `pnpm start`), this module reads the configuration from
+ * the environment, starts the server, and stops it gracefully on SIGTERM or SIGINT.
  */
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { AIError } from '@unalgorithm/ai';
-import { FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
+import { DEFAULT_PRICE_BOOK, FACTCHECK_JOB_TTL_MS, type FactcheckResult, type PerspectivesResult } from '@unalgorithm/protocol';
+import { openPriceStore, PriceBookError } from './admin/prices.ts';
 import { logSetupNeeded } from './admin/setup.ts';
 import { registerClaimCacheJobs } from './ai/claim-cache.ts';
 import { searchProviderFor } from './ai/factcheck.ts';
@@ -89,6 +90,10 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   });
   try {
     await runMigrations(db, { migrationsFolder: MIGRATIONS_FOLDER, log });
+    // The price book in use, kept in memory: a stored book that is not sound (PriceBookError) stops the start before
+    // anything is served, as a billing module that cannot be loaded does. The one store: the billing host (so the module
+    // charges from the book people see) and the app (discovery, offers, `/prices.json`, the Pricing page) both read it.
+    const prices = await openPriceStore(db.db, { seed: DEFAULT_PRICE_BOOK });
     await logSetupNeeded(db.db, log);
     // Refuses a provider that breaks the routing rules (RouteConfigError) before anything is served.
     await syncRouteFromConfig(db.db, config, log);
@@ -105,7 +110,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     registerSyncJobs(jobs, { db: db.db });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
-    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv });
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv, prices });
     const billing = await loadBilling(config, host, log);
     // After loadBilling, so the alert check also asks the module for its alerts; before the jobs start.
     const notifier = createAlertNotifier({ db: db.db, config, log, mailer });
@@ -119,13 +124,13 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       billing,
       auth,
       ai,
+      prices,
       stopping: stopping.signal,
       inFlight,
       errors,
       search,
       linkCheck: egress.checkLinks,
       resolveLink: egress.resolveLink,
-      priceSchedule: host.priceSchedule,
       factcheckJobs,
       perspectivesJobs,
     });
@@ -235,12 +240,12 @@ async function closeAll(running: RunningJobs | undefined, db: DbHandle): Promise
 
 /**
  * What `main` prints for a start failure that is the operator's to fix, or undefined for one it logs as
- * `server.start_failed`. A routing rule, a billing module that cannot be loaded and a module's own configuration error
- * (named `BillingConfigError`, whose message by contract names variables only) are printed like a ConfigError:
- * `errorFields` would drop the message, which is all they have to say.
+ * `server.start_failed`. A routing rule, a stored price book that is not sound, a billing module that cannot be loaded
+ * and a module's own configuration error (named `BillingConfigError`, whose message by contract names variables only)
+ * are printed like a ConfigError: `errorFields` would drop the message, which is all they have to say.
  */
 export function startFailureMessage(err: unknown): string | undefined {
-  if (err instanceof RouteConfigError || err instanceof BillingLoadError) return err.message;
+  if (err instanceof RouteConfigError || err instanceof BillingLoadError || err instanceof PriceBookError) return err.message;
   if (err instanceof Error && err.name === 'BillingConfigError') return err.message;
   return undefined;
 }

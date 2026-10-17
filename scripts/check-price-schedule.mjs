@@ -1,5 +1,5 @@
 // Prices in effect never change, a raise gives PRICE_NOTICE_DAYS of notice, and a cut may start at the next 00:00 UTC
-// (docs/release.md → Changing a price card). Compares this checkout's CREDIT_PRICE_SCHEDULE with the one at a base
+// (docs/release.md → Prices). Compares this checkout's CREDIT_PRICE_SCHEDULE with the one at a base
 // revision, read from git history:
 //
 //   node --import ./apps/server/src/require-node.js scripts/check-price-schedule.mjs --base <git revision> [--in-effect-only]
@@ -17,7 +17,7 @@ const ROOT = resolve(import.meta.dirname, '..');
 const SCHEDULE_FILE = 'packages/protocol/src/price-schedule.ts';
 const BILLING_FILE = 'packages/protocol/src/billing.ts';
 const USAGE = 'usage: node scripts/check-price-schedule.mjs --base <git revision> [--in-effect-only]';
-const SEE = 'see docs/release.md → Changing a price card.';
+const SEE = 'see docs/release.md → Prices.';
 
 /**
  * Imports a price-schedule.ts source (as git shows it) from a new temporary directory, which is then removed. The
