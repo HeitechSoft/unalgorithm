@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { ChevronLeft, ExternalLink, LoaderCircle, Newspaper } from '../icons.ts';
 import { BalanceNotice } from './balance.tsx';
 import { IconButton } from './controls.tsx';
-import { CitationFigure } from './factcheck.tsx';
+import { CitationFigure, FootLinks, type SheetFootLink } from './factcheck.tsx';
 import { Badge, Banner, EmptyState } from './feedback.tsx';
 
 /** Each lean bucket in words (never colour alone), from the protocol: one map for the sheet and every list page. */
@@ -32,6 +32,13 @@ export interface PerspectivesSheetProps {
   listWarnings?: readonly string[];
   /** Up to 4 older checks and comparisons on this tab. */
   earlier?: { label: string; onOpen(): void }[];
+  /** Links shown last in the footer of a finished comparison (how it works, report a mistake): the extension's own URLs. */
+  links?: readonly SheetFootLink[] | undefined;
+  /**
+   * UnAlgorithm Cloud's public source list page (`SOURCE_LIST_PAGE_URL`): when set, a Cloud result's footer links the
+   * list's name to it, where appeals start. An own-list result never links: it is the person's list.
+   */
+  listHref?: string | undefined;
   onBack(): void;
 }
 
@@ -43,11 +50,27 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, DAY_FOR
 /** A search result's page age as a date when it parses as one, else as given. */
 const pageDay = (age: string) => (Number.isNaN(Date.parse(age)) ? age : day(age));
 
-/** Where a result's leans came from, by the list it ran on (D104). Copy is a draft (D110). */
-function leansFrom(result: PerspectivesResult): string {
-  return result.list === 'own'
-    ? 'Leans come from your own source list, which no one has reviewed. Never from AI.'
-    : `Leans come from UnAlgorithm Cloud's source list (version ${result.registryVersion}), set by people with evidence, never by AI.`;
+const CLOUD_LIST = "UnAlgorithm Cloud's source list";
+
+/**
+ * Where a result's leans came from, by the list it ran on (D104), with the Cloud list's name linked to `listHref` when
+ * set (P3-69). Copy is a draft (D110).
+ */
+function LeansFrom({ result, listHref }: { result: PerspectivesResult; listHref?: string | undefined }) {
+  if (result.list === 'own') return <>Leans come from your own source list, which no one has reviewed. Never from AI.</>;
+  return (
+    <>
+      {'Leans come from '}
+      {listHref ? (
+        <a href={listHref} target="_blank" rel="noopener noreferrer">
+          {CLOUD_LIST}
+        </a>
+      ) : (
+        CLOUD_LIST
+      )}
+      {` (version ${result.registryVersion}), set by people with evidence, never by AI.`}
+    </>
+  );
 }
 
 /**
@@ -63,6 +86,8 @@ export function PerspectivesSheet({
   errorMessage,
   listWarnings = [],
   earlier = [],
+  links,
+  listHref,
   onBack,
 }: PerspectivesSheetProps) {
   return (
@@ -96,8 +121,11 @@ export function PerspectivesSheet({
           />
           <footer className="ua-factcheck-foot">
             <div>Compared {new Date(result.checkedAt).toLocaleString(undefined, COMPARED_AT_FORMAT)}</div>
-            <div>{leansFrom(result)}</div>
+            <div>
+              <LeansFrom result={result} listHref={listHref} />
+            </div>
             <div>AI can be wrong, so open the sources.</div>
+            <FootLinks links={links} />
           </footer>
         </>
       ) : null}

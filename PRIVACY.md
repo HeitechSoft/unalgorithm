@@ -126,6 +126,14 @@ page's language, whether detection looked healthy, and counts of what was found 
 names, ids or links. These diagnostics are part of the link your browser opens on GitHub; nothing is filed until you
 review the issue and submit it yourself, under GitHub's terms and privacy statement.
 
+A finished fact-check or UnEcho Chamber result in the side panel has a **Report a wrong verdict** (or **Report a
+mistake**) link. It opens our correction form on GitHub with only these filled in: the feature's name, UnAlgorithm's
+version, the version of the AI instructions and, for UnEcho Chamber, whether it used UnAlgorithm Cloud's source list or
+your own. Never the post, the claims, the sources, the link, your list or anything about you. You describe the problem
+in your own words, and nothing is filed until you submit it yourself, under GitHub's terms and privacy statement. The
+result's *How it works* link opens our website, and the link on *UnAlgorithm Cloud's source list* opens the Cloud's
+public list.
+
 ## Permissions
 
 | Permission | Why |

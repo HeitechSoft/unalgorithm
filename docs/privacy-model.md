@@ -368,7 +368,16 @@ removes the account from the extension.
 
 "Report a problem" builds a GitHub issue URL with at most 2 KB of JSON: versions, Chrome major version, page
 language, health status, counts, detector hit counts and landmark counts. No text, names, ids or URLs. The user sees
-the issue before submitting it. `content/report.ts` is the only place that builds it.
+the issue before submitting it.
+
+A finished fact-check or UnEcho Chamber result in the side panel links the correction form (P3-69, decisions D88,
+D107): `correctionUrl` sets `template=correction.yml` and four fields only, `feature` (the feature's name), `version`
+(the extension's), `prompt` (the result's prompt version) and, for UnEcho Chamber, `list` ("UnAlgorithm Cloud's list"
+or "My own list"). No date, verdict, claim, source, link, list content or anything from the post or about the person.
+The other links under a result are fixed: the methodology page on the website and UnAlgorithm Cloud's public source
+list (a Cloud result only).
+
+`content/report.ts` and `lib/report-links.ts` are the only places that build a GitHub issue URL.
 
 ## Untrusted input
 

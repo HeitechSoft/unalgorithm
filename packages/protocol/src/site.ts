@@ -14,6 +14,9 @@ export const CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
 /** UnAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
 export const SOURCE_LIST_PAGE_URL = `${CLOUD_ORIGIN}${OUTLETS_PAGE_PATH}`;
 
+/** The open-source repository, where issues are filed ("Report a problem", the correction form). */
+export const SOURCE_REPO = 'https://github.com/HeitechSoft/unalgorithm';
+
 export interface SiteDocument {
   /** The Markdown file, relative to this repo's root. */
   readonly source: string;
