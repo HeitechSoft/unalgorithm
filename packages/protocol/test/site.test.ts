@@ -332,12 +332,18 @@ describe('feature names (P3-63)', () => {
   /** Every text file under `path` (a file or a directory), skipping dependencies, release history and changesets. */
   const textFiles = (path: string): string[] => {
     const url = new URL(path, REPO_ROOT);
-    if (!existsSync(url)) return [];
-    if (statSync(url).isFile()) {
+    // Read first and branch on the error, so no check comes before the use (CodeQL js/file-system-race).
+    let names: string[];
+    try {
+      names = readdirSync(url);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return [];
+      if (code !== 'ENOTDIR') throw error;
       const bytes = readFileSync(url);
       return /(^|\/)CHANGELOG\.md$/.test(path) || bytes.includes(0) ? [] : [path];
     }
-    return readdirSync(url)
+    return names
       .filter((name) => name !== 'node_modules' && name !== '.changeset')
       .flatMap((name) => textFiles(`${path.replace(/\/$/, '')}/${name}`));
   };
