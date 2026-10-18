@@ -19,7 +19,8 @@ cookies; see [This website](#this-website).
 - While a LinkedIn or Facebook tab is open, the lists in the popup and side panel (the author, a short snippet and a
   link for each hidden or highlighted post) are kept in the browser's temporary session storage. They are removed
   when the tab closes, when the browser restarts, or when you choose Erase everything.
-- Nothing is sent anywhere unless you turn on AI, or you click **Report a problem** (see below).
+- Nothing is sent anywhere unless you turn on AI, sign in to an unAlgorithm server, or click **Report a problem** (see
+  below).
 
 ## When you turn on AI
 
@@ -42,6 +43,7 @@ It **never** sends author names, profile links, group names, comments, images or
 | On this device (your browser's built-in AI: Chrome's, or Edge's in its preview builds; not in Firefox) | Nowhere: it runs on your computer |
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
+| An unAlgorithm server (unAlgorithm Cloud, or one you or your organization run) | Only to that server, then to the AI provider its operator configured. See [When you sign in to an unAlgorithm server](#when-you-sign-in-to-an-unalgorithm-server). |
 
 **Fact-check (off by default).** When you turn on Settings → AI → Fact-check, use your own Anthropic or OpenAI
 key and confirm a check on a public post, unAlgorithm sends that one post to that provider, directly from your browser
@@ -138,6 +140,38 @@ decides only whether signing in to a server sends this device's name, such as "F
 in without it has no name on that server, and a change applies from the next sign-in. Versions without the server
 sign-in don't list it, and Firefox offers no choice at install.
 
+## When you sign in to an unAlgorithm server
+
+Instead of an API key, you can choose an unAlgorithm server as your AI option and sign in to it. **unAlgorithm Cloud**
+is HeitechSoft's own server at `cloud.unalgorithm.app` (invite-only beta). Anyone can also run an unAlgorithm server;
+the extension shows every other server by its address, never as unAlgorithm Cloud.
+
+**What is sent.** To sign in: your email address, to which the server emails a one-time code. To classify posts: the
+same post fields and interests as any AI option (see above), to that server only; Facebook posts that aren't public are
+never sent. The extension also reads your credit balance from the server, sending only your sign-in token.
+
+**Who receives it.** With unAlgorithm Cloud: HeitechSoft, which forwards post fields to Anthropic in the United States
+to classify them and sends sign-in emails through SMTP2GO. With any other unAlgorithm server: that server's operator and
+the AI provider they configured, under their own terms and privacy policy, not HeitechSoft's.
+
+**What unAlgorithm Cloud keeps.** Your email address, your signed-in devices, sign-in tokens by hash only, usage counts
+and costs, your credit ledger and, if you turn sync on, your synced settings (your own UnEcho Chamber source list
+included). Never post text, link titles, interests, the source list a comparison sends, prompts or AI answers. The
+[unAlgorithm Cloud beta privacy notice](https://unalgorithmfeed.com/cloud/beta-privacy) has the details, how long each
+item is kept, and how to download your data or delete your account.
+
+**Sign-in.** Signing in opens the server's own sign-in page with the browser's identity permission, which Chrome and
+Edge ask you for only when you click Sign in (Firefox grants it with the extension, without asking). In Firefox the same
+click asks for the consent described in [Firefox's consent](#when-you-turn-on-ai). Your refresh token is stored in the
+extension's own storage, which web pages cannot read; signing out or Erase everything ends it on the server.
+
+### Sync between your computers
+
+If you turn on settings sync, your settings, interests and exceptions (the names and profile identifiers you chose to
+always show or hide) and your own UnEcho Chamber source list (outlet names, web addresses and the leans you gave them)
+go to the server you signed in to, and your other signed-in browsers fetch them from there; never API keys or post
+text. Sync runs on a short timer only while you have it turned on.
+
 ## Report a problem
 
 **Report a problem** (in the popup, and under *Why? → Wrong call?*) opens a new GitHub issue form in your browser,
@@ -164,6 +198,8 @@ public list.
 | Storage | To keep your settings and statistics in your browser |
 | Side panel (Chrome and Edge), sidebar (Firefox) | To show Highlights: the posts picked for you and the ones that were hidden |
 | Scripting (Chrome and Edge) | To start working in LinkedIn/Facebook tabs that were already open when you installed it. Firefox does this by itself, without this permission |
+| Identity | Used only when you click Sign in on an unAlgorithm server: it opens that server's sign-in page and receives a one-time code back. Chrome and Edge ask for it when you click Sign in; Firefox grants it with the extension, without asking. unAlgorithm Feed does not access your Google, Microsoft or Firefox account |
+| Alarms | To run settings sync on a short timer, only while you have sync turned on |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
 | Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → AI, for that one service |
 | Change requests to your local AI server (optional in Chrome and Edge; Firefox grants it with the extension, since it can't be optional there) | Asked for in Chrome and Edge, and used in every browser, only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
@@ -189,6 +225,3 @@ unAlgorithm is not directed at children under 16.
 
 We will describe material changes in the release notes and update the date above. Questions:
 **privacy@heitechsoft.com**.
-
-*unAlgorithm Cloud (a future, optional service with accounts and sync) will have its own terms and privacy notice
-before it launches.*

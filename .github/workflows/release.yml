@@ -51,6 +51,8 @@ jobs:
         # The one step that builds what ships, for every browser: whatever environment it has (UA_CLOUD, the Cloud
         # card's switch) reaches all of them (apps/extension/tests/privacy-gate.test.ts checks).
         run: pnpm zip
+        env:
+          UA_CLOUD: "1"
 
       - name: Firefox add-on lint
         # The linter AMO runs on upload: no errors, and only the reviewed warnings (scripts/check-firefox-lint.mjs).

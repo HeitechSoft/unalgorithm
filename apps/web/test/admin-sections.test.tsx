@@ -1,6 +1,6 @@
 /**
- * The admin page's other two sections (R38, R43): the invites (CL4-06's routes, the sentence the admin passes on and the
- * line about store builds under it) and the server's usage against its daily spend limit with its content-free status
+ * The admin page's other two sections (R38, R43): the invites (CL4-06's routes and the sentence the admin passes on,
+ * with no line about store builds now that every store version offers servers) and the server's usage against its daily spend limit with its content-free status
  * (CL4-05's overview, CL4-14's `ops`). `fetch` is the shared fake server: its invite routes change the next accounts
  * list as the server's do, and every request is recorded.
  */
@@ -188,10 +188,9 @@ describe('invites', () => {
     const sentence = await screen.findByText(
       `Tell new@example.org: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`,
     );
-    const line = screen.getByText(STORE_LINE);
-    // A plain line: it links nowhere.
-    expect(line.querySelector('a')).toBeNull();
-    expect(line && sentence.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sentence).toBeTruthy();
+    // Every store version offers servers (docs/release.md): no note about builds under the sentence.
+    expect(screen.queryByText(STORE_LINE)).toBeNull();
 
     // The last address invited is the one to pass on.
     await invite(user, LEO);

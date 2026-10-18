@@ -213,8 +213,9 @@ shows when, and a new one replaces the secret.
 
 ## Before a store build carries the Cloud card
 
-Store builds show the unAlgorithm Cloud card only as "Coming soon". The working card, which signs in to unAlgorithm
-Cloud or another unAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
+From 0.4.0, store builds carry the working unAlgorithm Cloud card; before that they showed it only as "Coming soon".
+The working card, which signs in to unAlgorithm Cloud or another unAlgorithm server (Settings → AI and onboarding), the
+`identity` permission it signs in with and the
 `alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
 `apps/extension/wxt.config.ts`; development and e2e builds always have them). The switch reaches every browser at once:
 `release.yml` builds all of them in its one `pnpm zip` step, and CI refuses a second build step or a package script
@@ -258,8 +259,8 @@ done, for all three stores:
     and add review credit. Its address and password go only into the store's reviewer notes at submission, never into
     a repository. The Firefox reviewer builds from the sources with `UA_CLOUD=1` ([amo-build.md](amo-build.md)).
 
-Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zips" step of
-`release.yml`. Until that PR, `release.yml` never sets it.
+The 0.4.0 release PR, which added those PRIVACY.md sections, set `UA_CLOUD: "1"` in the `env` of the "Build zips" step
+of `release.yml`, for all three browsers at once. Taking it out takes the card out of every store build again.
 
 ```yaml
       - name: Build zips
