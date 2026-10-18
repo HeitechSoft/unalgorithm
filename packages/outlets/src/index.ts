@@ -1,15 +1,16 @@
-/** The outlet registry, browser-safe (the extension bundles this entry): no `node:` import here or below. */
-import data from '../data/registry.json' with { type: 'json' };
-import { type Registry, RegistrySchema } from './schema.ts';
+/** Source lists for UnEcho Chamber, browser-safe (the extension bundles this entry): no `node:` import here or below. */
+import data from '../data/candidates.json' with { type: 'json' };
+import { type Candidates, CandidatesSchema } from './schema.ts';
 
+export * from './balance.ts';
 export * from './schema.ts';
 
-let bundled: Registry | null | undefined;
+let bundled: Candidates | null | undefined;
 
-/** The registry shipped in `data/registry.json`, parsed once; null when it is invalid. */
-export function bundledRegistry(): Registry | null {
+/** The candidate list shipped in `data/candidates.json`, parsed once; null when it is invalid. It holds no lean. */
+export function bundledCandidates(): Candidates | null {
   if (bundled === undefined) {
-    const parsed = RegistrySchema.safeParse(data);
+    const parsed = CandidatesSchema.safeParse(data);
     bundled = parsed.success ? parsed.data : null;
   }
   return bundled;

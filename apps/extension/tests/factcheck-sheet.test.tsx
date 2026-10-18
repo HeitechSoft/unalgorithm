@@ -11,6 +11,7 @@ import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App as SidePanel } from '../src/entrypoints/sidepanel/App.tsx';
+import { correctionUrl } from '../src/lib/report-links.ts';
 import { type FactcheckEntry, factcheckItem, tabStateItem } from '../src/lib/storage.ts';
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
@@ -142,6 +143,47 @@ describe('FactcheckSheet', () => {
     expect(plainFoot.lastElementChild?.textContent).toBe('AI can be wrong, so open the sources.');
   });
 
+  it('test_sheet_footer_links_open_in_new_tab', () => {
+    const report = correctionUrl({ task: 'factcheck', extensionVersion: '0.3.0', promptVersion: 1 });
+    const links = [
+      { text: 'How Fact-check works', href: 'https://unalgorithmfeed.com/methodology' },
+      { text: 'Report a wrong verdict', href: report },
+    ];
+    const { container } = render(
+      <FactcheckSheet label="A post about a bridge" status="done" result={result()} links={links} onBack={() => {}} />,
+    );
+    const foot = container.querySelector('.ua-factcheck-foot') as HTMLElement;
+    const lines = [...foot.children];
+    expect(lines.slice(1, -1).map((c) => c.textContent)).toEqual(['AI can be wrong, so open the sources.']);
+    const last = lines.at(-1) as HTMLElement;
+    expect(last.tagName).toBe('DIV');
+    expect(last.textContent).toBe('How Fact-check works · Report a wrong verdict');
+    for (const { text, href } of links) {
+      const a = within(foot).getByRole('link', { name: text });
+      expect(a.parentElement).toBe(last);
+      expect(a.getAttribute('href')).toBe(href);
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    }
+    cleanup();
+
+    // Without links (and with an empty list) the footer is as before.
+    for (const without of [undefined, []]) {
+      const { container: plain } = render(
+        <FactcheckSheet label="A post about a bridge" status="done" result={result()} links={without} onBack={() => {}} />,
+      );
+      const plainFoot = plain.querySelector('.ua-factcheck-foot') as HTMLElement;
+      expect(plainFoot.children).toHaveLength(2);
+      expect(plainFoot.lastElementChild?.textContent).toBe('AI can be wrong, so open the sources.');
+      expect(within(plainFoot).queryByRole('link')).toBeNull();
+      cleanup();
+    }
+
+    // A running or failed check has no footer, so no links either.
+    sheet({ status: 'running', result: undefined, links });
+    expect(screen.queryByRole('link', { name: 'Report a wrong verdict' })).toBeNull();
+  });
+
   it('test_sheet_marks_earlier_check_without_empty_explanation', () => {
     const CACHED_AT = '2026-10-14T09:00:00.000Z';
     const r = result();
@@ -220,6 +262,7 @@ describe('FactcheckSheet', () => {
 
 describe('side panel', () => {
   const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
+  const MANIFEST_VERSION = '9.8.7';
 
   const entry = (overrides: Partial<FactcheckEntry> = {}): FactcheckEntry => ({
     key: 'li:1' as FactcheckEntry['key'],
@@ -234,6 +277,8 @@ describe('side panel', () => {
     fakeBrowser.reset();
     // `as never`: spyOn picks the callback overloads. The fake browser has no focused window to answer `query` from.
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
+    // Nor a manifest: the sheet's correction link carries its version (P3-69).
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: MANIFEST_VERSION } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
   });
 
@@ -266,5 +311,19 @@ describe('side panel', () => {
     await waitFor(() => expect(screen.getByText('The bridge opened in 1932.')).toBeTruthy());
     expect(screen.queryByText(/Checking facts…/)).toBeNull();
     expect(screen.getByText('AI can be wrong, so open the sources.')).toBeTruthy();
+  });
+
+  it('test_sidepanel_passes_correction_link', async () => {
+    await factcheckItem(TAB.id).setValue({ entries: [entry({ result: result({ promptVersion: 4 }) })] });
+    render(<SidePanel />);
+    const report = await screen.findByRole('link', { name: 'Report a wrong verdict' });
+    const query = new URL(report.getAttribute('href') as string).searchParams;
+    expect(query.get('prompt')).toBe('4');
+    expect(query.get('version')).toBe(MANIFEST_VERSION);
+    expect(query.get('feature')).toBe('Fact-check');
+    expect(screen.getByRole('link', { name: 'How Fact-check works' }).getAttribute('href')).toBe(
+      'https://unalgorithmfeed.com/methodology',
+    );
+    expect(screen.queryByRole('link', { name: "unAlgorithm Cloud's source list" })).toBeNull();
   });
 });

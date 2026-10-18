@@ -115,7 +115,7 @@ export function AiSetup({
     try {
       res = await sendToBackground({ type: 'testSource', config: cfg, ...(apiKey ? { apiKey } : {}) });
     } catch {
-      setResult({ ok: false, text: 'UnAlgorithm could not run the test. Reload this page and try again.' });
+      setResult({ ok: false, text: 'unAlgorithm could not run the test. Reload this page and try again.' });
       return;
     } finally {
       setBusy(false);
@@ -145,7 +145,7 @@ export function AiSetup({
       if (!granted)
         return setResult({
           ok: false,
-          text: `UnAlgorithm needs permission to reach ${new URL(info.origin).hostname}. That's the only place your key and post text go.`,
+          text: `unAlgorithm needs permission to reach ${new URL(info.origin).hostname}. That's the only place your key and post text go.`,
         });
       void test(keyConfig(p), key.trim());
     });
@@ -160,7 +160,7 @@ export function AiSetup({
     }
     const info = COMPAT_PRESET_INFO[preset];
     void browser.permissions.request({ origins: [pattern] }).then((granted) => {
-      if (!granted) return setResult({ ok: false, text: `UnAlgorithm needs permission to reach ${info.label}.` });
+      if (!granted) return setResult({ ok: false, text: `unAlgorithm needs permission to reach ${info.label}.` });
       void test(localConfig(), token || undefined);
     });
   };
@@ -209,8 +209,8 @@ export function AiSetup({
         // promises no sync (CL3) and no billing (CL2) that a server doesn't have yet.
         <ChoiceCard
           value="cloud"
-          title="UnAlgorithm server"
-          description="No API key needed. Sign in to UnAlgorithm Cloud (invite only during the beta) or to an UnAlgorithm server you trust."
+          title="unAlgorithm server"
+          description="No API key needed. Sign in to unAlgorithm Cloud (invite only during the beta) or to an unAlgorithm server you trust."
         >
           <ServerSetup device={device} onSaved={onSaved} />
         </ChoiceCard>
@@ -218,7 +218,7 @@ export function AiSetup({
         <ChoiceCard
           value="cloud"
           disabled
-          title="UnAlgorithm Cloud"
+          title="unAlgorithm Cloud"
           badge={<Badge>Coming soon</Badge>}
           description="Nothing to set up and works on all your devices. Pay only for what you use."
         />

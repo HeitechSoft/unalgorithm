@@ -47,12 +47,12 @@ export async function updateBadge(tabId: number, s: TabState): Promise<void> {
   await action.setBadgeTextColor?.({ tabId, color: '#FFFFFF' })?.catch(() => undefined);
   const site = s.platform === 'facebook' ? 'Facebook' : s.platform === 'linkedin' ? 'LinkedIn' : null;
   const title = !site
-    ? 'UnAlgorithm'
+    ? 'unAlgorithm'
     : s.paused
-      ? `UnAlgorithm is paused on ${site}`
+      ? `unAlgorithm is paused on ${site}`
       : s.health.status === 'broken'
-        ? `UnAlgorithm: ${site}'s layout looks different, so nothing is hidden`
-        : `UnAlgorithm: ${count} post${count === 1 ? '' : 's'} hidden on this page`;
+        ? `unAlgorithm: ${site}'s layout looks different, so nothing is hidden`
+        : `unAlgorithm: ${count} post${count === 1 ? '' : 's'} hidden on this page`;
   await action.setTitle({ tabId, title }).catch(() => undefined);
   const paused = !!site && s.paused;
   await action

@@ -190,6 +190,7 @@ describe('feed controller', () => {
       learned: EMPTY_LEARNED,
       votes: {},
       serverOffer: null,
+      officialList: { list: null, checkedAt: 0 },
     };
     c.start(rt);
     await vi.advanceTimersByTimeAsync(1000);
@@ -225,7 +226,7 @@ describe('usage view', () => {
 
   async function showUsage(day: DayUsage) {
     await usageItem.setValue({ [dateKey()]: day });
-    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={device} />);
+    render(<AiPane settings={settings} save={vi.fn(async () => {})} device={device} saveDevice={vi.fn(async () => {})} />);
   }
   const groupOf = (header: string) => screen.getByRole('heading', { name: header }).closest('section') as HTMLElement;
 

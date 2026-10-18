@@ -1,20 +1,21 @@
 import { type AISourceConfig, canonicalText } from '@unalgorithm/core';
-import { ACCOUNT_PAGE_PATH } from '@unalgorithm/protocol';
+import { ACCOUNT_PAGE_PATH, CLOUD_ORIGIN } from '@unalgorithm/protocol';
 
 /**
  * How a `server` AI source is named on screen (R25, docs/brand.md). The same server code runs HeitechSoft's Cloud and
- * anyone's self-hosted copy, so "UnAlgorithm Cloud" is earned by the origin alone, never by what a server says about
- * itself. This module is the only place that knows the pinned origin.
+ * anyone's self-hosted copy, so "unAlgorithm Cloud" is earned by the origin alone, never by what a server says about
+ * itself. The pinned origin is the protocol's `CLOUD_ORIGIN` (one source; unAlgorithm Cloud's source list page is
+ * there too), and this module is the only place in the extension that names it.
  */
-export const PINNED_CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
+export const PINNED_CLOUD_ORIGIN = CLOUD_ORIGIN;
 
-const CLOUD = 'UnAlgorithm Cloud';
+const CLOUD = 'unAlgorithm Cloud';
 const MAX_SERVER_NAME = 80;
 const NEVER_SENT =
   "Author names, emails and phone numbers are never sent, and Facebook posts that aren't public stay on this computer.";
 
 export interface ServerLabel {
-  /** "UnAlgorithm Cloud" for the pinned origin, otherwise the server's host (port included). */
+  /** "unAlgorithm Cloud" for the pinned origin, otherwise the server's host (port included). */
   title: string;
   /** Empty when the address can't be parsed. */
   host: string;
@@ -39,7 +40,7 @@ export function serverLabel(baseUrl: string, info?: { name: string }): ServerLab
 }
 
 /**
- * Letters from other alphabets that pass for the letters of "UnAlgorithm Cloud" (after Unicode's confusables list):
+ * Letters from other alphabets that pass for the letters of "unAlgorithm Cloud" (after Unicode's confusables list):
  * Cyrillic, Greek, Armenian, Cherokee and Lisu letters, Latin small capitals, and digits. `i` and `l` share an entry
  * because a capital I passes for either. Case matters (Greek capital eta looks like H, small eta like n), so this is
  * read before lowercasing. Code points, because the characters themselves can't be told apart in source.
@@ -77,12 +78,12 @@ function skeleton(text: string): string {
     .replaceAll('rn', 'm');
 }
 
-const UNALGORITHM = skeleton('UnAlgorithm');
+const UNALGORITHM = skeleton('unAlgorithm');
 const CLOUD_WORD = skeleton('Cloud');
 
 /**
- * A name that reads as "UnAlgorithm" and "Cloud" anywhere in it, however it is spaced, ordered, accented or spelled
- * ("unalgorithm  cloud", "Cloud by UnAlgorithm", "cloud.unalgorithm.app", a Cyrillic o in place of the Latin one).
+ * A name that reads as "unAlgorithm" and "Cloud" anywhere in it, however it is spaced, ordered, accented or spelled
+ * ("unalgorithm  cloud", "Cloud by unAlgorithm", "cloud.unalgorithm.app", a Cyrillic o in place of the Latin one).
  */
 function borrowsCloudName(name: string): boolean {
   const s = skeleton(name);

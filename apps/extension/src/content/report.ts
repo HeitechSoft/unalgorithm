@@ -1,8 +1,7 @@
 import type { PlatformAdapter } from '@unalgorithm/platforms';
+import { SOURCE_REPO } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { FeedController } from './feed-controller.ts';
-
-const REPO = 'https://github.com/HeitechSoft/unalgorithm';
 
 /**
  * A prefilled GitHub issue for a detection problem. Contains only versions, counts and detector names: never post
@@ -27,5 +26,5 @@ export function reportProblemUrl(adapter: PlatformAdapter, controller: FeedContr
     platform: adapter.id === 'facebook' ? 'Facebook' : 'LinkedIn',
     diagnostics: JSON.stringify(diagnostics, null, 1).slice(0, 2000),
   });
-  return `${REPO}/issues/new?${params.toString()}`;
+  return `${SOURCE_REPO}/issues/new?${params.toString()}`;
 }

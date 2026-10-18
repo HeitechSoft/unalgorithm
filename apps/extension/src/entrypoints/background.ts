@@ -16,6 +16,7 @@ import {
 import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
+import { startOfficialListUpdates } from '../background/official-list.ts';
 import { forgetSearchKey, saveSearchKey } from '../background/search-key.ts';
 import {
   discoverServer,
@@ -93,7 +94,7 @@ function publicAccount(account: ServerAccount): PublicServerAccount {
 /**
  * Open feed tabs try AI again after a sign-in. A new source reaches them through their device watch, but signing in
  * again to the server that is already the source writes an identical device, which the watch never reports, and those
- * tabs would stay paused on "Sign in to … again". The message carries nothing; tabs without UnAlgorithm are skipped.
+ * tabs would stay paused on "Sign in to … again". The message carries nothing; tabs without unAlgorithm are skipped.
  */
 async function resumeFeedTabs(): Promise<void> {
   const tabs = await browser.tabs.query({ url: FEED_TAB_URLS }).catch(() => []);
@@ -174,14 +175,14 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     const all = msg.what === 'all';
     if (all) {
       // Sync stops before anything goes, so no run writes its state back or pushes during the erase.
-      await resetSync().catch((err: unknown) => console.debug('[UnAlgorithm] sync reset failed', err));
+      await resetSync().catch((err: unknown) => console.debug('[unAlgorithm] sync reset failed', err));
       // Ending the device on the server needs its refresh token, which `clearSecrets` deletes, so this goes first. A
       // failed sign-out doesn't stop the erase: the account itself is removed below either way.
       try {
         const account = await serverAccountItem.getValue();
         if (account) await signOut(account.origin);
       } catch (err) {
-        console.debug('[UnAlgorithm] server sign-out failed', err);
+        console.debug('[unAlgorithm] server sign-out failed', err);
       }
     }
     const steps: Array<() => Promise<unknown>> = [];
@@ -314,7 +315,7 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   },
 };
 
-/** Put UnAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. */
+/** Put unAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. */
 async function injectIntoOpenTabs(): Promise<void> {
   const scripts: Record<string, string> = {
     'www.linkedin.com': '/content-scripts/linkedin.js',
@@ -337,13 +338,15 @@ async function injectIntoOpenTabs(): Promise<void> {
 export default defineBackground(() => {
   initSync();
   syncServerOffer();
+  // unAlgorithm Cloud's source list, while UnEcho Chamber is on: at most daily, anonymous (D98).
+  startOfficialListUpdates();
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
     const handler = handlers[msg?.type] as unknown as ((m: BgRequest, s: Sender) => Promise<unknown>) | undefined;
     if (!handler) return false;
     handler(msg, sender)
       .then(sendResponse)
       .catch((err: unknown) => {
-        console.warn('[UnAlgorithm]', msg.type, err);
+        console.warn('[unAlgorithm]', msg.type, err);
         sendResponse({ __uaError: err instanceof Error ? err.message : String(err) } satisfies BgFailure);
       });
     return true;

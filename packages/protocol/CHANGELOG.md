@@ -1,5 +1,23 @@
 # @unalgorithm/protocol
 
+## 0.2.0
+
+### Minor Changes
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The price book: a server's task prices, starter credit, buying credit amounts and auto-reload caps in one shape, with
+  today's prices as its default, the rules each change must pass (with typing-slip bounds), the shape `/prices.json`
+  publishes and the admin contract of the Pricing page. Nothing reads it yet, and no price changes.
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The price rules give each refusal a code and its facts (the task, the date and the earliest date allowed), in plain
+  words for the Pricing page, without changing a line the price-schedule CI check prints. One task's price change is an
+  edit of the dated schedule: price a task from a date, cancel a scheduled change, or move it.
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Every price the server shows or charges now comes from its price book, so a change saved on the Pricing page applies
+  at once, without a restart: discovery and the fact-check and UnEcho Chamber offers, and the billing module through
+  the billing host's `prices` (which replaces `priceSchedule`). The book is published at `/prices.json`, public and
+  cacheable with an ETag, on a server that charges. Discovery also gives a billing server's price of 1,000 classified
+  posts (`classifyPrice`). No price changes.
+
 ## 0.1.0
 
 ### Minor Changes

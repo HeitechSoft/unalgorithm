@@ -1,18 +1,19 @@
-import type { DIFFERENCE_KINDS, LeanBucket, PerspectivesResult, PerspectivesSource } from '@unalgorithm/protocol';
+import {
+  BUCKET_LABELS,
+  type DIFFERENCE_KINDS,
+  FEATURE_NAMES,
+  type PerspectivesResult,
+  type PerspectivesSource,
+} from '@unalgorithm/protocol';
 import type { ReactNode } from 'react';
 import { ChevronLeft, ExternalLink, LoaderCircle, Newspaper } from '../icons.ts';
+import { BalanceNotice } from './balance.tsx';
 import { IconButton } from './controls.tsx';
-import { CitationFigure } from './factcheck.tsx';
+import { CitationFigure, FootLinks, type SheetFootLink } from './factcheck.tsx';
 import { Badge, Banner, EmptyState } from './feedback.tsx';
 
-/** Each lean bucket in words (never colour alone). Leans come only from the reviewed outlet registry. */
-export const BUCKET_LABELS: Record<LeanBucket, string> = {
-  left: 'Left',
-  'lean-left': 'Leans left',
-  center: 'Center',
-  'lean-right': 'Leans right',
-  right: 'Right',
-};
+/** Each lean bucket in words (never colour alone), from the protocol: one map for the sheet and every list page. */
+export { BUCKET_LABELS };
 
 export const DIFFERENCE_LABELS: Record<(typeof DIFFERENCE_KINDS)[number], string> = {
   emphasis: 'Emphasis',
@@ -27,8 +28,17 @@ export interface PerspectivesSheetProps {
   status: 'running' | 'done' | 'failed';
   result?: PerspectivesResult;
   errorMessage?: string;
+  /** The source list's balance warnings when the comparison started (`FactcheckEntry.listWarnings`). */
+  listWarnings?: readonly string[];
   /** Up to 4 older checks and comparisons on this tab. */
   earlier?: { label: string; onOpen(): void }[];
+  /** Links shown last in the footer of a finished comparison (how it works, report a mistake): the extension's own URLs. */
+  links?: readonly SheetFootLink[] | undefined;
+  /**
+   * unAlgorithm Cloud's public source list page (`SOURCE_LIST_PAGE_URL`): when set, a Cloud result's footer links the
+   * list's name to it, where appeals start. An own-list result never links: it is the person's list.
+   */
+  listHref?: string | undefined;
   onBack(): void;
 }
 
@@ -40,17 +50,51 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, DAY_FOR
 /** A search result's page age as a date when it parses as one, else as given. */
 const pageDay = (age: string) => (Number.isNaN(Date.parse(age)) ? age : day(age));
 
+const CLOUD_LIST = "unAlgorithm Cloud's source list";
+
 /**
- * One "Other perspectives" comparison in the side panel: who covered the story by lean bucket (every gap named),
- * facts agreed across sides, differences and one-side claims, each with quoted sources. Model and page text render
- * only as React text nodes; source URLs are http(s) by `PerspectivesSourceSchema`.
+ * Where a result's leans came from, by the list it ran on (D104), with the Cloud list's name linked to `listHref` when
+ * set (P3-69). Copy is a draft (D110).
  */
-export function PerspectivesSheet({ label, status, result, errorMessage, earlier = [], onBack }: PerspectivesSheetProps) {
+function LeansFrom({ result, listHref }: { result: PerspectivesResult; listHref?: string | undefined }) {
+  if (result.list === 'own') return <>Leans come from your own source list, which no one has reviewed. Never from AI.</>;
   return (
-    <section className="ua-factcheck ua-perspectives" aria-label="Other perspectives">
+    <>
+      {'Leans come from '}
+      {listHref ? (
+        <a href={listHref} target="_blank" rel="noopener noreferrer">
+          {CLOUD_LIST}
+        </a>
+      ) : (
+        CLOUD_LIST
+      )}
+      {` (version ${result.registryVersion}), set by people with evidence, never by AI.`}
+    </>
+  );
+}
+
+/**
+ * One UnEcho Chamber comparison in the side panel: who covered the story by lean bucket (every gap named),
+ * facts agreed across sides, differences and one-side claims, each with quoted sources; then the list's balance
+ * warnings as they were when it started, and which list the leans came from. Model and page text render only as React
+ * text nodes; source URLs are http(s) by `PerspectivesSourceSchema`.
+ */
+export function PerspectivesSheet({
+  label,
+  status,
+  result,
+  errorMessage,
+  listWarnings = [],
+  earlier = [],
+  links,
+  listHref,
+  onBack,
+}: PerspectivesSheetProps) {
+  return (
+    <section className="ua-factcheck ua-perspectives" aria-label={FEATURE_NAMES.perspectives}>
       <div className="ua-factcheck-head">
         <IconButton icon={ChevronLeft} label="Back" onClick={onBack} />
-        <h2 className="ua-factcheck-title">Other perspectives</h2>
+        <h2 className="ua-factcheck-title">{FEATURE_NAMES.perspectives}</h2>
         <Badge tone="ai">AI-generated</Badge>
       </div>
       <div className="ua-factcheck-post">{label}</div>
@@ -69,13 +113,21 @@ export function PerspectivesSheet({ label, status, result, errorMessage, earlier
       ) : null}
 
       {status === 'done' && result ? (
-        <footer className="ua-factcheck-foot">
-          <div>Compared {new Date(result.checkedAt).toLocaleString(undefined, COMPARED_AT_FORMAT)}</div>
-          <div>
-            Leans come from the UnAlgorithm outlet registry ({result.registryVersion}), reviewed by people, never from AI.
-          </div>
-          <div>AI can be wrong, so open the sources.</div>
-        </footer>
+        <>
+          <BalanceNotice
+            name={result.list === 'own' ? 'Your list' : "unAlgorithm Cloud's list"}
+            empty={false}
+            warnings={listWarnings}
+          />
+          <footer className="ua-factcheck-foot">
+            <div>Compared {new Date(result.checkedAt).toLocaleString(undefined, COMPARED_AT_FORMAT)}</div>
+            <div>
+              <LeansFrom result={result} listHref={listHref} />
+            </div>
+            <div>AI can be wrong, so open the sources.</div>
+            <FootLinks links={links} />
+          </footer>
+        </>
       ) : null}
 
       {earlier.length ? (

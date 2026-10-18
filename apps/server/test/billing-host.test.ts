@@ -2,9 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CREDIT_PRICE_SCHEDULE, priceCardsAt } from '@unalgorithm/protocol';
+import { CREDIT_PRICE_SCHEDULE, DEFAULT_PRICE_BOOK, priceCardsAt } from '@unalgorithm/protocol';
 import { type SQL, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
+import { applyPriceChange, type PriceStore } from '../src/admin/prices.ts';
 import { createAuth } from '../src/auth/better-auth.ts';
 import {
   BILLING_MIGRATION_LOCK_KEY,
@@ -28,6 +29,7 @@ import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.t
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 const TOM = 'tom@example.com';
+const ADA = 'ada@example.org';
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server again.' };
 
 /** One migration, `0000_probe.sql`, creating `billing.probe`. */
@@ -252,7 +254,7 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
 
     expect(Object.keys(host)).toEqual([
       'protocol',
-      'priceSchedule',
+      'prices',
       'db',
       'migrate',
       'log',
@@ -267,6 +269,9 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
       'usage',
       'mail',
     ]);
+    // The price book in use, read at each use: never the store itself (no refresh, no seed).
+    expect(Object.keys(host.prices)).toEqual(['current']);
+    expect(Object.isFrozen(host.prices)).toBe(true);
     expect(Object.keys(host.db)).toEqual(['sql', 'query', 'transaction']);
     expect(host.db.sql).toBe(sql);
     expect(Object.keys(host.accounts)).toEqual(['get', 'findByEmail']);
@@ -300,6 +305,31 @@ describe('shape', { timeout: PGLITE_TIMEOUT }, () => {
     host.log.info('billing.probe');
     expect(JSON.parse(lines.at(-1) ?? '{}')).toMatchObject({ event: 'billing.probe', module: 'billing' });
   });
+
+  it('test_host_prices_follow_the_store', async () => {
+    const { host, db, prices } = await testHost();
+    // The store's book, not a copy: the code defaults while none is stored.
+    expect(host.prices.current()).toBe(prices.current());
+    expect(host.prices.current()).toEqual(DEFAULT_PRICE_BOOK);
+
+    // An admin saves a change: the same host returns the new book, without being made again.
+    const at = new Date();
+    await db.db.insert(user).values({ id: 'u-ada', name: '', email: ADA, emailVerified: true, createdAt: at, updatedAt: at });
+    const purchase = {
+      minMicros: 10_000_000,
+      maxMicros: 1_000_000_000,
+      presetsMicros: [10_000_000, 25_000_000],
+      defaultMicros: 25_000_000,
+    };
+    expect(await applyPriceChange(db.db, prices, 'u-ada', { action: 'purchase', baseVersion: '0', purchase })).toEqual({
+      ok: true,
+      version: '2',
+      changed: true,
+    });
+    expect(host.prices.current()).toBe(prices.current());
+    expect(host.prices.current().purchase).toEqual(purchase);
+    expect(host.prices.current().schedule).toEqual(DEFAULT_PRICE_BOOK.schedule);
+  });
 });
 
 const ANN = 'ann@example.org';
@@ -314,12 +344,12 @@ async function annHost() {
   return { ...t, annId };
 }
 
-/** A host on `db` whose mailer is `mailer`, logging into `lines`. */
-function hostWithMailer(db: DbHandle, mailer: Mailer) {
+/** A host on `db` and its price store whose mailer is `mailer`, logging into `lines`. */
+function hostWithMailer(db: DbHandle, prices: PriceStore, mailer: Mailer) {
   const config = testConfig();
   const { log, lines } = captureLog();
   const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: false });
-  return { host: createBillingHost({ config, db, log, auth, jobs: createJobRegistry(), mailer }), lines };
+  return { host: createBillingHost({ config, db, log, auth, jobs: createJobRegistry(), mailer, prices }), lines };
 }
 
 /** The calls `mail.toAccount` refuses (AC 4's six cases, the line break both ways), as [user id, message]. */
@@ -371,18 +401,18 @@ describe('mail', { timeout: PGLITE_TIMEOUT }, () => {
   });
 
   it('test_host_mail_rejection_propagates', async () => {
-    const { db, annId } = await annHost();
+    const { db, prices, annId } = await annHost();
     const refused = new Error('550 mailbox unavailable');
-    const { host } = hostWithMailer(db, { send: () => Promise.reject(refused) });
+    const { host } = hostWithMailer(db, prices, { send: () => Promise.reject(refused) });
     await expect(host.mail.toAccount(annId, MESSAGE)).rejects.toBe(refused);
   });
 
   it('test_host_mail_logs_hold_no_address_or_text', async () => {
-    const { host, db, lines, annId } = await annHost();
+    const { host, db, prices, lines, annId } = await annHost();
     await host.mail.toAccount(annId, MESSAGE);
     await host.mail.toAccount('no-such-account', MESSAGE);
     for (const [userId, message] of badMessages(annId)) await host.mail.toAccount(userId, message).catch(() => {});
-    const failing = hostWithMailer(db, { send: () => Promise.reject(new Error(`refused for ${ANN}`)) });
+    const failing = hostWithMailer(db, prices, { send: () => Promise.reject(new Error(`refused for ${ANN}`)) });
     await failing.host.mail.toAccount(annId, MESSAGE).catch(() => {});
 
     const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);

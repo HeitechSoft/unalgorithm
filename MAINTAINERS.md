@@ -1,6 +1,6 @@
 # Maintainers
 
-UnAlgorithm is maintained by [HeitechSoft](https://heitechsoft.com).
+unAlgorithm is maintained by [HeitechSoft](https://heitechsoft.com).
 
 | Name | GitHub | Role | Areas |
 |---|---|---|---|

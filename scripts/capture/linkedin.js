@@ -1,5 +1,5 @@
 /*
- * UnAlgorithm fixture capture for LinkedIn. Paste into DevTools on your LinkedIn feed, scroll a little first.
+ * unAlgorithm fixture capture for LinkedIn. Paste into DevTools on your LinkedIn feed, scroll a little first.
  *
  * Copies anonymized HTML of the first N feed items to the clipboard:
  *  - every word is scrambled except LinkedIn's own UI labels (so detectors still see "Promoted", "Follow"...);

@@ -161,7 +161,7 @@ export function whyCopy(
     case 'less-like-this':
       return {
         title: 'You asked for less like this',
-        body: 'UnAlgorithm will show fewer posts like this one.',
+        body: 'unAlgorithm will show fewer posts like this one.',
         footnote: 'Your feedback',
         actions: [{ id: 'show', label: 'Show this post' }],
       };

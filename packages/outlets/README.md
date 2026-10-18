@@ -1,70 +1,58 @@
 # @unalgorithm/outlets
 
-The open outlet registry that "Other perspectives" sorts coverage with: which news outlets exist, their domains and
-country, and, only where the review panel approved one, a lean label.
+Source lists for UnEcho Chamber: the shapes and rules of a list of news outlets that UnEcho Chamber sorts coverage
+with, each outlet with its name, web addresses and, only where a person set one, a lean.
 
 - **Code** (`src/`, `test/`): AGPL-3.0-only, as the rest of the repository.
-- **Data** (`data/registry.json`): Creative Commons Attribution 4.0 International (CC BY 4.0), legal code in
-  [`data/LICENSE`](data/LICENSE).
+- **Data** (`data/candidates.json`): Creative Commons Attribution 4.0 International (CC BY 4.0), legal code in
+  [`data/LICENSE`](data/LICENSE). A server's published list (`/outlets.json`) is CC BY 4.0 too.
 
-## Where lean labels come from
+## What is here
 
-A lean label comes only from the human review panel. Never from a model, never from an agent, never inferred from
-anything else. The schema makes that mechanical: every label needs at least one piece of evidence (an HTTPS link and a
-note), at least two distinct reviewers who are on the registry's panel, and a review date that is not in the future.
+- `SourceList`: the one shape every UnEcho Chamber run reads, whichever list it is: unAlgorithm Cloud's published
+  list (`officialSourceList`, from the protocol's `OfficialListSchema`), a person's own list, or the test fixture. An
+  outlet's lean there is its bucket alone; evidence never travels with a run.
+- The list rules (`listProblems`, `listProblemText`): ids are unique; a web address belongs to at most one outlet and
+  is never nested under another outlet's; at most 300 outlets and 400 web addresses in all.
+- The lookups: `outletForHost` (which outlet a link's host belongs to) and `outletsIn` (a bucket's outlets, the input
+  of its search). `domainFromInput` and `outletIdFromName` turn what a person types into a web address and an id.
+- The balance rule (`listBalance`), below.
+- The candidate list (`bundledCandidates()`, `data/candidates.json`).
 
-An outlet whose details nobody checked is listed with name, domains and country only, `verified: false` and no facts.
-A fact (owner, parent company, founding, headquarters) needs a source link and the day it was checked.
+## Where leans come from
 
-## Registry status
+People only. On unAlgorithm Cloud's list, its admins set a lean with one approval and evidence (an HTTPS link and a
+note), and every change is published at once with a public change history. On a person's own list, that person sets
+the leans, and every result from it says no one reviewed them. Never a model, never an agent, never inferred from
+anything else.
 
-| `meta.status` | Labels                     | Ships?                                   | Perspectives                    |
-| ------------- | -------------------------- | ---------------------------------------- | ------------------------------- |
-| `draft`       | none (every `lean: null`)  | yes                                      | hidden                          |
-| `reviewed`    | panel-approved, signed     | only with a signature that verifies      | shown once every bucket is set  |
-| `fixture`     | fictional, `.example` only | never                                    | tests and e2e builds only       |
+`data/candidates.json` is a **candidate list**: 169 general-news outlets (114 US, 55 Canadian) that an agent listed by
+name, main web addresses and country, as a starting point that admins import and people copy: national newspapers and
+broadcasters, wire services, national digital-native news sites, the largest regional dailies, and a few major Spanish-
+and French-language outlets. Satire, opinion-only blogs, aggregators and outlets based outside the US and Canada were
+left out. No source page was opened while preparing it, so its web addresses are unchecked too. It is not an endorsement, a ranking or a grouping;
+outlets are sorted by id. Its schema (`CandidatesSchema`) allows no lean at all: every `lean` is `null`, and a file
+with any other value fails to parse.
 
-The bundled registry is a draft until the panel reviews v0. `usableRegistry()` is the runtime rule: perspectives
-uses a registry only when it is reviewed, sound and has at least one labelled outlet in every lean bucket.
+## Appeals
 
-## Draft seed
+A lean on unAlgorithm Cloud's list, or an outlet's name, web addresses or country there, is appealed to the Cloud's
+admins: see [Source list appeals](../../docs/site/corrections.md#source-list-appeals). A person's own list is theirs,
+and is not appealed.
 
-`data/registry.json` ships a **candidate list for the review panel**: about 115 US and 55 Canadian general-news outlets
-that publish online daily or weekly (national newspapers and broadcasters, wire services, national digital-native news
-sites, the largest regional dailies, and a few major Spanish- and French-language outlets). Satire, opinion-only blogs
-and aggregators were left out, and so were outlets based outside the US and Canada (the schema only has `US` and
-`CA`). The panel decides the final scope.
+## The balance rule
 
-How it was made: an agent listed each outlet's name, main web host(s) and country. No source page was opened while
-preparing it, so **every outlet is `verified: false` with `facts: []`**, and its domains are unverified too. A fact
-(owner, parent company, founding, headquarters) is added later only by someone who opened its source page and read it
-there, with that page's link and the day it was checked.
+`listBalance` counts the outlets with a lean in each bucket and warns, in plain words, when:
 
-What it is not: not an endorsement, not a ranking, not a grouping. Outlets are sorted by id, so the file's order means
-nothing. **No outlet has a lean label** (every `lean: null`), the registry stays `draft` with an empty panel, and
-perspectives stays hidden with this data. Labels come only from the panel's review.
+- a bucket has fewer than **2** outlets (`MIN_OUTLETS_PER_BUCKET`): "No outlets in Right.", "Only 1 outlet in Center.";
+- one side has more than **2 times** the other's outlets (`MAX_SIDE_RATIO`), the left side being Left and Leans left,
+  the right side Leans right and Right: "Left and Leans left have 9 outlets, Leans right and Right have 2."
 
-## Commands
-
-Run from the repository root:
-
-```sh
-node packages/outlets/src/cli.ts validate            # print every problem; exit 1 when any
-node packages/outlets/src/cli.ts sign --key <path>   # panel only: sign a sound reviewed registry
-node packages/outlets/src/cli.ts verify              # exit 0 only when the signature verifies
-pnpm outlets:check                                   # the build gate (also run by the extension's build and zip)
-```
-
-`--file`, `--sig` and `--pub` override the defaults `data/registry.json`, `data/registry.sig` and
-`keys/panel-ed25519.pub`.
-
-## Signing
-
-The panel signs the canonical form of the registry (object keys sorted at every level, no whitespace) with Ed25519.
-The public key lives at `keys/panel-ed25519.pub` (PEM text, named `.pub` so the repo's `*.pem` ignore and secret-scan rules never catch it); until the panel creates its key pair, no registry can pass the
-gate as reviewed. **The private key is never committed**: keep it offline with the panel, pass its path to `sign`, and
-commit only `data/registry.json`, `data/registry.sig` and the public key.
+A warning never blocks a run. The only list UnEcho Chamber can't use is one with no outlet with a lean. The same rule
+and words apply to every list, wherever it is shown.
 
 ## Tests
 
-Tests use `FIXTURE_REGISTRY` from `@unalgorithm/outlets/testing`: fictional outlets on `.example` domains only.
+Tests use `FIXTURE_OFFICIAL_LIST` and `FIXTURE_LIST` from `@unalgorithm/outlets/testing`: ten fictional outlets on
+`.example` web addresses only, two per bucket, whose evidence notes carry `FIXTURE_MARKER` so a store build can be
+checked for them. No test names a real outlet with a lean.

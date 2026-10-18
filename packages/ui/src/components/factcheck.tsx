@@ -1,4 +1,5 @@
 import type { FactcheckClaim, FactcheckResult, FactcheckSource, FactcheckVerdict } from '@unalgorithm/protocol';
+import { Fragment } from 'react';
 import { ChevronLeft, ExternalLink, LoaderCircle, SearchCheck } from '../icons.ts';
 import { IconButton } from './controls.tsx';
 import { Badge, Banner, EmptyState } from './feedback.tsx';
@@ -25,7 +26,15 @@ export interface FactcheckSheetProps {
   earlier?: { label: string; onOpen(): void }[];
   /** What the check cost or was charged (`checkCostLine`), shown in the footer when set. */
   costLine?: string | null | undefined;
+  /** Links shown last in the footer of a finished check (how it works, report a mistake): the extension's own URLs. */
+  links?: readonly SheetFootLink[] | undefined;
   onBack(): void;
+}
+
+/** A link in a sheet's footer. Its `href` is one of the extension's own `https:` URLs, never one from a result. */
+export interface SheetFootLink {
+  text: string;
+  href: string;
 }
 
 const CHECKED_AT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
@@ -36,7 +45,16 @@ const CACHED_AT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium' };
  * One fact-check in the side panel: each claim with its verdict, explanation and quoted sources. Model and page text
  * render only as React text nodes; source URLs are http(s) by `FactcheckSourceSchema`.
  */
-export function FactcheckSheet({ label, status, result, errorMessage, earlier = [], costLine, onBack }: FactcheckSheetProps) {
+export function FactcheckSheet({
+  label,
+  status,
+  result,
+  errorMessage,
+  earlier = [],
+  costLine,
+  links,
+  onBack,
+}: FactcheckSheetProps) {
   return (
     <section className="ua-factcheck" aria-label="Fact-check">
       <div className="ua-factcheck-head">
@@ -74,6 +92,7 @@ export function FactcheckSheet({ label, status, result, errorMessage, earlier = 
           <div>Checked {new Date(result.checkedAt).toLocaleString(undefined, CHECKED_AT_FORMAT)}</div>
           <div>AI can be wrong, so open the sources.</div>
           {costLine ? <div>{costLine}</div> : null}
+          <FootLinks links={links} />
         </footer>
       ) : null}
 
@@ -112,6 +131,23 @@ function ClaimItem({ claim, sources }: { claim: FactcheckClaim; sources: Factche
         <CitationFigure key={i} quote={cite.quote} source={sources.find((s) => s.id === cite.sourceId)} />
       ))}
     </li>
+  );
+}
+
+/** A sheet footer's links in one line, separated by " · ", each opening in a new tab; nothing when there are none. */
+export function FootLinks({ links = [] }: { links?: readonly SheetFootLink[] | undefined }) {
+  if (!links.length) return null;
+  return (
+    <div>
+      {links.map((l, i) => (
+        <Fragment key={l.href}>
+          {i ? ' · ' : null}
+          <a href={l.href} target="_blank" rel="noopener noreferrer">
+            {l.text}
+          </a>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 

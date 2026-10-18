@@ -248,7 +248,7 @@ describe('copy and accessibility', () => {
       "This deletes your account on Lagoon Classifier: your synced settings, devices, passkeys and usage history. Every computer signed in with this account is signed out. This can't be undone.",
     );
     // No file in src names a server itself: test_web_source_never_hardcodes_cloud_name (authorize.test.tsx) reads them all.
-    expect(dialog().textContent).not.toContain('UnAlgorithm');
+    expect(dialog().textContent).not.toContain('unAlgorithm');
   });
 
   it('test_data_section_keyboard', async () => {
@@ -346,7 +346,11 @@ describe('purchased credit warning', () => {
         ++asked === 1
           ? { status: 200, body: credit(0) }
           : { status, body: { code: status === 401 ? 'auth-required' : 'internal', message: 'No.' } };
-      const { server, user } = await openBillingDialog(reply);
+      const { server, user } = openAccount({ info: BILLING, routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: reply } });
+      const row = await screen.findByRole('button', { name: DELETE_ROW });
+      // Opens the dialog only once the Credits section has asked: on a slow runner the dialog could ask first.
+      await waitFor(() => expect(server.count('GET', CREDIT_ACCOUNT_PATH)).toBe(1));
+      await user.click(row);
       expect(await within(dialog()).findByText(CREDIT_UNCHECKED)).toBeTruthy();
       expect(dialog().open).toBe(true);
       await user.type(within(dialog()).getByLabelText(FIELD), TOM);

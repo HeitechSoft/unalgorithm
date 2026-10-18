@@ -13,6 +13,7 @@ import {
   type PersonRule,
   type PlatformSettings,
   type Preset,
+  perspectivesSwitchOn,
   presetOf,
   presetSummary,
   type Settings,
@@ -21,17 +22,22 @@ import {
   sourceCapabilities,
   type Topic,
 } from '@unalgorithm/core';
-import { NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
+import { listBalance, officialSourceList, ownSourceList, type SourceList } from '@unalgorithm/outlets';
+import { FEATURE_NAMES, type ListKind, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
 import {
   Badge,
+  BalanceNotice,
   Banner,
   Button,
   Chip,
+  ChoiceCard,
+  ChoiceCardGroup,
   Dialog,
   DisplayModeThumb,
   Download,
   ExternalLink,
   ListGroup,
+  ListProblemsNotice,
   ListRow,
   Logo,
   Plus,
@@ -51,10 +57,10 @@ import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
-import { perspectivesRegistry } from '../../lib/outlets.ts';
+import { listName, namedListProblems, storedOfficialList } from '../../lib/outlets.ts';
 import { recipientText, serverLabel } from '../../lib/server-label.ts';
 import { replaceSettings } from '../../lib/settings-store.ts';
-import { learnedItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
+import { learnedItem, officialListItem, serverOfferItem, usageItem } from '../../lib/storage.ts';
 
 type Save = (mutate: (s: Settings) => Settings | void) => Promise<void>;
 type SaveDevice = (mutate: (d: Device) => void) => Promise<void>;
@@ -515,7 +521,7 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
     Object.entries(settings.interests[list]).filter(([id]) => ![...STARTER_TOPICS, ...STARTER_LESS_OF].some((t) => t.id === id));
   return (
     <>
-      <Title intro="Without AI, UnAlgorithm looks for related words. With AI, it understands topics, so it also catches posts that don't use the exact words.">
+      <Title intro="Without AI, unAlgorithm looks for related words. With AI, it understands topics, so it also catches posts that don't use the exact words.">
         Interests
       </Title>
       <ListGroup header="More of" footer="Posts about these get a quiet For you highlight.">
@@ -596,7 +602,7 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
           onRemove={(id) => void save((s) => void delete s.interests.muteWords[id])}
         />
       </ListGroup>
-      <ListGroup header="What UnAlgorithm learned">
+      <ListGroup header="What unAlgorithm learned">
         <ListRow
           title="Learn from More like this and Not for me"
           control={
@@ -612,7 +618,7 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
           subtitle={`${Object.keys(learned.weights).length} topics adjusted`}
         />
         <ListRow
-          title="Reset what UnAlgorithm learned"
+          title="Reset what unAlgorithm learned"
           tone="destructive"
           onSelect={() =>
             void sendToBackground({ type: 'clearData', what: 'learned' })
@@ -627,7 +633,17 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
 
 // ---------- AI ----------
 
-export function AiPane({ settings, save, device }: { settings: Settings; save: Save; device: Device }) {
+export function AiPane({
+  settings,
+  save,
+  device,
+  saveDevice,
+}: {
+  settings: Settings;
+  save: Save;
+  device: Device;
+  saveDevice: SaveDevice;
+}) {
   const usage = useStorageItem(usageItem, {});
   const day = dayUsage(usage);
   const cost = dayCostMicros(day);
@@ -736,6 +752,7 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
           ))}
         </ListGroup>
       ) : null}
+      <CheckSettings settings={settings} save={save} device={device} saveDevice={saveDevice} />
     </>
   );
 }
@@ -744,9 +761,24 @@ export function AiPane({ settings, save, device }: { settings: Settings; save: S
 const SHOWN_BATCHES = 10;
 const BATCH_TIME = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
-// ---------- Labs ----------
+// ---------- Fact-check and UnEcho Chamber (end of the AI pane) ----------
 
-export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (m: (d: Device) => void) => Promise<void> }) {
+/**
+ * The switches for Fact-check and UnEcho Chamber, at the end of Settings → AI next to the source they need (P3-64,
+ * D77). Both stay off until turned on (D78); the device-local flags keep their Labs-era names (`device.labs.*`). Under
+ * the UnEcho Chamber switch, the source list it uses (P3-76), a synced setting.
+ */
+export function CheckSettings({
+  settings,
+  save,
+  device,
+  saveDevice,
+}: {
+  settings: Settings;
+  save: Save;
+  device: Device;
+  saveDevice: SaveDevice;
+}) {
   // Without a source that can fact-check, the switch shows off; the stored flag is left as it is.
   const offer = useStorageItem(serverOfferItem, null);
   const can = sourceCapabilities(device.aiSource, offer, device.webSearch);
@@ -754,61 +786,114 @@ export function LabsPane({ device, saveDevice }: { device: Device; saveDevice: (
   const onServer = device.aiSource?.kind === 'server';
   const onCompat = device.aiSource?.kind === 'openai-compatible';
   const needsKey = 'Needs a web search key (above).';
-  const needs = onServer
-    ? "Your server doesn't offer fact-check."
-    : onCompat
-      ? needsKey
-      : 'Needs your own Anthropic key or a server that offers it.';
+  // Neither a server nor OpenAI-compatible: an own Anthropic or OpenAI key can check and compare (RM4).
+  const needsSource = 'Needs your own Anthropic or OpenAI key, or a server that offers it.';
   return (
     <>
-      <Title intro="Early features. They may change or go away.">Labs</Title>
       {onCompat ? <WebSearchKey device={device} /> : null}
-      <ListGroup footer="Adds Check facts to public posts that make factual claims. It runs only when you click, with your own Anthropic key or your UnAlgorithm server, and shows the price first. AI can be wrong, so open the sources.">
+      {/* Copy is a draft (D91). */}
+      <ListGroup
+        header={FEATURE_NAMES.factcheck}
+        footer="Adds Check facts to public posts that make factual claims. It runs only when you click, on the AI you chose above, and shows the price first. AI can be wrong, so open the sources."
+      >
         <ListRow
-          title="Fact-check"
-          subtitle={capable ? undefined : needs}
+          title={FEATURE_NAMES.factcheck}
+          subtitle={capable ? undefined : onServer ? "Your server doesn't offer fact-check." : onCompat ? needsKey : needsSource}
           control={
             <Switch
               checked={capable && device.labs.factcheck}
               disabled={!capable}
-              label="Fact-check"
+              label={FEATURE_NAMES.factcheck}
               onCheckedChange={(v) => void saveDevice((d) => void (d.labs.factcheck = v))}
             />
           }
         />
-        {capable || onCompat ? null : (
-          <div style={{ padding: '0 12px 12px' }}>
-            <Button variant="plain" size="sm" onClick={() => (location.hash = '#/ai')}>
-              Set up AI
-            </Button>
-          </div>
-        )}
       </ListGroup>
-      {/* Hidden until this build has a reviewed outlet registry (D36). Copy is a draft (D37). */}
-      {perspectivesRegistry() !== null ? (
-        <ListGroup footer="Adds Other perspectives to public posts that share a news link. It runs only when you click, sends only the link and its title, and shows the price first. Leans come from a list reviewed by people, never from AI. AI can be wrong, so open the sources.">
-          <ListRow
-            title="Other perspectives"
-            subtitle={
-              can.perspectives
-                ? undefined
-                : onServer
-                  ? "Your server doesn't offer Other perspectives."
-                  : onCompat
-                    ? needsKey
-                    : 'Needs your own Anthropic key or a server that offers it.'
-            }
-            control={
-              <Switch
-                checked={can.perspectives && device.labs.perspectives}
-                disabled={!can.perspectives}
-                label="Other perspectives"
-                onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
-              />
-            }
-          />
-        </ListGroup>
-      ) : null}
+      {/* On every build (D103): it runs on the source list chosen below. Copy is a draft (D110). */}
+      <ListGroup
+        header={FEATURE_NAMES.perspectives}
+        footer={`Adds ${FEATURE_NAMES.perspectives} to public posts that share a news link. It runs only when you click and shows the price first. It sends the link, its title and the web addresses of your chosen list's outlets with a lean, never the post. Leans come from people, never from AI. AI can be wrong, so open the sources.`}
+      >
+        <ListRow
+          title={FEATURE_NAMES.perspectives}
+          subtitle={
+            can.perspectives
+              ? undefined
+              : onServer
+                ? `Your server doesn't offer ${FEATURE_NAMES.perspectives}.`
+                : onCompat
+                  ? needsKey
+                  : needsSource
+          }
+          control={
+            <Switch
+              checked={perspectivesSwitchOn(device, offer)}
+              disabled={!can.perspectives}
+              label={FEATURE_NAMES.perspectives}
+              onCheckedChange={(v) => void saveDevice((d) => void (d.labs.perspectives = v))}
+            />
+          }
+        />
+        <SourceListChoice settings={settings} save={save} />
+      </ListGroup>
+    </>
+  );
+}
+
+/** "3 outlets with a lean": the outlets of `list` UnEcho Chamber can search. */
+function withLean(list: SourceList): string {
+  const n = list.outlets.filter((o) => o.lean !== null).length;
+  return `${n} ${n === 1 ? 'outlet' : 'outlets'} with a lean`;
+}
+
+/**
+ * Which source list UnEcho Chamber uses (decision D100): unAlgorithm Cloud's, as last downloaded, or the person's own,
+ * with a status line under the chosen one, that list's problems (an own list can get one through sync, and then
+ * UnEcho Chamber can't use it) and balance, and the way to the editor (`#/ai/sources`). Copy is a draft (D110).
+ */
+function SourceListChoice({ settings, save }: { settings: Settings; save: Save }) {
+  const official = storedOfficialList(useStorageItem(officialListItem, { list: null, checkedAt: 0 }));
+  const chosen = settings.perspectives.list;
+  const own = ownSourceList(settings.perspectives.outlets);
+  const cloud = official ? officialSourceList(official) : null;
+  const cloudStatus = !cloud
+    ? `Not downloaded yet: it downloads once ${FEATURE_NAMES.perspectives} is on`
+    : cloud.outlets.some((o) => o.lean !== null)
+      ? `Version ${cloud.version}, ${withLean(cloud)}`
+      : 'No outlets with a lean yet';
+  const ownStatus = own.outlets.length === 0 ? 'Empty' : withLean(own);
+  const shown = chosen === 'own' ? own : cloud;
+  const balance = shown ? listBalance(shown) : null;
+  const problems = shown ? namedListProblems(shown) : [];
+  const openEditor = () => {
+    location.hash = '#/ai/sources';
+  };
+  return (
+    <>
+      <ListRow title="Source list" />
+      <div className="ua-stack" style={{ padding: '0 12px 12px' }}>
+        <ChoiceCardGroup<ListKind>
+          label="Source list"
+          value={chosen}
+          columns={2}
+          onValueChange={(v) => void save((s) => void (s.perspectives.list = v))}
+        >
+          <ChoiceCard value="cloud" title="unAlgorithm Cloud's list">
+            <span className="ua-footnote">{cloudStatus}</span>
+          </ChoiceCard>
+          <ChoiceCard value="own" title="Your own list">
+            <span className="ua-footnote">{ownStatus}</span>
+          </ChoiceCard>
+        </ChoiceCardGroup>
+        <ListProblemsNotice
+          name={listName(chosen)}
+          problems={problems.map((p) => ({ id: `${p.code} ${p.outletId}`, text: p.text }))}
+          // Only an own list can have one: the Cloud's stored copy passed the list rules.
+          action={chosen === 'own' ? { label: 'Fix your list', onAction: openEditor } : undefined}
+        />
+        {balance ? <BalanceNotice name={listName(chosen)} empty={balance.empty} warnings={balance.warnings} /> : null}
+      </div>
+      <ListRow title="Edit your list" accessory="chevron" onSelect={openEditor} />
     </>
   );
 }
@@ -865,7 +950,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
         await replaceSettings(migrateSettings(JSON.parse(await file.text())));
         toast({ title: 'Settings imported.' });
       } catch {
-        toast({ title: "That file isn't UnAlgorithm settings." });
+        toast({ title: "That file isn't unAlgorithm settings." });
       }
     };
     input.click();
@@ -933,7 +1018,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
       </ListGroup>
       <ListGroup
         header="Permissions"
-        footer="UnAlgorithm can always read linkedin.com and facebook.com pages you open. Nothing else unless you allow it."
+        footer="unAlgorithm can always read linkedin.com and facebook.com pages you open. Nothing else unless you allow it."
       >
         <ListRow title="linkedin.com and facebook.com" subtitle="Required" />
         {origins.map((o) => (
@@ -969,7 +1054,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
         title="Erase everything?"
         // The background ends the device on the server before it erases the refresh token. Store builds have no
         // server card yet, so nobody can be signed in to a server there.
-        description={`This removes your settings, exceptions, what UnAlgorithm learned, stats, AI usage history and saved API keys from this browser${CLOUD_ENABLED ? ', and signs it out of any UnAlgorithm server' : ''}. This can't be undone.`}
+        description={`This removes your settings, exceptions, what unAlgorithm learned, stats, AI usage history and saved API keys from this browser${CLOUD_ENABLED ? ', and signs it out of any unAlgorithm server' : ''}. This can't be undone.`}
         actions={
           <>
             <Button onClick={() => setErase(false)} autoFocus>
@@ -1013,7 +1098,7 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
         <span className="ua-secondary">Version {version}</span>
         <span className="ua-footnote">by HeitechSoft · Ontario, Canada</span>
       </div>
-      <ListGroup footer="UnAlgorithm is free software under the GNU AGPL, version 3 only. Not affiliated with LinkedIn or Meta.">
+      <ListGroup footer="unAlgorithm is free software under the GNU AGPL, version 3 only. Not affiliated with LinkedIn or Meta.">
         <ListRow title="Website" accessory="external" href={`${site}/`} />
         <ListRow title="Help" accessory="external" href={`${site}/help/`} />
         <ListRow title="Source code" accessory="external" href={repo} />
@@ -1030,7 +1115,7 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
       {devBuild ? (
         <ListGroup
           header="Developer"
-          footer="Development builds only. Labels show what UnAlgorithm read and decided for each post, never names or text."
+          footer="Development builds only. Labels show what unAlgorithm read and decided for each post, never names or text."
         >
           <ListRow
             title="Show detection labels on posts"

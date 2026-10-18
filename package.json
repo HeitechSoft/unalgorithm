@@ -1,7 +1,7 @@
 {
   "name": "unalgorithm",
   "private": true,
-  "description": "UnAlgorithm: see the posts you came for. An open-source feed curator for LinkedIn and Facebook.",
+  "description": "unAlgorithm: see the posts you came for. An open-source feed curator for LinkedIn and Facebook.",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.34.6",
   "engines": {
@@ -19,9 +19,9 @@
     "test": "vitest run",
     "e2e": "pnpm --filter @unalgorithm/extension e2e",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "docs:site": "node packages/research/eval/publish.ts",
     "eval:factcheck": "node packages/research/eval/cli.ts",
     "eval:trust": "node apps/server/src/cli/trust-eval.ts",
-    "outlets:check": "node packages/outlets/src/cli.ts check",
     "changeset": "changeset",
     "fixtures:check": "node scripts/check-fixtures.mjs",
     "scan:public": "node scripts/scan-public-repo.mjs",

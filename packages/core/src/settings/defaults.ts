@@ -7,7 +7,7 @@ export function defaultPlatformSettings(platform: PlatformId, preset: Preset = '
   return { enabled: true, preset, filters: v.filters, ai: v.ai, alwaysShow: {}, alwaysHide: {} };
 }
 
-/** Fresh-install settings: Balanced on both platforms, collapse display, no interests, no AI. */
+/** Fresh-install settings: Balanced on both platforms, collapse display, no interests, no AI, the Cloud's source list. */
 export function defaultSettings(): Settings {
   return {
     version: SETTINGS_VERSION,
@@ -27,6 +27,7 @@ export function defaultSettings(): Settings {
     interests: { more: {}, less: {}, about: '', highlightWords: {}, muteWords: {} },
     highlights: { enabled: true, amount: 'standard' },
     ai: { relevanceCutoff: 35, dailyCap: 300, redactMentions: true, learnFromFeedback: true },
+    perspectives: { list: 'cloud', outlets: {} },
   };
 }
 

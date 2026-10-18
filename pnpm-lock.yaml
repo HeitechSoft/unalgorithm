@@ -187,6 +187,9 @@ importers:
       '@unalgorithm/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@unalgorithm/outlets':
+        specifier: workspace:*
+        version: link:../../packages/outlets
       '@unalgorithm/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

@@ -279,7 +279,7 @@ describe('messages', () => {
     };
     for (const [origin, title] of [
       [ORIGIN, 'sync.example.org'],
-      [PINNED_CLOUD_ORIGIN, 'UnAlgorithm Cloud'],
+      [PINNED_CLOUD_ORIGIN, 'unAlgorithm Cloud'],
     ] as const) {
       await serverAccountItem.setValue(account({ origin }));
       for (const [problem, text] of Object.entries(expected) as [SyncProblem, string][]) {

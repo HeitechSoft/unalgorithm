@@ -1,6 +1,6 @@
 import { useId } from 'react';
 
-/** The UnAlgorithm mark: a Lagoon tile with a "U" holding a single dot, the post that is for you. */
+/** The unAlgorithm mark: a Lagoon tile with a "U" holding a single dot, the post that is for you. */
 export function Logo({ size = 28, title }: { size?: number; title?: string }) {
   const id = useId().replace(/:/g, '');
   return (
@@ -20,11 +20,11 @@ export function Logo({ size = 28, title }: { size?: number; title?: string }) {
   );
 }
 
-/** "UnAlgorithm" set in two weights: Un in Lagoon, Algorithm in ink. */
+/** "unAlgorithm" set in two weights: un in Lagoon, Algorithm in ink. */
 export function Wordmark({ size = 17 }: { size?: number }) {
   return (
     <span style={{ font: `600 ${size}px/1 var(--ua-font-display)`, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
-      <span style={{ color: 'var(--ua-accent)', fontWeight: 700 }}>Un</span>
+      <span style={{ color: 'var(--ua-accent)', fontWeight: 700 }}>un</span>
       <span style={{ color: 'var(--ua-text)' }}>Algorithm</span>
     </span>
   );

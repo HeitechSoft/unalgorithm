@@ -104,14 +104,14 @@ test.describe('a self-hosted server', () => {
   });
 });
 
-test.describe('UnAlgorithm Cloud', () => {
+test.describe('unAlgorithm Cloud', () => {
   test.skip(SKIP, NEEDS);
 
   test('test_cloud_origin_labels_and_recipient', async ({ context, extensionId }) => {
     // No live Cloud: only its discovery document, served here.
     const info = ServerInfoSchema.parse({
       v: 1,
-      name: 'UnAlgorithm Cloud',
+      name: 'unAlgorithm Cloud',
       version: '0.1.0',
       source: 'https://github.com/HeitechSoft/unalgorithm',
       billing: false,
@@ -132,15 +132,15 @@ test.describe('UnAlgorithm Cloud', () => {
     expect(saved).toMatchObject({ ok: true });
 
     await options.goto(`chrome-extension://${extensionId}/options.html#/privacy`);
-    await expect(options.locator('.flow-box').last()).toHaveText('UnAlgorithm Cloud');
-    const recipient = options.getByText(/^Post text goes from your browser to UnAlgorithm Cloud/);
+    await expect(options.locator('.flow-box').last()).toHaveText('unAlgorithm Cloud');
+    const recipient = options.getByText(/^Post text goes from your browser to unAlgorithm Cloud/);
     await expect(recipient).toContainText('HeitechSoft');
     await expect(recipient).toContainText('Anthropic');
 
     // Not signed in, so the popup asks for attention.
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByText('UnAlgorithm Cloud · Needs attention', { exact: true })).toBeVisible();
+    await expect(popup.getByText('unAlgorithm Cloud · Needs attention', { exact: true })).toBeVisible();
   });
 });
 

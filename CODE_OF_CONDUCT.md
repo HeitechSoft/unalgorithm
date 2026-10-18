@@ -1,6 +1,6 @@
 # Code of Conduct
 
-UnAlgorithm adopts the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/)
+unAlgorithm adopts the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/)
 as its code of conduct. In short:
 
 - Be welcoming, patient and respectful. Assume good intent.

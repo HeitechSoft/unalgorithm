@@ -1,4 +1,4 @@
-# Development only: Postgres and Mailpit for running the UnAlgorithm Feed server on your own computer.
+# Development only: Postgres and Mailpit for running the unAlgorithm Feed server on your own computer.
 # Never use this file on a server. Its database password is fixed, and every port is published on 127.0.0.1 only.
 #
 #   docker compose -f apps/server/compose.dev.yaml up -d     start both (from the repository root)

@@ -47,12 +47,8 @@ export function factcheckOffer(
 }
 
 /** Mounts the fact-check job endpoints: start, poll and cancel. `limits` is the app's one `LimitDeps` (shared with classify). */
-export function factcheckRoutes(
-  app: App,
-  deps: AppDeps & { priceSchedule: CreditPriceSchedule; factcheckJobs: JobStore<FactcheckResult> },
-  limits: LimitDeps,
-): void {
-  const { config, db, log, ai, priceSchedule } = deps;
+export function factcheckRoutes(app: App, deps: AppDeps & { factcheckJobs: JobStore<FactcheckResult> }, limits: LimitDeps): void {
+  const { config, db, log, ai, prices } = deps;
   const search = deps.search ?? null;
   mountJobRoutes<FactcheckJobRequest, FactcheckResult>(
     app,
@@ -72,7 +68,8 @@ export function factcheckRoutes(
         busyServer: 'The server is running as many checks as it can.',
       },
       refusedModel: config.factcheck.synthesisModel,
-      offer: () => factcheckOffer(config, priceSchedule),
+      // The book in use at each request: a saved change applies without a restart.
+      offer: () => factcheckOffer(config, prices.current().schedule),
       // F18: only a public post is ever checked. The extension never sends another; nothing is metered.
       admit: ({ post }) => {
         if (!serverMayReceive(post)) throw new AIError('bad-request', 'Only a public post can be checked.');

@@ -1,6 +1,6 @@
 {
   "name": "@unalgorithm/research",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./eval": "./eval/score.ts",
     "./eval/perspectives": "./eval/perspectives-score.ts",
+    "./eval/results": "./eval/results.ts",
     "./testing": "./src/testing/mock-searxng.ts"
   },
   "scripts": {

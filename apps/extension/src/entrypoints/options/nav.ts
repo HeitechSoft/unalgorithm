@@ -5,13 +5,12 @@ import {
   Info,
   type LucideIcon,
   Palette,
-  SearchCheck,
   Shield,
   type TileTint,
   UsersRound,
 } from '@unalgorithm/ui';
 
-export type PaneId = 'linkedin' | 'facebook' | 'display' | 'interests' | 'ai' | 'labs' | 'privacy' | 'about';
+export type PaneId = 'linkedin' | 'facebook' | 'display' | 'interests' | 'ai' | 'privacy' | 'about';
 
 export const NAV: { id: PaneId; label: string; group: string; icon: LucideIcon; tint: TileTint; keywords: string[] }[] = [
   {
@@ -52,15 +51,20 @@ export const NAV: { id: PaneId; label: string; group: string; icon: LucideIcon; 
     group: '',
     icon: Cpu,
     tint: 'violet',
-    keywords: ['api key', 'anthropic', 'openai', 'ollama', 'model', 'on-device', 'limit'],
-  },
-  {
-    id: 'labs',
-    label: 'Labs',
-    group: '',
-    icon: SearchCheck,
-    tint: 'lagoon',
-    keywords: ['fact-check', 'facts', 'sources', 'experimental'],
+    keywords: [
+      'api key',
+      'anthropic',
+      'openai',
+      'ollama',
+      'model',
+      'on-device',
+      'limit',
+      'fact-check',
+      'facts',
+      'sources',
+      'unecho chamber',
+      'web search',
+    ],
   },
   {
     id: 'privacy',

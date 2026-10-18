@@ -16,7 +16,7 @@ import { getAccessToken, markNeedsSignIn, refreshServerInfo, type ServerAccount,
 import { noteRefused, noteSettlement } from './server-balance.ts';
 
 /**
- * The `server` AI source (R25): one `POST /v1/classify` per batch to an UnAlgorithm server, with the signed-in device's
+ * The `server` AI source (R25): one `POST /v1/classify` per batch to an unAlgorithm server, with the signed-in device's
  * token. The server builds the prompts, calls its own model and meters the request, so the extension sees no token
  * usage. Posts arrive here with batch-local refs (`p1`…), never anything derived from a post key, and Facebook posts
  * that aren't public never arrive at all.
@@ -76,14 +76,16 @@ export async function classifyViaServer(
     const account = deps.account !== undefined ? deps.account : await serverAccountItem.getValue().catch(() => null);
     const owner = account?.origin === base.origin ? account : undefined;
     /**
-     * Keeps the balance a billing server reported (CL2-10). A stored discovery document that doesn't advertise billing
-     * predates it (CL1-era accounts), so it is read again. Never fails the posts.
+     * Keeps the balance a billing server reported (CL2-10), and reads the server's discovery document again, at most
+     * once per `REDISCOVER_MIN_INTERVAL_MS`: the stored one is from sign-in or the last read, so it may predate billing
+     * (CL1-era accounts) or the server's current prices (`classifyPrice`, `jobPrices`), which its admin can change at
+     * any time (PA-07). Never fails the posts.
      */
     const recordBalance = async (record: (deviceId: string) => Promise<void>) => {
       if (!owner) return;
       try {
         await record(owner.deviceId);
-        if (owner.info.billing !== true) void rediscover(base.origin).catch(() => undefined);
+        void rediscover(base.origin).catch(() => undefined);
       } catch {
         // A balance is a convenience; the posts' results stand.
       }

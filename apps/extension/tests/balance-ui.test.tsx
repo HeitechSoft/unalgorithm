@@ -64,6 +64,7 @@ const balance = (balanceMicros: number, over: Partial<PublicBalance> = {}): Publ
   low: balanceMicros > 0 && balanceMicros < LOW_BALANCE_MICROS,
   empty: balanceMicros <= 0,
   accountUrl: ACCOUNT_URL,
+  microsPer1000Posts: null,
   updatedAt: TODAY.getTime(),
   ...over,
 });
@@ -461,7 +462,7 @@ describe('price instant', () => {
     vi.mocked(balanceLine).mockClear();
     render(<BalancePill balance={balance(970_000)} onOpen={() => undefined} />);
     expect(screen.getByRole('button', { name: pillName(FULL_TEXT) }).textContent).toBe(FULL_TEXT);
-    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(970_000, TODAY);
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(970_000, TODAY, undefined, null);
     cleanup();
 
     vi.mocked(balanceLine).mockClear();
@@ -469,8 +470,28 @@ describe('price instant', () => {
     await openPopup();
     const banner = (await screen.findByText(LOW_TITLE)).closest('.ua-banner') as HTMLElement;
     expect(within(banner).getByText(LOW_TEXT)).toBeTruthy();
-    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(150_000, TODAY);
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(150_000, TODAY, undefined, null);
     for (const [, instant] of vi.mocked(balanceLine).mock.calls) expect(instant).toEqual(TODAY);
+    await settle();
+  });
+
+  it('test_balance_pill_uses_server_price', async () => {
+    // The server's price per 1,000 posts (discovery's `classifyPrice`, 2.5×: 182,500), not the bundled schedule's.
+    const priced = (micros: number) => balance(micros, { microsPer1000Posts: 182_500 });
+    vi.mocked(balanceLine).mockClear();
+    render(<BalancePill balance={priced(970_000)} onOpen={() => undefined} />);
+    const text = '$0.97 left · about 5,300 posts';
+    expect(screen.getByRole('button', { name: pillName(text) }).textContent).toBe(text);
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(970_000, TODAY, undefined, 182_500);
+    cleanup();
+
+    // The low-balance banner too (150,000 × 1,000 / 182,500 = 821, rounded down to 820).
+    aiReply = () => cloudStatus(priced(150_000));
+    await openPopup();
+    const banner = (await screen.findByText(LOW_TITLE)).closest('.ua-banner') as HTMLElement;
+    expect(within(banner).getByText('$0.15 left · about 820 posts')).toBeTruthy();
+    expect(within(banner).queryByText(LOW_TEXT)).toBeNull();
+    expect(vi.mocked(balanceLine)).toHaveBeenCalledWith(150_000, TODAY, undefined, 182_500);
     await settle();
   });
 });

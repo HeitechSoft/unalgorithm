@@ -49,7 +49,14 @@ const device = (labs: boolean, aiSource: AISourceConfig = ANTHROPIC): Device => 
 });
 
 function runtime(d: Device, serverOffer: ServerOffer | null = null): Runtime {
-  return { settings: defaultSettings(), device: d, learned: EMPTY_LEARNED, votes: {}, serverOffer };
+  return {
+    settings: defaultSettings(),
+    device: d,
+    learned: EMPTY_LEARNED,
+    votes: {},
+    serverOffer,
+    officialList: { list: null, checkedAt: 0 },
+  };
 }
 
 function bridge(over: Partial<Bridge> = {}): Bridge {
@@ -229,7 +236,7 @@ describe('Check facts: where it is offered', () => {
     expect(c.mounted()).toHaveLength(0);
     c.update({ ...rt, device: device(true) });
     expect(offered(c).map((e) => e.id)).toStrictEqual([id(CLAIMS)]);
-    // ...and goes away again when Labs is switched off.
+    // ...and goes away again when Fact-check is switched off.
     c.update({ ...rt, device: device(false) });
     expect(c.mounted()).toHaveLength(0);
     expect(b.classify).toHaveBeenCalledTimes(1);
@@ -254,8 +261,10 @@ describe('Check facts: price first, then the check', () => {
     const { c, b, user } = await offeredPost();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await flush();
-    expect(screen.getByRole('button', { name: 'Check facts' })).toBeTruthy();
-    expect(screen.getByText('Labs')).toBeTruthy();
+    const start = screen.getByRole('button', { name: 'Check facts' });
+    // Its visible text is its whole name: no aria-label (only UnEcho Chamber's button adds what it does).
+    expect(start.hasAttribute('aria-label')).toBe(false);
+    expect(screen.queryByText('Labs')).toBeNull();
     expect(screen.queryByText(PRICE)).toBeNull();
     expect(b.factcheck).not.toHaveBeenCalled();
     c.stop();
@@ -314,7 +323,7 @@ describe('Check facts: price first, then the check', () => {
     await user.click(screen.getByRole('button', { name: 'See result' }));
     await flush();
     expect(b.openFactcheck).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Checked. Open UnAlgorithm from the toolbar to see it.')).toBeTruthy();
+    expect(screen.getByText('Checked. Open unAlgorithm from the toolbar to see it.')).toBeTruthy();
     expect(b.factcheck).toHaveBeenCalledTimes(1);
     c.stop();
   });
@@ -337,7 +346,7 @@ describe('Check facts: price first, then the check', () => {
     factcheck.mockRejectedValueOnce(new Error('Extension context invalidated.'));
     await user.click(screen.getByRole('button', { name: 'Check' }));
     await flush();
-    expect(screen.getByText("Couldn't reach UnAlgorithm. Reload the page.")).toBeTruthy();
+    expect(screen.getByText("Couldn't reach unAlgorithm. Reload the page.")).toBeTruthy();
     c.stop();
   });
 });

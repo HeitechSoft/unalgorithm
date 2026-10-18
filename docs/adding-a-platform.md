@@ -1,6 +1,6 @@
 # Adding or fixing a platform
 
-Everything UnAlgorithm knows about a site's layout lives in `packages/platforms/src/<platform>/`. The feed
+Everything unAlgorithm knows about a site's layout lives in `packages/platforms/src/<platform>/`. The feed
 controller, rules, UI and AI are shared.
 
 ## When a site changes its layout

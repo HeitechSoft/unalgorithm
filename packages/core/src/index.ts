@@ -16,6 +16,7 @@ export * from './labs.ts';
 export * from './learn.ts';
 export * from './post.ts';
 export * from './presets.ts';
+export * from './price-rules-text.ts';
 export * from './reasons.ts';
 export * from './rules.ts';
 export * from './settings/clocks.ts';

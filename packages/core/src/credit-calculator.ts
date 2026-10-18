@@ -16,7 +16,7 @@ export interface CalculatorData {
   };
   /**
    * The retail price of 1,000 classified posts, in micro-dollars, under each card the page covers: the one in effect at
-   * build, then the next change if any (`retailMicrosPer1000Posts`).
+   * build, then each later change, if any (`retailMicrosPer1000Posts`).
    */
   prices: { from: string; microsPer1000Posts: number }[];
 }

@@ -1,5 +1,6 @@
 import { startMockOpenAI } from '@unalgorithm/ai/testing';
-import type { CreditPriceSchedule } from '@unalgorithm/protocol';
+import { type CreditPriceSchedule, DEFAULT_PRICE_BOOK, type PriceBook } from '@unalgorithm/protocol';
+import { openPriceStore } from '../../src/admin/prices.ts';
 import { clientForRoute } from '../../src/ai/provider.ts';
 import { createAuth } from '../../src/auth/better-auth.ts';
 import { type BillingModule, createBillingHost } from '../../src/billing/host.ts';
@@ -56,7 +57,15 @@ export interface TestAppOptions {
   billingModule?: BillingModule;
   /** The module's `BILLING_*` variables (`host.env`). Default: none. */
   billingEnv?: Record<string, string>;
-  /** The billing host's `priceSchedule`. Default: `CREDIT_PRICE_SCHEDULE`; `TEST_PRICE_SCHEDULE` prices checks. */
+  /**
+   * The price book's seed: the book in use until an admin saves (`prices`, which the app and the billing host both
+   * read). Default: `DEFAULT_PRICE_BOOK`.
+   */
+  priceBook?: PriceBook;
+  /**
+   * Shorthand for a `priceBook` of `{ ...DEFAULT_PRICE_BOOK, schedule }`. Default: `CREDIT_PRICE_SCHEDULE`;
+   * `TEST_PRICE_SCHEDULE` prices checks.
+   */
   priceSchedule?: CreditPriceSchedule;
   /**
    * Better Auth's rate limiter. Default: off. Without a socket every test request comes from one address, and the
@@ -90,8 +99,6 @@ export interface TestAppOptions {
   linkCheck?: AppDeps['linkCheck'];
   /** The fact-check job store, such as one on a test clock. Default: the app's own. */
   factcheckJobs?: AppDeps['factcheckJobs'];
-  /** The perspectives registry: `FIXTURE_REGISTRY`, or null. Default: the app's own (the bundled registry if usable). */
-  outlets?: AppDeps['outlets'];
   /** The perspectives job store. Default: the app's own. */
   perspectivesJobs?: AppDeps['perspectivesJobs'];
   /** The shared link's resolution (the egress fetcher's in production). Default: none. */
@@ -100,13 +107,20 @@ export interface TestAppOptions {
   claimCache?: AppDeps['claimCache'];
 }
 
+/** The price store's seed `opts` ask for: `priceBook`, else the defaults with `priceSchedule`, else the defaults. */
+export function priceSeed(opts: { priceBook?: PriceBook; priceSchedule?: CreditPriceSchedule }): PriceBook {
+  if (opts.priceBook) return opts.priceBook;
+  return opts.priceSchedule ? { ...DEFAULT_PRICE_BOOK, schedule: opts.priceSchedule } : DEFAULT_PRICE_BOOK;
+}
+
 /**
  * The real app on a fresh migrated PGlite database (or the caller's `db`), logging into memory: `lines` and `events()`
- * hold what it wrote (`deps.errors` counts its error lines, as the server's window does), and `outbox` every email it
- * sent. Its classify route (`route`) is the app's own mock AI provider
- * (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's billing, and `host` and
- * `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs never start). Call
- * `close()` when done. Tests add routes of their own to `app` when they need one.
+ * hold what it wrote (`deps.errors` counts its error lines, as the server's window does), `outbox` every email it
+ * sent, and `prices` the price book's store on its database (`deps.prices`, and the billing host's `prices`). Its
+ * classify route (`route`) is the app's
+ * own mock AI provider (`mock`), past its eval; `seedPassingRoute` with overrides replaces it. `provider` is the app's
+ * billing, and `host` and `jobs` the billing host and job registry built for it (as `startServer` builds them; the jobs
+ * never start). Call `close()` when done. Tests add routes of their own to `app` when they need one.
  */
 export async function createTestApp(overrides: TestAppOptions = {}) {
   if (overrides.billing && overrides.billingModule) throw new TypeError('Pass billing or billingModule, not both.');
@@ -124,16 +138,9 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
     const log = capture.log;
     const auth = createAuth({ config, db, mailer, log, rateLimitEnabled: overrides.authRateLimit ?? false });
     const jobs = createJobRegistry();
-    const host = createBillingHost({
-      config,
-      db,
-      log,
-      auth,
-      jobs,
-      mailer,
-      env: overrides.billingEnv ?? {},
-      priceSchedule: overrides.priceSchedule,
-    });
+    const prices = await openPriceStore(db.db, { seed: priceSeed(overrides) });
+    // The one store, as `startServer` passes it: the module charges from the book discovery and the offers read.
+    const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: overrides.billingEnv ?? {}, prices });
     const provider = overrides.billingModule
       ? await overrides.billingModule.createBillingProvider(host)
       : (overrides.billing ?? noopBilling);
@@ -144,6 +151,7 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       billing: provider,
       auth,
       ai: overrides.ai ?? { clientFor: (r) => clientForRoute(r, config) },
+      prices,
       classifyDeadlineMs: overrides.classifyDeadlineMs,
       syncAccess: overrides.syncAccess,
       syncNotifier: overrides.syncNotifier,
@@ -152,16 +160,26 @@ export async function createTestApp(overrides: TestAppOptions = {}) {
       errors: capture.errors,
       search: overrides.search,
       linkCheck: overrides.linkCheck,
-      // The billing host's schedule, so discovery and the job gates price checks as the module does.
-      priceSchedule: host.priceSchedule,
       factcheckJobs: overrides.factcheckJobs,
       perspectivesJobs: overrides.perspectivesJobs,
       resolveLink: overrides.resolveLink,
-      outlets: overrides.outlets,
       ...(overrides.claimCache !== undefined ? { claimCache: overrides.claimCache } : {}),
     };
     const app = createApp(deps);
-    return { app, deps, mock, route, outbox, lines: capture.lines, events: capture.events, host, jobs, provider, close };
+    return {
+      app,
+      deps,
+      mock,
+      route,
+      outbox,
+      lines: capture.lines,
+      events: capture.events,
+      host,
+      jobs,
+      provider,
+      prices,
+      close,
+    };
   } catch (err) {
     await close();
     throw err;

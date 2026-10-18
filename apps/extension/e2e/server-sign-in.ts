@@ -42,7 +42,7 @@ export async function signInFromSettings(
   // The server card: address, then who receives posts.
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
-  await options.getByText('UnAlgorithm server', { exact: true }).click();
+  await options.getByText('unAlgorithm server', { exact: true }).click();
   await options.getByLabel('Server address').fill(serverUrl);
   await options.getByRole('button', { name: 'Continue', exact: true }).click();
   const consent = options.getByText(/not HeitechSoft/);

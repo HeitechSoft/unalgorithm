@@ -3,11 +3,12 @@ import { Badge, Coins } from '@unalgorithm/ui';
 import type { PublicBalance } from '../background/server-balance.ts';
 
 /**
- * The account's credit balance (R31): in the popup footer and under the Settings account row, never in the feed. It
- * opens the server's account page, the `accountUrl` the background allows (CL2-10); without one it only shows.
+ * The account's credit balance (R31): in the popup footer and under the Settings account row, never in the feed. Its
+ * "about N posts" is at the server's price when discovery gave one (`microsPer1000Posts`, PA-07). It opens the server's
+ * account page, the `accountUrl` the background allows (CL2-10); without one it only shows.
  */
 export function BalancePill({ balance, onOpen }: { balance: PublicBalance; onOpen?(): void }) {
-  const text = balanceLine(balance.balanceMicros, new Date());
+  const text = balanceLine(balance.balanceMicros, new Date(), undefined, balance.microsPer1000Posts);
   const opens = !!onOpen && balance.accountUrl !== null;
   return (
     <button

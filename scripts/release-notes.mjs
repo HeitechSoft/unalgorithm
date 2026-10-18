@@ -25,7 +25,7 @@ function changelogSection(text, version) {
 
 function extensionNotes(version, readFile) {
   const notes = changelogSection(readFile('apps/extension/CHANGELOG.md'), version);
-  return `${notes || `UnAlgorithm Feed ${version}`}
+  return `${notes || `unAlgorithm Feed ${version}`}
 
 **Install:** download \`unalgorithm-${version}-chrome.zip\`, unzip it, open \`chrome://extensions\`, turn on
 Developer mode and choose **Load unpacked**. Verify the download against \`SHA256SUMS.txt\` and the build provenance
@@ -34,10 +34,10 @@ attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`;
 
 function serverNotes(version, readFile) {
   const notes = changelogSection(readFile('apps/server/CHANGELOG.md'), version);
-  return `${notes || `UnAlgorithm Feed server ${version}`}
+  return `${notes || `unAlgorithm Feed server ${version}`}
 
 **Source:** [server-v${version}](https://github.com/HeitechSoft/unalgorithm/tree/server-v${version}), under
-AGPL-3.0-only. The server image (\`${SERVER_IMAGE}\`) is private: HeitechSoft builds it for UnAlgorithm Cloud.`;
+AGPL-3.0-only. The server image (\`${SERVER_IMAGE}\`) is private: HeitechSoft builds it for unAlgorithm Cloud.`;
 }
 
 /**

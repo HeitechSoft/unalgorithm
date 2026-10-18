@@ -143,7 +143,7 @@ describe('discovery', () => {
   });
 
   it('test_discover_rejects_non_server_and_network', async () => {
-    const notServer = { ok: false, error: { code: 'unsupported', message: "That address isn't an UnAlgorithm server." } };
+    const notServer = { ok: false, error: { code: 'unsupported', message: "That address isn't an unAlgorithm server." } };
     for (const [what, info] of [
       ['wrong version', () => json({ ...INFO, v: 2 })],
       ['no email sign-in', () => json({ ...INFO, auth: { ...INFO.auth, methods: ['passkey'] } })],
@@ -499,7 +499,7 @@ describe('copy', () => {
   // The default texts and the scan of packages/ai/src for the hosted service name (AC 11) are in
   // packages/ai/test/ai.test.ts ('error messages'); this checks the names the extension passes in.
   it('test_describe_error_uses_server_name', () => {
-    expect(describeError('auth-required', serverLabel(PINNED_CLOUD_ORIGIN).title)).toBe('Sign in to UnAlgorithm Cloud again.');
+    expect(describeError('auth-required', serverLabel(PINNED_CLOUD_ORIGIN).title)).toBe('Sign in to unAlgorithm Cloud again.');
     expect(describeError('auth-required', serverLabel(ORIGIN, INFO).title)).toBe('Sign in to ai.example.org again.');
   });
 });

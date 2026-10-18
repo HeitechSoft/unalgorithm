@@ -1,5 +1,5 @@
 import { type AIClient, AIError, type ResearchRequest, type StructuredRequest } from '@unalgorithm/ai';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import { costMicros, type NormalizedUsage, type PostForAI, type RetrievedSource, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import { runFactcheck } from '../src/factcheck.ts';
@@ -103,10 +103,10 @@ describe('deps per mode', () => {
     await fc.retriever.retrieve(retrieveReq);
     expect(research.map((r) => r.model)).toEqual(['claude-sonnet-5-5']);
 
-    const pd = perspectivesDepsForMode(client, { kind: 'anthropic' }, FIXTURE_REGISTRY);
+    const pd = perspectivesDepsForMode(client, { kind: 'anthropic' }, FIXTURE_LIST);
     expect(pd.searcher.model).toBe('claude-haiku-5-5');
     expect(pd.models).toBeUndefined();
-    expect(pd.registry).toBe(FIXTURE_REGISTRY);
+    expect(pd.registry).toBe(FIXTURE_LIST);
     for (const d of [fc, pd]) {
       expect(d).not.toHaveProperty('maxCostMicros');
       expect(d).not.toHaveProperty('linkCheck');
@@ -121,7 +121,7 @@ describe('deps per mode', () => {
     await fc.retriever.retrieve(retrieveReq);
     expect(research.map((r) => r.model)).toEqual(['gpt-5']);
 
-    const pd = perspectivesDepsForMode(client, { kind: 'openai' }, FIXTURE_REGISTRY);
+    const pd = perspectivesDepsForMode(client, { kind: 'openai' }, FIXTURE_LIST);
     expect(pd.models).toEqual(OPENAI_PERSPECTIVES_MODELS);
     expect(pd.searcher.model).toBe('gpt-5-mini');
     await pd.searcher.search(bucketReq);
@@ -155,7 +155,7 @@ describe('deps per mode', () => {
     expect(fcErr).toBeInstanceOf(AIError);
     expect(fcErr).toMatchObject({ provider: 'brave', code: 'not-available', retryAfterMs: 5_000, cause: fail });
 
-    const pd = perspectivesDepsForMode(client, mode, FIXTURE_REGISTRY);
+    const pd = perspectivesDepsForMode(client, mode, FIXTURE_LIST);
     const pErr = await rejection(runPerspectives(LINK, { ...pd, nonce: NONCE, now: () => NOW }));
     expect(pErr).toBeInstanceOf(WebSearchFailure);
     expect(pErr).toMatchObject({ provider: 'brave', code: 'not-available' });

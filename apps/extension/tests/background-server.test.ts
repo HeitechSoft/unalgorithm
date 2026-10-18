@@ -168,9 +168,9 @@ describe('discover and sign-in', () => {
     // The Cloud is named by its origin, whatever the server calls itself.
     mocks.discoverServer.mockResolvedValue({ ok: true, origin: PINNED_CLOUD_ORIGIN, info: INFO });
     const cloud = await handlers.serverDiscover({ type: 'serverDiscover', baseUrl: PINNED_CLOUD_ORIGIN }, page());
-    expect(cloud.ok && cloud.label).toStrictEqual({ title: 'UnAlgorithm Cloud', host: 'cloud.unalgorithm.app', isCloud: true });
+    expect(cloud.ok && cloud.label).toStrictEqual({ title: 'unAlgorithm Cloud', host: 'cloud.unalgorithm.app', isCloud: true });
 
-    const error = { code: 'unsupported', message: "That address isn't an UnAlgorithm server." };
+    const error = { code: 'unsupported', message: "That address isn't an unAlgorithm server." };
     mocks.discoverServer.mockResolvedValue({ ok: false, error });
     expect(await handlers.serverDiscover({ type: 'serverDiscover', baseUrl: 'example.com' }, page())).toStrictEqual({
       ok: false,
@@ -286,7 +286,7 @@ describe('sign-out and account', () => {
 
     await serverAccountItem.setValue(account({ origin: PINNED_CLOUD_ORIGIN, needsSignIn: true }));
     const cloud = await handlers.serverAccount({ type: 'serverAccount' }, page());
-    expect(cloud.account).toMatchObject({ needsSignIn: true, label: { title: 'UnAlgorithm Cloud', isCloud: true } });
+    expect(cloud.account).toMatchObject({ needsSignIn: true, label: { title: 'unAlgorithm Cloud', isCloud: true } });
     expect(cloud.account).not.toHaveProperty('billing');
 
     // A server that bills says so: Settings asks for the balance again after signing in (CL2-12).

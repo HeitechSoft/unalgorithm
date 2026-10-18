@@ -116,7 +116,7 @@ export function App() {
       ) : null}
       {lowBalance && balance?.low ? (
         <Banner tone="info" title="Your balance is low" action={addCredit} onDismiss={dismissLowBalance}>
-          {balanceLine(balance.balanceMicros, new Date())}
+          {balanceLine(balance.balanceMicros, new Date(), undefined, balance.microsPer1000Posts)}
         </Banner>
       ) : null}
     </>
@@ -270,7 +270,7 @@ export function App() {
         ) : null}
         {tabState.health.status === 'unsupported-locale' && on ? (
           <Banner title={`${SITE[platform]} isn't in English`}>
-            UnAlgorithm reads English labels, so most filters can't run on this page yet.
+            unAlgorithm reads English labels, so most filters can't run on this page yet.
           </Banner>
         ) : null}
         <div className="ua-card">
@@ -281,7 +281,7 @@ export function App() {
             }}
             title={SITE[platform]}
             subtitle={on ? 'Cleaning up your feed' : paused ? 'Paused. Posts show as the site sends them.' : 'Off'}
-            control={<Switch checked={on} onCheckedChange={(v) => void setOn(v)} label={`UnAlgorithm on ${SITE[platform]}`} />}
+            control={<Switch checked={on} onCheckedChange={(v) => void setOn(v)} label={`unAlgorithm on ${SITE[platform]}`} />}
           />
           {paused ? (
             <div className="ua-hstack ua-wrap ua-footnote" style={{ padding: '0 16px 12px', gap: 6 }}>
@@ -326,7 +326,7 @@ export function App() {
                 </>
               ) : (
                 <div className="ua-hstack" style={{ justifyContent: 'space-between', padding: '10px 0 14px' }}>
-                  <span className="ua-secondary ua-callout">UnAlgorithm works on your home feed.</span>
+                  <span className="ua-secondary ua-callout">unAlgorithm works on your home feed.</span>
                   <Button size="sm" variant="tinted" href={FEED_URLS[platform]}>
                     Go to feed
                   </Button>

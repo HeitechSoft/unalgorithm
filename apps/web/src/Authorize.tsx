@@ -12,9 +12,9 @@ import { ApiError, authorize, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
 import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
-const INTRO = 'Sign in to use AI in the UnAlgorithm Feed extension.';
+const INTRO = 'Sign in to use AI in the unAlgorithm Feed extension.';
 
-const INVALID_LINK = "This sign-in link isn't valid. Start again from the UnAlgorithm extension.";
+const INVALID_LINK = "This sign-in link isn't valid. Start again from the unAlgorithm extension.";
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
 
 type Step =

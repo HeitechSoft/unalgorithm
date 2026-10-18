@@ -4,7 +4,7 @@ import { type PublicServerAccount, type SyncStatus, sendToBackground } from '../
 import { syncStateItem } from '../lib/storage.ts';
 
 const SWITCH = 'Sync settings between your computers';
-const NO_ANSWER = "UnAlgorithm couldn't finish that. Reload this page and try again.";
+const NO_ANSWER = "unAlgorithm couldn't finish that. Reload this page and try again.";
 /** "Synced just now" turns into "Synced 1 minute ago" without a new status. */
 const TICK_MS = 30_000;
 
@@ -108,7 +108,7 @@ export function AccountSync({ account, onSignInAgain }: { account: PublicServerA
         onOpenChange={setAsking}
         alert
         title="Turn on sync?"
-        description={`Your settings, interests and exceptions, including the names of people you always show or hide, are saved on ${title} and kept the same on every computer where you sign in and turn on sync. API keys and sign-in tokens never leave this computer. What UnAlgorithm learned from your feedback stays on this computer too.`}
+        description={`Your settings, interests and exceptions, including the names of people you always show or hide, are saved on ${title} and kept the same on every computer where you sign in and turn on sync. API keys and sign-in tokens never leave this computer. What unAlgorithm learned from your feedback stays on this computer too.`}
         actions={
           <>
             <Button onClick={() => setAsking(false)} autoFocus>

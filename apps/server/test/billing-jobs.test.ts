@@ -4,6 +4,7 @@ import {
   CREDIT_PRICE_SCHEDULE,
   type CreditPriceSchedule,
   type CreditTask,
+  DEFAULT_PRICE_BOOK,
   priceScheduleProblems,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
@@ -28,7 +29,7 @@ function clockInJobPrices() {
   vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
 }
 
-/** The fixture's provider on a host with `priceSchedule` (default `TEST_PRICE_SCHEDULE`), starting at `startMicros`. */
+/** The fixture's provider on a host priced by `priceSchedule` (default `TEST_PRICE_SCHEDULE`), from `startMicros`. */
 async function fixtureProvider(opts: { startMicros?: number; priceSchedule?: CreditPriceSchedule } = {}) {
   const env: Record<string, string> =
     opts.startMicros === undefined ? {} : { BILLING_FIXTURE_START_MICROS: String(opts.startMicros) };
@@ -74,18 +75,22 @@ describe('billing host price schedule', () => {
   it(
     'test_billing_host_price_schedule_default_and_override',
     async () => {
+      // The host prices from its store's book: the code defaults while none is stored.
       const plain = await createTestHost();
       cleanup.push(() => plain.close());
-      expect(plain.host.priceSchedule).toBe(CREDIT_PRICE_SCHEDULE);
+      expect(plain.host.prices.current().schedule).toEqual(CREDIT_PRICE_SCHEDULE);
+      expect(plain.host.prices.current()).toEqual(DEFAULT_PRICE_BOOK);
 
-      // A mutable copy: TEST_PRICE_SCHEDULE is frozen already, so it cannot show that the host freezes what it is given.
+      // A mutable copy: TEST_PRICE_SCHEDULE is frozen already, so it cannot show that the store freezes what it is given.
       type Mutable = { effectiveFrom: string; cards: Record<string, { maxChargeMicros?: number }> }[];
       const given = structuredClone(TEST_PRICE_SCHEDULE) as unknown as Mutable;
       const priced = await createTestHost({ priceSchedule: given as unknown as CreditPriceSchedule });
       cleanup.push(() => priced.close());
-      expect(priced.host.priceSchedule).toEqual(TEST_PRICE_SCHEDULE);
-      expect(Object.isFrozen(priced.host.priceSchedule)).toBe(true);
-      const entry = priced.host.priceSchedule[1];
+      const schedule = priced.host.prices.current().schedule;
+      expect(schedule).toEqual(TEST_PRICE_SCHEDULE);
+      expect(priced.host.prices.current()).toBe(priced.prices.current());
+      expect(Object.isFrozen(schedule)).toBe(true);
+      const entry = schedule[1];
       expect(Object.isFrozen(entry)).toBe(true);
       expect(Object.isFrozen(entry?.cards)).toBe(true);
       expect(Object.isFrozen(entry?.cards.factcheck)).toBe(true);
@@ -93,7 +98,7 @@ describe('billing host price schedule', () => {
       const card = given[1]?.cards.factcheck;
       if (card) card.maxChargeMicros = 1;
       given.push({ effectiveFrom: '2026-10-03T00:00:00Z', cards: {} });
-      expect(priced.host.priceSchedule).toEqual(TEST_PRICE_SCHEDULE);
+      expect(priced.host.prices.current().schedule).toEqual(TEST_PRICE_SCHEDULE);
     },
     PGLITE_TIMEOUT,
   );

@@ -89,10 +89,10 @@ export function AdminInvites({ invites, reload, onSignedOut }: AdminInvitesProps
       {passOn ? (
         <div className="web-notes">
           <p>
-            {`Tell ${passOn}: install UnAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`}
+            {`Tell ${passOn}: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`}
           </p>
           <p className="ua-footnote">
-            Until the store version of UnAlgorithm Feed offers servers, they need a build of UnAlgorithm Feed that does, with its
+            Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with its
             id in EXTENSION_IDS.
           </p>
         </div>
