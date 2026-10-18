@@ -164,7 +164,7 @@ test.describe
       expect(logs).not.toContain(LINK_URL);
       expect(logs).not.toContain(LINK_TITLE);
       // The e2e build carries its list; nothing went to unAlgorithm Cloud for one.
-      expect(profile.proxy.refused.filter((target) => target.startsWith('cloud.unalgorithm.app'))).toEqual([]);
-      expect(profile.proxy.requests.filter((r) => r.url.startsWith('https://cloud.unalgorithm.app'))).toEqual([]);
+      expect(profile.proxy.refused.filter((target) => target.split(':')[0] === 'cloud.unalgorithm.app')).toEqual([]);
+      expect(profile.proxy.requests.filter((r) => new URL(r.url).hostname === 'cloud.unalgorithm.app')).toEqual([]);
     });
   });
