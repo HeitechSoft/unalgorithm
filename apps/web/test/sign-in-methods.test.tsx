@@ -13,6 +13,7 @@ import {
   AUTHORIZE_PAGE_PATH,
   EMAIL_OTP_METHOD,
   GOOGLE_METHOD,
+  geckoRedirectUri,
   PASSKEY_METHOD,
   type ServerInfo,
 } from '@unalgorithm/protocol';
@@ -30,6 +31,7 @@ import {
 import { SignIn, type SignInProps } from '../src/SignIn.tsx';
 import {
   fakeServer,
+  GECKO_PARAMS,
   GOOGLE_URL,
   INFO,
   PARAMS,
@@ -270,6 +272,39 @@ describe('Google', () => {
     expect(back.origin + back.pathname).toBe(`https://server.example${AUTHORIZE_PAGE_PATH}`);
     expect(Object.fromEntries(back.searchParams)).toEqual(PARAMS);
     expect(server.count('POST', AUTHORIZE_API_PATH)).toBe(0);
+  });
+
+  it('test_authorize_google_round_trip_keeps_firefox_request', async () => {
+    // Firefox add-on ids hold `@`, or `{` and `}`: the request comes back from Google exactly as the extension sent it.
+    const uuidId = '{daf44bf7-a45e-4450-979c-91cf07434c3d}';
+    const firefox = [GECKO_PARAMS, { ...GECKO_PARAMS, client_id: uuidId, redirect_uri: geckoRedirectUri(uuidId) }];
+    for (const params of firefox) {
+      let server = fakeServer({ info: INFO_ALL });
+      let assign = stubLocation(AUTHORIZE_PAGE_PATH, `?${new URLSearchParams(params)}`);
+      let user = setupUser();
+      render(<Authorize />);
+      await user.click(await screen.findByRole('button', { name: GOOGLE }));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(GOOGLE_URL));
+      const body = server.posts()[0]?.body as ReturnType<typeof googleBody>;
+      expect(body).toEqual(googleBody(body.callbackURL));
+      // Encoded, so the return address stays a plain path and query on this server.
+      expect(body.callbackURL).not.toMatch(/[{}@]/);
+      const back = new URL(body.callbackURL, 'https://server.example');
+      expect(back.pathname).toBe(AUTHORIZE_PAGE_PATH);
+      expect(Object.fromEntries(back.searchParams)).toEqual(params);
+      cleanup();
+
+      // Google sends the browser back there with a session: "Continue as" sends it on to Firefox's redirect address.
+      server = fakeServer({ session: TOM, info: INFO_ALL });
+      assign = stubLocation(back.pathname, back.search);
+      user = setupUser();
+      render(<Authorize />);
+      await user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
+      await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+      expect(assign).toHaveBeenCalledWith(`${params.redirect_uri}?code=${'c'.repeat(43)}&state=${params.state}`);
+      expect(server.posts()).toEqual([{ method: 'POST', path: AUTHORIZE_API_PATH, body: params }]);
+      cleanup();
+    }
   });
 
   it('test_account_google_returns_to_account', async () => {

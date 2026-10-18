@@ -3,6 +3,7 @@ import type { PlatformAdapter } from '@unalgorithm/platforms';
 import { uuid } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { browserKind, browserVersion } from '../lib/browser-kind.ts';
 import { type ContentRequest, type ContentResponses, sendQuietly, sendToBackground } from '../lib/messages.ts';
 import {
   deviceItem,
@@ -14,7 +15,7 @@ import {
   settingsItem,
   votesItem,
 } from '../lib/storage.ts';
-import { type Bridge, FeedController, type Runtime } from './feed-controller.ts';
+import { type Bridge, FeedController, panelHint, type Runtime } from './feed-controller.ts';
 import { reportProblemUrl } from './report.ts';
 import { mountUiHost, UiLayer } from './ui-layer.tsx';
 
@@ -32,6 +33,8 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     officialList: await officialListItem.getValue(),
   };
 
+  /** Firefox's sidebar shortcut, as the background last reported it. */
+  let shortcut: string | undefined;
   const bridge: Bridge = {
     classify: (items, opts) =>
       sendToBackground({ type: 'classify', platform: adapter.id, items, cacheOnly: opts?.cacheOnly === true }),
@@ -51,29 +54,40 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     perspectives: (key, req) => sendToBackground({ type: 'perspectives', key, ...req }),
     openFactcheck: async () => {
       if (!ctx.isValid) return false;
-      return (await sendToBackground({ type: 'openFactcheck' }).catch(() => ({ ok: false }))).ok;
+      const res: { ok: boolean; shortcut?: string } = await sendToBackground({ type: 'openFactcheck' }).catch(() => ({
+        ok: false,
+      }));
+      shortcut = res.shortcut;
+      return res.ok;
     },
+    panelHint: () => panelHint(browserKind() === 'firefox', shortcut),
   };
 
   const controller = new FeedController(adapter, bridge, mountUiHost, () => ctx.isValid);
   const layer = new UiLayer();
   let resumeTimer: number | undefined;
 
-  const sync = () => {
+  /**
+   * Runs the feed UI where the page is the feed, and stops it elsewhere. `next`: the address a client-side navigation
+   * goes to. WXT reports one from the Navigation API's `navigate` event, which comes before the address changes, so
+   * `location` still holds the page being left; every other caller reads `location`.
+   */
+  const sync = (next?: URL) => {
     if (!ctx.isValid) return;
-    const onFeed = adapter.isFeedPage(new URL(location.href));
+    const url = next ?? new URL(location.href);
+    const onFeed = adapter.isFeedPage(url);
     const enabled = rt.settings.platforms[adapter.id].enabled;
     const paused = isPaused(rt.device, adapter.id);
     window.clearTimeout(resumeTimer);
     const until = rt.device.pausedUntil[adapter.id];
-    if (typeof until === 'number' && until > Date.now()) resumeTimer = window.setTimeout(sync, until - Date.now() + 50);
+    if (typeof until === 'number' && until > Date.now()) resumeTimer = window.setTimeout(() => sync(), until - Date.now() + 50);
     if (onFeed && enabled && !paused) {
       layer.mount(controller);
       controller.start(rt);
     } else {
       controller.stop();
       layer.unmount();
-      bridge.pushTabState({ platform: adapter.id, url: location.href, onFeed, paused: paused || !enabled });
+      bridge.pushTabState({ platform: adapter.id, url: url.href, onFeed, paused: paused || !enabled });
     }
   };
 
@@ -109,8 +123,8 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
     }),
   ];
 
-  // Single-page apps: follow client-side navigation.
-  ctx.addEventListener(window, 'wxt:locationchange', sync);
+  // Single-page apps: follow client-side navigation, to the address it goes to.
+  ctx.addEventListener(window, 'wxt:locationchange', (e) => sync(e.newUrl));
 
   const onMessage = (msg: ContentRequest, _sender: unknown, sendResponse: (r: unknown) => void) => {
     const reply = <T extends ContentRequest['type']>(r: ContentResponses[T]) => sendResponse(r);
@@ -133,7 +147,7 @@ export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentSc
         reply<'diagnostics'>({
           adapter: adapter.version,
           extension: browser.runtime.getManifest().version,
-          browser: navigator.userAgent.match(/Chrome\/(\d+)/)?.[1] ?? 'unknown',
+          browser: browserVersion(navigator.userAgent),
           lang: document.documentElement.lang || 'unknown',
           pageKind: adapter.isFeedPage(new URL(location.href)) ? 'feed' : 'other',
           health: controller.getHealth(),

@@ -32,10 +32,11 @@ import {
   WebSearchFailure,
 } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
+import { hasConsent, POST_DATA } from '../lib/data-consent.ts';
 import type { BgError, BgResponses } from '../lib/messages.ts';
 import { chosenList, listReady, matchLeans, namedListProblems, storedOfficialList } from '../lib/outlets.ts';
 import { type FactcheckEntry, factcheckItem, officialListItem, readDevice, readSettings } from '../lib/storage.ts';
-import { clientFor, hasPermission, parsePostInput, providerName, recordSpend } from './ai.ts';
+import { clientFor, missingAccess, parsePostInput, providerName, recordSpend } from './ai.ts';
 import { deviceClaimCache } from './claim-cache.ts';
 import { runFactcheckViaServer, runPerspectivesViaServer } from './factcheck-server.ts';
 import { deviceSearchProvider } from './search-key.ts';
@@ -76,17 +77,38 @@ const needs = (task: Task) =>
 const NEEDS: Record<Task, string> = { factcheck: needs('factcheck'), perspectives: needs('perspectives') };
 
 /**
- * Opens the side panel for a tab. Called before any `await` in the handler, so Chrome still sees the click's user
- * gesture; resolves false when Chrome refuses (or has no side panel).
+ * Opens the side panel for a feed tab. Called before any `await` in the handler, so Chrome and Edge still see the
+ * click's user gesture; resolves false when they refuse. Firefox opens its sidebar only from a user action, and a click
+ * relayed from a content script isn't one (ADR 0008): there it resolves whether the tab's window already shows the
+ * sidebar, which then shows this tab's newest check, and opens nothing.
  */
-export function openFactcheckPanel(tabId: number): Promise<boolean> {
+export function openFactcheckPanel(tab: { id: number; windowId?: number }): Promise<boolean> {
   try {
-    return browser.sidePanel.open({ tabId }).then(
-      () => true,
+    const sidebar = browser.sidebarAction;
+    const opened = sidebar
+      ? sidebar.isOpen(tab.windowId === undefined ? {} : { windowId: tab.windowId })
+      : browser.sidePanel.open({ tabId: tab.id }).then(() => true);
+    return opened.then(
+      (open) => open,
       () => false,
     );
   } catch {
     return Promise.resolve(false);
+  }
+}
+
+/**
+ * Firefox: the keyboard shortcut that opens the sidebar (`_execute_sidebar_action`), as the person has it now, for the
+ * in-feed words when the sidebar isn't open. Undefined in Chrome and Edge, and when the person removed it.
+ */
+export async function sidebarShortcut(): Promise<string | undefined> {
+  if (!browser.sidebarAction) return undefined;
+  try {
+    const command = (await browser.commands.getAll()).find((c) => c.name === '_execute_sidebar_action');
+    // Firefox writes the Mac Control key as "MacCtrl".
+    return command?.shortcut ? command.shortcut.replace('MacCtrl', 'Control') : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -229,10 +251,12 @@ async function runOwnKey(post: PostForAI, cfg: OwnKey, mode: OwnKeyMode): Promis
 
 /**
  * The refusal when a host permission the run needs is missing: the source's own and, for an OpenAI-compatible source,
- * its web search service's. Only checked here: both are asked for from a click in Settings.
+ * its web search service's. In Firefox the consent to send there counts the same (ADR 0008). Only checked here: all of
+ * them are asked for from a click in Settings.
  */
 async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | null): Promise<Refusal | null> {
-  if (!(await hasPermission(cfg))) return refuse('host-permission', describeError('host-permission', providerName(cfg)));
+  const denied = await missingAccess(cfg);
+  if (denied) return refuse(denied.code, denied.message);
   if (cfg.kind !== 'openai-compatible' || !webSearch) return null;
   let granted = false;
   try {
@@ -240,7 +264,7 @@ async function missingPermission(cfg: AISourceConfig, webSearch: WebSearchKey | 
   } catch {
     granted = false;
   }
-  if (granted) return null;
+  if (granted && (await hasConsent(POST_DATA))) return null;
   const name = webSearchName(webSearch.provider);
   return refuse(
     'host-permission',

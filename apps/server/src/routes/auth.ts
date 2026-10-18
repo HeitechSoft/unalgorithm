@@ -14,10 +14,10 @@ import {
   AUTHORIZE_API_PATH,
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
-  chromiumRedirectUri,
   OkResponseSchema,
   REVOKE_PATH,
   RevokeRequestSchema,
+  redirectUriFor,
   TOKEN_PATH,
   TokenRequestSchema,
   TokenResponseSchema,
@@ -59,8 +59,9 @@ export function authRoutes(app: App, deps: AppDeps): void {
       // `requireWebSession` has set `Cache-Control: no-store`: the answer holds a code.
       const req = c.req.valid('json');
       if (!extensionIds.has(req.client_id)) return c.json(REFUSED, 403);
-      // The schema holds the same rule; the server does not depend on it to keep codes from going elsewhere.
-      if (req.redirect_uri !== chromiumRedirectUri(req.client_id)) throw new HTTPException(400);
+      // The schema holds the same rule; the server does not depend on it to keep codes from going elsewhere. Chrome and
+      // Edge come back to `<id>.chromiumapp.org`, Firefox to the SHA-1 of its add-on id under `extensions.allizom.org`.
+      if (req.redirect_uri !== redirectUriFor(req.client_id)) throw new HTTPException(400);
       const code = await issueAuthCode(db.db, {
         userId: c.get('webUser').userId,
         clientId: req.client_id,

@@ -19,6 +19,7 @@ import {
   ServerErrorSchema,
 } from '@unalgorithm/protocol';
 import type { z } from 'zod';
+import { serverConsentMessage } from '../lib/data-consent.ts';
 import type { BgError } from '../lib/messages.ts';
 import { serverLabel } from '../lib/server-label.ts';
 import type { ServerAccount } from './server-auth.ts';
@@ -28,12 +29,15 @@ import { type ServerHttpDeps, type ServerResult, serverRequest } from './server-
 /**
  * Server jobs on the person's unAlgorithm server (P3-21, generic over the task since P3-37): start a job with the
  * device's token, long-poll it until it ends, and cancel it when the tab closes or the deadline passes. Errors carry the
- * extension's own words for the server's error code, never the server's text.
+ * extension's own words for the server's error code, never the server's text. In Firefox every request needs the
+ * server's data-collection consent (ADR 0008, `serverRequest`): consent withdrawn while a job runs stops the polling,
+ * and not even the cancel goes out; the server's own deadline ends the job.
  */
 
 /**
  * Counted from before the start POST: > the server's 240 s pipeline deadline (plus hold, settle and row), and with the
  * final cancel still < an MV3 service worker's 5-minute limit for the content script's message. Serves every task.
+ * Firefox's event page has no such limit while `keepAwake` holds it for the message.
  */
 export const FACTCHECK_SERVER_DEADLINE_MS = 280_000;
 const START_TIMEOUT_MS = 30_000;
@@ -135,6 +139,7 @@ export async function runJobViaServer<R>(
     if ('reason' in r) {
       if (r.reason === 'aborted') return Promise.resolve(STOPPED());
       if (r.reason === 'auth') return Promise.resolve(fail('auth-required', describeError('auth-required', title)));
+      if (r.reason === 'consent') return Promise.resolve(fail('host-permission', serverConsentMessage(title)));
       return Promise.resolve(fail('network', describeError('network')));
     }
     const wire = ServerErrorSchema.safeParse(r.body);

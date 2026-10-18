@@ -63,7 +63,7 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'host-permission':
       return `unAlgorithm needs permission to reach ${provider || 'this AI server'}. Open Settings → AI and test it again.`;
     case 'origin-blocked':
-      return 'The local server refused the request. For Ollama, set OLLAMA_ORIGINS=chrome-extension://* and restart it.';
+      return 'The local server refused the request. For Ollama, set OLLAMA_ORIGINS=chrome-extension://*,moz-extension://* and restart it.';
     case 'model-not-found':
       return `${name} doesn't have that model. Pick another in Settings → AI.`;
     case 'rate-limit':
@@ -89,7 +89,7 @@ export function describeError(code: AIErrorCode, provider?: string): string {
     case 'context-overflow':
       return 'The post was too long for this model.';
     case 'insufficient-credits':
-      return `${provider ? `Your ${provider} balance is empty.` : 'Your balance on this AI server is empty.'} Add credit, or switch to on-device or your own key.`;
+      return `${provider ? `Your ${provider} balance is empty.` : 'Your balance on this AI server is empty.'} Add credit, or switch to your own key, or to on-device AI where your browser offers it.`;
     case 'auth-required':
       return provider ? `Sign in to ${provider} again.` : 'Sign in to your AI server again.';
     case 'no-model':

@@ -18,7 +18,8 @@ export const ACCOUNT_EXPORT_PATH = '/v1/account/export';
 export const ACCOUNT_DELETE_PATH = '/v1/account/delete';
 
 /**
- * What the extension calls itself at sign-in, e.g. "Chrome on Windows". Letters, digits, spaces and . _ ( ) - only.
+ * What the extension calls itself at sign-in, e.g. "Chrome on Windows" or "Firefox on Linux". Letters, digits, spaces
+ * and . _ ( ) - only.
  * Self-declared, coarse and optional: the server stores what passes and never derives a name from the User-Agent.
  */
 export const DeviceNameSchema = z

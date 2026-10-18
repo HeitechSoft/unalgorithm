@@ -1,10 +1,12 @@
 import { Banner, Button, Dialog, ListGroup, ListRow, Switch, useToast } from '@unalgorithm/ui';
 import { useEffect, useRef, useState } from 'react';
+import { CLOUD_DATA, requestConsent } from '../lib/data-consent.ts';
 import { type PublicServerAccount, type SyncStatus, sendToBackground } from '../lib/messages.ts';
 import { syncStateItem } from '../lib/storage.ts';
 
 const SWITCH = 'Sync settings between your computers';
 const NO_ANSWER = "unAlgorithm couldn't finish that. Reload this page and try again.";
+const NO_CONSENT = 'unAlgorithm needs your permission to send your settings to the server.';
 /** "Synced just now" turns into "Synced 1 minute ago" without a new status. */
 const TICK_MS = 30_000;
 
@@ -22,8 +24,8 @@ export function syncedText(lastSyncAt: number | null, now: number): string {
 /**
  * The "Sync settings" switch on the server card (R15, R17): turning it on first says what is synced and what never
  * leaves this computer; then a one-line status, or what is wrong and what to do. The background does the work.
- * `onSignInAgain` is the card's click-only sign-in: it runs from the click itself, so Chrome can show its permission
- * prompt.
+ * `onSignInAgain` is the card's click-only sign-in: it runs from the click itself, so the browser can show its
+ * permission prompt. Firefox's consent to send the settings (ADR 0008) is asked for from a click here too.
  */
 export function AccountSync({ account, onSignInAgain }: { account: PublicServerAccount; onSignInAgain(): void }) {
   const toast = useToast();
@@ -65,6 +67,9 @@ export function AccountSync({ account, onSignInAgain }: { account: PublicServerA
       });
   };
   const setEnabled = (enabled: boolean) => apply(() => sendToBackground({ type: 'syncSetEnabled', enabled }), enabled);
+  /** From a click: Firefox's consent first (at once when it stands, and in Chrome and Edge), then `then`. */
+  const consentFirst = (then: () => void) =>
+    void requestConsent(CLOUD_DATA).then((ok) => (ok ? then() : toast({ title: NO_CONSENT })));
 
   if (!status) return null;
 
@@ -99,7 +104,9 @@ export function AccountSync({ account, onSignInAgain }: { account: PublicServerA
           action={
             status.problem === 'auth'
               ? { label: 'Sign in again', onAction: onSignInAgain }
-              : { label: 'Try again', onAction: () => apply(() => sendToBackground({ type: 'syncNow' })) }
+              : status.problem === 'consent'
+                ? { label: 'Allow', onAction: () => consentFirst(() => apply(() => sendToBackground({ type: 'syncNow' }))) }
+                : { label: 'Try again', onAction: () => apply(() => sendToBackground({ type: 'syncNow' })) }
           }
         />
       ) : null}
@@ -118,7 +125,7 @@ export function AccountSync({ account, onSignInAgain }: { account: PublicServerA
               variant="primary"
               onClick={() => {
                 setAsking(false);
-                setEnabled(true);
+                consentFirst(() => setEnabled(true));
               }}
             >
               Turn on sync

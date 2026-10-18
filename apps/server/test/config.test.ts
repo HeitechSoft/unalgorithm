@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { DEV_CHROMIUM_ID, FIREFOX_ADDON_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import pkg from '../package.json' with { type: 'json' };
 import { CONFIG_VARIABLES, ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
@@ -17,6 +18,7 @@ const SHORT_AUTH_SECRET = 'shortQXZ7auth';
 const SECRETS = [AUTH_SECRET, API_KEY, SMTP_PASSWORD, SHORT_AUTH_SECRET];
 
 const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+const FIREFOX_UUID_ID = '{daf44bf7-a45e-4450-979c-91cf07434c3d}';
 
 /** The smallest environment an anthropic-backed server starts with. */
 function minimalEnv(): Record<string, string> {
@@ -66,7 +68,9 @@ describe('defaults and required', () => {
     expect(config.port).toBe(8787);
     expect(config.host).toBe('127.0.0.1');
     expect(config.billing).toBe('off');
-    expect(config.extensionIds).toEqual([DEV_EXTENSION_ID]);
+    // Every id this release knows: the development key's (Chrome and Edge) and both Firefox add-on ids.
+    expect(config.extensionIds).toEqual([DEV_EXTENSION_ID, 'feed-dev@unalgorithmfeed.com', 'feed@unalgorithmfeed.com']);
+    expect(config.extensionIds).toEqual([DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID]);
     expect(config.signupAllowlist).toEqual([]);
     expect(config.dailySpendLimitMicros).toBe(5_000_000);
 
@@ -154,6 +158,50 @@ describe('validation', () => {
 
     const two = loadConfig({ ...minimalEnv(), EXTENSION_IDS: `${DEV_EXTENSION_ID},${'b'.repeat(32)}` });
     expect(two.extensionIds).toEqual([DEV_EXTENSION_ID, 'b'.repeat(32)]);
+
+    // Firefox add-on ids, alone or among Chrome and Edge ids: trimmed and de-duplicated, never lower-cased (the
+    // redirect address hashes the id exactly as written).
+    const mixed = loadConfig({
+      ...minimalEnv(),
+      EXTENSION_IDS: ` ${DEV_EXTENSION_ID} , Feed@Example.org,${FIREFOX_UUID_ID},${'b'.repeat(32)}, Feed@Example.org `,
+    });
+    expect(mixed.extensionIds).toEqual([DEV_EXTENSION_ID, 'Feed@Example.org', FIREFOX_UUID_ID, 'b'.repeat(32)]);
+    expect(loadConfig({ ...minimalEnv(), EXTENSION_IDS: 'a.b-c_d@x.y' }).extensionIds).toEqual(['a.b-c_d@x.y']);
+    expect(loadConfig({ ...minimalEnv(), EXTENSION_IDS: FIREFOX_UUID_ID.toUpperCase() }).extensionIds).toEqual([
+      FIREFOX_UUID_ID.toUpperCase(),
+    ]);
+    const longest = `${'a'.repeat(68)}@example.org`;
+    expect(longest).toHaveLength(80);
+    expect(isValid({ ...minimalEnv(), EXTENSION_IDS: longest })).toBe(true);
+
+    // One bad entry refuses the whole list, whichever browser's form it misses.
+    for (const bad of [
+      `b${longest}`,
+      'feed@',
+      '@',
+      'feed',
+      'feed@unalgorithm feed.com',
+      'a@b@c',
+      '{daf44bf7-a45e-4450-979c}',
+      'daf44bf7-a45e-4450-979c-91cf07434c3d',
+      'chrome-extension://aokmlebkpkeniofcnbeajmgabinicggm',
+      'moz-extension://daf44bf7-a45e-4450-979c-91cf07434c3d',
+      DEV_EXTENSION_ID.toUpperCase(),
+    ]) {
+      expect(invalidNames({ ...minimalEnv(), EXTENSION_IDS: `${DEV_EXTENSION_ID},${bad}` }), bad).toEqual(['EXTENSION_IDS']);
+    }
+    expect(invalidNames({ ...minimalEnv(), EXTENSION_IDS: ' , ' })).toEqual(['EXTENSION_IDS']);
+
+    // The rule names both browsers' forms, and no value.
+    const err = configError({ ...minimalEnv(), EXTENSION_IDS: 'feed@,secret-QXZ7-value' });
+    expect(err.invalid).toEqual([
+      {
+        name: 'EXTENSION_IDS',
+        reason:
+          'must be a comma-separated list of extension ids (Chrome and Edge: 32 letters a to p; Firefox: name@domain or {uuid}, up to 80 characters)',
+      },
+    ]);
+    expect(err.message).not.toContain('QXZ7');
   });
 
   it('test_config_smtp_rules', () => {

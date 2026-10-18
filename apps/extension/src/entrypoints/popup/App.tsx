@@ -122,8 +122,11 @@ export function App() {
     </>
   );
 
+  // Straight from the click, before the popup closes: Firefox opens its sidebar (in this window) only then.
   const openPanel = () => {
-    if (tab) void browser.sidePanel.open({ windowId: tab.windowId });
+    const sidebar = browser.sidebarAction;
+    if (sidebar) void sidebar.open().catch(() => undefined);
+    else if (tab) void browser.sidePanel.open({ windowId: tab.windowId });
     window.close();
   };
 

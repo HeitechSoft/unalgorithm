@@ -1,15 +1,20 @@
 # Chrome Web Store listing
 
 The text and graphics for unAlgorithm Feed's Chrome Web Store entry, ready to paste into the developer dashboard
-(HeitechSoft developer account). Nothing here is submitted automatically; see [release.md](release.md#chrome-web-store-listing)
+(HeitechSoft developer account). Nothing here is submitted automatically; see [release.md](release.md#store-listings)
 for when and how a release goes to the store.
 
 This is for store builds **without the Cloud card** (`UA_CLOUD` unset): the manifest is
-`manifestFor('production')` in `apps/extension/wxt.config.ts`, with no `identity`, no `alarms` and no sync. Before a
-store build carries the Cloud card, these answers change too ([release.md](release.md#before-a-store-build-carries-the-cloud-card)).
+`manifestFor('production', 'chrome')` in `apps/extension/wxt.config.ts`, with no `identity`, no `alarms` and no sync.
+Before a store build carries the Cloud card, these answers change too
+([release.md](release.md#before-a-store-build-carries-the-cloud-card)).
+
+The other stores follow this file: [Microsoft Edge Add-ons](store-listing-edge.md), whose build has this manifest, and
+[Firefox Add-ons](store-listing-firefox.md). Their descriptions repeat this one line for line, except the lines that
+name the browser's built-in AI or the side panel (`apps/extension/tests/store-listing.test.ts` checks).
 
 Keep this file in step with [PRIVACY.md](../PRIVACY.md) and the manifest: when a permission or what is sent changes,
-update both here and in the dashboard in the same release.
+update both here and in the dashboard in the same release, and the other stores' files and pages with them.
 
 ## Store listing tab
 
@@ -109,7 +114,7 @@ unAlgorithm Feed curates the user's LinkedIn and Facebook feed. It folds away th
 
 ### Permission justifications
 
-One field per permission in `manifestFor('production')`. These follow the permissions table in
+One field per permission in `manifestFor('production', 'chrome')`. These follow the permissions table in
 [PRIVACY.md](../PRIVACY.md#permissions).
 
 **storage**

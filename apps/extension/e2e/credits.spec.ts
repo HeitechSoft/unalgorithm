@@ -23,7 +23,7 @@ const PROMOTED = '[componentkey="update-card-focusBBBkeyPromoted0002"]';
 /** The balance pill's accessible name (CL2-12). */
 const BALANCE_PILL = /^Credit balance:/;
 /** R27, the end of every "balance is empty" message. */
-const ADD_CREDIT_OR_SWITCH = 'Add credit, or switch to on-device or your own key.';
+const ADD_CREDIT_OR_SWITCH = 'Add credit, or switch to your own key, or to on-device AI where your browser offers it.';
 /** How long the feed stays open at $0 with nothing reaching the AI provider. */
 const PAUSED_WATCH_MS = 10_000;
 

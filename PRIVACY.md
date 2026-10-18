@@ -1,8 +1,8 @@
 # unAlgorithm privacy policy
 
 *Last updated: October 2026. This policy covers unAlgorithm Feed ("unAlgorithm"), the browser extension (public
-preview), and its website, unalgorithmfeed.com. It is also the privacy policy linked from the Chrome Web Store
-listing.*
+preview) for Chrome, Microsoft Edge and Firefox, and its website, unalgorithmfeed.com. It is also the privacy policy
+linked from the Chrome Web Store, Microsoft Edge Add-ons and Firefox Add-ons listings.*
 
 unAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **The
 extension does not collect your data, and it has no analytics or tracking.** The website counts visits without
@@ -39,7 +39,7 @@ It **never** sends author names, profile links, group names, comments, images or
 | AI option | Where post text goes |
 |---|---|
 | Rules only (default) | Nowhere |
-| On this device (Chrome built-in AI) | Nowhere: it runs on your computer |
+| On this device (your browser's built-in AI: Chrome's, or Edge's in its preview builds; not in Firefox) | Nowhere: it runs on your computer |
 | Local or self-hosted (Ollama, LM Studio, your server) | Only to the server address you entered |
 | Your own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) | Directly from your browser to that provider, under their terms and privacy policy. HeitechSoft never sees it. OpenAI requests ask OpenAI not to store responses. |
 
@@ -118,13 +118,35 @@ that is still running. This browser shows a result only when every lean in it ma
 Your API key is stored only in this browser, in storage that web pages cannot read. It is never synced, exported or
 sent to HeitechSoft.
 
+**Firefox's consent.** In Firefox, unAlgorithm also asks for your consent in Firefox's own prompt before it sends post
+text, your settings or account details to any service, including one on this computer (such as Ollama on `localhost`): a
+local server is outside the browser and can pass on what it receives. The source list download above carries none of
+these and needs no consent. unAlgorithm asks to share *website content* and *personal communications* (the posts are
+other people's social media posts) when you set up your own API key or an AI server, or save a web search key, in the
+same prompt that asks to reach that service. Versions that can sign in to an unAlgorithm server also ask, for that
+server, for those two and for *personally identifying information* and *authentication information* (the names of the
+people you always show or hide, which sync sends with your settings, and your account and this device's sign-in), from
+the click that signs in to it, turns it on or turns on sync. You can withdraw any of them in Firefox's add-ons page
+(unAlgorithm Feed → Permissions and data): unAlgorithm then stops sending them there and offers to ask again. For an
+unAlgorithm server that covers your balance and devices list too: nothing about you or your account goes to it then,
+except a sign-out, which ends this device's sign-in there. Two things still go ahead, since neither carries anything
+about you: reading the server's public description of itself, and the source list download above.
+
+Those versions also list *technical and interaction data*, which Firefox offers when you install unAlgorithm (on unless
+you turn it off) and lets you change in its add-ons page. unAlgorithm never asks for it and nothing depends on it: it
+decides only whether signing in to a server sends this device's name, such as "Firefox on Linux". A device that signs
+in without it has no name on that server, and a change applies from the next sign-in. Versions without the server
+sign-in don't list it, and Firefox offers no choice at install.
+
 ## Report a problem
 
 **Report a problem** (in the popup, and under *Why? → Wrong call?*) opens a new GitHub issue form in your browser,
-prefilled with diagnostics about the page: the extension and detection versions, your Chrome version number, the
-page's language, whether detection looked healthy, and counts of what was found and hidden. It contains no post text,
-names, ids or links. These diagnostics are part of the link your browser opens on GitHub; nothing is filed until you
-review the issue and submit it yourself, under GitHub's terms and privacy statement.
+prefilled with diagnostics about the page: the extension and detection versions, your browser's name and major
+version number (such as Firefox 147), the page's language, whether detection looked healthy, and counts of what was
+found and hidden. It contains no post text, names, ids or links. These diagnostics are part of the link your browser
+opens on GitHub; nothing is filed until you review the issue and submit it yourself, under GitHub's terms and privacy
+statement. unAlgorithm itself sends and keeps nothing here, and nothing reaches HeitechSoft unless you submit the issue,
+so it is not data collection and Firefox's consent (above) doesn't cover it.
 
 A finished fact-check or UnEcho Chamber result in the side panel has a **Report a wrong verdict** (or **Report a
 mistake**) link. It opens our correction form on GitHub with only these filled in: the feature's name, unAlgorithm's
@@ -140,11 +162,12 @@ public list.
 |---|---|
 | Read and change linkedin.com and facebook.com | To find feed posts and fold away the ones you don't want |
 | Storage | To keep your settings and statistics in your browser |
-| Side panel | To show Highlights: the posts picked for you and the ones that were hidden |
-| Scripting | To start working in LinkedIn/Facebook tabs that were already open when you installed it |
+| Side panel (Chrome and Edge), sidebar (Firefox) | To show Highlights: the posts picked for you and the ones that were hidden |
+| Scripting (Chrome and Edge) | To start working in LinkedIn/Facebook tabs that were already open when you installed it. Firefox does this by itself, without this permission |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
 | Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → AI, for that one service |
-| Optional: change requests to your local AI server | Asked only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
+| Change requests to your local AI server (optional in Chrome and Edge; Firefox grants it with the extension, since it can't be optional there) | Asked for in Chrome and Edge, and used in every browser, only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
+| Firefox only, optional: share website content and personal communications; with the unAlgorithm server sign-in, also personally identifying information, authentication information and technical and interaction data | As described in [Firefox's consent](#when-you-turn-on-ai). Technical and interaction data is never asked for: it only decides whether a sign-in sends the device's name |
 
 ## This website
 

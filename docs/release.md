@@ -2,9 +2,10 @@
 
 ## What is released here
 
-The extension is released from this repository: `vX.Y.Z` tags, built by `.github/workflows/release.yml` into the Chrome
-zip on a GitHub Release and submitted to the Chrome Web Store, where a person publishes it after the smoke test (the
-steps below).
+The extension is released from this repository: `vX.Y.Z` tags, built by `.github/workflows/release.yml` for Chrome,
+Microsoft Edge and Firefox in one step, attached to a GitHub Release and sent to the three stores: the Chrome Web
+Store, Firefox Add-ons (addons.mozilla.org, AMO) and Microsoft Edge Add-ons. A person publishes each version after the
+smoke test (the steps below).
 
 The server (`apps/server`) is not released from here: no tags, no GitHub Releases and no public images (Tom,
 2026-10-16). It runs unAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
@@ -15,47 +16,125 @@ is scheduled at least 30 days ahead, a cut can start at the next 00:00 UTC, and 
 
 ## Versioning
 
-The extension version lives in `apps/extension/package.json` and follows semver. Changes are described with
-[Changesets](https://github.com/changesets/changesets): every user-visible PR adds one with `pnpm changeset`.
+The extension version lives in `apps/extension/package.json` and follows semver; one version covers every browser.
+Changes are described with [Changesets](https://github.com/changesets/changesets): every user-visible PR adds one with
+`pnpm changeset`.
+
+## What a release carries
+
+`pnpm zip` builds every file into `apps/extension/.output`, from one build of each browser ([ADR
+0008](adr/0008-firefox-and-edge.md)):
+
+| File | What it is |
+|---|---|
+| `unalgorithm-<version>-chrome.zip` | The Chrome Web Store upload |
+| `unalgorithm-<version>-edge.zip` | The Microsoft Edge Add-ons upload: Chrome's manifest, built for Edge |
+| `unalgorithm-<version>-firefox.zip` | The Firefox Add-ons upload, with the add-on id `feed@unalgorithmfeed.com` |
+| `unalgorithm-<version>-sources.zip` | The source AMO builds the Firefox zip from: the extension, the workspace packages, the lockfile and [amo-build.md](amo-build.md) |
+| `unalgorithm-<version>-sideload.zip` | Chrome's store build with the development key, for Load unpacked in Chrome and Edge: its id (`aokmlebkpkeniofcnbeajmgabinicggm`) is one unAlgorithm servers accept |
+| `unalgorithm-<version>-firefox-sideload.xpi` | Only when the Firefox Add-ons credentials are set and AMO signed it during the run: Firefox's store build with the development id (`feed-dev@unalgorithmfeed.com`), signed by AMO as an unlisted add-on, since release Firefox installs only signed add-ons |
+| `SHA256SUMS.txt` | Checksums of every file above, with a build provenance attestation |
+
+The store zips never carry a key: each store gives its own id (the Firefox one is fixed in the manifest).
 
 ## Steps
 
 1. Merging to `main` keeps a **Version packages** PR open (`.github/workflows/changesets.yml`). It bumps versions and
    writes `apps/extension/CHANGELOG.md`.
 2. Review the changelog wording (it becomes the release notes), then merge the PR.
-3. If the release changes the permissions, the data use or the listing, save those changes in the Chrome Web Store
-   developer dashboard first, without submitting: the tag submits the zip with whatever the dashboard holds
-   ([what the API leaves to the dashboard](#chrome-web-store-credentials)). Then tag the merge commit and push the tag:
+3. **Smoke test** the merge commit, before the tag: Firefox Add-ons publishes a version once it is signed, with no
+   staged step. Use the `unalgorithm-zips` artifact of the commit's CI run, which `pnpm zip` built from the same
+   commit, or run `pnpm zip` on it yourself (with `UA_CLOUD=1` once `release.yml` sets it: CI builds without it). In a
+   clean profile of each browser:
+   - **Chrome:** unzip the chrome zip, then `chrome://extensions`, Developer mode, **Load unpacked**.
+   - **Edge:** the edge zip, the same way in `edge://extensions`.
+   - **Firefox:** unzip the firefox zip, then `about:debugging`, **This Firefox**, **Load Temporary Add-on…**, and pick
+     its `manifest.json`. A temporary add-on needs no signature.
+
+   Each time: onboarding opens, the LinkedIn feed hides ads and suggested posts, popup counts match, **Open
+   Highlights** opens the side panel (the sidebar in Firefox), Settings opens, and the background console (**Inspect**
+   on the extension's card; in Firefox on `about:debugging`) shows no errors. With the Cloud card, also sign in to
+   unAlgorithm Cloud (Firefox asks for its data-collection consent first), see the feed labelled through it, turn on
+   sync between two of the browsers, and check the devices list names each one. A temporary add-on gets no install
+   prompt, so Firefox's technical and interaction data starts off there and its device is unnamed: turn it on in
+   `about:addons` (unAlgorithm Feed → Permissions and data) before signing in. An unpacked store zip gets an id of
+   its own in Chrome and Edge, which the Cloud doesn't accept: test sign-in there with the sideload zip, the same
+   build with the development id. The firefox zip keeps its store id.
+4. If the release changes the permissions, the data use or the listing, save those changes in each store before the
+   tag: the Chrome Web Store developer dashboard, without submitting (the tag submits the zip with whatever the
+   dashboard holds, [what the API leaves to the dashboard](#chrome-web-store-credentials)); the listing pages of the
+   add-on in the Firefox Add-ons Developer Hub; and, for Edge, the draft a person submits in step 8. Then tag the merge
+   commit and push the tag:
    ```bash
    git tag v0.1.0 && git push origin v0.1.0
    ```
-4. `release.yml` verifies (lint, typecheck, tests, fixtures, notices), checks the tag matches the version, builds
-   `unalgorithm-<version>-chrome.zip`, writes `SHA256SUMS.txt`, attests build provenance, creates the GitHub Release
-   and submits the zip to the Chrome Web Store for review with staged publishing. It runs in the protected `release`
-   environment. Until the store credentials are set, the submission step only leaves a notice.
-5. **Smoke test** the zip unpacked in a clean Chrome profile: onboarding opens, LinkedIn feed hides ads and suggested
-   posts, popup counts match, Settings opens, no errors in the service worker console.
+5. `release.yml` verifies (lint, typecheck, tests, fixtures, notices), checks the tag matches the version, builds every
+   file with `pnpm zip`, runs Mozilla's add-on linter on the Firefox build (`scripts/check-firefox-lint.mjs`: no errors
+   or notices, only the reviewed warnings) and rebuilds the Firefox zip from the sources zip to compare
+   (`scripts/check-firefox-sources.mjs`). It has AMO sign the Firefox sideload build, writes `SHA256SUMS.txt`, attests
+   build provenance, creates the GitHub Release, and then sends the store zips: to the Chrome Web Store for review with
+   staged publishing, to Firefox Add-ons on the listed channel with the sources zip, and to Microsoft Edge Add-ons as a
+   draft. It runs in the protected `release` environment. Until a store's credentials are set, its step only leaves a
+   notice. The signed sideload is optional: if AMO doesn't sign it (an error, or no approval within web-ext's 15
+   minutes), its step only leaves a warning, and the release and the store submissions go out without the `.xpi`
+   ([The signed sideload](#the-signed-sideload)).
 6. **Chrome Web Store:** once the review passes, the version waits in the developer dashboard instead of going live.
    Publish it from the item's page when the smoke test has passed, within 30 days of approval (after that it goes back
    to draft and needs a new review). If the smoke test fails, don't publish it: cancel the submission if it is still in
    review, and release a fixed version. If the submission step was skipped or failed, the GitHub Release is already
    made: upload its zip in the dashboard and submit it for review by hand, with publishing deferred.
+7. **Firefox Add-ons:** AMO checks and signs the version, usually within a day, and it goes live at once; a reviewer
+   may still look at it later and ask questions by email. If the step was skipped or failed, upload the firefox zip
+   by hand on the add-on's Developer Hub page (**Upload New Version**), answer yes to the source code question and
+   upload the sources zip, and paste the Notes for Reviewers from [store-listing-firefox.md](store-listing-firefox.md).
+   If a live version turns out broken, release a fixed one; disabling a version in the Developer Hub takes it down for
+   new installs.
+8. **Microsoft Edge Add-ons:** the new package waits as a draft in Partner Center. Check the listing, paste the Notes
+   for certification from [store-listing-edge.md](store-listing-edge.md) and **Publish**. Certification can take up to
+   seven business days, and the version goes live as soon as it passes. If the step was skipped or failed, upload the
+   edge zip on the extension's **Packages** page first.
 
-## Chrome Web Store listing
+A failed run can't simply run again for the same version once a store has it: AMO refuses a version number it has
+already received, signed sideload included. Fix what failed by hand as above, or release the next patch version.
 
-The paste-ready listing, permission justifications and data-use answers are in [store-listing.md](store-listing.md),
-and the screenshots and promo tiles in [store/](store/).
+### The signed sideload
+
+A release without `unalgorithm-X.Y.Z-firefox-sideload.xpi` tells Firefox users, in its notes, to try the firefox zip
+as a temporary add-on until Firefox Add-ons has the version. When that happened although the Firefox Add-ons
+credentials are set, the "Signed Firefox sideload" step's warning says why. If AMO received the version and signs it
+later, download the signed file from the `feed-dev@unalgorithmfeed.com` add-on's versions page in the Developer Hub,
+name it `unalgorithm-X.Y.Z-firefox-sideload.xpi`, and attach it:
+
+```bash
+gh release upload vX.Y.Z unalgorithm-X.Y.Z-firefox-sideload.xpi
+```
+
+Then edit the release notes' Firefox line to what `scripts/release-notes.mjs` writes when the file is there ("open
+`unalgorithm-X.Y.Z-firefox-sideload.xpi` in Firefox and add it…"). A file attached this way is not in `SHA256SUMS.txt`
+or the build provenance attestation; Mozilla's signature, which Firefox checks when it installs the file, vouches for
+it. If AMO never received the version, this release stays without the file, and the next one carries it.
+
+## Store listings
+
+The paste-ready text for each store, with its permission notes, data answers and reviewer notes:
+
+- Chrome Web Store: [store-listing.md](store-listing.md), the reference the others follow.
+- Firefox Add-ons: [store-listing-firefox.md](store-listing-firefox.md).
+- Microsoft Edge Add-ons: [store-listing-edge.md](store-listing-edge.md).
+
+The screenshots and promo tiles in [store/](store/) serve all three stores.
 
 - **Name:** unAlgorithm Feed. It comes from `extName` in `apps/extension/public/_locales/en/messages.json`; never
-  plain "unAlgorithm" (see [brand.md](brand.md)). Publish from the HeitechSoft developer account, so the listing shows
-  HeitechSoft as the developer, and open the long description with "unAlgorithm Feed by HeitechSoft".
-- 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tile, short and long descriptions
+  plain "unAlgorithm" (see [brand.md](brand.md)). Publish from HeitechSoft's account in each store, so the listing
+  shows HeitechSoft as the developer, and open the long description with "unAlgorithm Feed by HeitechSoft".
+- 128 px icon, 1280×800 screenshots made from fixtures (never real feeds), promo tiles, short and long descriptions
   with the non-affiliation line. `pnpm --filter @unalgorithm/extension store:screens` remakes the screenshots and
   `node scripts/make-icons.mjs --store` the promo tiles.
 - **Website, support and privacy policy URLs:** `https://unalgorithmfeed.com/`, `https://unalgorithmfeed.com/help/`
   and `https://unalgorithmfeed.com/privacy/` once the website is live; until then the GitHub repo, SUPPORT.md and
   PRIVACY.md on GitHub. The website's privacy page is built from PRIVACY.md, so a merged change reaches it with the
-  website's next deploy. Update the store's data-use disclosures whenever PRIVACY.md changes.
+  website's next deploy. Firefox Add-ons keeps its own copy of the policy's text: paste it again when PRIVACY.md
+  changes. Update every store's data disclosures whenever PRIVACY.md changes.
 
 ## Chrome Web Store credentials
 
@@ -79,7 +158,7 @@ Google Cloud service account added to the HeitechSoft publisher. To set it up on
    change the key, add a new one, replace the secret and delete the old key in the console.
 
 The API uploads the zip and submits it, nothing else. The store listing, screenshots, permission justifications and
-data-use answers are changed by hand in the dashboard and saved before the tag (step 3), and the submission carries
+data-use answers are changed by hand in the dashboard and saved before the tag (step 4), and the submission carries
 them. That matters most for the `UA_CLOUD` release, which adds the `identity` and `alarms` permissions: both
 justifications and the data-use answers for sign-in and sync are saved before it is tagged. The store takes one
 submission at a time, so cancel a version still in review before tagging the next.
@@ -91,36 +170,99 @@ Identity Federation. The job already has `id-token: write`. A workload identity 
 account, passed to the step as `CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN` in place of the email and key (the step's secret
 check changes with it).
 
+## Firefox Add-ons credentials
+
+`release.yml` uses AMO's API twice, with one API key of HeitechSoft's AMO developer account: `wxt submit` sends the
+firefox zip and its sources to the listed add-on `feed@unalgorithmfeed.com`, and `web-ext sign --channel unlisted`
+has AMO sign the sideload build, `feed-dev@unalgorithmfeed.com`, for the GitHub Release.
+
+1. **The first listed version is uploaded by hand**, because AMO needs the listing before its API takes versions: in
+   the [Developer Hub](https://addons.mozilla.org/developers/), **Submit a New Add-on**, **On this site**, upload the
+   firefox zip, answer yes to the source code question and upload the sources zip, then fill in the listing from
+   [store-listing-firefox.md](store-listing-firefox.md). AMO ties the listing to `feed@unalgorithmfeed.com` for good:
+   unAlgorithm servers key devices and the sign-in address to that id, so it never changes.
+2. Under **Tools → Manage API Keys**, generate credentials. In the repository's **Settings → Environments →
+   release**, add `FIREFOX_JWT_ISSUER` (the JWT issuer) and `FIREFOX_JWT_SECRET` (the JWT secret).
+
+The first signed sideload creates the unlisted add-on `feed-dev@unalgorithmfeed.com` on the same account; nothing about
+it is public. With neither secret set, both steps skip with a notice and the release has no signed Firefox file; with
+only one, they fail. With both, a signing AMO doesn't complete only warns ([The signed sideload](#the-signed-sideload)).
+To change the key, generate a new one in the Developer Hub (which revokes the old) and replace both secrets. AMO keeps
+the listing text, the privacy policy and the reviewer notes; the API sends only the files.
+
+## Microsoft Edge Add-ons credentials
+
+`release.yml` uploads the edge zip through the Microsoft Edge Add-ons API (v1.1, `wxt submit`) and doesn't submit it
+(`EDGE_SKIP_SUBMIT_REVIEW`): a certified version goes live at once, so a person submits it after the smoke test
+([Steps](#steps), step 8).
+
+1. **The first version is published by hand**, because the API only updates an extension that exists: in
+   [Partner Center](https://partner.microsoft.com/dashboard/microsoftedge/overview), **Create new extension**, upload
+   the edge zip, and fill in Availability, Properties, Store listings and the Notes for certification from
+   [store-listing-edge.md](store-listing-edge.md).
+2. Partner Center assigns the Edge store's own extension id, different from the Chrome Web Store's. unAlgorithm Cloud
+   must list it in `EXTENSION_IDS` before a Cloud build is published there. If the id only shows once the extension is
+   published, publish the first version with **Visibility: Hidden** (reachable only by its link), read the id, list it,
+   then make it public.
+3. On Partner Center's **Publish API** page, create API credentials. In the repository's **Settings → Environments →
+   release**, add `EDGE_PRODUCT_ID` (the extension's product id on its overview page), `EDGE_CLIENT_ID` and
+   `EDGE_API_KEY`.
+
+With none of the three set, the step skips with a notice; with only some, it fails. API keys expire: Partner Center
+shows when, and a new one replaces the secret.
+
 ## Before a store build carries the Cloud card
 
 Store builds show the unAlgorithm Cloud card only as "Coming soon". The working card, which signs in to unAlgorithm
 Cloud or another unAlgorithm server (Settings → AI and onboarding), the `identity` permission it signs in with and the
 `alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
-`apps/extension/wxt.config.ts`; development and e2e builds always have them). A store build may carry them only when
-all nine of these are done:
+`apps/extension/wxt.config.ts`; development and e2e builds always have them). The switch reaches every browser at once:
+`release.yml` builds all of them in its one `pnpm zip` step, and CI refuses a second build step or a package script
+that sets it (`apps/extension/tests/privacy-gate.test.ts`). In Chrome and Edge, `identity` is asked for in the click
+that signs in; Firefox grants `identity` and `alarms` with the extension, without a prompt, and asks for its
+data-collection consent in that click instead (ADR 0008). A store build may carry them only when all ten of these are
+done, for all three stores:
 
 1. The unAlgorithm Cloud beta privacy notice and beta terms (`CLOUD-BETA-NOTICE.md`, `CLOUD-BETA-TERMS.md`) are live on
    unalgorithmfeed.com at `/cloud/beta-privacy` and `/cloud/beta-terms`.
-2. The Chrome Web Store data-use answers and the justifications for the `identity` and `alarms` permissions are
-   saved in the dashboard before the release is tagged, since the tag submits it ([Steps](#steps), step 3).
+2. Each store's answers for sign-in are saved before the release is tagged, since the tag submits the zips
+   ([Steps](#steps), step 4):
+   - Chrome Web Store: the data-use answers and the justifications for the `identity` and `alarms` permissions, in the
+     dashboard.
+   - Microsoft Edge Add-ons: the same answers wherever Partner Center asks for them, before the draft is submitted.
+   - Firefox Add-ons: the listing's privacy policy text. AMO has no permission justifications; it reads the
+     data-collection types from the manifest, and the Notes for Reviewers explain `identity` and `alarms`.
 3. PRIVACY.md describes the server source (what is sent, to whom, what unAlgorithm Cloud keeps), in the same release.
-4. The store extension's id is in `EXTENSION_IDS` on unAlgorithm Cloud, so the Cloud accepts its sign-in.
+4. Each store's id is in `EXTENSION_IDS` on unAlgorithm Cloud, so the Cloud accepts its sign-in: the Chrome Web Store
+   id, the Microsoft Edge Add-ons id ([its credentials](#microsoft-edge-add-ons-credentials), step 2) and
+   `feed@unalgorithmfeed.com`. A server must understand Firefox ids before it lists one (an older one refuses to start
+   with one), so the Cloud runs such a server first, and its `/.well-known/unalgorithm.json` lists `chromium` and
+   `gecko` in `auth.clients`.
 5. Invitees are still limited to the sign-up allowlist (`SIGNUP_ALLOWLIST`) until the public launch.
 6. The privacy impact assessment for unAlgorithm Cloud (Quebec Law 25) is started, in HeitechSoft's private
    repository.
 7. PRIVACY.md has the sections *When you sign in to an unAlgorithm server* and *Sync between your computers*, and an
    *Alarms* row in its permissions table (the text is drafted in HeitechSoft's private repository with the store
-   answers). CI's privacy-gate test (`apps/extension/tests/privacy-gate.test.ts`) refuses the release workflow
-   otherwise.
-8. The Chrome Web Store data-use answers cover sync.
+   answers). They say how each browser grants `identity` and `alarms`, as above. CI's privacy-gate test
+   (`apps/extension/tests/privacy-gate.test.ts`) refuses the release workflow otherwise.
+8. Every store's data answers cover sync. For Firefox, the manifest's `data_collection_permissions`
+   (`browser_specific_settings.gecko` in `apps/extension/wxt.config.ts`) are checked against Mozilla's data categories
+   for everything sign-in and sync send, such as the device name and the synced settings, and changed in the same
+   release if a type is missing. `technicalAndInteraction` may only decide whether the device name is sent: nothing
+   may depend on it (Mozilla's add-on policies).
 9. Remove the store-build line under the admin page's pass-on sentence (`apps/web/src/AdminInvites.tsx`, CL4-09) in the
    same release.
+10. Each store that tests by hand has a reviewer account on unAlgorithm Cloud: Firefox Add-ons and Microsoft Edge
+    Add-ons ask for test credentials when a feature needs an account. Use a mailbox made only for store reviews,
+    invite it on the Cloud's admin page (an invite admits one address without opening sign-ups), sign in with it once
+    and add review credit. Its address and password go only into the store's reviewer notes at submission, never into
+    a repository. The Firefox reviewer builds from the sources with `UA_CLOUD=1` ([amo-build.md](amo-build.md)).
 
-Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zip" step of
+Then, in the same release PR that updates PRIVACY.md, set `UA_CLOUD: "1"` in the `env` of the "Build zips" step of
 `release.yml`. Until that PR, `release.yml` never sets it.
 
 ```yaml
-      - name: Build zip
+      - name: Build zips
         run: pnpm zip
         env:
           UA_CLOUD: "1"
@@ -198,8 +340,8 @@ date a cut is never cancelled (the rules refuse it), so check the date before sa
 or after the date, it shows the earlier, higher price, never a lower one than the Cloud charges.
 
 Older installed extensions that don't read `classifyPrice` estimate "about N posts" at their bundled schedule until
-Chrome updates them; the balance itself and the job price lines always come from the server. A raise's notice period
-leaves time for those updates; after a cut they estimate fewer posts than the balance buys, never more.
+their browser updates them; the balance itself and the job price lines always come from the server. A raise's notice
+period leaves time for those updates; after a cut they estimate fewer posts than the balance buys, never more.
 
 ### When a change applies
 

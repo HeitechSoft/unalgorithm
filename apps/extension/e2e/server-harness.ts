@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
 import { createPostgresTestDb, databaseExists as databaseExistsOn } from '../../server/test/support/postgres.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -35,6 +36,12 @@ const ROUTE_EVAL_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 15_000;
 const CODE_TIMEOUT_MS = 10_000;
 const POLL_MS = 200;
+
+/**
+ * The e2e builds' ids: Chrome's and Edge's (the dev key) and Firefox's development id, so all three browsers can sign
+ * in. Listed explicitly rather than left to the server's default, which also names the Firefox store id.
+ */
+export const E2E_EXTENSION_IDS = [DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID].join(',');
 
 /** Variables a child process needs from this one to run at all; nothing of the developer's own server settings. */
 const PLATFORM_ENV = ['PATH', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE'];
@@ -88,6 +95,7 @@ export async function startLocalServer(opts: {
       AI_MODEL: 'mock-model',
       AI_DATA_POLICY: 'self-hosted',
       SIGNUP_ALLOWLIST: 'tester@example.com',
+      EXTENSION_IDS: E2E_EXTENSION_IDS,
       ROUTE_EVAL_MIN_AGREEMENT: '0',
       WEB_DIST,
       ...opts.env,

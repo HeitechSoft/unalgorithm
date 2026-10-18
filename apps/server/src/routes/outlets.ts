@@ -2,9 +2,9 @@
  * The source list's public routes (P3-67, decision D96) and its admin routes (P3-73, decisions D93–D95).
  *
  * Public: `GET /outlets.json`, the list as published (CC BY 4.0), and `GET /outlets/changes.json`, its latest changes
- * without who made them (D94). Outside `/v1`, whose CORS answers extension ids only: any origin may read them, and a
- * cache may keep them for 5 minutes. They read no cookie, session or header but `If-None-Match`, set no cookie and log
- * nothing of their own (the app's `http` line holds no address).
+ * without who made them (D94). Outside `/v1`, whose CORS answers extension origins only: any origin may read them, and
+ * a cache may keep them for 5 minutes. They read no cookie, session or header but `If-None-Match`, set no cookie and
+ * log nothing of their own (the app's `http` line holds no address).
  *
  * Admin: guarded as `routes/admin.ts`'s actions are. `GET /v1/admin/outlets` is what the source control page reads: the
  * list as published and its latest changes, each with the admin's address; it needs a web session with the admin role.

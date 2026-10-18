@@ -20,7 +20,7 @@ apps/web ────────► packages/ui, packages/core, packages/protoc
 | `protocol` | Wire contracts (zod): ids, `PostForAI`, classify request/response, AI error codes, usage and model price cards, the dated credit price schedule, hybrid logical clock, server discovery and sign-in | zod only; additive changes only. The server imports the same files |
 | `core` | Post model, rules and `decide()`, presets, settings schema/defaults/migration/clocks, the classification prompt and fence, cache policy, health evaluation | No `chrome.*`, no DOM |
 | `platforms` | `PlatformAdapter` contract and the LinkedIn and Facebook adapters, per-locale markers, anonymized fixtures, `checkAdapterContract` | DOM reads only; never mutate, click, scroll or focus |
-| `ai` | Vendor clients (Anthropic, OpenAI Responses, OpenAI-compatible, Chrome built-in), strict JSON schema helper, `classifyPosts` orchestrator, key detection, provider presets | No `chrome.*` except the `chrome-builtin` subpath |
+| `ai` | Vendor clients (Anthropic, OpenAI Responses, OpenAI-compatible, the built-in AI of Chrome and Edge), strict JSON schema helper, `classifyPosts` orchestrator, key detection, provider presets | No `chrome.*` except the `chrome-builtin` subpath |
 | `sync` | Collection registry, merge strategies, settings items and merge; imported by the server and the extension | Only `protocol`, `core`, zod and the SDK-free `@unalgorithm/ai/presets`; no `chrome.*`, DOM or Node |
 | `ui` | Design tokens, accessible components, in-feed parts (stub, run, Why? popover, For you row, toasts) | No `chrome.*`; services come in as props |
 | `apps/extension` | Entrypoints, the feed controller, background services, storage, messaging, E2E | The only place that talks to the browser |
@@ -34,10 +34,10 @@ are consumed as TypeScript source (`exports` points at `src/index.ts`); there is
 
 | Entrypoint | Job |
 |---|---|
-| `background.ts` | Typed message router (exhaustive handler map, sender validation), AI classification, IndexedDB (secrets, cache), per-tab state and badge, settings actions with undo, install flow (opens onboarding, injects into already-open feed tabs) |
+| `background.ts` | Typed message router (exhaustive handler map, sender validation), AI classification, IndexedDB (secrets, cache), per-tab state and badge, settings actions with undo, install flow (opens onboarding; in Chrome and Edge injects into already-open feed tabs, which Firefox does itself) |
 | `linkedin.content`, `facebook.content` | Boot the feed controller with that platform's adapter (`content/bootstrap.ts`) |
 | `popup` | The toolbar "Control Center": on/pause, hidden count, reason chips, Strength, For you, Peek, Report a problem |
-| `sidepanel` | Highlights: For you and Hidden lists, with scroll-to and Show |
+| `sidepanel` | Highlights: For you and Hidden lists, with scroll-to and Show. Chrome's and Edge's side panel; Firefox's sidebar (`sidebar_action`, opened from the popup or Alt+Shift+U) |
 | `options` | Settings, macOS System Settings style: LinkedIn, Facebook, Display, Interests, AI, Privacy & Data, About |
 | `onboarding` | Welcome → Strength → Interests → AI (optional) → Done |
 
@@ -56,7 +56,8 @@ are consumed as TypeScript source (`exports` points at `src/index.ts`); there is
    when available. Unknown or weak evidence never hides a post.
 5. **Show.** Only items that need UI get it: hidden items become a one-line stub (or a merged run: "3 hidden · Show
    all"), dimmed and revealed items get a bar, highlighted items get a "For you" row. One React root renders every
-   item through portals into small shadow roots that adopt one constructed stylesheet. Ordinary posts are untouched.
+   item through portals into small shadow roots that adopt one constructed stylesheet (in Firefox each gets a
+   `<style>` element instead, ADR 0008). Ordinary posts are untouched.
 6. **Classify (optional).** Rule-passing posts near the viewport are batched (2–6 per request, by source) and sent to the
    background, which checks the IndexedDB cache, then calls the chosen AI source. A verdict for a post that is on
    screen waits until it scrolls away, so posts never vanish while you read them.
@@ -95,10 +96,10 @@ extension pages. Content scripts never see API keys or build prompts; the backgr
 ## AI
 
 See [ai-sources.md](ai-sources.md). In short: one strict JSON schema is sent through four transports (Anthropic
-structured output, OpenAI Responses `json_schema`, OpenAI-compatible with a learned step-down ladder, Chrome's
-`responseConstraint`). Posts are fenced with a per-request nonce after control/bidi characters are stripped and
-entities escaped. Refusals bisect the batch so only the offending post fails; ids the model skipped are retried once;
-usage is recorded even when a call fails.
+structured output, OpenAI Responses `json_schema`, OpenAI-compatible with a learned step-down ladder, the built-in
+AI's `responseConstraint` in Chrome and Edge). Posts are fenced with a per-request nonce after control/bidi characters
+are stripped and entities escaped. Refusals bisect the batch so only the offending post fails; ids the model skipped
+are retried once; usage is recorded even when a call fails.
 
 ## Server
 
@@ -112,15 +113,24 @@ repository builds it from a pinned commit ([release.md](release.md#the-server)).
 
 ### Sign-in
 
-1. The extension reads `/.well-known/unalgorithm.json`: the server's name, version, source link and capabilities.
-2. The background opens `/authorize` in `chrome.identity.launchWebAuthFlow` with a PKCE challenge. On that page the
-   person enters their email address and the six-digit code the server emails, or, where the discovery document lists
+1. The extension reads `/.well-known/unalgorithm.json`: the server's name, version, source link and capabilities,
+   and `auth.clients`, the kinds of extension it takes sign-ins from (`chromium`, `gecko`; missing means Chrome and
+   Edge only). If its own kind isn't there, it says the server doesn't accept sign-ins from this browser yet and stops.
+2. The background opens `/authorize` in `identity.launchWebAuthFlow` with a PKCE challenge and the redirect address of
+   its own id (`redirectUriFor` in `packages/protocol`): `https://<id>.chromiumapp.org/` in Chrome and Edge,
+   `https://<SHA-1 of the add-on id>.extensions.allizom.org/` in Firefox. It opens the window only when the browser's
+   `identity.getRedirectURL()` is that same address; the browser catches the redirect itself, so nothing is ever sent
+   to that host. In Firefox the click that starts the sign-in also asks for consent to share website content, personal
+   communications, personally identifying information and authentication information, for a server on this computer
+   too, and the background refuses the sign-in without it (ADR 0008). On that page the person
+   enters their email address and the six-digit code the server emails, or, where the discovery document lists
    them, uses a passkey they added on the account page or continues with Google, which sends the browser back to the
    page signed in (it then waits for "Continue as"). Accounts are created only for verified addresses in
    `SIGNUP_ALLOWLIST` or that an admin invited, and signing in starts a one-day session for the page.
 3. The page asks `POST /v1/auth/authorize` for a single-use code, valid for a minute and bound to the extension id
-   (one of `EXTENSION_IDS`), its redirect address and the challenge, and sends the browser back to the extension with
-   it.
+   (one of `EXTENSION_IDS`: each store's Chrome and Edge id, the Firefox add-on ids and the development ids), the
+   redirect address that id must use and the challenge, and sends the browser back to the extension with it, only to
+   an address under the request's own redirect address.
 4. The background trades the code and its verifier at `POST /v1/auth/token` for a 15-minute EdDSA access token and a
    refresh token, and the server records a device. Each refresh token is traded once at the same route for the next;
    one used twice revokes its device. The one exception is a refresh whose answer was lost: a token spent less than a
@@ -134,6 +144,14 @@ makes and mails no code and the last one emailed still works) and 10 wrong codes
 `Retry-After`; a sign-in that works is not counted). The counters live in memory, keyed
 by a SHA-256 hash of the lowercased address, and a send Better Auth refuses is given back
 (`apps/server/src/auth/better-auth.ts`).
+
+**Extension origins.** `/v1/*` answers CORS for `chrome-extension://<id>` of each Chrome and Edge id in
+`EXTENSION_IDS`, and for any `moz-extension://<uuid>` once a Firefox id is listed: Firefox picks that UUID at random
+for each install, so it can't be tied to an add-on id (`extensionCors` in `apps/server/src/http/middleware.ts`). CORS
+is not the access control: every `/v1` route needs a bearer token, a session or a secret (code and verifier, refresh
+token, the payment provider's signature), no answer allows credentials, and session writes from the server's own
+pages check that the request came from them. A server older than Firefox support refuses to start with a Firefox id in
+`EXTENSION_IDS`, so it is upgraded first.
 
 ### Classify
 
@@ -307,7 +325,8 @@ same machine) and `tools` (the one-off `keygen`).
 | Layer | Tool | What |
 |---|---|---|
 | Unit | Vitest projects (jsdom where needed) | Rules, decide, presets, migration, clocks, prompt/fence, adapters on fixtures, the contract check, AI clients against a fake fetch, the feed controller |
-| End to end | Playwright + bundled Chromium, `wxt build --mode e2e` | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it, and with the test billing module the balance pill, its drop after classifying and the pause at $0 |
+| End to end | Playwright Test with each browser's `wxt build --mode e2e`: the `chromium` and `edge` projects drive Playwright's Chromium and Microsoft Edge (the same specs), the `firefox` project drives Firefox through Puppeteer over WebDriver BiDi (`e2e/firefox/`, ADR 0008) | The real extension on fixture pages served at `https://www.linkedin.com/feed/` with all network aborted; popup, settings, onboarding, Why? and undo, a mock OpenAI-compatible AI server, axe in light and dark; with `UA_SERVER_E2E=1` (CI `server` job), sign-in to a real server process on Postgres and Mailpit and the feed labelled through it, and with the test billing module the balance pill, its drop after classifying and the pause at $0. In Firefox, the background's requests go through a recording proxy, and sign-in uses Firefox's own sign-in window |
+| Firefox package | `scripts/check-firefox-lint.mjs` (Mozilla's add-on linter), `scripts/check-firefox-sources.mjs` | The Firefox build has no linter errors or notices and only the reviewed warnings; the sources zip holds nothing private and rebuilds the Firefox zip byte for byte, with and without the Cloud card |
 | Server | The Vitest `server` project on PGlite, and on Postgres 17 and Mailpit in the CI `server` job; `compose-smoke.sh`, `backup-smoke.sh` and `restore-smoke.sh` | Routes, sign-in and tokens, classify, limits, migrations, the canary test; the image and compose file as an operator runs them, their encrypted backups, and a wiped stack restored from one |
 
 ## Decisions

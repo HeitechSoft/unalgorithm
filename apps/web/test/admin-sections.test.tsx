@@ -24,8 +24,7 @@ import { fakeServer, OVERVIEW, type Reply, SESSION_GONE, TOM } from './support/f
 
 const HAS_ACCOUNT = 'This address already has an account.';
 const STORE_LINE =
-  'Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with ' +
-  'its id in EXTENSION_IDS.';
+  'Until the store versions of unAlgorithm Feed offer servers, they need a build that does, with its id in EXTENSION_IDS.';
 const BREAKER = "Today's AI spending limit is reached. AI resumes for everyone at 00:00 UTC.";
 const LOAD_FAILED = "Couldn't load usage.";
 const NOT_WATCHED = "Backups aren't watched on this server.";

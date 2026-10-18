@@ -27,8 +27,16 @@ import { deviceName } from '../src/background/device-name.ts';
 import { clearSecrets, getSecret } from '../src/background/idb.ts';
 import { serverAccountItem, signIn } from '../src/background/server-auth.ts';
 import { handlers } from '../src/entrypoints/background.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { serverLabel } from '../src/lib/server-label.ts';
 import { DEFAULT_SYNC_STATE, deviceItem, readDevice, syncStateItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox cases switch `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 type Sender = Browser.runtime.MessageSender;
 
@@ -141,6 +149,7 @@ const revoke = (deviceId: string, sender = page()) =>
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   fakeBrowser.runtime.id = ID;
   vi.spyOn(fakeBrowser.identity, 'getRedirectURL').mockReturnValue(REDIRECT);
   await clearSecrets();
@@ -153,19 +162,35 @@ afterEach(() => {
 
 describe('device name', () => {
   it('test_device_name_from_platform_and_brand', async () => {
-    const name = (os: string, brands: string[]) => deviceName({ platformOs: async () => os, brands: () => brands });
+    const noInfo = async () => undefined;
+    const name = (os: string, brands: string[]) =>
+      deviceName({ platformOs: async () => os, browserInfo: noInfo, brands: () => brands });
     expect(await name('win', ['Chromium', 'Google Chrome'])).toBe('Chrome on Windows');
     expect(await name('mac', ['Not=A?Brand', 'Chromium', 'Microsoft Edge'])).toBe('Edge on macOS');
     expect(await name('linux', ['Chromium', 'Opera'])).toBe('Opera on Linux');
-    expect(await name('cros', [])).toBe('Chrome on ChromeOS');
-    expect(await name('android', ['Chromium'])).toBe('Chrome on Android');
+    expect(await name('cros', ['Chromium', 'Google Chrome'])).toBe('Chrome on ChromeOS');
     expect(await name('openbsd', ['Chromium', 'Google Chrome'])).toBe('Chrome');
+    // A Chromium browser that names only Chromium, or a browser that names nothing, is never called Chrome.
+    expect(await name('android', ['Chromium'])).toBe('Chromium on Android');
+    expect(await name('linux', ['Brave', 'Chromium'])).toBe('Chromium on Linux');
+    expect(await name('cros', [])).toBe('Browser on ChromeOS');
+    expect(await name('', [])).toBe('Browser');
+
+    // Firefox names itself, and has no brand names.
+    const firefox = (os: string, browserName: string) =>
+      deviceName({ platformOs: async () => os, browserInfo: async () => ({ name: browserName }), brands: () => [] });
+    expect(await firefox('linux', 'Firefox')).toBe('Firefox on Linux');
+    expect(await firefox('win', 'Firefox')).toBe('Firefox on Windows');
+    expect(await firefox('mac', ' Firefox ')).toBe('Firefox on macOS');
+    expect(await firefox('android', '')).toBe('Browser on Android');
+    expect(await firefox('linux', 'Fire<fox>')).toBeUndefined();
 
     for (const os of ['win', 'mac', 'linux', 'cros', 'android', 'fuchsia', '']) {
       for (const brands of [[], ['Google Chrome'], ['Microsoft Edge'], ['Opera'], ['Brave', 'Chromium']]) {
         const result = await name(os, brands);
         expect(DeviceNameSchema.safeParse(result).success, `${os} ${brands.join()}`).toBe(true);
       }
+      expect(DeviceNameSchema.safeParse(await firefox(os, 'Firefox')).success, `${os} Firefox`).toBe(true);
     }
 
     // Any failure gives no name rather than an error.
@@ -179,9 +204,18 @@ describe('device name', () => {
       }),
     ).toBeUndefined();
 
-    // The defaults read the platform and the brand names.
+    // The defaults read the platform and the brand names, or Firefox's own name for itself.
     stubPlatform('mac', ['Chromium', 'Microsoft Edge']);
     expect(await deviceName()).toBe('Edge on macOS');
+    stubPlatform('linux', []);
+    const info = { name: 'Firefox', vendor: 'Mozilla', version: '147.0', buildID: '20260113000000' };
+    Object.assign(fakeBrowser.runtime, { getBrowserInfo: async () => info });
+    try {
+      expect(await deviceName()).toBe('Firefox on Linux');
+    } finally {
+      Reflect.deleteProperty(fakeBrowser.runtime, 'getBrowserInfo');
+    }
+    expect(await deviceName()).toBe('Browser on Linux');
   });
 
   it('test_sign_in_sends_device_name', async () => {
@@ -322,5 +356,58 @@ describe('senders and state', () => {
     expect(await devices()).toStrictEqual(again);
     expect(await revoke(OTHER_DEVICE)).toStrictEqual(again);
     expect(server.calls).toHaveLength(0);
+  });
+});
+
+describe('firefox consent', () => {
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+
+  /** Firefox from here on, with the data-collection consent `getAll()` reports. */
+  function firefox(initial: string[]) {
+    env.kind = 'firefox';
+    const consent = { granted: initial };
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: consent.granted,
+    })) as never);
+    return consent;
+  }
+
+  it('test_firefox_devices_need_the_server_consent_but_sign_out_never_does', async () => {
+    const server = await signedIn();
+    const consent = firefox(CLOUD_DATA.filter((type) => type !== 'authenticationInfo'));
+    const withdrawn = {
+      ok: false,
+      error: { code: 'host-permission', message: `unAlgorithm needs your permission to send your account details to ${TITLE}.` },
+    };
+    // Nothing reaches the server, the token included: the list and revoking another device answer what to do.
+    expect(await devices()).toStrictEqual(withdrawn);
+    expect(await revoke(OTHER_DEVICE)).toStrictEqual(withdrawn);
+    expect(server.calls).toHaveLength(0);
+    expect(await serverAccountItem.getValue()).toMatchObject({ deviceId: THIS_DEVICE, needsSignIn: false });
+
+    // Given again: both work. Technical and interaction data (the device name) is no part of it.
+    consent.granted = CLOUD_DATA;
+    expect(await devices()).toStrictEqual({ ok: true, devices: DEVICES });
+    expect(await revoke(OTHER_DEVICE)).toStrictEqual({ ok: true, signedOut: false });
+    expect(server.calls.map((c) => c.path)).toStrictEqual([ACCOUNT_DEVICES_PATH, ACCOUNT_DEVICE_REVOKE_PATH]);
+
+    // Withdrawn again: signing out (revoking this computer) still ends the device on the server.
+    consent.granted = [];
+    server.calls.length = 0;
+    expect(await revoke(THIS_DEVICE)).toStrictEqual({ ok: true, signedOut: true });
+    expect(server.calls.map((c) => c.path)).toStrictEqual([REVOKE_PATH]);
+    expect(await serverAccountItem.getValue()).toBeNull();
+  });
+
+  it('test_chrome_devices_never_read_consent', async () => {
+    const server = await signedIn();
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    expect(await devices()).toStrictEqual({ ok: true, devices: DEVICES });
+    expect(await revoke(OTHER_DEVICE)).toStrictEqual({ ok: true, signedOut: false });
+    expect(server.calls).toHaveLength(2);
+    expect(getAll).not.toHaveBeenCalled();
   });
 });

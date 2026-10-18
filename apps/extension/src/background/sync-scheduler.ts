@@ -23,7 +23,7 @@ import { type SyncOutcome, syncOnce } from './sync-client.ts';
  */
 
 export const SYNC_ALARM = 'ua-sync';
-/** Chrome's minimum alarm period. */
+/** Chrome's minimum alarm period (Firefox has none). */
 const ALARM_PERIOD_MINUTES = 0.5;
 const EDIT_DEBOUNCE_MS = 2_000;
 /** Worker start runs at once when the last sync is older than this. */
@@ -41,6 +41,7 @@ const PROBLEM_TEXT: Record<SyncProblem, (title: string) => string> = {
   clock: () => "This computer's date or time looks wrong, so sync is paused. Check the clock, then try again.",
   server: (t) => `${t} had a problem. Sync tries again soon.`,
   unavailable: (t) => `${t} doesn't offer sync.`,
+  consent: (t) => `unAlgorithm needs your permission to send your settings to ${t}.`,
 };
 
 interface Run {
@@ -128,7 +129,7 @@ async function activeSurface(): Promise<boolean> {
   const tabs = await browser.tabs.query({ url: FEED_TAB_URLS }).catch(() => []);
   if (tabs.length) return true;
   try {
-    // Chrome 116+ (the manifest's minimum is 130).
+    // Chrome 116+ and Firefox 127+ (the manifests' minimums are 130 and 147); Firefox's sidebar is a SIDE_PANEL.
     return (await browser.runtime.getContexts({ contextTypes: ['TAB', 'POPUP', 'SIDE_PANEL'] })).length > 0;
   } catch {
     return false;
@@ -161,6 +162,9 @@ async function longPollLoop(): Promise<void> {
       problems = 0;
       const empty = outcome.pulled === 0 && outcome.pushed === 0;
       if (longPoll && empty && Date.now() - startedAt < FAST_ANSWER_MS) await sleep(FAST_ANSWER_GAP_MS);
+    } else if (outcome.problem === 'consent') {
+      // Nothing changes until the person allows it in Settings, whose button syncs again; the alarm checks meanwhile.
+      return;
     } else if (!outcome.aborted) {
       await sleep(BACKOFF_MS[Math.min(problems, BACKOFF_MS.length - 1)] ?? 60_000);
       problems++;
@@ -261,6 +265,9 @@ export function initSync(): void {
   browser.alarms?.onAlarm.addListener((alarm) => {
     if (alarm.name === SYNC_ALARM) runSync().catch(log);
   });
+  // Firefox keeps alarms in memory only, and starts an event page when the browser starts only for an `onStartup`
+  // listener; Chrome may drop alarms on a restart too. The start is what counts: the check below brings the alarm back.
+  browser.runtime.onStartup.addListener(() => undefined);
 
   // A remote apply saves `known` before the clocks (CL3-19), so it leaves nothing to push and starts no run.
   settingsClocksItem.watch(() => {
@@ -276,7 +283,7 @@ export function initSync(): void {
   void (async () => {
     const st = await syncStateItem.getValue();
     if (!st.enabled) return;
-    // Chrome clears alarms when the extension updates and may on a browser restart.
+    // Chrome clears alarms when the extension updates and may on a browser restart; Firefox always does on a restart.
     if (browser.alarms && !(await browser.alarms.get(SYNC_ALARM))) await createAlarm();
     if (st.lastSyncAt === null || Date.now() - st.lastSyncAt > WAKE_STALE_MS) await runSync();
     else ensureLongPoll();

@@ -38,7 +38,7 @@ import { classifyBody, serverPost as post, postClassify } from './support/classi
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
 import { createPostgresTestDb, TEST_DATABASE_URL } from './support/postgres.ts';
-import { signInDevice, signInWeb } from './support/sign-in.ts';
+import { FIREFOX_EXTENSION_ID, FIREFOX_EXTENSION_ORIGIN, signInDevice, signInWeb } from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT, PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
@@ -683,6 +683,14 @@ describe('fixture through the app', { timeout: PGLITE_TIMEOUT }, () => {
       promoExpiresAt: null,
       starter: 'active',
     });
+    // Firefox reads the same balance from its extension page.
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID);
+    const fromFirefox = await t.app.request(CREDIT_BALANCE_PATH, {
+      headers: { Authorization: `Bearer ${firefox.access_token}`, Origin: FIREFOX_EXTENSION_ORIGIN },
+    });
+    expect(fromFirefox.status).toBe(200);
+    expect(fromFirefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(CreditBalanceSchema.parse(await fromFirefox.json()).balanceMicros).toBe(1_000_000);
 
     const account = await t.app.request(CREDIT_ACCOUNT_PATH, { headers: { Cookie: cookie } });
     expect(account.status).toBe(200);

@@ -3,7 +3,7 @@
  * address may then create an account. The server sends no email, so the page gives the admin the sentence to pass on:
  * it names the extension and this server's address, never the server's own name, so it is right on any server. Under it
  * a line for the admin: until store builds offer servers (docs/release.md, *Before a store build carries the Cloud
- * card*), the person needs a build that offers servers; the release that passes that gate removes it.
+ * card*), the person needs a build that offers servers; the release that passes that gate in every store removes it.
  * The pending invites come from the accounts list the page keeps, asked for again after each change.
  */
 import { type AdminUsers, InviteRequestSchema } from '@unalgorithm/protocol';
@@ -92,8 +92,7 @@ export function AdminInvites({ invites, reload, onSignedOut }: AdminInvitesProps
             {`Tell ${passOn}: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`}
           </p>
           <p className="ua-footnote">
-            Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with its
-            id in EXTENSION_IDS.
+            Until the store versions of unAlgorithm Feed offer servers, they need a build that does, with its id in EXTENSION_IDS.
           </p>
         </div>
       ) : null}

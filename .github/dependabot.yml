@@ -18,9 +18,16 @@ updates:
       # (`auth`) pins `better-auth` exactly, so the two must move together.
       auth:
         patterns: ['better-auth', '@better-auth/*', 'auth']
+      # What drives the e2e tests (Playwright in Chromium and Edge, Puppeteer in Firefox, axe for accessibility) moves in
+      # one PR, gated by the e2e jobs in all three browsers. puppeteer-core and @puppeteer/browsers are pinned exactly,
+      # and CI's Firefox is the release puppeteer-core is tested with (FIREFOX_VERSION in ci.yml): update that pin in the
+      # same PR.
+      browser-automation:
+        patterns: ['@playwright/test', 'puppeteer-core', '@puppeteer/browsers', 'axe-core', '@axe-core/playwright']
       dev-tooling:
         dependency-type: development
-        exclude-patterns: ['wxt', '@wxt-dev/*', '@types/react', '@types/react-dom', 'better-auth', '@better-auth/*', 'auth']
+        exclude-patterns: ['wxt', '@wxt-dev/*', '@types/react', '@types/react-dom', 'better-auth', '@better-auth/*', 'auth',
+          '@playwright/test', 'puppeteer-core', '@puppeteer/browsers', 'axe-core', '@axe-core/playwright']
         update-types: [minor, patch]
     labels: [dependencies]
 

@@ -11,7 +11,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { requireDevice } from '../src/auth/bearer.ts';
 import { REFUSED } from '../src/auth/web-session.ts';
 import { devices } from '../src/db/schema.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, postToken, signInDevice, signInWeb } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  postToken,
+  signInDevice,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -19,6 +28,7 @@ const TOM = 'tom@example.com';
 const ANA = 'ana@example.com';
 const WINDOWS = 'Chrome on Windows';
 const LINUX = 'Chrome on Linux';
+const FIREFOX = 'Firefox on Linux';
 /** A test-only route behind `requireDevice`, as CL1-10's tests mount it: whether a device's access token still works. */
 const ME = '/v1/test/me';
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server again.' };
@@ -124,6 +134,31 @@ describe('listing', { timeout: PGLITE_TIMEOUT }, () => {
     // The second device sees itself as the current one.
     const fromLinux = await listed(t, bearer(linux));
     expect(fromLinux.filter((d) => d.current).map((d) => d.id)).toEqual([linux.device_id]);
+  });
+
+  it('test_devices_list_from_firefox', async () => {
+    const t = await devicesApp();
+    const { windows, linux } = await tomsDevices(t);
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID, FIREFOX);
+
+    // Asked from a Firefox page with the device's token: readable there, and the same list Chrome's devices see.
+    const res = await list(t, { ...bearer(firefox), Origin: FIREFOX_EXTENSION_ORIGIN });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const text = await res.text();
+    const devicesListed = AccountDevicesResponseSchema.parse(JSON.parse(text)).devices;
+    // The asking device first: its request just used it.
+    expect(devicesListed[0]).toMatchObject({ id: firefox.device_id, name: FIREFOX, current: true });
+    expect(devicesListed.map((d) => `${d.name} ${d.current}`).sort()).toEqual(
+      [`${WINDOWS} false`, `${LINUX} false`, `${FIREFOX} true`].sort(),
+    );
+    // Names only: no extension id, whichever browser signed in.
+    for (const id of [FIREFOX_EXTENSION_ID, DEV_EXTENSION_ID]) expect(text).not.toContain(id);
+
+    // The Firefox device signs itself out from the list, from its own page.
+    await revoked(t, firefox.device_id, { ...bearer(firefox), Origin: FIREFOX_EXTENSION_ORIGIN });
+    await expectAuthRequired(await me(t, firefox));
+    expect((await listed(t, bearer(windows))).map((d) => d.id)).toEqual([windows.device_id, linux.device_id]);
   });
 
   it('test_devices_list_order', async () => {
@@ -255,6 +290,7 @@ describe('guards', { timeout: PGLITE_TIMEOUT }, () => {
       { Cookie: cookie },
       { Cookie: cookie, Origin: 'https://evil.example' },
       { Cookie: cookie, Origin: DEV_EXTENSION_ORIGIN },
+      { Cookie: cookie, Origin: FIREFOX_EXTENSION_ORIGIN },
     ];
     for (const headers of elsewhere) {
       const res = await revoke(t, linux.device_id, headers);

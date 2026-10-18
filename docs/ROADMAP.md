@@ -9,9 +9,14 @@ unAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
   AI: Chrome's on-device AI, your own key (Anthropic, OpenAI, Gemini, OpenRouter, Groq), local and self-hosted
   models; noise labels, relevance, More/Less like this.
 - **Next.** Facebook verified on live feeds, a right-click menu on posts, and French for Canada.
-- **Website and Chrome Web Store.** The product website at unalgorithmfeed.com: what unAlgorithm Feed does, how to
-  install it, the privacy policy, help and release notes. Then the Chrome Web Store release as unAlgorithm Feed by
-  HeitechSoft, with the listing and the extension's links pointing to the website.
+- **Website and stores.** The product website at unalgorithmfeed.com: what unAlgorithm Feed does, how to install it,
+  the privacy policy, help and release notes. Then the store releases as unAlgorithm Feed by HeitechSoft, on the
+  Chrome Web Store, Firefox Add-ons and Microsoft Edge Add-ons, with the listings and the extension's links pointing
+  to the website.
+- **Edge and Firefox (done).** Builds for Microsoft Edge and Firefox (desktop) with everything the Chrome build has,
+  unAlgorithm Cloud included: sign-in, sync, AI labels and credits, fact-check and UnEcho Chamber on a server, and the
+  devices list. In Firefox, Highlights is in the sidebar and there is no on-device AI; Edge's on-device AI is a preview
+  ([ADR 0008](adr/0008-firefox-and-edge.md)).
 
 ## Phase 2: unAlgorithm Cloud
 
@@ -34,7 +39,7 @@ unAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
 
 ## Phase 4: more places
 
-- Edge, Firefox and Safari builds; mobile through Safari on iOS and Firefox on Android.
+- A Safari build; mobile through Safari on iOS and Firefox on Android.
 - More sites (X, Threads, Reddit, Instagram, YouTube), more languages (French for Canada first).
 - Signed, data-only detection updates so layout fixes don't wait for store review.
 - The website in French, with an install page for each browser.

@@ -1,9 +1,10 @@
 /**
  * The HTTP rules every route depends on, fixed once: a request log that holds no bodies, query strings, headers or
- * addresses; the client address taken from exactly one proxy hop; and CORS that admits only the configured extensions.
+ * addresses; the client address taken from exactly one proxy hop; and CORS that answers extension pages only.
  */
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import { clientKind } from '@unalgorithm/protocol';
 import type { Context, MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import type { Config } from '../config.ts';
@@ -151,15 +152,26 @@ function socketAddress(c: Context): string | null {
   return getConnInfo(c).remote.address ?? null;
 }
 
+/** A Firefox extension page's origin: a UUID Firefox picks at random for each profile and install. */
+const MOZ_EXTENSION_ORIGIN = /^moz-extension:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /**
- * CORS for `/v1/*`: only `chrome-extension://<id>` origins of the configured extension ids are answered, for the
- * methods and headers the extension uses. No credentials: the extension sends bearer tokens, never cookies.
- * `Retry-After` is exposed: without that, a cross-origin fetch cannot read it and the extension could not wait as told.
+ * CORS for `/v1/*`, for the methods and headers the extension uses: `chrome-extension://<id>` for each configured
+ * Chrome and Edge id, and any `moz-extension://<uuid>` once a Firefox id is configured, since that UUID cannot be tied
+ * to an add-on id. No credentials: the extension sends bearer tokens, never cookies. `Retry-After` is exposed: without
+ * that, a cross-origin fetch cannot read it and the extension could not wait as told.
+ *
+ * CORS is not the access control here (ADR 0008). It never refuses a request; it only lets a browser page read the
+ * answer. Every `/v1` route needs a bearer token, a web session or a secret (a code and its verifier, a refresh
+ * token, a billing provider's signature); `Access-Control-Allow-Credentials` is never sent, so no other origin can
+ * read an answer to a session cookie; and session writes stay behind `ownPageOnly`. Sign-in itself is guarded by the
+ * listed client ids, the redirect bound to each id, and PKCE.
  */
 export function extensionCors(extensionIds: readonly string[]): MiddlewareHandler {
-  const allowed = new Set(extensionIds.map((id) => `chrome-extension://${id}`));
+  const allowed = new Set(extensionIds.filter((id) => clientKind(id) === 'chromium').map((id) => `chrome-extension://${id}`));
+  const firefox = extensionIds.some((id) => clientKind(id) === 'gecko');
   return cors({
-    origin: (origin) => (allowed.has(origin) ? origin : null),
+    origin: (origin) => (allowed.has(origin) || (firefox && MOZ_EXTENSION_ORIGIN.test(origin)) ? origin : null),
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['authorization', 'content-type'],
     exposeHeaders: ['Retry-After'],

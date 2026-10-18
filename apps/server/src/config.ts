@@ -1,7 +1,7 @@
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANTHROPIC_DEFAULT_MODEL } from '@unalgorithm/ai';
-import { ExtensionIdSchema } from '@unalgorithm/protocol';
+import { ClientIdSchema, DEV_CHROMIUM_ID, FIREFOX_ADDON_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
 import { FACTCHECK_MODELS, SEARCH_PROVIDERS, type SearchProviderId } from '@unalgorithm/research';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
@@ -98,6 +98,7 @@ export interface Config {
    * `billing` is `off`. The server neither reads nor checks them; the module does (`host.env`).
    */
   billingEnv: Readonly<Record<string, string>>;
+  /** The extensions that may sign in: Chrome and Edge ids and Firefox add-on ids (`ClientIdSchema`), as configured. */
   extensionIds: string[];
   /**
    * `allowlist`: only `SIGNUP_ALLOWLIST` addresses and invites may create an account (the default). `open`: every
@@ -207,8 +208,12 @@ export class ConfigError extends Error {
   }
 }
 
-/** The development key's extension id (ADR 0004). The store id joins it once the store assigns one. */
-const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/**
+ * `EXTENSION_IDS` when unset: every id this release knows (ADR 0008), the development key's Chrome and Edge id and
+ * both Firefox add-on ids. The Chrome Web Store and Edge Add-ons ids are added in a deployment's configuration once
+ * each store assigns them.
+ */
+const DEFAULT_EXTENSION_IDS: readonly string[] = [DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 /** INSTANCE_NAME and MAIL_FROM_NAME; the discovery document's `name` has the same limit. */
 const MAX_DISPLAY_NAME = 80;
@@ -333,9 +338,13 @@ export function loadConfig(env: Env = process.env): Config {
 
   // Who may use it
   const extensionIdsValue = read('EXTENSION_IDS');
-  const extensionIds = extensionIdsValue ? list(extensionIdsValue) : [DEV_EXTENSION_ID];
-  if (!extensionIds.length || !extensionIds.every((id) => ExtensionIdSchema.safeParse(id).success)) {
-    bad('EXTENSION_IDS', 'must be a comma-separated list of extension ids (32 letters a to p)');
+  // Not lower-cased, unlike the allowlist: a Firefox id's redirect address is the hash of the id exactly as written.
+  const extensionIds = extensionIdsValue ? list(extensionIdsValue) : [...DEFAULT_EXTENSION_IDS];
+  if (!extensionIds.length || !extensionIds.every((id) => ClientIdSchema.safeParse(id).success)) {
+    bad(
+      'EXTENSION_IDS',
+      'must be a comma-separated list of extension ids (Chrome and Edge: 32 letters a to p; Firefox: name@domain or {uuid}, up to 80 characters)',
+    );
   }
   const signup = oneOf('SIGNUP', ['allowlist', 'open'] as const, 'allowlist');
   const allowlistValue = read('SIGNUP_ALLOWLIST');

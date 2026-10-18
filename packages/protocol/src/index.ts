@@ -12,6 +12,7 @@ export * from './platform.ts';
 export * from './prices.ts';
 export * from './schedule-edits.ts';
 export * from './server.ts';
+export * from './sha1.ts';
 export * from './site.ts';
 export * from './sync.ts';
 export * from './usage.ts';

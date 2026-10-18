@@ -68,6 +68,17 @@ const TOAST_MS = 6000;
 const FACTCHECK_STALE = "Couldn't reach unAlgorithm. Reload the page.";
 const FACTCHECK_TOOLBAR_HINT = 'Open unAlgorithm from the toolbar to see it.';
 
+/**
+ * What a done fact-check or comparison says when the side panel didn't open. Chrome and Edge: their toolbar popup opens
+ * it. Firefox can't open its sidebar from a click in the page (ADR 0008), so it names the way in: the popup's
+ * Open Highlights button, or the sidebar's keyboard shortcut when the person has one.
+ */
+export function panelHint(firefox: boolean, shortcut?: string): string {
+  if (!firefox) return FACTCHECK_TOOLBAR_HINT;
+  const popup = 'open unAlgorithm from the toolbar and choose Open Highlights';
+  return shortcut ? `Press ${shortcut} to see it, or ${popup}.` : `To see it, ${popup}.`;
+}
+
 export interface Runtime {
   settings: Settings;
   device: Device;
@@ -110,8 +121,10 @@ export interface Bridge {
   report(): void;
   /** Fact-check one post on the person's own key (P3-06). Only ever called after the person confirmed the price. */
   factcheck(key: PostKey, input: Omit<PostForAI, 'ref'>): Promise<BgResponses['factcheck']>;
-  /** True when the side panel opened (P3-06 `openFactcheck`); false when Chrome refused, or on a stale context. */
+  /** True when the side panel opened (P3-06 `openFactcheck`); false when it didn't, or on a stale context. */
   openFactcheck(): Promise<boolean>;
+  /** What to say when it didn't (`panelHint`, which knows the browser); Chrome's toolbar hint when absent. */
+  panelHint?(): string;
   /**
    * UnEcho Chamber for one post's shared link (P3-38). Only the link (URL and link-card title), the platform and
    * the audience leave the content script, never post text; only ever called after the person confirmed the price.
@@ -794,7 +807,8 @@ export class FeedController {
       case 'open': {
         // Both jobs show their result in the same side panel.
         const opened = await this.bridge.openFactcheck().catch(() => false);
-        if (!opened && e[job]?.state === 'done') e[job] = { state: 'done', message: FACTCHECK_TOOLBAR_HINT };
+        const hint = this.bridge.panelHint?.() ?? FACTCHECK_TOOLBAR_HINT;
+        if (!opened && e[job]?.state === 'done') e[job] = { state: 'done', message: hint };
         break;
       }
       case 'confirm': {

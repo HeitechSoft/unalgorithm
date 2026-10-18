@@ -1,18 +1,20 @@
 import type { PlatformAdapter } from '@unalgorithm/platforms';
 import { SOURCE_REPO } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
+import { browserVersion } from '../lib/browser-kind.ts';
 import type { FeedController } from './feed-controller.ts';
 
 /**
- * A prefilled GitHub issue for a detection problem. Contains only versions, counts and detector names: never post
- * text, names, ids or URLs. The user reviews it and submits it themselves.
+ * A prefilled GitHub issue for a detection problem. Contains only versions (the browser's name and major version, e.g.
+ * "Firefox 147"), counts and detector names: never post text, names, ids or URLs. The user reviews it and submits it
+ * themselves.
  */
 export function reportProblemUrl(adapter: PlatformAdapter, controller: FeedController): string {
   const d = controller.diagnostics();
   const diagnostics = {
     extension: browser.runtime.getManifest().version,
     adapter: adapter.version,
-    chrome: navigator.userAgent.match(/Chrome\/(\d+)/)?.[1] ?? 'unknown',
+    browser: browserVersion(navigator.userAgent),
     lang: (document.documentElement.lang || 'unknown').slice(0, 8),
     health: controller.getHealth(),
     counts: d.counts,

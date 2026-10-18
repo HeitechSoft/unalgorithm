@@ -55,6 +55,7 @@ import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
+import { browserKind, browserLabel } from '../../lib/browser-kind.ts';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { listName, namedListProblems, storedOfficialList } from '../../lib/outlets.ts';
@@ -200,7 +201,7 @@ export function PlatformPane({
         {!aiOn ? (
           <ListRow
             title="Set up AI"
-            subtitle="On-device, your own key, or a local model"
+            subtitle={browserKind() === 'firefox' ? 'Your own key or a local model' : 'On-device, your own key, or a local model'}
             accessory="chevron"
             onSelect={() => (location.hash = '#/ai')}
           />
@@ -710,7 +711,10 @@ export function AiPane({
           }
         />
       </ListGroup>
-      <ListGroup header="Daily limit" footer="Applies to sources that cost money. Local and on-device AI are unlimited.">
+      <ListGroup
+        header="Daily limit"
+        footer={`Applies to sources that cost money. ${browserKind() === 'firefox' ? 'Local AI is' : 'Local and on-device AI are'} unlimited.`}
+      >
         <ListRow
           title="Posts per day"
           subtitle={
@@ -916,7 +920,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   const flow: { to: string | null; text: string; stays?: string } = !src
     ? { to: null, text: 'Rules run in your browser.', stays: 'Nothing leaves your computer.' }
     : src.kind === 'on-device'
-      ? { to: null, text: "Chrome's built-in AI runs on this computer.", stays: 'Nothing leaves it.' }
+      ? { to: null, text: `${browserLabel(browserKind())}'s built-in AI runs on this computer.`, stays: 'Nothing leaves it.' }
       : src.kind === 'openai-compatible'
         ? {
             to: new URL(src.baseUrl).host,

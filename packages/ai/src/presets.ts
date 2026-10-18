@@ -94,7 +94,7 @@ export const COMPAT_PRESET_INFO: Record<CompatPreset, CompatPresetInfo> = {
     baseUrl: 'http://localhost:11434/v1',
     auth: 'none',
     local: true,
-    help: 'If the test is refused, start Ollama with OLLAMA_ORIGINS=chrome-extension://* so it accepts requests from extensions.',
+    help: 'If the test is refused, start Ollama with OLLAMA_ORIGINS=chrome-extension://*,moz-extension://* so it accepts requests from extensions.',
   },
   lmstudio: {
     id: 'lmstudio',

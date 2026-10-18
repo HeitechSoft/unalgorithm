@@ -37,10 +37,13 @@ export function classifyBody(posts: PostForAI[], profile: InterestProfile = TEST
   return { v: 1, posts, profile, profileHash: 'h1', locale: 'en-CA', ...extra };
 }
 
-/** `POST /v1/classify` from the extension with this access token, or without one when `token` is null. */
-export function postClassify(app: App, body: unknown, token: string | null): Promise<Response> {
+/**
+ * `POST /v1/classify` from the extension with this access token, or without one when `token` is null. `origin` is the
+ * extension page's: Chrome's development build unless a test sends Firefox's.
+ */
+export function postClassify(app: App, body: unknown, token: string | null, origin = DEV_EXTENSION_ORIGIN): Promise<Response> {
   return postJson(app, CLASSIFY_PATH, body, {
-    Origin: DEV_EXTENSION_ORIGIN,
+    Origin: origin,
     ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
   });
 }

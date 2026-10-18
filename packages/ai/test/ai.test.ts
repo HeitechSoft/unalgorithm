@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AIError,
   anthropicClient,
+  COMPAT_PRESET_INFO,
   classifyPosts,
   describeError,
   detectProvider,
@@ -467,13 +468,26 @@ describe('error messages', () => {
     }
   });
 
+  it('test_ollama_origins_text_covers_every_browser', () => {
+    // Chrome and Edge send chrome-extension://<id>; Firefox sends moz-extension://<a random UUID per install>, so only
+    // the wildcard works there. The shared text names no browser.
+    const origins = 'OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*';
+    expect(describeError('origin-blocked')).toBe(
+      `The local server refused the request. For Ollama, set ${origins} and restart it.`,
+    );
+    expect(COMPAT_PRESET_INFO.ollama.help).toBe(
+      `If the test is refused, start Ollama with ${origins} so it accepts requests from extensions.`,
+    );
+    for (const code of AI_ERROR_CODES) expect(describeError(code, 'Ollama')).not.toMatch(/\bChrome\b|\bFirefox\b|\bEdge\b/);
+  });
+
   it('test_insufficient_credits_text', () => {
     // R27: at a zero balance AI pauses, and the text says how to go on. It names only the server it is given.
     expect(describeError('insufficient-credits', 'unAlgorithm Cloud')).toBe(
-      'Your unAlgorithm Cloud balance is empty. Add credit, or switch to on-device or your own key.',
+      'Your unAlgorithm Cloud balance is empty. Add credit, or switch to your own key, or to on-device AI where your browser offers it.',
     );
     expect(describeError('insufficient-credits')).toBe(
-      'Your balance on this AI server is empty. Add credit, or switch to on-device or your own key.',
+      'Your balance on this AI server is empty. Add credit, or switch to your own key, or to on-device AI where your browser offers it.',
     );
   });
 

@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRoute } from '@hono/zod-openapi';
 import { AIError, describeError } from '@unalgorithm/ai';
-import { AI_ERROR_CODES, type AIErrorCode, SERVER_INFO_PATH, ServerErrorSchema, ServerInfoSchema } from '@unalgorithm/protocol';
+import {
+  AI_ERROR_CODES,
+  type AIErrorCode,
+  FIREFOX_ADDON_ID,
+  SERVER_INFO_PATH,
+  ServerErrorSchema,
+  ServerInfoSchema,
+} from '@unalgorithm/protocol';
 import { HTTPException } from 'hono/http-exception';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -16,7 +23,13 @@ import { getClientIp } from '../src/http/middleware.ts';
 import { startServer } from '../src/index.ts';
 import { createTestDb } from './support/db.ts';
 import { captureLog } from './support/log.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, SEND_CODE } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  SEND_CODE,
+} from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT, PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
@@ -78,7 +91,12 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
       source: config.sourceUrl,
       billing: false,
       capabilities: { classify: true, sync: true, factcheck: false, perspectives: false },
-      auth: { methods: ['email-otp', 'passkey'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
+      auth: {
+        methods: ['email-otp', 'passkey'],
+        authorizePath: '/authorize',
+        tokenPath: '/v1/auth/token',
+        clients: ['chromium', 'gecko'],
+      },
       limits: { maxPostsPerRequest: 12 },
     });
 
@@ -86,6 +104,22 @@ describe('health and discovery', { timeout: PGLITE_TIMEOUT }, () => {
     const billed = await testApp({ config, billing: { ...noopBilling, id: 'fake', advertised: true } });
     const billedDoc = ServerInfoSchema.parse(await (await billed.app.request(SERVER_INFO_PATH)).json());
     expect(billedDoc.billing).toBe(true);
+  });
+
+  it('test_well_known_lists_client_kinds', async () => {
+    // The browsers whose extension ids EXTENSION_IDS lists, each once, so Firefox can tell a server that takes none of
+    // its ids before it opens the sign-in window.
+    const clients = async (ids: string) => {
+      const t = await testApp({ config: testConfig({ EXTENSION_IDS: ids }) });
+      const res = await t.app.request(SERVER_INFO_PATH);
+      const raw = (await res.json()) as { auth: { clients?: unknown } };
+      expect(ServerInfoSchema.parse(raw).auth.clients).toEqual(raw.auth.clients);
+      return raw.auth.clients;
+    };
+    expect(await clients(`${DEV_EXTENSION_ID},${'b'.repeat(32)}`)).toEqual(['chromium']);
+    expect(await clients(`${FIREFOX_EXTENSION_ID},${FIREFOX_ADDON_ID}`)).toEqual(['gecko']);
+    expect(await clients('{daf44bf7-a45e-4450-979c-91cf07434c3d}')).toEqual(['gecko']);
+    expect(await clients(`${FIREFOX_ADDON_ID},${DEV_EXTENSION_ID}`)).toEqual(['chromium', 'gecko']);
   });
 
   it('test_well_known_name_defaults_to_host', async () => {
@@ -149,6 +183,36 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
       expect((await preflight(origin)).headers.get('access-control-allow-origin')).toBeNull();
     }
 
+    // Firefox: the default list has Firefox ids, so a Firefox extension page's origin is answered the same way. Its
+    // UUID is random per install, so any well-formed one is.
+    const firefox = await preflight(FIREFOX_EXTENSION_ORIGIN);
+    expect(firefox.status).toBe(204);
+    expect(firefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(firefox.headers.get('access-control-allow-methods')).toBe('GET,POST,OPTIONS');
+    expect(firefox.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+    expect(firefox.headers.get('access-control-allow-credentials')).toBeNull();
+    const another = `moz-extension://${crypto.randomUUID()}`;
+    expect((await preflight(another)).headers.get('access-control-allow-origin')).toBe(another);
+    // Only the exact form Firefox sends: lower-case hex, no braces, no path, port or other host.
+    const uuid = FIREFOX_EXTENSION_ORIGIN.slice('moz-extension://'.length);
+    for (const origin of [
+      `moz-extension://${uuid.toUpperCase()}`,
+      `moz-extension://{${uuid}}`,
+      `${FIREFOX_EXTENSION_ORIGIN}/`,
+      `${FIREFOX_EXTENSION_ORIGIN}/popup.html`,
+      `${FIREFOX_EXTENSION_ORIGIN}:443`,
+      `${FIREFOX_EXTENSION_ORIGIN}.evil.example`,
+      `moz-extension://${uuid.slice(0, -1)}`,
+      `moz-extension://${uuid.replaceAll('-', '')}`,
+      `moz-extension://${FIREFOX_EXTENSION_ID}`,
+      `chrome-extension://${uuid}`,
+      `https://${uuid}`,
+      'moz-extension://',
+      'null',
+    ]) {
+      expect((await preflight(origin)).headers.get('access-control-allow-origin'), origin).toBeNull();
+    }
+
     // Actual responses carry the header too, error bodies included, so the extension can read them.
     const notFound = await t.app.request('/v1/anything', { headers: { Origin: DEV_EXTENSION_ORIGIN } });
     expect(notFound.status).toBe(404);
@@ -163,6 +227,14 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
     expect(
       (await t.app.request('/v1/limited', { headers: { Origin: OTHER_ORIGIN } })).headers.get('access-control-allow-origin'),
     ).toBeNull();
+    // The same for a Firefox page.
+    const notFoundInFirefox = await t.app.request('/v1/anything', { headers: { Origin: FIREFOX_EXTENSION_ORIGIN } });
+    expect(notFoundInFirefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const limitedInFirefox = await t.app.request('/v1/limited', { headers: { Origin: FIREFOX_EXTENSION_ORIGIN } });
+    expect(limitedInFirefox.status).toBe(429);
+    expect(limitedInFirefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(limitedInFirefox.headers.get('access-control-expose-headers')).toBe('Retry-After');
+    expect(limitedInFirefox.headers.get('access-control-allow-credentials')).toBeNull();
 
     // The allowlist is the configured one: a second id is admitted once it is listed.
     const both = await testApp({ config: testConfig({ EXTENSION_IDS: `${DEV_EXTENSION_ID},${'b'.repeat(32)}` }) });
@@ -171,6 +243,28 @@ describe('CORS', { timeout: PGLITE_TIMEOUT }, () => {
       headers: { Origin: OTHER_ORIGIN, 'Access-Control-Request-Method': 'POST' },
     });
     expect(other.headers.get('access-control-allow-origin')).toBe(OTHER_ORIGIN);
+  });
+
+  it('test_cors_firefox_origins_follow_configured_ids', async () => {
+    const answered = async (ids: string, origin: string) => {
+      const t = await testApp({ config: testConfig({ EXTENSION_IDS: ids }) });
+      const res = await t.app.request('/v1/anything', {
+        method: 'OPTIONS',
+        headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' },
+      });
+      expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+      return res.headers.get('access-control-allow-origin') === origin;
+    };
+
+    // No Firefox id listed: no Firefox page is answered, which is how servers before Firefox behaved.
+    expect(await answered(DEV_EXTENSION_ID, FIREFOX_EXTENSION_ORIGIN)).toBe(false);
+    expect(await answered(DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN)).toBe(true);
+    // Firefox ids only: Firefox pages are, Chrome's development build is not.
+    expect(await answered(FIREFOX_ADDON_ID, FIREFOX_EXTENSION_ORIGIN)).toBe(true);
+    expect(await answered(FIREFOX_ADDON_ID, DEV_EXTENSION_ORIGIN)).toBe(false);
+    expect(await answered('{daf44bf7-a45e-4450-979c-91cf07434c3d}', FIREFOX_EXTENSION_ORIGIN)).toBe(true);
+    // A Firefox id never stands for a `chrome-extension://` origin of the same text.
+    expect(await answered(FIREFOX_ADDON_ID, `chrome-extension://${FIREFOX_ADDON_ID}`)).toBe(false);
   });
 });
 
@@ -288,7 +382,7 @@ describe('errors', { timeout: PGLITE_TIMEOUT }, () => {
     // The two codes whose text used to name the hosted service now name this server.
     expect(describeError('auth-required', 'My Server')).toBe('Sign in to My Server again.');
     expect(describeError('insufficient-credits', 'My Server')).toBe(
-      'Your My Server balance is empty. Add credit, or switch to on-device or your own key.',
+      'Your My Server balance is empty. Add credit, or switch to your own key, or to on-device AI where your browser offers it.',
     );
   });
 

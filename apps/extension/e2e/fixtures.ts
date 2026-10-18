@@ -17,7 +17,12 @@ import {
 } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const EXTENSION_PATH = resolve(here, '../.output/chrome-mv3-e2e');
+/** The Chromium browsers the Playwright projects load the extension into (Firefox has its own driver, `firefox/`). */
+export type ExtensionBrowser = 'chromium' | 'edge';
+/** The e2e build each browser loads: `wxt build --mode e2e` and `wxt build -b edge --mode e2e`. */
+export function extensionPath(browser: ExtensionBrowser): string {
+  return resolve(here, `../.output/${browser === 'edge' ? 'edge' : 'chrome'}-mv3-e2e`);
+}
 const devKey = JSON.parse(readFileSync(resolve(here, '../dev-key.json'), 'utf8')) as { id: string };
 
 /** A LinkedIn-like page built from anonymized fixtures, with just enough styling to look like cards. */
@@ -45,16 +50,45 @@ export function linkedinShell(scheme: 'light' | 'dark' = 'light'): string {
 </style></head><body>${cards}</body></html>`;
 }
 
+const VIEWPORT = { width: 1280, height: 860 };
+
 /**
- * A persistent context on a temporary profile with the e2e build of the extension loaded. No real network at all:
- * every request other than the extension's own is aborted unless a test routes it.
+ * A persistent context on a temporary profile with the browser's e2e build of the extension loaded. No real network at
+ * all: every request other than the extension's own is aborted unless a test routes it.
+ *
+ * Chromium is Playwright's own unless `UA_CHROMIUM` names another Chromium binary; it loads the build with
+ * `--load-extension`. Edge is the installed Microsoft Edge (Playwright's `msedge` channel) unless `UA_EDGE` names a
+ * binary. Branded Edge ignores `--load-extension`, so the build is loaded over the DevTools pipe Playwright already
+ * holds (`Extensions.loadUnpacked`), which needs `--enable-unsafe-extension-debugging` and Playwright's default
+ * `--disable-extensions` left out. The dev key gives the same extension id either way.
  */
-export async function launchExtensionContext(): Promise<BrowserContext> {
-  const context = await chromium.launchPersistentContext('', {
-    channel: 'chromium',
-    viewport: { width: 1280, height: 860 },
-    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
-  });
+export async function launchExtensionContext(browser: ExtensionBrowser = 'chromium'): Promise<BrowserContext> {
+  const path = extensionPath(browser);
+  const context =
+    browser === 'edge'
+      ? await chromium.launchPersistentContext('', {
+          ...(process.env.UA_EDGE ? { executablePath: process.env.UA_EDGE } : { channel: 'msedge' }),
+          viewport: VIEWPORT,
+          ignoreDefaultArgs: ['--disable-extensions'],
+          args: ['--enable-unsafe-extension-debugging'],
+        })
+      : await chromium.launchPersistentContext('', {
+          ...(process.env.UA_CHROMIUM ? { executablePath: process.env.UA_CHROMIUM } : { channel: 'chromium' }),
+          viewport: VIEWPORT,
+          args: [`--disable-extensions-except=${path}`, `--load-extension=${path}`],
+        });
+  if (browser === 'edge') {
+    try {
+      const session = await context.browser()?.newBrowserCDPSession();
+      if (!session) throw new Error('Edge gave no DevTools session to load the extension through.');
+      const { id } = (await session.send('Extensions.loadUnpacked', { path })) as { id: string };
+      if (id !== devKey.id) throw new Error(`unexpected extension id ${id}`);
+      await session.detach();
+    } catch (err) {
+      await context.close();
+      throw err;
+    }
+  }
   await context.route('**/*', (route) => {
     const url = route.request().url();
     if (url.startsWith('chrome-extension://') || url.startsWith('data:')) return route.continue();
@@ -82,14 +116,20 @@ export async function linkedinFeed(context: BrowserContext, scheme: 'light' | 'd
   return page;
 }
 
-export const test = base.extend<{
-  context: BrowserContext;
-  extensionId: string;
-  feed: (scheme?: 'light' | 'dark') => Promise<Page>;
-}>({
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture signature
-  context: async ({}, use) => {
-    const context = await launchExtensionContext();
+export const test = base.extend<
+  {
+    context: BrowserContext;
+    extensionId: string;
+    feed: (scheme?: 'light' | 'dark') => Promise<Page>;
+  },
+  {
+    /** The project's browser (`playwright.config.ts`); a worker fixture, so `beforeAll` can launch it too. */
+    extensionBrowser: ExtensionBrowser;
+  }
+>({
+  extensionBrowser: ['chromium', { option: true, scope: 'worker' }],
+  context: async ({ extensionBrowser }, use) => {
+    const context = await launchExtensionContext(extensionBrowser);
     await use(context);
     await context.close();
   },

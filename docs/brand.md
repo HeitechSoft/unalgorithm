@@ -4,7 +4,7 @@
 
 | Name | Use it for | Where |
 |---|---|---|
-| **unAlgorithm Feed** | The product's full name | Chrome Web Store title and the extension's name in Chrome, the website's title, release titles, legal documents and press. The first mention in any document |
+| **unAlgorithm Feed** | The product's full name | The store title on the Chrome Web Store, Firefox Add-ons and Microsoft Edge Add-ons and the extension's name in the browser, the website's title, release titles, legal documents and press. The first mention in any document |
 | **unAlgorithm** | Shorthand | Everywhere inside the extension (popup, toolbar tooltip, onboarding, settings, in-feed labels) and in docs after the first mention |
 | **unAlgo** | Informal short form | Social posts, hashtags, tight headlines, conversation |
 | **by HeitechSoft** | Byline | Store listing, website header and footer, README, onboarding footer, About in Settings |
@@ -17,7 +17,7 @@
   "Un-Algorithm". The u stays lowercase at the start of a sentence, a heading or a title too.
 - Lowercase `unalgorithm` only where the medium requires it: domains, URLs, package names, file names and code
   identifiers. These stay `unalgorithm` (`@unalgorithm/*`, `github.com/HeitechSoft/unalgorithm`,
-  `unalgorithm-<version>-chrome.zip`).
+  `unalgorithm-<version>-chrome.zip` and the release's other files).
 - In store and website copy, open with the full name: "unAlgorithm Feed by HeitechSoft". After that, "unAlgorithm"
   is fine.
 - Plain "unAlgorithm" is never the store title or a page title on its own, and "unAlgo" never stands in for the
@@ -51,7 +51,7 @@ Writing them:
 
 | Domain | Role |
 |---|---|
-| `unalgorithmfeed.com` | The website: what unAlgorithm Feed does, how to install it, the privacy policy, help and release notes. `www.` redirects to it |
+| `unalgorithmfeed.com` | The website: what unAlgorithm Feed does, how to install it, the privacy policy, help and release notes. `www.` redirects to it. Also the domain of the Firefox add-on ids, `feed@unalgorithmfeed.com` (Firefox Add-ons) and `feed-dev@unalgorithmfeed.com` (development, test and GitHub sideload builds), which are ids only, never email addresses |
 | `unalgorithm.app` | The app's domain (unAlgorithm Cloud). The website doesn't serve or redirect it |
 | `cloud.unalgorithm.app` | unAlgorithm Cloud (invite-only beta until the public launch) |
 

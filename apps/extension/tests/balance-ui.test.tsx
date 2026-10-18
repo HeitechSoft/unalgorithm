@@ -40,7 +40,7 @@ const YESTERDAY = new Date(2026, 9, 13, 10);
 const FEED_TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 0 };
 const FULL_TEXT = '$0.97 left · about 6,600 posts';
 const LOW_TEXT = '$0.15 left · about 1,000 posts';
-const PAUSED_ENDING = 'Add credit, or switch to on-device or your own key.';
+const PAUSED_ENDING = 'Add credit, or switch to your own key, or to on-device AI where your browser offers it.';
 const LOW_TITLE = 'Your balance is low';
 const FEED_DIRS = [
   'apps/extension/src/content',

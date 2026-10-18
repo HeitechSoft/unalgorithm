@@ -42,6 +42,8 @@ export function modelLabel(model: string): string {
     'claude-haiku-5-5': 'Claude Haiku 5.5',
     'claude-sonnet-5-5': 'Claude Sonnet 5.5',
     'claude-opus-5-5': 'Claude Opus 5.5',
+    // The on-device model's id in every browser that has one (and in cache keys), so it stays as it is.
+    'chrome-built-in': 'Built-in AI',
   };
   return known[model] ?? model;
 }

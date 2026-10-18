@@ -1,7 +1,7 @@
 import { AIError } from '../errors.ts';
 import type { AIClient, StructuredRequest, StructuredResult } from '../types.ts';
 
-/** Minimal typings for Chrome's built-in Prompt API (Gemini Nano). */
+/** Minimal typings for the browser's built-in Prompt API (`LanguageModel`: Chrome's Gemini Nano, Edge's preview). */
 interface LanguageModelSession {
   prompt(input: string, opts?: { responseConstraint?: unknown; signal?: AbortSignal }): Promise<string>;
   clone(opts?: { signal?: AbortSignal }): Promise<LanguageModelSession>;
@@ -41,7 +41,7 @@ export async function onDeviceAvailability(): Promise<OnDeviceAvailability> {
 }
 
 /**
- * Start (or finish) the one-time model download. Must be called from a click: Chrome requires a user gesture.
+ * Start (or finish) the one-time model download. Must be called from a click: the browser requires a user gesture.
  * `onProgress` receives 0..1.
  */
 export async function downloadOnDeviceModel(onProgress: (p: number) => void): Promise<void> {
@@ -57,7 +57,7 @@ export async function downloadOnDeviceModel(onProgress: (p: number) => void): Pr
 }
 
 /**
- * Chrome's on-device model: free, private, offline. One base session per system prompt; each batch runs in a
+ * The browser's on-device model: free, private, offline. One base session per system prompt; each batch runs in a
  * clone, which is the on-device equivalent of prompt caching. Calls run one at a time.
  */
 export function onDeviceClient(): AIClient {
@@ -114,7 +114,7 @@ export function onDeviceClient(): AIClient {
       return next;
     },
     async listModels() {
-      return [{ id: 'chrome-built-in', name: 'Chrome built-in AI (Gemini Nano)' }];
+      return [{ id: 'chrome-built-in', name: 'Built-in AI' }];
     },
   };
 }

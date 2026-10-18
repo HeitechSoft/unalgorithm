@@ -5,7 +5,7 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 ## Principles
 
 1. **Rules only means no network.** The extension's required host permissions are only linkedin.com and
-   facebook.com. With AI off, the service worker makes no requests. The one request that doesn't depend on the AI
+   facebook.com. With AI off, the background makes no requests. The one request that doesn't depend on the AI
    source is unAlgorithm Cloud's source list, and only while UnEcho Chamber is on
    ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)).
 2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose.
@@ -52,7 +52,7 @@ and the E2E AI test checks the body received by the mock server.
 | Source | Destination | Who sees it |
 |---|---|---|
 | Rules only | — | — |
-| On this device | Chrome's built-in model, in process | Nobody |
+| On this device | The browser's built-in model (Chrome; Edge's preview builds), in process. Firefox has none | Nobody |
 | Local or self-hosted model (OpenAI-compatible) | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
 | Own key | The provider's API, directly from the browser | The provider, under their terms. OpenAI calls send `store: false` |
 | An unAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
@@ -62,6 +62,37 @@ For both kinds of unAlgorithm server, Facebook posts that aren't public are neve
 (`serverMayReceive`), and a server declines any that reach it without calling a model. The extension names each server
 by its address; only `https://cloud.unalgorithm.app` is called unAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
+
+**Firefox's data-collection consent.** The Firefox build declares `data_collection_permissions` with `required:
+['none']` and, as optional, only the types its code uses (ADR 0008): `['websiteContent', 'personalCommunications']` in
+store builds without the server card, and those two plus `'personallyIdentifyingInfo'`, `'authenticationInfo'` and
+`'technicalAndInteraction'` in builds with it (`manifestFor` in `apps/extension/wxt.config.ts`;
+`apps/extension/tests/manifest.test.ts` ties each build's list to the sets below). Every place post text, settings or
+account details go (all but on-device AI) needs consent before anything is sent there, one on `localhost`, `127.0.0.1`
+or `[::1]` included: a local server is outside the browser, and an unAlgorithm server passes posts on to the AI its
+operator configured (table above). The source list download carries none of these and needs none. `POST_DATA`
+(`websiteContent` and `personalCommunications`: post text, which is other people's social media posts) covers an own-key
+provider, a model server and a web search service; `CLOUD_DATA` (post text, plus `personallyIdentifyingInfo` for the
+people sync names and `authenticationInfo` for the account and this device's sign-in) covers an unAlgorithm server
+(`sourceConsent` in `apps/extension/src/lib/data-consent.ts`). The consent is requested in the same click and the same
+prompt as the host permission, or, for a server, in the click that signs in, turns it on, turns on sync or allows it
+again. The background checks it again before every send: `missingAccess` in `background/ai.ts` for classify, model
+lists, tests, fact-check and UnEcho Chamber; the search key in `background/search-key.ts`; for a server, `signIn` in
+`background/server-auth.ts`, `classifyViaServer` in `background/server-source.ts` and `serverRequest` in
+`background/server-http.ts`, through which the balance (checked first in `background/server-balance.ts` too, so none is
+shown), the devices list and revoking a device, sync (its `consent` problem) and server jobs go, each refused before the
+token is read. So consent withdrawn in Firefox's add-ons page stops the sending like a removed host permission, and the
+server card, the devices list and sync offer *Allow*. Of what carries the person's data or this device's sign-in, only
+signing out (`signOut`, which ends the device on the server) goes without it. Two anonymous reads (no cookie, token or
+user data) need no consent: the server's discovery document (`discoverServer` in `background/server-auth.ts`), read
+whenever the extension checks what a server offers, and the download of unAlgorithm Cloud's source list
+(`background/official-list.ts`, [below](#unecho-chambers-source-lists)), a request to the Cloud whether or not the
+person signed in to it. `technicalAndInteraction` (`DEVICE_NAME_DATA`) is never requested and gates nothing, as
+Mozilla's add-on policies require: Firefox's install prompt offers it, on unless the person turns it off, and
+its add-ons page changes it, and it decides only whether the sign-in sends the device name
+(`background/server-auth.ts`). Chrome and Edge have no such consent, and the checks pass there without asking. The
+loopback addresses keep one rule of their own: tokens may go to them over `http` (`isTrustedServerOrigin` in
+`apps/extension/src/lib/server-label.ts`), since the request never crosses the network.
 
 ### Fact-check
 
@@ -198,10 +229,11 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   expires and when it was used (`setup_tokens`). A used link's row is kept until the account with that address is
   deleted; an unused one until a new link replaces it. The link itself travels in the URL fragment, which browsers never
   send to a server.
-- **Devices:** one row per signed-in copy of the extension: its extension id, the short name the extension gave itself
-  at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
-  when and why it was signed out or revoked: signed out from the extension, a refresh token used twice, or revoked
-  from the account page (`devices`).
+- **Devices:** one row per signed-in copy of the extension: its extension id (a Chrome or Edge id, or a Firefox add-on
+  id), the short name the extension gave itself at sign-in (such as "Chrome on Windows" or "Firefox on Linux", from the
+  browser's brand names or Firefox's `runtime.getBrowserInfo()`, never read from request headers), when it signed in
+  and was last used, and when and why it was signed out or revoked: signed out from the extension, a refresh token
+  used twice, or revoked from the account page (`devices`).
 - **Passkeys:** for each passkey the person added on the account page, its public key, its credential id, the
   authenticator model's id (AAGUID), its sign count, a label and when it was added (`passkey`). Never a private key or
   biometric data: they never leave the person's device.
@@ -377,9 +409,12 @@ removes the account from the extension.
 
 ## Diagnostics
 
-"Report a problem" builds a GitHub issue URL with at most 2 KB of JSON: versions, Chrome major version, page
-language, health status, counts, detector hit counts and landmark counts. No text, names, ids or URLs. The user sees
-the issue before submitting it.
+"Report a problem" builds a GitHub issue URL with at most 2 KB of JSON: versions, the browser's name and major version
+(`browser`, such as "Firefox 147" or "Edge 141", from the user agent string), page language, health status, counts,
+detector hit counts and landmark counts. No text, names, ids or URLs. The user sees the issue before submitting it.
+The extension sends nothing itself: the browser opens the form, and nothing is filed or reaches HeitechSoft until the
+user submits it on GitHub, so the Firefox build declares no data type for it (store-listing-firefox.md, *Data
+collection*).
 
 A finished fact-check or UnEcho Chamber result in the side panel links the correction form (P3-69, decisions D88,
 D107): `correctionUrl` sets `template=correction.yml` and four fields only, `feature` (the feature's name), `version`

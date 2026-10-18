@@ -20,12 +20,20 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup } from '../../components/AiSetup.tsx';
+import { type BrowserKind, browserKind } from '../../lib/browser-kind.ts';
 import { FEED_URLS, useDevice, useSettings } from '../../lib/hooks.ts';
 import { serverLabel } from '../../lib/server-label.ts';
 
 const STEPS = ['welcome', 'strength', 'interests', 'ai', 'done'] as const;
 type Step = (typeof STEPS)[number];
 const QUESTION_STEPS: Step[] = ['strength', 'interests', 'ai'];
+
+/** How to put the toolbar button on the toolbar. Firefox starts it there (`default_area`); this is for when it moved. */
+const PIN_STEPS: Record<BrowserKind, string> = {
+  chrome: 'Click the puzzle piece in Chrome’s toolbar, then the pin next to unAlgorithm.',
+  edge: 'Click Extensions (the puzzle piece) in Edge’s toolbar, then Show in toolbar (the eye) next to unAlgorithm.',
+  firefox: 'Click Extensions (the puzzle piece) in Firefox’s toolbar, then the gear next to unAlgorithm and Pin to Toolbar.',
+};
 
 export function App() {
   const [settings, save] = useSettings();
@@ -296,6 +304,7 @@ function Done({
   aiLabel: string | null;
 }) {
   const [pinned, setPinned] = useState<boolean | null>(null);
+  const kind = browserKind();
   useEffect(() => {
     const action = browser.action as typeof browser.action & { getUserSettings?: () => Promise<{ isOnToolbar: boolean }> };
     if (!action.getUserSettings) return;
@@ -338,11 +347,13 @@ function Done({
             {pinned ? <CircleCheck /> : <Puzzle />}
           </span>
           <div className="ua-grow">
-            <div className="ua-headline">{pinned ? 'Pinned to your toolbar' : 'Pin unAlgorithm to your toolbar'}</div>
+            <div className="ua-headline">
+              {pinned ? (kind === 'firefox' ? 'On your toolbar' : 'Pinned to your toolbar') : 'Pin unAlgorithm to your toolbar'}
+            </div>
             <div className="ua-callout ua-secondary" style={{ marginTop: 2 }}>
               {pinned
                 ? 'You’ll see how many posts are hidden on each page.'
-                : 'Click the puzzle piece in Chrome’s toolbar, then the pin next to unAlgorithm. It shows how many posts are hidden.'}
+                : `${PIN_STEPS[kind]} It shows how many posts are hidden.`}
             </div>
           </div>
           {pinned === false ? <Pin size={18} aria-hidden="true" className="ua-tertiary" /> : null}

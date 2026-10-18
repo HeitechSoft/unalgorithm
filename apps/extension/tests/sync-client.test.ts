@@ -22,6 +22,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { setSecret } from '../src/background/idb.ts';
 import { markNeedsSignIn, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { type SyncDeps, syncOnce } from '../src/background/sync-client.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { applyRemoteSettings, updateSettings } from '../src/lib/settings-store.ts';
 import {
   DEFAULT_SYNC_STATE,
@@ -36,6 +37,13 @@ import {
   votesItem,
 } from '../src/lib/storage.ts';
 import { createFakeSyncServer, type FakeSyncServer } from './support/fake-sync-server.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const ORIGIN = 'https://sync.example.org';
 const EMAIL = 'ada@example.org';
@@ -96,6 +104,7 @@ const pushedKeys = (fake = server) => fake.pushBodies().flatMap((b) => b.items.m
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   await deviceItem.setValue(defaultDevice(LOCAL));
@@ -131,6 +140,78 @@ describe('guards', () => {
     expect(await run()).toStrictEqual({ ok: false, problem: 'auth' });
     expect((await state()).problem).toBe('auth');
     expect(server.calls).toHaveLength(0);
+  });
+});
+
+describe('firefox consent', () => {
+  it('test_firefox_sync_waits_for_consent', async () => {
+    env.kind = 'firefox';
+    let granted: string[] = ['websiteContent'];
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    // The settings name the people you always show or hide, and go with the account: post text alone isn't enough, nor
+    // is all but one of the types the sign-in asked for. Technical and interaction data (the device name) isn't one.
+    const cloudData = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+    for (const missing of cloudData) {
+      granted = cloudData.filter((type) => type !== missing);
+      expect(await run(), missing).toStrictEqual({ ok: false, problem: 'consent' });
+    }
+    expect((await state()).problem).toBe('consent');
+    expect(server.calls).toHaveLength(0);
+    expect(deps.getAccessToken).not.toHaveBeenCalled();
+
+    granted = cloudData;
+    expect(await run()).toMatchObject({ ok: true });
+    expect((await state()).problem).toBeNull();
+    expect(server.calls.length).toBeGreaterThan(0);
+
+    // A server on this computer needs the same: it is outside the browser.
+    granted = [];
+    const local = 'http://127.0.0.1:8787';
+    await serverAccountItem.setValue(account({ origin: local }));
+    await enable({ origin: local });
+    const before = server.calls.length;
+    expect(await run()).toStrictEqual({ ok: false, problem: 'consent' });
+    expect(server.calls).toHaveLength(before);
+    granted = cloudData;
+    expect(await run()).toMatchObject({ ok: true });
+    expect(server.calls.length).toBeGreaterThan(before);
+  });
+
+  it('test_firefox_consent_withdrawn_during_a_run_stops_it', async () => {
+    env.kind = 'firefox';
+    const cloudData = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+    let granted = cloudData;
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    // A local edit, so the run has something to push after its pull.
+    await updateSettings((s) => {
+      s.platforms.linkedin.preset = 'calm';
+    });
+    // Withdrawn in Firefox's add-ons page once the server has answered the run's first request.
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const answer = await server.fetch(input, init);
+      granted = ['websiteContent'];
+      return answer;
+    }) as unknown as typeof globalThis.fetch;
+    expect(await run({}, { fetch })).toStrictEqual({ ok: false, problem: 'consent' });
+    expect(server.calls).toHaveLength(1);
+    expect(server.pushBodies()).toHaveLength(0);
+    expect((await state()).problem).toBe('consent');
+  });
+
+  it('test_chrome_sync_never_asks_for_consent', async () => {
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    expect(await run()).toMatchObject({ ok: true });
+    expect(getAll).not.toHaveBeenCalled();
   });
 });
 

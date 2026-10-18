@@ -3,22 +3,33 @@ import feedCss from '@unalgorithm/ui/feed.css?inline';
 import { useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
+import { browserKind } from '../lib/browser-kind.ts';
 import type { Entry, FeedController, UiHost } from './feed-controller.ts';
 
 let sheet: CSSStyleSheet | null = null;
 
-/** One constructed stylesheet shared by every shadow root (falls back to a <style> where that is unsupported). */
+/**
+ * One constructed stylesheet shared by every shadow root, or a <style> where that is unsupported. Firefox always gets
+ * a <style> (ADR 0008), as WXT's own shadow-root UI does there, so no constructed sheet has to cross the content
+ * script's Xray wrappers.
+ */
 function attachStyles(shadow: ShadowRoot): void {
+  if (browserKind() !== 'firefox' && adoptSheet(shadow)) return;
+  const style = document.createElement('style');
+  style.textContent = feedCss;
+  shadow.prepend(style);
+}
+
+function adoptSheet(shadow: ShadowRoot): boolean {
   try {
     if (!sheet) {
       sheet = new CSSStyleSheet();
       sheet.replaceSync(feedCss);
     }
     shadow.adoptedStyleSheets = [sheet];
+    return true;
   } catch {
-    const style = document.createElement('style');
-    style.textContent = feedCss;
-    shadow.prepend(style);
+    return false;
   }
 }
 

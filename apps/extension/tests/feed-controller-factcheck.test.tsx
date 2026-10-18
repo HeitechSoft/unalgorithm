@@ -328,6 +328,20 @@ describe('Check facts: price first, then the check', () => {
     c.stop();
   });
 
+  it('test_firefox_see_result_says_how_to_open_the_sidebar', async () => {
+    // Firefox can't open its sidebar from a click in the page: the bridge passes in words that say how (`panelHint`).
+    const hint = 'Press Alt+Shift+U to see it, or open unAlgorithm from the toolbar and choose Open Highlights.';
+    const { c, b, user } = await offeredPost(bridge({ openFactcheck: vi.fn(async () => false), panelHint: () => hint }));
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    await flush();
+    await user.click(screen.getByRole('button', { name: 'See result' }));
+    await flush();
+    expect(b.openFactcheck).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(`Checked. ${hint}`)).toBeTruthy();
+    expect(screen.queryByText(/Open unAlgorithm from the toolbar to see it/)).toBeNull();
+    c.stop();
+  });
+
   it('test_failure_shows_message_and_retry_asks_price_again', async () => {
     const message = 'Anthropic is busy right now. Try again in a minute.';
     const factcheck = vi.fn(

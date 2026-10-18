@@ -48,9 +48,9 @@ test.describe
     let a: Profile;
     let b: Profile;
 
-    test.beforeAll(async () => {
+    test.beforeAll(async ({ extensionBrowser }) => {
       const launch = async (name: Profile['name']): Promise<Profile> => {
-        const context = await launchExtensionContext();
+        const context = await launchExtensionContext(extensionBrowser);
         return { name, context, extensionId: await extensionIdOf(context), requests: [] };
       };
       a = await launch('a');

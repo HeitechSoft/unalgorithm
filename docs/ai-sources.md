@@ -10,7 +10,7 @@ AI is optional. Rules handle ads, suggested posts, activity and people you don't
 
 | Source | Cost | Privacy | Setup |
 |---|---|---|---|
-| **On this device** (Chrome built-in AI, Gemini Nano) | Free | Nothing leaves your computer | Chrome 138+ on a capable computer; Chrome downloads the model once |
+| **On this device** (the browser's built-in AI: Gemini Nano in Chrome, Edge's own model in its preview builds) | Free | Nothing leaves your computer | Chrome 138+ on a capable computer, or Edge Canary or Dev with the Prompt API turned on in `edge://flags`; the browser downloads the model once. Not in Firefox |
 | **Your own key: Anthropic** | Pay Anthropic directly; about $0.07 per 1,000 posts with Claude Haiku 5.5 | Post text goes to Anthropic | Paste a key from console.anthropic.com |
 | **Your own key: OpenAI** | Pay OpenAI | Post text goes to OpenAI (`store: false`) | Paste a key from platform.openai.com |
 | **Google Gemini, OpenRouter, Groq** | Pay the provider | Post text goes to the provider | Paste a key; unAlgorithm recognizes it by prefix |
@@ -21,6 +21,11 @@ AI is optional. Rules handle ads, suggested posts, activity and people you don't
 Set it up in onboarding or **Settings → AI**. **Test and save** asks for permission to reach that one server,
 lists its models, picks a small default and runs a one-post probe: "Connected · Claude Haiku 5.5 · 640 ms". To use
 another model, choose it under **Model** in Settings → AI; each choice is tested with one post before it is saved.
+
+In Firefox the same prompt also asks for Firefox's consent to share website content and personal communications (the
+posts are other people's social media posts), for a server on this computer (`localhost`, `127.0.0.1`, `[::1]`) too:
+it is outside the browser. If that consent is withdrawn in Firefox's add-ons page, the source stops like one whose
+permission was removed, until **Test and save** asks again.
 
 Paid sources have a **daily limit** (default 300 posts). When it is reached, posts that would have been classified
 show "Daily limit reached" and rules keep working.
@@ -44,9 +49,10 @@ show "Daily limit reached" and rules keep working.
 ## Local models
 
 **Ollama** rejects requests from extension origins by default (HTTP 403). In Settings → AI, **Fix it for me** adds a
-rule that removes the `Origin` header for requests to your Ollama address only (it asks for the
-`declarativeNetRequestWithHostAccess` permission). Alternatively start Ollama with
-`OLLAMA_ORIGINS=chrome-extension://*`.
+rule that removes the `Origin` header from unAlgorithm's own requests to your Ollama address only. In Chrome and Edge
+it asks for the `declarativeNetRequestWithHostAccess` permission first; Firefox grants that permission with the
+extension, so it asks nothing. Alternatively start Ollama with `OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*`
+(Chrome and Edge use the first, Firefox the second).
 
 **LM Studio**: start the local server (Developer → Start Server) and enable CORS.
 

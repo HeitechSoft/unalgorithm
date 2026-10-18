@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { notesFor } from '../../../scripts/release-notes.mjs';
+import { notesFor, releaseAssets, SIDELOAD_MANIFEST } from '../../../scripts/release-notes.mjs';
 import { PROCESS_TIMEOUT, SPAWN_TIMEOUT } from './support/timeouts.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -53,6 +53,11 @@ const EXTENSION_CHANGELOG = [
   '',
 ].join('\n');
 
+/** The sideload manifest of a build with the Cloud card (UA_CLOUD=1): Chrome asks for `identity` at sign-in. */
+const CLOUD_SIDELOAD_MANIFEST = JSON.stringify({ permissions: ['storage', 'alarms'], optional_permissions: ['identity'] });
+/** The same build without the Cloud card, as a release builds it until `release.yml` sets UA_CLOUD: no sign-in. */
+const STORE_SIDELOAD_MANIFEST = JSON.stringify({ permissions: ['storage'], optional_permissions: ['scripting'] });
+
 describe('release notes', () => {
   it('test_server_tag_notes_from_changelog', () => {
     const notes = notesFor('server-v0.1.0', files({ 'apps/server/CHANGELOG.md': SERVER_CHANGELOG }));
@@ -85,10 +90,14 @@ describe('release notes', () => {
     expect(missing.startsWith('unAlgorithm Feed server 0.3.0\n\n')).toBe(true);
   });
 
-  it('test_extension_tag_notes_unchanged', () => {
-    const read = files({ 'apps/extension/CHANGELOG.md': EXTENSION_CHANGELOG, 'apps/server/CHANGELOG.md': SERVER_CHANGELOG });
+  it('test_extension_tag_notes_name_every_release_file', () => {
+    const read = files({
+      'apps/extension/CHANGELOG.md': EXTENSION_CHANGELOG,
+      'apps/server/CHANGELOG.md': SERVER_CHANGELOG,
+      [SIDELOAD_MANIFEST]: CLOUD_SIDELOAD_MANIFEST,
+    });
 
-    // What scripts/release-notes.mjs printed for v0.2.0 before server tags existed (without console.log's newline).
+    // The changelog section, then how to install from the stores or from this release, and what every file is.
     expect(notesFor('v0.2.0', read)).toBe(
       `### Minor Changes
 
@@ -98,17 +107,64 @@ describe('release notes', () => {
 
 - 5d6e7f8: Calmer popup copy.
 
-**Install:** download \`unalgorithm-0.2.0-chrome.zip\`, unzip it, open \`chrome://extensions\`, turn on
-Developer mode and choose **Load unpacked**. Verify the download against \`SHA256SUMS.txt\` and the build provenance
-attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
-    );
-    expect(notesFor('v0.3.0', read)).toBe(
-      `unAlgorithm Feed 0.3.0
+**Install:** from the Chrome Web Store, Microsoft Edge Add-ons or Firefox Add-ons once each has reviewed this version.
+From this release:
+- Chrome or Edge: download \`unalgorithm-0.2.0-sideload.zip\`, unzip it, open \`chrome://extensions\` or \`edge://extensions\`,
+  turn on Developer mode and choose **Load unpacked**. It has the development id, so unAlgorithm servers accept its
+  sign-in.
+- Firefox: until Firefox Add-ons has this version, try it as a temporary add-on, which Firefox keeps until it restarts
+  (it keeps for good only add-ons that Mozilla signed): download \`unalgorithm-0.2.0-firefox.zip\`, open \`about:debugging\`,
+  choose **This Firefox**, then **Load Temporary Add-on…**, and select the zip.
 
-**Install:** download \`unalgorithm-0.3.0-chrome.zip\`, unzip it, open \`chrome://extensions\`, turn on
-Developer mode and choose **Load unpacked**. Verify the download against \`SHA256SUMS.txt\` and the build provenance
-attestation (\`gh attestation verify <zip> --repo HeitechSoft/unalgorithm\`).`,
+\`unalgorithm-0.2.0-chrome.zip\`, \`unalgorithm-0.2.0-edge.zip\` and \`unalgorithm-0.2.0-firefox.zip\` are the files sent to each store, and
+\`unalgorithm-0.2.0-sources.zip\` is the source Firefox Add-ons builds the Firefox zip from. Verify any download against
+\`SHA256SUMS.txt\` and the build provenance attestation (\`gh attestation verify <file> --repo HeitechSoft/unalgorithm\`).`,
     );
+    // No changelog section: the fallback heading, and the same files.
+    const fallback = notesFor('v0.3.0', read);
+    expect(fallback.startsWith('unAlgorithm Feed 0.3.0\n\n**Install:**')).toBe(true);
+    for (const asset of releaseAssets('0.3.0')) expect(fallback).toContain(`\`${asset}\``);
+    expect(releaseAssets('0.3.0')).toEqual([
+      'unalgorithm-0.3.0-chrome.zip',
+      'unalgorithm-0.3.0-edge.zip',
+      'unalgorithm-0.3.0-firefox.zip',
+      'unalgorithm-0.3.0-sources.zip',
+      'unalgorithm-0.3.0-sideload.zip',
+    ]);
+    expect(fallback).not.toContain('.xpi');
+  });
+
+  it('test_extension_notes_offer_signed_firefox_file', () => {
+    // When AMO signed the Firefox sideload build, the release carries it and the notes point Firefox users to it.
+    const assets = [...releaseAssets('0.3.0'), 'unalgorithm-0.3.0-firefox-sideload.xpi'];
+    const notes = notesFor('v0.3.0', files({}), assets);
+    expect(notes).toContain(
+      '- Firefox: open `unalgorithm-0.3.0-firefox-sideload.xpi` in Firefox and add it. Mozilla signed it, with the development id.',
+    );
+    // The signed file replaces the temporary add-on.
+    expect(notes).not.toMatch(/about:debugging|Temporary Add-on/);
+    // A server tag never lists extension files, whatever the folder holds.
+    expect(notesFor('server-v0.3.0', files({}), assets)).not.toMatch(/\.zip|\.xpi/);
+  });
+
+  it('test_extension_notes_mention_sign_in_only_when_the_build_has_it', () => {
+    const chromeLine = (manifest?: string) => {
+      const notes = notesFor('v0.3.0', files(manifest === undefined ? {} : { [SIDELOAD_MANIFEST]: manifest }));
+      return notes.slice(notes.indexOf('- Chrome or Edge:'), notes.indexOf('- Firefox:'));
+    };
+    // Built with the Cloud card, the sideload zip signs in with the development id, which servers accept.
+    expect(chromeLine(CLOUD_SIDELOAD_MANIFEST)).toContain(
+      'It has the development id, so unAlgorithm servers accept its\n  sign-in.',
+    );
+    // `identity` granted with the extension counts the same.
+    expect(chromeLine(JSON.stringify({ permissions: ['identity'] }))).toContain('accept its\n  sign-in.');
+    // Without the Cloud card the build has no sign-in, so the notes promise none. Nor when the manifest is missing (no
+    // `pnpm zip` yet) or unreadable.
+    for (const manifest of [STORE_SIDELOAD_MANIFEST, undefined, '{', 'null']) {
+      const line = chromeLine(manifest);
+      expect(line, String(manifest)).toContain('**Load unpacked**. It has the development id.\n');
+      expect(line, String(manifest)).not.toMatch(/sign-in|unAlgorithm server/);
+    }
   });
 
   it('test_release_notes_import_prints_nothing', { timeout: SPAWN_TIMEOUT }, () => {

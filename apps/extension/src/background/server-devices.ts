@@ -17,7 +17,9 @@ import { type ServerHttpDeps, type ServerResult, serverRequest } from './server-
  * The account's devices from the extension (R11): the devices list and revoking another device. Revoking this computer
  * itself is the sign-out (the background's `signOutOfServer`). The token stays in `serverRequest`; pages get device ids
  * and names, which are not credentials. The name this computer gives itself at sign-in is `deviceName()`
- * (`device-name.ts`, kept apart because `server-auth.ts` uses it and this module imports `server-auth.ts`).
+ * (`device-name.ts`, kept apart because `server-auth.ts` uses it and this module imports `server-auth.ts`). In Firefox
+ * both need the server's data-collection consent (ADR 0008): without it `serverRequest` sends nothing, and the answer
+ * is a `host-permission` error, which the list offers to fix with Allow.
  */
 
 const TIMEOUT_MS = 10_000;
@@ -65,6 +67,12 @@ async function signedInOrigin(): Promise<string | { ok: false; error: BgError }>
 /** The extension's own words for a failed request, never the server's text. */
 function failure(res: Exclude<ServerResult, { ok: true }>, origin: string): { ok: false; error: BgError } {
   const { title } = serverLabel(origin);
+  if ('reason' in res && res.reason === 'consent') {
+    return {
+      ok: false,
+      error: { code: 'host-permission', message: `unAlgorithm needs your permission to send your account details to ${title}.` },
+    };
+  }
   // `codeForStatus(0)` would say `unknown`.
   if ('reason' in res) return fail(res.reason === 'auth' ? 'auth-required' : 'network', title);
   const wire = ServerErrorSchema.safeParse(res.body);

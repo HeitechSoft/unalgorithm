@@ -33,6 +33,7 @@ import {
   BALANCE_MAX_AGE_MS,
   BALANCE_WAIT_MS,
   balanceStatus,
+  checkBalanceSoon,
   noteRefused,
   noteSettlement,
   onBalanceRestored,
@@ -41,8 +42,16 @@ import {
   serverBalanceItem,
 } from '../src/background/server-balance.ts';
 import { classifyViaServer } from '../src/background/server-source.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { PINNED_CLOUD_ORIGIN } from '../src/lib/server-label.ts';
 import { deviceItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 // `aiStatus` takes no dependencies: the device token comes from this stub, the network from a stubbed global fetch.
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
@@ -194,6 +203,7 @@ async function setSource(cfg: AISourceConfig | null) {
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockImplementation(tokens());
@@ -682,7 +692,7 @@ describe('status', () => {
     expect(empty.balance).toMatchObject({ balanceMicros: 0, low: false, empty: true });
     expect(empty.state).toBe('needs-attention');
     expect(empty.message).toBe(describeError('insufficient-credits', 'unAlgorithm Cloud'));
-    expect(empty.message).toMatch(/Add credit, or switch to on-device or your own key\.$/);
+    expect(empty.message).toMatch(/Add credit, or switch to your own key, or to on-device AI where your browser offers it\.$/);
     expect(s.calls).toHaveLength(0);
   });
 
@@ -893,5 +903,59 @@ describe('restored signal', () => {
     expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 500_000 });
     await vi.waitFor(async () => expect(await serverBalanceItem.getValue()).toMatchObject({ balanceMicros: 5_000_000 }));
     expect(s.balanceCalls()).toHaveLength(2);
+  });
+});
+
+describe('firefox consent', () => {
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+
+  it('test_firefox_balance_needs_the_server_consent', async () => {
+    env.kind = 'firefox';
+    let granted = CLOUD_DATA.filter((type) => type !== 'personallyIdentifyingInfo');
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    const acc = account();
+    await serverAccountItem.setValue(acc);
+    const s = fakeServer({ balance: () => json(balanceBody(5_000_000)) });
+    vi.stubGlobal('fetch', s.fetch);
+    const deps = { fetch: s.fetch, now: () => NOW + 10 * MINUTE };
+    // An empty balance old enough for every check to ask the server again.
+    const empty = stored({ balanceMicros: 0, source: 'refused', updatedAt: NOW });
+    await serverBalanceItem.setValue(empty);
+
+    // Withdrawn: no balance to show, and none is asked for, the token included.
+    expect(await balanceStatus(CFG, acc, deps)).toBeUndefined();
+    await checkBalanceSoon(CFG, acc, deps);
+    expect(await refreshBalance(acc, deps)).toStrictEqual(empty);
+    const status = await aiStatus();
+    expect(status).toMatchObject({ kind: 'server' });
+    expect(status).not.toHaveProperty('balance');
+    expect(s.calls).toHaveLength(0);
+    expect(auth.getAccessToken).not.toHaveBeenCalled();
+    expect(await serverBalanceItem.getValue()).toStrictEqual(empty);
+
+    // Given again (technical and interaction data plays no part): the check asks, and credit added meanwhile shows.
+    granted = CLOUD_DATA;
+    await checkBalanceSoon(CFG, acc, deps);
+    expect(s.balanceCalls()).toHaveLength(1);
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 5_000_000, empty: false });
+  });
+
+  it('test_chrome_balance_never_reads_consent', async () => {
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    const acc = account();
+    await serverAccountItem.setValue(acc);
+    const s = fakeServer();
+    const deps = { fetch: s.fetch, now: () => NOW + 10 * MINUTE };
+    await serverBalanceItem.setValue(stored({ balanceMicros: 0, source: 'refused', updatedAt: NOW }));
+    await checkBalanceSoon(CFG, acc, deps);
+    expect(await balanceStatus(CFG, acc, deps)).toMatchObject({ balanceMicros: 970_000 });
+    expect(await refreshBalance(acc, deps)).toMatchObject({ balanceMicros: 970_000 });
+    expect(s.balanceCalls()).toHaveLength(2);
+    expect(getAll).not.toHaveBeenCalled();
   });
 });

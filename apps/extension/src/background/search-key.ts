@@ -2,14 +2,16 @@ import { AIError } from '@unalgorithm/ai';
 import { type Device, WEB_SEARCH_PROVIDERS, type WebSearchProviderId, webSearchName, webSearchOrigin } from '@unalgorithm/core';
 import { createSearchProvider, type SearchProvider } from '@unalgorithm/research';
 import { browser } from 'wxt/browser';
+import { hasConsent, POST_DATA } from '../lib/data-consent.ts';
 import type { BgError } from '../lib/messages.ts';
 import { updateDevice } from '../lib/settings-store.ts';
 import { getSecret, setSecret } from './idb.ts';
 
 /**
  * The person's own web search key for an OpenAI-compatible source (F24, P3-45). The key is a secret in IndexedDB like an
- * AI key (`search:<provider>`); `device.webSearch` only names the provider. The host permission is asked for from the
- * Save click in Settings; the background only checks it.
+ * AI key (`search:<provider>`); `device.webSearch` only names the provider. The host permission, and in Firefox the
+ * consent to send search words (ADR 0008), are asked for from the Save click in Settings; the background only checks
+ * them.
  */
 
 const MAX_KEY_LENGTH = 200;
@@ -40,7 +42,7 @@ export async function saveSearchKey(provider: unknown, apiKey: unknown): Promise
   if (!isProvider(provider) || key.length < 1 || key.length > MAX_KEY_LENGTH) {
     return { ok: false, error: { code: 'bad-request', message: 'Enter the whole key.' } };
   }
-  if (!(await hasOrigin(provider))) {
+  if (!(await hasOrigin(provider)) || !(await hasConsent(POST_DATA))) {
     const host = new URL(webSearchOrigin(provider)).hostname;
     return { ok: false, error: { code: 'host-permission', message: `unAlgorithm needs permission to reach ${host}.` } };
   }

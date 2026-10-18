@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest';
  * `release.yml`) ships only with a PRIVACY.md that describes them, in the same release (docs/release.md, *Before a
  * store build carries the Cloud card*). The PRIVACY.md text is drafted privately with the store answers (CL3-25), so
  * this test is what stops the flag being flipped first.
+ *
+ * One switch covers every browser (ADR 0008): `release.yml` builds every zip, Chrome's, Edge's and Firefox's and the
+ * sideload builds, in one `pnpm zip` step, and no package script sets the flag itself, so the flag can't reach one
+ * store's build without the others' or without this gate.
  */
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -102,6 +106,117 @@ describe('release gate', () => {
 
   it('test_privacy_gate_accepts_cloud_with_sections', () => {
     expect(privacyGateProblems(WORKFLOW_WITH_FLAG, PRIVACY_WITH_SECTIONS)).toEqual([]);
+  });
+});
+
+/** A command that builds the extension: `wxt zip` or `wxt build`, or a `pnpm` script named zip or build. */
+const BUILD_COMMAND = /\b(?:wxt\s+(?:zip|build)\b|pnpm\s+(?:--filter\s+\S+\s+)?(?:run\s+)?(?:zip|build)(?::[\w:-]+)?(?![\w:-]))/g;
+
+/** Every build command in a workflow's lines, comments left out. */
+function buildCommands(workflowYaml: string): string[] {
+  return workflowYaml
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('#'))
+    .flatMap((line) => line.match(BUILD_COMMAND) ?? []);
+}
+
+type Scripts = Record<string, string>;
+
+/**
+ * The commands `pnpm zip` runs from the repository root, following `pnpm <script>` and
+ * `pnpm --filter @unalgorithm/extension <script>` into the extension's scripts. Each command keeps the environment
+ * assignments in front of it (`cross-env UA_SIDELOAD=1 wxt zip`).
+ */
+function zipCommands(root: Scripts, extension: Scripts): string[] {
+  const expand = (scripts: Scripts, name: string, depth: number): string[] => {
+    const script = scripts[name];
+    if (script === undefined) throw new Error(`no script ${name}`);
+    if (depth > 5) throw new Error(`scripts call each other too deep at ${name}`);
+    return script.split('&&').flatMap((part) => {
+      const command = part.trim();
+      const own = /^pnpm\s+(?:run\s+)?([\w:-]+)$/.exec(command);
+      if (own?.[1]) return expand(scripts, own[1], depth + 1);
+      const filtered = /^pnpm\s+--filter\s+@unalgorithm\/extension\s+(?:run\s+)?([\w:-]+)$/.exec(command);
+      if (filtered?.[1]) return expand(extension, filtered[1], depth + 1);
+      return [command];
+    });
+  };
+  return expand(root, 'zip', 0);
+}
+
+/** Why `pnpm zip` in `release.yml` may not be the one switch for every store build; empty when it is. */
+function oneSwitchProblems(workflowYaml: string, root: Scripts, extension: Scripts): string[] {
+  const problems: string[] = [];
+  const builds = buildCommands(workflowYaml);
+  if (builds.length !== 1 || builds[0] !== 'pnpm zip') {
+    problems.push(`release.yml must build in one \`pnpm zip\` step; it runs: ${builds.join(', ') || 'no build'}`);
+  }
+  const commands = zipCommands(root, extension);
+  const wxt = commands.filter((c) => /\bwxt\s+(zip|build)\b/.test(c));
+  const store = wxt.filter((c) => !c.includes('UA_SIDELOAD=1'));
+  const has = (list: string[], test: (c: string) => boolean, what: string) => {
+    if (!list.some(test)) problems.push(`pnpm zip builds no ${what}`);
+  };
+  has(store, (c) => /\bwxt\s+zip\b/.test(c) && !/\s-b\s/.test(c), 'Chrome store zip');
+  has(store, (c) => /\bwxt\s+zip\b.*\s-b\s+edge\b/.test(c), 'Edge store zip');
+  has(store, (c) => /\bwxt\s+zip\b.*\s-b\s+firefox\b/.test(c), 'Firefox store zip');
+  has(wxt, (c) => c.includes('UA_SIDELOAD=1') && /\bwxt\s+zip\b/.test(c) && !/\s-b\s/.test(c), 'Chrome and Edge sideload zip');
+  has(wxt, (c) => c.includes('UA_SIDELOAD=1') && /\s-b\s+firefox\b/.test(c), 'Firefox sideload build');
+  for (const [where, scripts] of [
+    ['package.json', root],
+    ['apps/extension/package.json', extension],
+  ] as const) {
+    for (const [name, script] of Object.entries(scripts)) {
+      if (CLOUD_FLAG.test(script)) problems.push(`${where} script "${name}" sets UA_CLOUD itself`);
+    }
+  }
+  return problems;
+}
+
+const scriptsOf = (path: string) => (JSON.parse(read(path)) as { scripts: Scripts }).scripts;
+
+describe('one switch for every browser', () => {
+  it('test_release_builds_every_browser_in_one_step', () => {
+    const problems = oneSwitchProblems(
+      read('.github/workflows/release.yml'),
+      scriptsOf('package.json'),
+      scriptsOf('apps/extension/package.json'),
+    );
+    expect(problems).toEqual([]);
+    // What `pnpm zip` runs today, so a change to the scripts is a change to this test.
+    expect(zipCommands(scriptsOf('package.json'), scriptsOf('apps/extension/package.json'))).toEqual([
+      'wxt zip',
+      'wxt zip -b edge',
+      // Firefox's from the repository root, so its sources zip holds the workspace.
+      'cd ../..',
+      'wxt zip apps/extension -b firefox',
+      'cross-env UA_SIDELOAD=1 wxt zip',
+      'cross-env UA_SIDELOAD=1 wxt build -b firefox',
+    ]);
+  });
+
+  it('test_one_switch_refuses_a_build_outside_pnpm_zip', () => {
+    const root = scriptsOf('package.json');
+    const extension = scriptsOf('apps/extension/package.json');
+    // A second build step could take the flag for one store's zip alone.
+    for (const extra of ['pnpm zip:firefox', 'pnpm --filter @unalgorithm/extension zip:edge', 'pnpm exec wxt zip -b firefox']) {
+      const workflow = `${WORKFLOW_WITHOUT_FLAG}      - name: Again\n        run: ${extra}\n`;
+      expect(oneSwitchProblems(workflow, root, extension), extra).toHaveLength(1);
+    }
+    // A comment naming a command is not a step.
+    expect(oneSwitchProblems(`${WORKFLOW_WITHOUT_FLAG}        # then pnpm zip:edge\n`, root, extension)).toEqual([]);
+    // A script that sets the flag for one browser, or a `pnpm zip` that leaves a browser out.
+    const flagged = { ...extension, 'zip:edge': 'cross-env UA_CLOUD=1 wxt zip -b edge' };
+    expect(oneSwitchProblems(WORKFLOW_WITHOUT_FLAG, root, flagged)).toEqual([
+      'apps/extension/package.json script "zip:edge" sets UA_CLOUD itself',
+    ]);
+    const noEdge = { ...extension, 'zip:all': 'pnpm zip && pnpm zip:firefox && pnpm zip:sideload' };
+    expect(oneSwitchProblems(WORKFLOW_WITHOUT_FLAG, root, noEdge)).toEqual(['pnpm zip builds no Edge store zip']);
+    const noSideload = { ...extension, 'zip:all': 'pnpm zip && pnpm zip:edge && pnpm zip:firefox' };
+    expect(oneSwitchProblems(WORKFLOW_WITHOUT_FLAG, root, noSideload)).toEqual([
+      'pnpm zip builds no Chrome and Edge sideload zip',
+      'pnpm zip builds no Firefox sideload build',
+    ]);
   });
 });
 

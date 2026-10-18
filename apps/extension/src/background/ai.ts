@@ -44,6 +44,8 @@ import {
 } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
+import { browserKind, browserLabel } from '../lib/browser-kind.ts';
+import { hasConsent, serverConsentMessage, sourceConsent } from '../lib/data-consent.ts';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
@@ -93,12 +95,15 @@ export function sourceLabel(cfg: AISourceConfig | null): string {
   }
 }
 
-/** Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title. */
+/**
+ * Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title, or the
+ * browser whose built-in AI runs on this computer ("Chrome", "Edge").
+ */
 export function providerName(cfg: AISourceConfig): string {
   if (cfg.kind === 'anthropic') return 'Anthropic';
   if (cfg.kind === 'openai') return 'OpenAI';
   if (cfg.kind === 'openai-compatible') return COMPAT_PRESET_INFO[cfg.preset].label;
-  if (cfg.kind === 'on-device') return 'Chrome';
+  if (cfg.kind === 'on-device') return browserLabel(browserKind());
   return serverLabel(cfg.baseUrl).title;
 }
 
@@ -153,7 +158,7 @@ function modelFor(cfg: AISourceConfig): string {
   throw new AIError('no-model', 'Choose a model in Settings → AI.');
 }
 
-export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
+async function hasHostPermission(cfg: AISourceConfig): Promise<boolean> {
   const pattern = sourcePermission(cfg);
   if (!pattern) return true;
   try {
@@ -161,6 +166,19 @@ export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * What stops a source from running now, as the error the person sees: a host permission it lacks, or in Firefox the
+ * consent to send post text there (ADR 0008), which counts the same. Both were asked for from a click in Settings,
+ * where the person can give them again. Null when nothing is missing.
+ */
+export async function missingAccess(cfg: AISourceConfig): Promise<AIError | null> {
+  if ((await hasHostPermission(cfg)) && (await hasConsent(sourceConsent(cfg)))) return null;
+  const name = providerName(cfg);
+  // A server has no host permission to lose (it answers the extension's origin itself): this is its consent.
+  const message = cfg.kind === 'server' ? serverConsentMessage(name) : describeError('host-permission', name);
+  return new AIError('host-permission', message);
 }
 
 // ---------- classification ----------
@@ -222,15 +240,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const cfg = device.aiSource;
   if (!cfg) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'ai-off' })) };
 
-  const fail = (e: AIError): BgResponses['classify'] => ({
-    results: items.map((i) => ({
-      key: i.key,
-      status: 'failed',
-      code: e.code,
-      message: describeError(e.code, providerName(cfg)),
-      retryable: isRetryable(e.code),
-    })),
-    ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: toBgError(e, cfg) } : {}),
+  const fail = (e: AIError, message = describeError(e.code, providerName(cfg))): BgResponses['classify'] => ({
+    results: items.map((i) => ({ key: i.key, status: 'failed', code: e.code, message, retryable: isRetryable(e.code) })),
+    ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: { code: e.code, message } } : {}),
   });
 
   const limits = SOURCE_LIMITS[cfg.kind];
@@ -238,8 +250,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const pHash = profileHash(profile);
   let model: string;
   let classify: (posts: PostForAI[]) => Promise<ServerClassifyOutcome>;
+  const denied = await missingAccess(cfg);
+  if (denied) return fail(denied, denied.message);
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission for the AI server.');
     model = modelFor(cfg);
     if (cfg.kind === 'server') {
       classify = (posts) => classifyViaServer(cfg, posts, { profile, profileHash: pHash, locale: uiLocale() });
@@ -390,8 +403,9 @@ const PROBE: PostForAI = {
  */
 export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<TestSourceResult> {
   const started = Date.now();
+  const denied = await missingAccess(cfg);
+  if (denied) return { ok: false, error: { code: denied.code, message: denied.message } };
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
     if (cfg.kind === 'server') return await testServer(cfg, started);
     if (cfg.kind === 'on-device') {
       const a = await onDeviceAvailability();
@@ -453,8 +467,9 @@ async function testServer(cfg: ServerSource, started: number): Promise<TestSourc
 
 /** The models a configured source offers, using its saved key. Nothing is classified. */
 export async function listSourceModels(cfg: AISourceConfig): Promise<BgResponses['listModels']> {
+  const denied = await missingAccess(cfg);
+  if (denied) return { ok: false, error: { code: denied.code, message: denied.message } };
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
     // A server chooses its own model.
     if (cfg.kind === 'server') return { ok: true, models: [] };
     const client = await clientFor(cfg);

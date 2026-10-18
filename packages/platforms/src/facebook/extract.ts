@@ -211,6 +211,18 @@ export function postIdFrom(root: Element, author: string, text: string, media: s
   return `fb:h:${cyrb53(`${author}\u0000${text.slice(0, 200)}\u0000${media}`)}`;
 }
 
+/**
+ * Deletes the query parameters whose names `drop` picks. The names are read with `forEach`: in a Firefox content
+ * script `URL` comes through an Xray wrapper, whose `URLSearchParams` iterators can't be spread or looped over.
+ */
+function dropParams(u: URL, drop: (key: string) => boolean): void {
+  const keys: string[] = [];
+  u.searchParams.forEach((_value, key) => {
+    keys.push(key);
+  });
+  for (const key of keys) if (drop(key)) u.searchParams.delete(key);
+}
+
 function permalinkOf(root: Element): string | undefined {
   const a = Array.from(root.querySelectorAll<HTMLAnchorElement>(FB_SEL.permalink)).find(
     (x) => !inNestedPost(root, x) && x.getAttribute('href') !== '#',
@@ -218,7 +230,7 @@ function permalinkOf(root: Element): string | undefined {
   if (!a) return undefined;
   try {
     const u = new URL(a.getAttribute('href') ?? '', ORIGIN);
-    for (const k of [...u.searchParams.keys()]) if (k.startsWith('__')) u.searchParams.delete(k);
+    dropParams(u, (k) => k.startsWith('__'));
     return u.href;
   } catch {
     return undefined;
@@ -232,7 +244,7 @@ function sharedLinkOf(root: Element): PostData['sharedLink'] {
     const target = new URL(a.getAttribute('href') ?? '', ORIGIN).searchParams.get('u');
     if (!target) return undefined;
     const u = new URL(target);
-    for (const k of [...u.searchParams.keys()]) if (/^(utm_|fbclid)/.test(k)) u.searchParams.delete(k);
+    dropParams(u, (k) => /^(utm_|fbclid)/.test(k));
     const domain = linkDomain(u.href, ORIGIN);
     if (!domain) return undefined;
     const pieces = Array.from(a.querySelectorAll('span, div'))

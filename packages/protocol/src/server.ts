@@ -3,6 +3,7 @@ import { DeviceNameSchema } from './account.ts';
 import type { JobPrice } from './billing.ts';
 import { MAX_POSTS_PER_REQUEST } from './classify.ts';
 import { AI_ERROR_CODES, type WireError } from './errors.ts';
+import { sha1Hex } from './sha1.ts';
 
 /** Discovery document every unAlgorithm server serves; the extension reads it before signing in. */
 export const SERVER_INFO_PATH = '/.well-known/unalgorithm.json';
@@ -24,12 +25,63 @@ export const PASSKEY_METHOD = 'passkey';
 /** Access tokens live 15 minutes; the extension refreshes them with its refresh token. */
 export const ACCESS_TOKEN_TTL_SECONDS = 900;
 
-/** Chrome extension ids are 32 letters a-p. */
-export const ExtensionIdSchema = z.string().regex(/^[a-p]{32}$/);
+/** Chrome and Edge extension ids are 32 letters a-p. Each store assigns its own. */
+export const ChromiumIdSchema = z.string().regex(/^[a-p]{32}$/);
 
-/** Where `launchWebAuthFlow` expects the authorize page to send the browser back. */
+/**
+ * Firefox add-on ids (`runtime.id`): `{uuid}` or `name@domain`, in Firefox's own pattern. That pattern ignores case;
+ * it is written out here because a regex flag does not reach the OpenAPI document. At most 80 characters, as
+ * addons.mozilla.org allows.
+ */
+export const GeckoIdSchema = z
+  .string()
+  .max(80)
+  .regex(/^(\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}|[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+)$/);
+
+/** The extension's id in any browser: the `client_id` of sign-in. The two forms never overlap. */
+export const ClientIdSchema = z.union([ChromiumIdSchema, GeckoIdSchema]);
+
+/** Which family a client id belongs to; it decides the redirect URI. Edge is `chromium`, Firefox is `gecko`. */
+export const ClientKindSchema = z.enum(['chromium', 'gecko']);
+export type ClientKind = z.infer<typeof ClientKindSchema>;
+
+/** The development key's id (ADR 0004): Chrome and Edge development, e2e and GitHub sideload builds. */
+export const DEV_CHROMIUM_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/** The Firefox store build's add-on id. Permanent once on addons.mozilla.org: devices and the redirect follow it. */
+export const FIREFOX_ADDON_ID = 'feed@unalgorithmfeed.com';
+/** Firefox development, e2e and GitHub sideload builds: the release's `.xpi` is signed by AMO as an unlisted add-on. */
+export const FIREFOX_DEV_ADDON_ID = 'feed-dev@unalgorithmfeed.com';
+
+/** `'chromium'`, `'gecko'`, or null for anything that is not a client id. Never throws. */
+export function clientKind(id: string): ClientKind | null {
+  if (ChromiumIdSchema.safeParse(id).success) return 'chromium';
+  if (GeckoIdSchema.safeParse(id).success) return 'gecko';
+  return null;
+}
+
+/** Where Chrome's and Edge's `launchWebAuthFlow` expect the authorize page to send the browser back. */
 export function chromiumRedirectUri(extensionId: string): string {
   return `https://${extensionId}.chromiumapp.org/`;
+}
+
+/**
+ * Firefox's `identity.getRedirectURL()`: the SHA-1 of the add-on id, hashed exactly as given, in lowercase hex.
+ * `launchWebAuthFlow` refuses any other redirect URI.
+ */
+export function geckoRedirectUri(addonId: string): string {
+  return `https://${sha1Hex(addonId)}.extensions.allizom.org/`;
+}
+
+/** The only redirect URI a client id may sign in with, or null when `id` is not a client id. Never throws. */
+export function redirectUriFor(id: string): string | null {
+  switch (clientKind(id)) {
+    case 'chromium':
+      return chromiumRedirectUri(id);
+    case 'gecko':
+      return geckoRedirectUri(id);
+    default:
+      return null;
+  }
 }
 
 /**
@@ -76,6 +128,21 @@ export const ServerInfoSchema = z.object({
     methods: z.array(z.string().min(1).max(40)).min(1).max(10),
     authorizePath: OriginPath,
     tokenPath: OriginPath,
+    /**
+     * The client kinds (`clientKind`) the server takes sign-ins from, from its EXTENSION_IDS. Missing means
+     * `['chromium']`: servers from before Firefox leave it out. Kinds this client does not know are dropped, not
+     * refused, so a newer server's list still parses; a list with none it knows reads as missing. What this returns
+     * parses again unchanged, as stored accounts are.
+     */
+    clients: z
+      .array(z.string().min(1).max(40))
+      .min(1)
+      .max(10)
+      .transform((kinds) => {
+        const known = kinds.filter((kind): kind is ClientKind => ClientKindSchema.safeParse(kind).success);
+        return known.length ? known : undefined;
+      })
+      .optional(),
   }),
   limits: z.object({ maxPostsPerRequest: z.number().int().min(1).max(MAX_POSTS_PER_REQUEST) }),
 });
@@ -89,23 +156,36 @@ const Challenge = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const RefreshToken = z.string().min(20).max(200);
 
 /**
- * The redirect URI must be `chromiumRedirectUri(client_id)`, so a code can only ever go back to the extension that
- * asked for it, whichever server (or fork) answers.
+ * The redirect URI must be `redirectUriFor(client_id)`, so a code can only ever go back to the extension that asked
+ * for it, whichever server (or fork) answers. The check stays synchronous (the web page parses during a render) and
+ * refuses rather than throws whatever `client_id` holds.
  */
 export const AuthorizeRequestSchema = z
   .object({
-    client_id: ExtensionIdSchema,
+    client_id: ClientIdSchema,
     redirect_uri: z.string().url(),
     code_challenge: Challenge,
     code_challenge_method: z.literal('S256'),
     state: z.string().min(16).max(128),
   })
-  .refine((r) => r.redirect_uri === chromiumRedirectUri(r.client_id), { path: ['redirect_uri'] });
+  .refine(
+    (r) => {
+      const uri = redirectUriFor(r.client_id);
+      return uri !== null && r.redirect_uri === uri;
+    },
+    { path: ['redirect_uri'] },
+  );
 export type AuthorizeRequest = z.infer<typeof AuthorizeRequestSchema>;
 
-/** Where the authorize page sends the browser: the redirect URI with a single-use code and the state. */
+/**
+ * Where the authorize page sends the browser: the redirect URI with a single-use code and the state. https on a
+ * Chromium (`chromiumapp.org`) or Firefox (`extensions.allizom.org`) redirect host only; never Firefox's loopback form.
+ */
 export const AuthorizeResponseSchema = z.object({
-  redirect: z.url({ protocol: /^https$/, hostname: /^[a-p]{32}\.chromiumapp\.org$/ }),
+  redirect: z.url({
+    protocol: /^https$/,
+    hostname: /^([a-p]{32}\.chromiumapp\.org|[0-9a-f]{40}\.extensions\.allizom\.org)$/,
+  }),
 });
 export type AuthorizeResponse = z.infer<typeof AuthorizeResponseSchema>;
 
@@ -114,7 +194,7 @@ export const TokenRequestSchema = z.discriminatedUnion('grant_type', [
     grant_type: z.literal('authorization_code'),
     code: z.string().min(20).max(200),
     code_verifier: Verifier,
-    client_id: ExtensionIdSchema,
+    client_id: ClientIdSchema,
     /** Bound at authorize time; the server compares it with the stored one after burning the code. */
     redirect_uri: z.string().url(),
     /** What the extension calls itself, shown in the account's devices list. A refresh never renames a device. */
@@ -123,7 +203,7 @@ export const TokenRequestSchema = z.discriminatedUnion('grant_type', [
   z.object({
     grant_type: z.literal('refresh_token'),
     refresh_token: RefreshToken,
-    client_id: ExtensionIdSchema,
+    client_id: ClientIdSchema,
   }),
 ]);
 export type TokenRequest = z.infer<typeof TokenRequestSchema>;
@@ -140,7 +220,7 @@ export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 
 export const RevokeRequestSchema = z.object({
   refresh_token: RefreshToken,
-  client_id: ExtensionIdSchema,
+  client_id: ClientIdSchema,
 });
 export type RevokeRequest = z.infer<typeof RevokeRequestSchema>;
 

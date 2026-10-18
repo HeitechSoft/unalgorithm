@@ -71,7 +71,18 @@ jobs:
         run: pnpm licenses:server
 
       - name: Build
+        # Every release zip: Chrome, Edge and Firefox with its sources, and the sideload builds.
         run: pnpm zip
+
+      - name: Firefox add-on lint
+        if: matrix.os == 'ubuntu-latest'
+        # The linter AMO runs on upload, on the Firefox zip as built above and on the same build with the Cloud card
+        # (UA_CLOUD=1, what a release ships once the store disclosures are live): no errors, only reviewed warnings.
+        shell: bash
+        run: |
+          node scripts/check-firefox-lint.mjs apps/extension/.output/firefox-mv3
+          UA_CLOUD=1 pnpm build:firefox
+          node scripts/check-firefox-lint.mjs apps/extension/.output/firefox-mv3
 
       - name: Playwright version
         id: playwright
@@ -96,12 +107,17 @@ jobs:
       - name: End-to-end tests
         run: pnpm e2e
 
-      - name: Upload extension zip
+      - name: End-to-end tests in Edge
+        # The same specs in the runner's own Microsoft Edge (preinstalled on Ubuntu and Windows runners), with the Edge
+        # build loaded over the DevTools pipe (e2e/fixtures.ts).
+        run: pnpm e2e:edge
+
+      - name: Upload extension zips
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: unalgorithm-chrome
-          path: apps/extension/.output/*-chrome.zip
+          name: unalgorithm-zips
+          path: apps/extension/.output/unalgorithm-*.zip
           # The build output folder starts with a dot, which upload-artifact skips by default.
           include-hidden-files: true
           if-no-files-found: error
@@ -118,7 +134,8 @@ jobs:
     # The server against real Postgres 17 and Mailpit, and the extension signing in to it end to end (e2e/cloud.spec.ts),
     # with and without the public test billing module (e2e/credits.spec.ts), two profiles in sync (e2e/sync.spec.ts),
     # a fact-check through the server with the mock SearXNG (e2e/factcheck-server.spec.ts), and UnEcho Chamber through
-    # the server with the fixture source list (e2e/perspectives-server.spec.ts).
+    # the server with the fixture source list (e2e/perspectives-server.spec.ts): in Chromium and Edge, and the same
+    # flows in Firefox (e2e/firefox/), which also runs its specs that need no server.
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -146,6 +163,8 @@ jobs:
       # Only used to create and drop each test's own database.
       TEST_DATABASE_URL: postgres://postgres:dev@127.0.0.1:5432/unalgorithm
       MAILPIT_URL: http://127.0.0.1:8025
+      # The Firefox release the Firefox specs run on: puppeteer-core 25.14.0's.
+      FIREFOX_VERSION: '158.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -167,16 +186,44 @@ jobs:
         run: pnpm vitest run --project server
 
       - name: Build the extension for end-to-end tests
-        run: pnpm --filter @unalgorithm/extension build:e2e
+        run: |
+          pnpm --filter @unalgorithm/extension build:e2e
+          pnpm --filter @unalgorithm/extension build:e2e:edge
+          pnpm --filter @unalgorithm/extension build:e2e:firefox
 
       - name: Install Chromium
         working-directory: apps/extension
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Sign in to a local server, label the feed, show the balance, sync two profiles and check facts
-        run: pnpm --filter @unalgorithm/extension exec playwright test e2e/cloud.spec.ts e2e/credits.spec.ts e2e/sync.spec.ts e2e/factcheck-server.spec.ts e2e/perspectives-server.spec.ts
+        run: >-
+          pnpm --filter @unalgorithm/extension exec playwright test --project=chromium --project=edge
+          e2e/cloud.spec.ts e2e/credits.spec.ts e2e/sync.spec.ts e2e/factcheck-server.spec.ts e2e/perspectives-server.spec.ts
         env:
           UA_SERVER_E2E: '1'
+
+      - name: Cache Firefox
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/browsers
+          key: firefox-${{ runner.os }}-${{ env.FIREFOX_VERSION }}
+
+      - name: Install Firefox
+        # A pinned Firefox release from archive.mozilla.org (Puppeteer's installer, no sudo), the one puppeteer-core
+        # is tested with. Its WebDriver BiDi drives the Firefox specs.
+        id: firefox
+        working-directory: apps/extension
+        shell: bash
+        run: |
+          path=$(pnpm exec browsers install "firefox@stable_${FIREFOX_VERSION}" --path "$RUNNER_TEMP/browsers" --format '{{path}}' | tail -n 1)
+          test -x "$path"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: The same in Firefox, through its own sign-in window
+        run: pnpm --filter @unalgorithm/extension exec playwright test --project=firefox
+        env:
+          UA_SERVER_E2E: '1'
+          UA_FIREFOX_BIN: ${{ steps.firefox.outputs.path }}
 
       - name: Upload Playwright report
         if: failure()
@@ -185,6 +232,37 @@ jobs:
           name: playwright-report-server
           path: apps/extension/playwright-report
           retention-days: 7
+
+  firefox-sources:
+    # The Firefox sources zip AMO reviewers get: only committed files and nothing private in it, and rebuilt from its
+    # own files with a fresh install from the lockfile, it gives the Firefox zip byte for byte
+    # (scripts/check-firefox-sources.mjs).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Firefox zip and sources
+        run: pnpm zip:firefox
+
+      - name: Rebuild from the sources zip
+        run: node scripts/check-firefox-sources.mjs
+
+      - name: The same with the Cloud card
+        # What a release builds once UA_CLOUD is set for the stores. The check rebuilds with the switch the shipped
+        # manifest shows, as the AMO build instructions tell reviewers to.
+        run: |
+          UA_CLOUD=1 pnpm zip:firefox
+          node scripts/check-firefox-sources.mjs
 
   compose-smoke:
     # The server image and the public compose file as an operator runs them: the build, configuration errors, the

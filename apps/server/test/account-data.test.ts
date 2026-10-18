@@ -31,7 +31,16 @@ import {
 } from '../src/db/schema.ts';
 import { ensureUserSpace } from '../src/sync/spaces.ts';
 import { scanAllTables } from './support/scan-tables.ts';
-import { DEV_EXTENSION_ID, postJson, postToken, SEND_CODE, sessionOf, signInDevice, signInWeb } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  postToken,
+  SEND_CODE,
+  sessionOf,
+  signInDevice,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -615,6 +624,7 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
       { Cookie: tom.cookie },
       { Cookie: tom.cookie, Origin: 'https://evil.example' },
       { Cookie: tom.cookie, Origin: `chrome-extension://${DEV_EXTENSION_ID}` },
+      { Cookie: tom.cookie, Origin: FIREFOX_EXTENSION_ORIGIN },
     ];
     for (const headers of elsewhere) {
       const res = await deleteWith(t, TOM, headers);

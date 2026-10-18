@@ -138,7 +138,7 @@ export type BgRequest =
   | { type: 'syncNow' }
   /** Fact-check one public post on the person's own Anthropic key. Opens the side panel for the tab. */
   | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
-  /** Opens the side panel for the sending feed tab, where the newest check shows. */
+  /** Opens the side panel for the sending feed tab, where the newest check shows (Firefox: says whether it is open). */
   | { type: 'openFactcheck' }
   /**
    * A feed tab paused for want of credit became visible: the background refreshes an empty balance at most every 30 s,
@@ -185,8 +185,11 @@ export interface BgResponses {
   syncSetEnabled: SyncStatus;
   syncNow: SyncStatus;
   factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
-  /** False when Chrome refused to open the side panel (no user gesture reached it). */
-  openFactcheck: { ok: boolean };
+  /**
+   * False when the side panel didn't open: Chrome or Edge refused (no user gesture reached it), or Firefox's sidebar
+   * isn't open in the tab's window. `shortcut`: Firefox's keyboard shortcut for the sidebar, when it has one.
+   */
+  openFactcheck: { ok: boolean; shortcut?: string };
   balanceCheck: { ok: true };
   perspectives: { ok: true; result: PerspectivesResult; costMicros?: number } | { ok: false; error: BgError };
 }

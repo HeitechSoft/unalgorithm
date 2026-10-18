@@ -16,6 +16,7 @@ import {
   uuid,
 } from '@unalgorithm/protocol';
 import { applyRemoteItems, changedItems, dropAfterResync } from '@unalgorithm/sync';
+import { CLOUD_DATA, hasConsent } from '../lib/data-consent.ts';
 import { applyRemoteSettings, restampFutureClocks } from '../lib/settings-store.ts';
 import {
   DEFAULT_SYNC_STATE,
@@ -91,6 +92,13 @@ export async function syncOnce(
   if (st.origin !== account.origin || st.email !== account.email) {
     await syncStateItem.setValue({ ...DEFAULT_SYNC_STATE, known: {}, origin: account.origin, email: account.email });
     return { ok: false, problem: 'unavailable' };
+  }
+  // Firefox: the settings hold the people you always show or hide, so sync waits for the consent the sign-in asked for.
+  // Withdrawn during a run, the next request is refused too (`serverRequest`), and the run ends with the same problem.
+  if (!(await hasConsent(CLOUD_DATA))) {
+    st.problem = 'consent';
+    await save();
+    return { ok: false, problem: 'consent' };
   }
   const { origin } = account;
 

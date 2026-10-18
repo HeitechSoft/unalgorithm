@@ -231,7 +231,8 @@ describe('paused AI', () => {
   const postCard = (key: string) => FIRST_DEGREE_POST.replaceAll('EEEkeyFirstDegree5', key);
   const PAUSE = {
     code: 'insufficient-credits' as const,
-    message: 'Your ai.example.org balance is empty. Add credit, or switch to on-device or your own key.',
+    message:
+      'Your ai.example.org balance is empty. Add credit, or switch to your own key, or to on-device AI where your browser offers it.',
   };
   const BAIT: Classification = {
     relevance: 10,

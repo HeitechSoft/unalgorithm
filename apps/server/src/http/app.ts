@@ -14,6 +14,8 @@ import {
   ADMIN_SOURCES_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
+  ClientKindSchema,
+  clientKind,
   EMAIL_OTP_METHOD,
   FACTCHECK_JOB_TTL_MS,
   type FactcheckResult,
@@ -212,6 +214,8 @@ export function createApp(deps: AppDeps): App {
       methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : []), PASSKEY_METHOD],
       authorizePath: AUTHORIZE_PAGE_PATH,
       tokenPath: TOKEN_PATH,
+      // The browsers EXTENSION_IDS lets sign in, so Firefox can say up front when this server takes none of its ids.
+      clients: ClientKindSchema.options.filter((kind) => config.extensionIds.some((id) => clientKind(id) === kind)),
     },
     limits: { maxPostsPerRequest: MAX_POSTS_PER_REQUEST },
   };

@@ -101,6 +101,10 @@ export function Authorize() {
           }
           throw err;
         }
+        // Only back to the extension that asked: under the request's own redirect address, whatever the server
+        // answered. A navigation, not a form (the page's CSP keeps forms on this origin): Chrome and Edge catch it,
+        // and so does Firefox's sign-in window, which watches for its redirect address.
+        if (!redirect.startsWith(req.redirect_uri)) throw new ApiError(200);
         setStep({ name: 'done' });
         window.location.assign(redirect);
       },

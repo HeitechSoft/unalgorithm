@@ -20,7 +20,14 @@ import { listen, stopServing } from '../src/index.ts';
 import { excludeNonPublic, wireCodeFor } from '../src/routes/classify.ts';
 import { classifyBody, serverPost as post, postClassify, usageRowOf } from './support/classify.ts';
 import { seedPassingRoute } from './support/routes.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  signInDevice,
+} from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -146,6 +153,20 @@ describe('classify: happy path', { timeout: PGLITE_TIMEOUT }, () => {
     expect('billing' in raw).toBe(false);
   });
 
+  it('test_classify_from_firefox', async () => {
+    const t = await classifyApp();
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID);
+    const a = await post('A', 'How our team uses AI agents for automation');
+
+    // A Firefox device's token, sent from a Firefox page: the same answer, readable there.
+    const res = await postClassify(t.app, request([a]), firefox.access_token, FIREFOX_EXTENSION_ORIGIN);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+    expect(ClassifyResponseSchema.parse(await res.json()).results).toMatchObject([{ ref: a.ref, status: 'ok' }]);
+    expect(await usageRow(t, res)).toMatchObject({ deviceId: firefox.device_id, outcome: 'ok' });
+  });
+
   it('test_server_builds_prompt_and_ignores_prompt_fields', async () => {
     const t = await classifyApp();
     const posts = [await post('A', 'Automating our hiring pipeline'), await post('B', 'Lunch with an old colleague')];
@@ -245,6 +266,18 @@ describe('classify: happy path', { timeout: PGLITE_TIMEOUT }, () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
     expect(res.headers.get('access-control-allow-methods')).toContain('POST');
     expect(res.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+
+    const firefox = await t.app.request(CLASSIFY_PATH, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: FIREFOX_EXTENSION_ORIGIN,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+      },
+    });
+    expect(firefox.status).toBe(204);
+    expect(firefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(firefox.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
   });
 });
 

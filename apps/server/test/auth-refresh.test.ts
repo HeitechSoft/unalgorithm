@@ -5,7 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requireDevice } from '../src/auth/bearer.ts';
 import { REFRESH_TOKEN_TTL_DAYS } from '../src/auth/tokens.ts';
 import { devices, refreshTokens, user } from '../src/db/schema.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, postToken, signInDevice } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  extensionOrigin,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  postToken,
+  signInDevice,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -67,9 +76,9 @@ async function refreshed(t: TestApp, refreshToken: string): Promise<TokenRespons
   return TokenResponseSchema.parse(await res.json());
 }
 
-/** "Sign out" as the extension sends it. */
+/** "Sign out" as the extension sends it, from its own origin. */
 const revoke = (t: TestApp, refreshToken: string, clientId = DEV_EXTENSION_ID) =>
-  postJson(t.app, REVOKE_PATH, { refresh_token: refreshToken, client_id: clientId }, { Origin: DEV_EXTENSION_ORIGIN });
+  postJson(t.app, REVOKE_PATH, { refresh_token: refreshToken, client_id: clientId }, { Origin: extensionOrigin(clientId) });
 
 /** `GET /v1/test/me` with this `Authorization` header, or none. */
 const me = async (t: TestApp, authorization?: string): Promise<Response> =>
@@ -300,6 +309,47 @@ describe('sign-out', { timeout: PGLITE_TIMEOUT }, () => {
   });
 });
 
+describe('Firefox', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_firefox_device_refresh_and_sign_out', async () => {
+    const t = await refreshApp();
+    const chrome = await signedIn(t);
+    const firefox = await signedIn(t, FIREFOX_EXTENSION_ID);
+
+    // The Firefox device refreshes under its own add-on id, from a Firefox page, and its tokens name that id.
+    const res = await refresh(t, firefox.refresh_token, FIREFOX_EXTENSION_ID);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const next = TokenResponseSchema.parse(await res.json());
+    expect(next.device_id).toBe(firefox.device_id);
+    const answer = await withBearer(t, next.access_token);
+    expect(await answer.json()).toEqual({ userId: await userId(t), deviceId: firefox.device_id, clientId: FIREFOX_EXTENSION_ID });
+
+    // Each browser's token is bound to its own id: neither refreshes nor signs out under the other's, and the tries
+    // spend and revoke nothing.
+    await expectAuthRequired(await refresh(t, next.refresh_token, DEV_EXTENSION_ID));
+    await expectAuthRequired(await refresh(t, chrome.refresh_token, FIREFOX_EXTENSION_ID));
+    for (const [token, clientId] of [
+      [next.refresh_token, DEV_EXTENSION_ID],
+      [chrome.refresh_token, FIREFOX_EXTENSION_ID],
+    ] as const) {
+      const quiet = await revoke(t, token, clientId);
+      expect(quiet.status).toBe(200);
+      expect(await quiet.json()).toEqual({ ok: true });
+    }
+    for (const id of [chrome.device_id, firefox.device_id]) {
+      expect(await device(t, id)).toMatchObject({ revokedAt: null, revokedReason: null });
+    }
+
+    // "Sign out" in Firefox ends its device only.
+    const out = await revoke(t, next.refresh_token, FIREFOX_EXTENSION_ID);
+    expect(out.status).toBe(200);
+    expect(out.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect((await device(t, firefox.device_id)).revokedReason).toBe('sign-out');
+    await expectRejected(await withBearer(t, next.access_token));
+    expect((await refreshed(t, chrome.refresh_token)).device_id).toBe(chrome.device_id);
+  });
+});
+
 describe('bearer middleware', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_require_device_rejects_bad_tokens', async () => {
     const t = await refreshApp();
@@ -343,7 +393,7 @@ describe('bearer middleware', { timeout: PGLITE_TIMEOUT }, () => {
   });
 
   it('test_require_device_checks_claims_against_device', async () => {
-    const t = await refreshApp({ EXTENSION_IDS: `${DEV_EXTENSION_ID},${OTHER_ID}` });
+    const t = await refreshApp({ EXTENSION_IDS: `${DEV_EXTENSION_ID},${OTHER_ID},${FIREFOX_EXTENSION_ID}` });
     const tokens = await signedIn(t);
     const { sub, did, cid } = decodeJwt(tokens.access_token);
     const sign = async (payload: Record<string, unknown>) => {
@@ -361,6 +411,8 @@ describe('bearer middleware', { timeout: PGLITE_TIMEOUT }, () => {
       { sub, did: crypto.randomUUID(), cid },
       { sub: 'someone-else', did, cid },
       { sub, did, cid: OTHER_ID },
+      // A listed Firefox id on a Chrome device's claims.
+      { sub, did, cid: FIREFOX_EXTENSION_ID },
     ]) {
       await expectRejected(await withBearer(t, await sign(payload)));
     }

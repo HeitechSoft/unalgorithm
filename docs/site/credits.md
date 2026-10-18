@@ -30,8 +30,8 @@ Promotional credit has no cash value.
 
 ## When the balance is empty
 
-Cloud AI pauses. Your filters and the results already saved keep working. Add credit, or switch to on-device or your
-own key.
+Cloud AI pauses. Your filters and the results already saved keep working. Add credit, or switch to your own key, or to
+on-device AI where your browser offers it.
 
 ## Always free
 

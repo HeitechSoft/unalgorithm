@@ -16,6 +16,7 @@ import { AiSetup } from '../src/components/AiSetup.tsx';
 import { DeviceList } from '../src/components/DeviceList.tsx';
 import { ServerSetup } from '../src/components/ServerSetup.tsx';
 import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import {
   type BgRequest,
   type BgResponses,
@@ -27,6 +28,12 @@ import { accountPageUrl, PINNED_CLOUD_ORIGIN, serverLabel } from '../src/lib/ser
 import { DEFAULT_SYNC_STATE, type SyncProblem, syncStateItem } from '../src/lib/storage.ts';
 
 const flag = vi.hoisted(() => ({ cloud: true }));
+// Vitest builds for Chrome; the Firefox cases switch `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 vi.mock('../src/components/ServerSetup.tsx', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/components/ServerSetup.tsx')>();
   return {
@@ -77,6 +84,7 @@ const sentTypes = () => sent().map((msg) => msg.type);
 
 beforeEach(() => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   flag.cloud = true;
   events = [];
   replies = {
@@ -331,6 +339,135 @@ describe('sign in again', () => {
     expect(permission).toHaveBeenCalledWith({ permissions: ['identity'] });
     await waitFor(() => expect(sentTypes()).toContain('serverSignIn'));
     expect(events.indexOf('permission')).toBeLessThan(events.indexOf('serverSignIn'));
+  });
+});
+
+describe('firefox consent', () => {
+  // Never technical and interaction data: Firefox offers it at install, and the extension never asks for it.
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+
+  /**
+   * Firefox, with the consent `getAll()` reports (standing unless told otherwise; the server card's own banner stays
+   * out of these tests). Returns the change: Firefox's add-ons page, as the permission events report it.
+   */
+  function firefox(granted = CLOUD_DATA) {
+    env.kind = 'firefox';
+    const consent = { granted };
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: consent.granted,
+    })) as never);
+    const listeners = new Set<() => void>();
+    for (const event of [fakeBrowser.permissions.onAdded, fakeBrowser.permissions.onRemoved]) {
+      vi.spyOn(event, 'addListener').mockImplementation(((l: () => void) => void listeners.add(l)) as never);
+      vi.spyOn(event, 'removeListener').mockImplementation(((l: () => void) => void listeners.delete(l)) as never);
+    }
+    return (next: string[]) => {
+      consent.granted = next;
+      for (const l of listeners) l();
+    };
+  }
+
+  it('test_firefox_sync_on_asks_consent_from_the_click', async () => {
+    firefox();
+    const { user, toggle } = await renderCard();
+    await user.click(toggle);
+    fireEvent.click(within(dialogNamed('Turn on sync?')).getByRole('button', { name: 'Turn on sync' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    await waitFor(() => expect(sent()).toContainEqual({ type: 'syncSetEnabled', enabled: true }));
+    expect(events.indexOf('permission')).toBeLessThan(events.indexOf('syncSetEnabled'));
+    cleanup();
+
+    // Declined: sync stays off and says why.
+    permission.mockImplementation((async () => false) as never);
+    vi.mocked(sendToBackground).mockClear();
+    const again = await renderCard();
+    await again.user.click(again.toggle);
+    await again.user.click(within(dialogNamed('Turn on sync?')).getByRole('button', { name: 'Turn on sync' }));
+    expect(await screen.findByText('unAlgorithm needs your permission to send your settings to the server.')).toBeTruthy();
+    expect(sentTypes()).not.toContain('syncSetEnabled');
+    expect(again.toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('test_consent_problem_offers_allow', async () => {
+    firefox();
+    const message = 'unAlgorithm needs your permission to send your settings to unAlgorithm Cloud.';
+    replies.syncStatus = () => ({ ...OFF, enabled: true, state: 'problem', lastSyncAt: null, problem: 'consent', message });
+    await renderCard();
+    const banner = screen.getByText(message).closest('.ua-banner') as HTMLElement;
+    expect(within(banner).queryByRole('button', { name: 'Try again' })).toBeNull();
+    fireEvent.click(within(banner).getByRole('button', { name: 'Allow' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    await waitFor(() => expect(sent()).toContainEqual({ type: 'syncNow' }));
+    expect(events.indexOf('permission')).toBeLessThan(events.indexOf('syncNow'));
+  });
+
+  it('test_chrome_sync_on_asks_nothing', async () => {
+    const { user, toggle } = await renderCard();
+    await user.click(toggle);
+    await user.click(within(dialogNamed('Turn on sync?')).getByRole('button', { name: 'Turn on sync' }));
+    await waitFor(() => expect(sent()).toContainEqual({ type: 'syncSetEnabled', enabled: true }));
+    expect(permission).not.toHaveBeenCalled();
+  });
+
+  it('test_firefox_device_list_offers_allow', async () => {
+    // Withdrawn in Firefox's add-ons page: the background asks the server nothing and says so.
+    const change = firefox(['websiteContent', 'personalCommunications']);
+    const title = 'unAlgorithm needs your permission to send your account details to unAlgorithm Cloud.';
+    let granted = false;
+    replies.serverDevices = () =>
+      granted ? { ok: true, devices: [LAPTOP, WORK] } : { ok: false, error: { code: 'host-permission', message: title } };
+    replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN) });
+    render(
+      <ToastProvider>
+        <ServerSetup device={device({ kind: 'anthropic', model: null })} />
+      </ToastProvider>,
+    );
+    const banner = (await screen.findByText(title)).closest('.ua-banner') as HTMLElement;
+    expect(screen.queryByText('Work PC')).toBeNull();
+
+    // Declined: said, and the list isn't asked for again.
+    permission.mockImplementation((async () => {
+      events.push('permission');
+      return false;
+    }) as never);
+    const asked = sentTypes().filter((t) => t === 'serverDevices').length;
+    fireEvent.click(within(banner).getByRole('button', { name: 'Allow' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    expect(await screen.findByText('unAlgorithm needs your permission to send your account details to the server.')).toBeTruthy();
+    expect(sentTypes().filter((t) => t === 'serverDevices')).toHaveLength(asked);
+
+    // Given from the click (Firefox reports it as a permission change too): asked first, then the list.
+    permission.mockImplementation((async () => {
+      events.push('permission');
+      granted = true;
+      change(CLOUD_DATA);
+      return true;
+    }) as never);
+    events = [];
+    fireEvent.click(within(banner).getByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Work PC')).toBeTruthy();
+    expect(screen.queryByText(title)).toBeNull();
+    expect(events.indexOf('permission')).toBeLessThan(events.indexOf('serverDevices'));
+
+    // Withdrawn while the page is open, then given back in Firefox's add-ons page: asked again each time.
+    granted = false;
+    change(['websiteContent']);
+    expect(await screen.findByText(title)).toBeTruthy();
+    granted = true;
+    change(CLOUD_DATA);
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+    expect(screen.getByText('Work PC')).toBeTruthy();
+  });
+
+  it('test_chrome_device_list_asked_once', async () => {
+    vi.spyOn(fakeBrowser.permissions, 'getAll');
+    await renderCard();
+    // Chrome and Edge have no such consent: the list is asked for once, and nothing reads it.
+    expect(sentTypes().filter((t) => t === 'serverDevices')).toHaveLength(1);
+    expect(fakeBrowser.permissions.getAll).not.toHaveBeenCalled();
   });
 });
 

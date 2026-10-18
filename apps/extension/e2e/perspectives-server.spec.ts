@@ -95,11 +95,11 @@ test.describe
       { verdict },
     );
 
-    test.beforeAll(async () => {
+    test.beforeAll(async ({ extensionBrowser }) => {
       const { ai } = started();
       baseline.model = ai.bodies.length;
       baseline.searches = searx?.queries.length ?? 0;
-      context = await launchExtensionContext();
+      context = await launchExtensionContext(extensionBrowser);
       extensionId = await extensionIdOf(context);
     });
 

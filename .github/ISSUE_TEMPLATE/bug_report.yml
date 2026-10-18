@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in unAlgorithm itself is broken (settings, popup, side panel, AI setup, onboarding).
+description: Something in unAlgorithm itself is broken (settings, popup, Highlights, AI setup, onboarding).
 labels: [bug, triage]
 body:
   - type: markdown
@@ -33,6 +33,7 @@ body:
     id: browser
     attributes:
       label: Browser and version
+      description: Chrome, Microsoft Edge or Firefox, with its version
       placeholder: Chrome 141 on Windows 11
     validations:
       required: true
@@ -55,5 +56,5 @@ body:
     id: logs
     attributes:
       label: Errors
-      description: Anything from the extension's service worker console (chrome://extensions → Inspect views). Remove API keys and post text.
+      description: "Anything from the extension's background console: chrome://extensions or edge://extensions → Inspect views, or in Firefox about:debugging → This Firefox → Inspect. Remove API keys and post text."
       render: text

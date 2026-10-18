@@ -57,8 +57,11 @@ export const officialListItem = storage.defineItem<StoredOfficialList>('local:of
   fallback: { list: null, checkedAt: 0 },
 });
 
-/** Why the last sync run failed: a code only, never the server's message. */
-export type SyncProblem = 'auth' | 'network' | 'quota' | 'clock' | 'server' | 'unavailable';
+/**
+ * Why the last sync run failed: a code only, never the server's message. `consent`: Firefox's consent to send the
+ * settings to the server is missing (ADR 0008).
+ */
+export type SyncProblem = 'auth' | 'network' | 'quota' | 'clock' | 'server' | 'unavailable' | 'consent';
 
 /** Sync bookkeeping for one server and one account (CL3-19, CL3-20). */
 export interface SyncState {

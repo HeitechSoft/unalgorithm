@@ -40,7 +40,8 @@ carries, is kept in memory only, and is gone at most 10 minutes after it ends.
 
 - Your email address. No name and no picture.
 - Your devices: one row for each copy of the extension you signed in, with the short name it gave itself (such as
-  "Chrome on Windows"), when it signed in and when it was last used. Sign-in tokens and codes are stored only as hashes.
+  "Chrome on Windows" or "Firefox on Linux"), when it signed in and when it was last used. Sign-in tokens and codes are
+  stored only as hashes.
 - Passkeys, if you add one: the public key and its label. Never a private key or biometric data.
 - If you sign in with Google: Google's id for your Google account and the verified address Google gave. Never a Google
   access, refresh or ID token.
