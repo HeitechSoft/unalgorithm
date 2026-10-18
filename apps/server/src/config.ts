@@ -1,7 +1,13 @@
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANTHROPIC_DEFAULT_MODEL } from '@unalgorithm/ai';
-import { ClientIdSchema, DEV_CHROMIUM_ID, FIREFOX_ADDON_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
+import {
+  CHROME_WEB_STORE_ID,
+  ClientIdSchema,
+  DEV_CHROMIUM_ID,
+  FIREFOX_ADDON_ID,
+  FIREFOX_DEV_ADDON_ID,
+} from '@unalgorithm/protocol';
 import { FACTCHECK_MODELS, SEARCH_PROVIDERS, type SearchProviderId } from '@unalgorithm/research';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
@@ -209,11 +215,11 @@ export class ConfigError extends Error {
 }
 
 /**
- * `EXTENSION_IDS` when unset: every id this release knows (ADR 0008), the development key's Chrome and Edge id and
- * both Firefox add-on ids. The Chrome Web Store and Edge Add-ons ids are added in a deployment's configuration once
- * each store assigns them.
+ * `EXTENSION_IDS` when unset: every id this release knows (ADR 0008), the development key's Chrome and Edge id, the
+ * Chrome Web Store id and both Firefox add-on ids. The Edge Add-ons id is added in a deployment's configuration once
+ * Partner Center assigns it.
  */
-const DEFAULT_EXTENSION_IDS: readonly string[] = [DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID];
+const DEFAULT_EXTENSION_IDS: readonly string[] = [DEV_CHROMIUM_ID, CHROME_WEB_STORE_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 /** INSTANCE_NAME and MAIL_FROM_NAME; the discovery document's `name` has the same limit. */
 const MAX_DISPLAY_NAME = 80;

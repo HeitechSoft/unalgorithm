@@ -40,7 +40,7 @@ matter to Cloud:
 
 | Build | Chrome | Edge | Firefox |
 |---|---|---|---|
-| Store | Chrome Web Store id | Edge Add-ons id (assigned by Partner Center) | `feed@unalgorithmfeed.com` |
+| Store | `finhbclelafmnfcpdmnglicegopdlaph` (Chrome Web Store) | Edge Add-ons id (assigned by Partner Center); Edge users can also install the Chrome Web Store build | `feed@unalgorithmfeed.com` |
 | Development, e2e, GitHub sideload | `aokmlebkpkeniofcnbeajmgabinicggm` (dev key) | same as Chrome | `feed-dev@unalgorithmfeed.com` |
 
 The Firefox store id is permanent once the add-on is on AMO: the Cloud keys devices and the redirect address to it.
@@ -70,8 +70,9 @@ and the file can be attached by hand once AMO signs it.
 
 ### Server
 
-- `EXTENSION_IDS` takes both kinds. The default is every id this release knows: the Chromium dev id and both Firefox
-  ids. Store ids for Chrome and Edge are added in the deployment's configuration once each store assigns them.
+- `EXTENSION_IDS` takes both kinds. The default is every id this release knows: the Chromium dev id, the Chrome Web
+  Store id and both Firefox ids. The Edge Add-ons id is added in the deployment's configuration once Partner Center
+  assigns it.
 - CORS on `/v1/*` answers `chrome-extension://<id>` for listed Chromium ids and any `moz-extension://<uuid>` when at
   least one gecko id is listed. CORS is not the access control here: Hono's CORS never refuses a request, every
   `/v1` route needs a bearer token, a session or a secret (code and verifier, refresh token, Stripe signature),

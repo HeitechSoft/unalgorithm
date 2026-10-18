@@ -47,6 +47,8 @@ export type ClientKind = z.infer<typeof ClientKindSchema>;
 
 /** The development key's id (ADR 0004): Chrome and Edge development, e2e and GitHub sideload builds. */
 export const DEV_CHROMIUM_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/** The Chrome Web Store item's id, assigned by the store: Chrome's store build, and Edge users who install it there. */
+export const CHROME_WEB_STORE_ID = 'finhbclelafmnfcpdmnglicegopdlaph';
 /** The Firefox store build's add-on id. Permanent once on addons.mozilla.org: devices and the redirect follow it. */
 export const FIREFOX_ADDON_ID = 'feed@unalgorithmfeed.com';
 /** Firefox development, e2e and GitHub sideload builds: the release's `.xpi` is signed by AMO as an unlisted add-on. */

@@ -3,6 +3,7 @@ import type { NormalizedUsage } from '../src/index.ts';
 import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
+  CHROME_WEB_STORE_ID,
   ChromiumIdSchema,
   ClassifyRequestSchema,
   ClassifyResponseSchema,
@@ -366,6 +367,8 @@ describe('ids and redirects', () => {
   it('test_known_ids', () => {
     expect(DEV_CHROMIUM_ID).toBe(DEV_ID);
     expect(clientKind(DEV_CHROMIUM_ID)).toBe('chromium');
+    expect(CHROME_WEB_STORE_ID).toBe('finhbclelafmnfcpdmnglicegopdlaph');
+    expect(clientKind(CHROME_WEB_STORE_ID)).toBe('chromium');
     expect(FIREFOX_ADDON_ID).toBe('feed@unalgorithmfeed.com');
     expect(FIREFOX_DEV_ADDON_ID).toBe('feed-dev@unalgorithmfeed.com');
     expect(clientKind(FIREFOX_ADDON_ID)).toBe('gecko');

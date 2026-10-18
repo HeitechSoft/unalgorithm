@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { DEV_CHROMIUM_ID, FIREFOX_ADDON_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
+import { CHROME_WEB_STORE_ID, DEV_CHROMIUM_ID, FIREFOX_ADDON_ID, FIREFOX_DEV_ADDON_ID } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import pkg from '../package.json' with { type: 'json' };
 import { CONFIG_VARIABLES, ConfigError, loadConfig, SERVER_VERSION } from '../src/config.ts';
@@ -68,9 +68,15 @@ describe('defaults and required', () => {
     expect(config.port).toBe(8787);
     expect(config.host).toBe('127.0.0.1');
     expect(config.billing).toBe('off');
-    // Every id this release knows: the development key's (Chrome and Edge) and both Firefox add-on ids.
-    expect(config.extensionIds).toEqual([DEV_EXTENSION_ID, 'feed-dev@unalgorithmfeed.com', 'feed@unalgorithmfeed.com']);
-    expect(config.extensionIds).toEqual([DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID]);
+    // Every id this release knows: the development key's (Chrome and Edge), the Chrome Web Store's and both Firefox
+    // add-on ids.
+    expect(config.extensionIds).toEqual([
+      DEV_EXTENSION_ID,
+      'finhbclelafmnfcpdmnglicegopdlaph',
+      'feed-dev@unalgorithmfeed.com',
+      'feed@unalgorithmfeed.com',
+    ]);
+    expect(config.extensionIds).toEqual([DEV_CHROMIUM_ID, CHROME_WEB_STORE_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID]);
     expect(config.signupAllowlist).toEqual([]);
     expect(config.dailySpendLimitMicros).toBe(5_000_000);
 
