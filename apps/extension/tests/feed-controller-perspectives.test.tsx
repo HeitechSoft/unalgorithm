@@ -186,8 +186,18 @@ async function started(
   return { ...f, e, user, item: within(container) };
 }
 
+/**
+ * The controller's timers, and `performance` too: each scan reads changed posts for at most 8 ms of `performance.now()`,
+ * leaves the rest to the next scan, and walks the whole feed again. On the real clock a slow runner reads about one
+ * post per scan, so twenty posts took up to 57 scans instead of 2 and ran past the test timeout. On the fake clock
+ * every scan reads them all, on any machine.
+ */
+const FAKE_CLOCK: Parameters<typeof vi.useFakeTimers>[0] = {
+  toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+};
+
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+  vi.useFakeTimers(FAKE_CLOCK);
   document.documentElement.lang = 'en';
 });
 afterEach(() => {
@@ -281,17 +291,19 @@ describe('Other perspectives: where it is offered', () => {
     expect(offered(f.c)).toHaveLength(20);
     expect(b.perspectives).not.toHaveBeenCalled();
     vi.useRealTimers();
-    // Every offered item rendered: twenty rows, and still no call.
-    render(keys.map((k) => <Item key={k} c={f.c} e={entryOf(f.c, k)} />));
+    // Every offered item rendered: twenty rows, and still no call. Queried within the rows only: a role query on the
+    // whole document also walks the twenty posts' own markup, which on a loaded runner takes seconds.
+    const { container } = render(keys.map((k) => <Item key={k} c={f.c} e={entryOf(f.c, k)} />));
+    const rows = within(container);
     await flush();
-    const starts = screen.getAllByRole('button', { name: START });
+    const starts = rows.getAllByRole('button', { name: START });
     expect(starts).toHaveLength(20);
     expect(b.perspectives).not.toHaveBeenCalled();
     const user = setupUser();
     await user.click(starts[7] as HTMLElement);
     await flush();
     expect(b.perspectives).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Compare' }));
+    await user.click(rows.getByRole('button', { name: 'Compare' }));
     await flush();
     expect(b.perspectives).toHaveBeenCalledTimes(1);
     expect(vi.mocked(b.perspectives).mock.calls[0]?.[0]).toBe(id(keys[7] as string));
@@ -358,7 +370,7 @@ describe('Other perspectives: the comparison', () => {
     cleanup();
 
     // Facebook adds the audience; the post's text stays behind.
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    vi.useFakeTimers(FAKE_CLOCK);
     const fb = await started(bridge(), device(true), fbFeed(ORGANIC_LINK_SHARE), facebookAdapter);
     await fb.user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();
