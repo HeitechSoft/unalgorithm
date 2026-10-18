@@ -1,7 +1,8 @@
 name: Release
 
 # Runs when a version tag is pushed (see docs/release.md). Builds the extension zip, checksums it, attests build
-# provenance and attaches both to a GitHub Release. Chrome Web Store submission stays manual during the preview.
+# provenance, attaches both to a GitHub Release and submits the same zip to the Chrome Web Store for review. An approved
+# version waits in the store for a person to publish it after the smoke test (STAGED_PUBLISH).
 
 on:
   push:
@@ -34,12 +35,14 @@ jobs:
         run: pnpm check && pnpm fixtures:check && pnpm notices:check
 
       - name: Check the tag matches the extension version
+        id: version
         run: |
           version=$(node -p "require('./apps/extension/package.json').version")
           if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
             echo "Tag ${GITHUB_REF_NAME} does not match apps/extension version $version" >&2
             exit 1
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build zip
         run: pnpm zip
@@ -63,3 +66,33 @@ jobs:
             --title "unAlgorithm Feed ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md \
             --verify-tag
+
+      # Chrome Web Store API v2 as the release service account (docs/release.md, "Chrome Web Store credentials").
+      # Secrets can't be read in `if:`, so the script skips with a notice until the `release` environment has them.
+      - name: Chrome Web Store
+        working-directory: apps/extension
+        env:
+          CHROME_API_VERSION: v2
+          CHROME_PUBLISH_TYPE: STAGED_PUBLISH
+          CHROME_ZIP: .output/unalgorithm-${{ steps.version.outputs.version }}-chrome.zip
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for name in CHROME_EXTENSION_ID CHROME_PUBLISHER_ID CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL \
+            CHROME_SERVICE_ACCOUNT_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -eq 4 ]; then
+            echo "::notice::Chrome Web Store secrets are not set; upload the zip by hand (docs/release.md, step 6)."
+            exit 0
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing Chrome Web Store secrets in the release environment: ${missing[*]}"
+            exit 1
+          fi
+          # A key pasted from the JSON key file keeps its "\n" escapes; signing needs real line breaks.
+          export CHROME_SERVICE_ACCOUNT_PRIVATE_KEY="${CHROME_SERVICE_ACCOUNT_PRIVATE_KEY//\\n/$'\n'}"
+          pnpm exec wxt submit

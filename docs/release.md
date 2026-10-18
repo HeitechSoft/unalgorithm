@@ -3,7 +3,8 @@
 ## What is released here
 
 The extension is released from this repository: `vX.Y.Z` tags, built by `.github/workflows/release.yml` into the Chrome
-zip on a GitHub Release, then the Chrome Web Store (the steps below).
+zip on a GitHub Release and submitted to the Chrome Web Store, where a person publishes it after the smoke test (the
+steps below).
 
 The server (`apps/server`) is not released from here: no tags, no GitHub Releases and no public images (Tom,
 2026-10-16). It runs unAlgorithm Cloud, whose private repository builds the Cloud image from a pinned commit of this
@@ -22,17 +23,23 @@ The extension version lives in `apps/extension/package.json` and follows semver.
 1. Merging to `main` keeps a **Version packages** PR open (`.github/workflows/changesets.yml`). It bumps versions and
    writes `apps/extension/CHANGELOG.md`.
 2. Review the changelog wording (it becomes the release notes), then merge the PR.
-3. Tag the merge commit and push the tag:
+3. If the release changes the permissions, the data use or the listing, save those changes in the Chrome Web Store
+   developer dashboard first, without submitting: the tag submits the zip with whatever the dashboard holds
+   ([what the API leaves to the dashboard](#chrome-web-store-credentials)). Then tag the merge commit and push the tag:
    ```bash
    git tag v0.1.0 && git push origin v0.1.0
    ```
 4. `release.yml` verifies (lint, typecheck, tests, fixtures, notices), checks the tag matches the version, builds
-   `unalgorithm-<version>-chrome.zip`, writes `SHA256SUMS.txt`, attests build provenance and creates the GitHub
-   Release. It runs in the protected `release` environment.
+   `unalgorithm-<version>-chrome.zip`, writes `SHA256SUMS.txt`, attests build provenance, creates the GitHub Release
+   and submits the zip to the Chrome Web Store for review with staged publishing. It runs in the protected `release`
+   environment. Until the store credentials are set, the submission step only leaves a notice.
 5. **Smoke test** the zip unpacked in a clean Chrome profile: onboarding opens, LinkedIn feed hides ads and suggested
    posts, popup counts match, Settings opens, no errors in the service worker console.
-6. **Chrome Web Store** (manual during the preview): upload the same zip in the developer dashboard, update the
-   listing and privacy disclosures if permissions or data use changed, submit for review.
+6. **Chrome Web Store:** once the review passes, the version waits in the developer dashboard instead of going live.
+   Publish it from the item's page when the smoke test has passed, within 30 days of approval (after that it goes back
+   to draft and needs a new review). If the smoke test fails, don't publish it: cancel the submission if it is still in
+   review, and release a fixed version. If the submission step was skipped or failed, the GitHub Release is already
+   made: upload its zip in the dashboard and submit it for review by hand, with publishing deferred.
 
 ## Chrome Web Store listing
 
@@ -50,6 +57,40 @@ and the screenshots and promo tiles in [store/](store/).
   PRIVACY.md on GitHub. The website's privacy page is built from PRIVACY.md, so a merged change reaches it with the
   website's next deploy. Update the store's data-use disclosures whenever PRIVACY.md changes.
 
+## Chrome Web Store credentials
+
+`release.yml` submits through the Chrome Web Store API v2 (`wxt submit`, which runs `publish-browser-extension`), as a
+Google Cloud service account added to the HeitechSoft publisher. To set it up once:
+
+1. In the Google Cloud console, create a project for it (or pick HeitechSoft's) and enable the **Chrome Web Store
+   API**.
+2. Create a service account in that project. It needs no IAM roles. Add a JSON key to it (**Keys → Add key**).
+3. In the [developer dashboard](https://chrome.google.com/webstore/devconsole/), on the HeitechSoft publisher, add the
+   service account's email under **Account**. A publisher has one service account.
+4. In the repository's **Settings → Environments → release**, add four environment secrets:
+   - `CHROME_EXTENSION_ID`: the item's ID in the dashboard.
+   - `CHROME_PUBLISHER_ID`: the publisher ID under **Publisher → Settings** in the dashboard.
+   - `CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL`: `client_email` from the key.
+   - `CHROME_SERVICE_ACCOUNT_PRIVATE_KEY`: `private_key` from the key, the whole PEM block (the step accepts it with
+     line breaks or with the `\n` escapes of the JSON file), for example
+     `jq -r .private_key key.json | gh secret set CHROME_SERVICE_ACCOUNT_PRIVATE_KEY --env release`.
+
+   Then delete the key file. With none of the four set, the step skips with a notice; with only some, it fails. To
+   change the key, add a new one, replace the secret and delete the old key in the console.
+
+The API uploads the zip and submits it, nothing else. The store listing, screenshots, permission justifications and
+data-use answers are changed by hand in the dashboard and saved before the tag (step 3), and the submission carries
+them. That matters most for the `UA_CLOUD` release, which adds the `identity` and `alarms` permissions: both
+justifications and the data-use answers for sign-in and sync are saved before it is tagged. The store takes one
+submission at a time, so cancel a version still in review before tagging the next.
+
+**Without a stored key (not set up):** GitHub's OIDC token can stand in for the JSON key through Google's Workload
+Identity Federation. The job already has `id-token: write`. A workload identity pool trusting this repository's
+`release` environment lets `google-github-actions/auth` (pinned by SHA, `token_format: access_token`,
+`access_token_scopes: https://www.googleapis.com/auth/chromewebstore`) mint a short-lived token as the same service
+account, passed to the step as `CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN` in place of the email and key (the step's secret
+check changes with it).
+
 ## Before a store build carries the Cloud card
 
 Store builds show the unAlgorithm Cloud card only as "Coming soon". The working card, which signs in to unAlgorithm
@@ -60,8 +101,8 @@ all nine of these are done:
 
 1. The unAlgorithm Cloud beta privacy notice and beta terms (`CLOUD-BETA-NOTICE.md`, `CLOUD-BETA-TERMS.md`) are live on
    unalgorithmfeed.com at `/cloud/beta-privacy` and `/cloud/beta-terms`.
-2. The Chrome Web Store data-use answers and the justification for the `identity` permission are updated, ready to
-   submit with this release.
+2. The Chrome Web Store data-use answers and the justifications for the `identity` and `alarms` permissions are
+   saved in the dashboard before the release is tagged, since the tag submits it ([Steps](#steps), step 3).
 3. PRIVACY.md describes the server source (what is sent, to whom, what unAlgorithm Cloud keeps), in the same release.
 4. The store extension's id is in `EXTENSION_IDS` on unAlgorithm Cloud, so the Cloud accepts its sign-in.
 5. Invitees are still limited to the sign-up allowlist (`SIGNUP_ALLOWLIST`) until the public launch.
