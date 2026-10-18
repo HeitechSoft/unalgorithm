@@ -248,7 +248,7 @@ describe('copy and accessibility', () => {
       "This deletes your account on Lagoon Classifier: your synced settings, devices, passkeys and usage history. Every computer signed in with this account is signed out. This can't be undone.",
     );
     // No file in src names a server itself: test_web_source_never_hardcodes_cloud_name (authorize.test.tsx) reads them all.
-    expect(dialog().textContent).not.toContain('UnAlgorithm');
+    expect(dialog().textContent).not.toContain('unAlgorithm');
   });
 
   it('test_data_section_keyboard', async () => {

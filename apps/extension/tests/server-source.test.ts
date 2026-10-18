@@ -440,7 +440,7 @@ describe('classifyItems with a server source', () => {
 
   it('test_auth_required_pause_message_names_server', async () => {
     for (const [baseUrl, message] of [
-      [PINNED_CLOUD_ORIGIN, 'Sign in to UnAlgorithm Cloud again.'],
+      [PINNED_CLOUD_ORIGIN, 'Sign in to unAlgorithm Cloud again.'],
       ['https://ai.example.org', 'Sign in to ai.example.org again.'],
     ] as const) {
       await setSource({ kind: 'server', baseUrl });
@@ -466,8 +466,8 @@ describe('classifyItems with a server source', () => {
 describe('status and setup', () => {
   it('test_ai_status_server_label_and_attention', async () => {
     await setSource({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN });
-    const attention = { state: 'needs-attention', message: 'Sign in to UnAlgorithm Cloud again.' };
-    expect(await aiStatus()).toMatchObject({ configured: true, kind: 'server', label: 'UnAlgorithm Cloud', ...attention });
+    const attention = { state: 'needs-attention', message: 'Sign in to unAlgorithm Cloud again.' };
+    expect(await aiStatus()).toMatchObject({ configured: true, kind: 'server', label: 'unAlgorithm Cloud', ...attention });
 
     await serverAccountItem.setValue(account({ origin: ORIGIN }));
     expect(await aiStatus(), 'another server').toMatchObject(attention);
@@ -477,7 +477,7 @@ describe('status and setup', () => {
 
     await serverAccountItem.setValue(account({ origin: PINNED_CLOUD_ORIGIN }));
     const ready = await aiStatus();
-    expect(ready).toMatchObject({ label: 'UnAlgorithm Cloud', state: 'ready', capApplies: true });
+    expect(ready).toMatchObject({ label: 'unAlgorithm Cloud', state: 'ready', capApplies: true });
     expect(ready).not.toHaveProperty('message');
     expect(ready).not.toHaveProperty('model');
 
@@ -507,7 +507,7 @@ describe('status and setup', () => {
     vi.stubGlobal('fetch', notServer);
     expect(await testSource({ kind: 'server', baseUrl: ORIGIN })).toStrictEqual({
       ok: false,
-      error: { code: 'unsupported', message: "That address isn't an UnAlgorithm server." },
+      error: { code: 'unsupported', message: "That address isn't an unAlgorithm server." },
     });
 
     // Signed out: the extension's own words, naming the server.

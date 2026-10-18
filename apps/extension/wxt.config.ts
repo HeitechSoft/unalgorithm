@@ -56,7 +56,7 @@ export function manifestFor(mode: string): UserManifest {
   const identity = cloudEnabled(mode) && !e2e ? ['identity' as const] : [];
   return {
     name: '__MSG_extName__',
-    short_name: 'UnAlgorithm',
+    short_name: 'unAlgorithm',
     description: '__MSG_extDescription__',
     default_locale: 'en',
     minimum_chrome_version: '130',
@@ -77,7 +77,7 @@ export function manifestFor(mode: string): UserManifest {
     // (ADR 0004).
     optional_host_permissions: ['https://*/*', 'http://*/*'],
     optional_permissions: ['declarativeNetRequestWithHostAccess', ...identity],
-    action: { default_title: 'UnAlgorithm' },
+    action: { default_title: 'unAlgorithm' },
     ...(mode === 'production' ? {} : { key: devKey.key }),
   };
 }

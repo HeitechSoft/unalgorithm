@@ -154,7 +154,7 @@ describe('sync switch', () => {
     const { toggle } = await renderCard();
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText('Your settings stay on this computer.')).toBeTruthy();
-    expect(screen.getByText('Devices signed in to UnAlgorithm Cloud')).toBeTruthy();
+    expect(screen.getByText('Devices signed in to unAlgorithm Cloud')).toBeTruthy();
     const current = screen.getByText('Laptop').closest('.ua-row') as HTMLElement;
     expect(within(current).getByText('This computer')).toBeTruthy();
     expect(within(current).queryByRole('button')).toBeNull();
@@ -189,8 +189,8 @@ describe('sync switch', () => {
     for (const words of [
       'the names of people you always show or hide',
       'API keys and sign-in tokens never leave this computer',
-      'saved on UnAlgorithm Cloud',
-      'What UnAlgorithm learned from your feedback stays on this computer too.',
+      'saved on unAlgorithm Cloud',
+      'What unAlgorithm learned from your feedback stays on this computer too.',
     ]) {
       expect(dialog.textContent).toContain(words);
     }
@@ -268,7 +268,7 @@ describe('naming', () => {
     expect(dialogNamed('Revoke Work PC?').textContent).toContain(
       "It's signed out at once and has to sign in again to use ai.example.org.",
     );
-    expect(document.body.textContent).not.toContain('UnAlgorithm Cloud');
+    expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
   });
 });
 
@@ -305,7 +305,7 @@ describe('devices', () => {
 
 describe('sign in again', () => {
   it('test_auth_problem_offers_sign_in_again', async () => {
-    const message = 'Sign in to UnAlgorithm Cloud again to keep syncing.';
+    const message = 'Sign in to unAlgorithm Cloud again to keep syncing.';
     replies.syncStatus = () => ({ ...OFF, enabled: true, state: 'problem', lastSyncAt: null, problem: 'auth', message });
     replies.serverDevices = () => ({ ok: false, error: { code: 'auth-required', message: 'Sign in again to see devices.' } });
     replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN) });
@@ -345,17 +345,17 @@ describe('privacy pane', () => {
     render(<PrivacyPane settings={defaultSettings()} device={device()} />);
     await waitFor(() =>
       expect(footerOf()?.textContent).toBe(
-        'Rules run in your browser. Your settings, interests and exceptions are synced with UnAlgorithm Cloud.',
+        'Rules run in your browser. Your settings, interests and exceptions are synced with unAlgorithm Cloud.',
       ),
     );
-    expect(boxes()).toEqual(['This browser', 'UnAlgorithm Cloud']);
+    expect(boxes()).toEqual(['This browser', 'unAlgorithm Cloud']);
     expect(document.body.textContent).not.toContain('Nothing leaves your computer.');
     cleanup();
 
     // Beside another AI recipient.
     render(<PrivacyPane settings={defaultSettings()} device={device({ kind: 'anthropic', model: null })} />);
-    await waitFor(() => expect(boxes()).toEqual(['This browser', 'Anthropic', 'UnAlgorithm Cloud']));
-    expect(footerOf()?.textContent).toMatch(/Your settings, interests and exceptions are synced with UnAlgorithm Cloud\.$/);
+    await waitFor(() => expect(boxes()).toEqual(['This browser', 'Anthropic', 'unAlgorithm Cloud']));
+    expect(footerOf()?.textContent).toMatch(/Your settings, interests and exceptions are synced with unAlgorithm Cloud\.$/);
     cleanup();
 
     // Sync off: as before.

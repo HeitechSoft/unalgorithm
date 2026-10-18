@@ -1,5 +1,5 @@
 import { checkCostLine, dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
-import type { PlatformId, PostKey } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, type PlatformId, type PostKey, SOURCE_LIST_PAGE_URL } from '@unalgorithm/protocol';
 import {
   Banner,
   Button,
@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { FEED_URLS, platformOfUrl, useActiveTab, useStorageItem, useTabState } from '../../lib/hooks.ts';
 import { sendQuietly, sendToTab } from '../../lib/messages.ts';
+import { sheetLinks } from '../../lib/report-links.ts';
 import { type FactcheckEntry, factcheckItem, statsItem } from '../../lib/storage.ts';
 
 const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
@@ -77,15 +78,17 @@ export function App() {
   );
 
   if (openEntry) {
+    const version = browser.runtime.getManifest().version;
     const sheet = {
       label: openEntry.label,
       status: openEntry.status,
       errorMessage: openEntry.error?.message,
+      links: sheetLinks(openEntry, version),
       earlier: entries
         .filter((e) => e !== openEntry)
         .slice(0, 4)
         .map((e) => ({
-          label: e.task === 'perspectives' ? `Other perspectives: ${e.label}` : e.label,
+          label: e.task === 'perspectives' ? `${FEATURE_NAMES.perspectives}: ${e.label}` : e.label,
           onOpen: () => setNav({ tabId, at: Date.now(), pick: e.startedAt }),
         })),
       onBack: () => setNav({ tabId, at: Date.now(), pick: null }),
@@ -93,7 +96,12 @@ export function App() {
     return (
       <main className="panel" data-density="compact">
         {openEntry.task === 'perspectives' ? (
-          <PerspectivesSheet {...sheet} result={openEntry.perspectives} />
+          <PerspectivesSheet
+            {...sheet}
+            result={openEntry.perspectives}
+            listWarnings={openEntry.listWarnings}
+            listHref={SOURCE_LIST_PAGE_URL}
+          />
         ) : (
           <FactcheckSheet {...sheet} result={openEntry.result} costLine={checkCostLine(openEntry)} />
         )}
@@ -108,7 +116,7 @@ export function App() {
         <EmptyState
           icon={Newspaper}
           title="Open your feed to see highlights"
-          body="UnAlgorithm lists the posts picked for you and everything it folded away, right here."
+          body="unAlgorithm lists the posts picked for you and everything it folded away, right here."
         />
         <div className="ua-hstack" style={{ justifyContent: 'center', gap: 8 }}>
           <Button variant="tinted" size="sm" href={FEED_URLS.linkedin}>

@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in UnAlgorithm itself is broken (settings, popup, side panel, AI setup, onboarding).
+description: Something in unAlgorithm itself is broken (settings, popup, side panel, AI setup, onboarding).
 labels: [bug, triage]
 body:
   - type: markdown
@@ -24,7 +24,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: UnAlgorithm version
+      label: unAlgorithm version
       description: Settings → About
       placeholder: 0.1.0
     validations:

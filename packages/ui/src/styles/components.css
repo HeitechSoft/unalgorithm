@@ -1097,7 +1097,7 @@
     white-space: nowrap;
   }
 
-  /* ---------- Other perspectives sheet (side panel); builds on the .ua-factcheck classes ---------- */
+  /* ---------- UnEcho Chamber sheet (side panel); builds on the .ua-factcheck classes ---------- */
   .ua-perspectives-story,
   .ua-perspectives-section {
     display: grid;

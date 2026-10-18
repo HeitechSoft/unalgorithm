@@ -1,0 +1,54 @@
+name: Source list appeal
+description: An outlet's lean, name, web addresses or country on unAlgorithm Cloud's source list looks wrong.
+title: "[Appeal] "
+labels: [source-list-appeal, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **What never to send.** Use your own words: never the post, a screenshot of it, a link to it, or anyone's name.
+
+        Your GitHub username is public on this issue. Outlets may appeal by email instead: legal@heitechsoft.com.
+
+        How appeals are decided: https://unalgorithmfeed.com/corrections/
+
+        Appeals are for unAlgorithm Cloud's source list only. The leans on your own list are yours to change in Settings → AI.
+  - type: input
+    id: outlet
+    attributes:
+      label: Outlet id, as on the source list page
+    validations:
+      required: true
+  - type: dropdown
+    id: what
+    attributes:
+      label: What the appeal is about
+      options:
+        - Lean
+        - Name, web addresses or country
+        - Evidence
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Source list version
+      description: The version the source list page shows.
+  - type: textarea
+    id: appeal
+    attributes:
+      label: What is wrong, and why
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Public evidence
+      description: Links to public pages that show it.
+  - type: dropdown
+    id: represent
+    attributes:
+      label: Do you represent this outlet?
+      options:
+        - I represent this outlet
+        - I don't

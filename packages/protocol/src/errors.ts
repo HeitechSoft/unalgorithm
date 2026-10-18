@@ -1,4 +1,4 @@
-/** Every way an AI call can fail, shared by local sources and the (future) UnAlgorithm server. */
+/** Every way an AI call can fail, shared by local sources and the (future) unAlgorithm server. */
 export const AI_ERROR_CODES = [
   'no-key',
   'no-model',

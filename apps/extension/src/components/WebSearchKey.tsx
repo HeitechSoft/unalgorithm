@@ -1,4 +1,5 @@
 import { type Device, type WebSearchProviderId, webSearchName, webSearchOrigin } from '@unalgorithm/core';
+import { FEATURE_NAMES } from '@unalgorithm/protocol';
 import { Banner, Button, ChoiceCard, ChoiceCardGroup, ExternalLink, SecretField } from '@unalgorithm/ui';
 import { useState } from 'react';
 import { browser } from 'wxt/browser';
@@ -18,9 +19,9 @@ const DESCRIPTIONS: Record<WebSearchProviderId, string> = {
 type Result = { ok: boolean; text: string };
 
 /**
- * Settings → Labs, for an OpenAI-compatible source only (P3-45, F24): the person's own Brave or Tavily key, which
- * fact-check and Other perspectives search the web with. The provider's host permission is asked for from the Save
- * click only. The saved key stays in the background and is never read back into this page.
+ * Settings → AI, above the Fact-check switch, for an OpenAI-compatible source only (P3-45, F24): the person's own
+ * Brave or Tavily key, which fact-check and UnEcho Chamber search the web with. The provider's host permission is
+ * asked for from the Save click only. The saved key stays in the background and is never read back into this page.
  */
 export function WebSearchKey({ device }: { device: Device }) {
   const saved = device.webSearch;
@@ -37,7 +38,7 @@ export function WebSearchKey({ device }: { device: Device }) {
       setKey('');
       setResult({ ok: true, text: `Connected · ${webSearchName(p)}` });
     } catch {
-      setResult({ ok: false, text: 'UnAlgorithm could not save the key. Reload this page and try again.' });
+      setResult({ ok: false, text: 'unAlgorithm could not save the key. Reload this page and try again.' });
     } finally {
       setBusy(false);
     }
@@ -50,7 +51,7 @@ export function WebSearchKey({ device }: { device: Device }) {
     const denied = () =>
       setResult({
         ok: false,
-        text: `UnAlgorithm needs permission to reach ${new URL(webSearchOrigin(p)).hostname}. That's the only place your web search key and the search words go.`,
+        text: `unAlgorithm needs permission to reach ${new URL(webSearchOrigin(p)).hostname}. That's the only place your web search key and the search words go.`,
       });
     setResult(null);
     void browser.permissions
@@ -71,8 +72,8 @@ export function WebSearchKey({ device }: { device: Device }) {
       <h3 className="ua-group-header">Web search key</h3>
       <div className="ua-stack">
         <p className="ua-footnote" style={{ margin: 0 }}>
-          Fact-check and Other perspectives search the web with your own Brave or Tavily key. Only the claims (or, for Other
-          perspectives, the story's search words) are sent to it.
+          {FEATURE_NAMES.factcheck} and {FEATURE_NAMES.perspectives} search the web with your own Brave or Tavily key. Only the
+          claims (or, for {FEATURE_NAMES.perspectives}, the story's search words) are sent to it.
         </p>
         {saved ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

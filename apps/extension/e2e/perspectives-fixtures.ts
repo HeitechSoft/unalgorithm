@@ -1,16 +1,18 @@
 import type { Locator, Page } from '@playwright/test';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
-import { LEAN_BUCKETS, type LeanBucket } from '@unalgorithm/protocol';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
+import { BUCKET_LABELS, LEAN_BUCKETS, type LeanBucket } from '@unalgorithm/protocol';
 import { expect } from './fixtures.ts';
 
 /**
- * Shared by the two "Other perspectives" end-to-end specs (P3-41): the Facebook link share's link, the fictional
- * fixture registry's buckets and the coverage the mocks return for them, and the side-panel sheet's checks. Every
+ * Shared by the two UnEcho Chamber end-to-end specs (P3-41): the Facebook link share's link, the fictional
+ * fixture list's buckets and the coverage the mocks return for them, and the side-panel sheet's checks. Every
  * outlet is a fixture outlet on `*.example`: no real outlet, no real lean.
  */
 
-/** The action's name, and the Labs switch's. */
-export const PERSPECTIVES = 'Other perspectives';
+/** The feature's name: the AI pane switch's, the feed row's and the side-panel sheet's. */
+export const PERSPECTIVES = 'UnEcho Chamber';
+/** The in-feed start button's accessible name: the visible "UnEcho Chamber", then what it does (D74). */
+export const PERSPECTIVES_START = 'UnEcho Chamber: see how outlets across the spectrum covered this story';
 /** `ORGANIC_LINK_SHARE` (Facebook, public): its text, which never leaves for a comparison, and its shared link. */
 export const LINK_POST_TEXT = 'Interesting read on city transit funding.';
 export const LINK_URL = 'news.example.com/transit';
@@ -20,23 +22,15 @@ export const LINK_TITLE = 'City approves new transit budget';
 export const COVERED = ['left', 'center', 'right'] as const satisfies readonly LeanBucket[];
 export const GAPS = LEAN_BUCKETS.filter((b) => !(COVERED as readonly LeanBucket[]).includes(b));
 
-const BUCKET_LABELS: Record<LeanBucket, string> = {
-  left: 'Left',
-  'lean-left': 'Leans left',
-  center: 'Center',
-  'lean-right': 'Leans right',
-  right: 'Right',
-};
-
 const PASSAGES: Record<(typeof COVERED)[number], string> = {
   left: 'The city council approved the new transit budget on Tuesday after a long debate.',
   center: 'Council members voted to approve the transit budget, which adds bus routes next year.',
   right: 'The approved transit budget raises the city transit levy for property owners.',
 };
 
-/** A bucket's fixture domains, in registry order. */
+/** A bucket's fixture domains, in list order. */
 export function domainsOf(bucket: LeanBucket): string[] {
-  return FIXTURE_REGISTRY.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
+  return FIXTURE_LIST.outlets.filter((o) => o.lean?.bucket === bucket).flatMap((o) => o.domains);
 }
 
 /** Today in UTC, `YYYY-MM-DD`: inside the story's window, which ends now (the link carries no date). */
@@ -50,7 +44,7 @@ export interface CoverageHit {
   url: string;
   title: string;
   passage: string;
-  /** The fixture outlet's registry name. */
+  /** The fixture outlet's name on the list. */
   outlet: string;
 }
 
@@ -60,7 +54,7 @@ export interface CoverageHit {
  */
 export function coverageHit(bucket: (typeof COVERED)[number]): CoverageHit {
   const domain = domainsOf(bucket)[0] ?? '';
-  const outlet = FIXTURE_REGISTRY.outlets.find((o) => o.domains.includes(domain))?.name ?? '';
+  const outlet = FIXTURE_LIST.outlets.find((o) => o.domains.includes(domain))?.name ?? '';
   return {
     bucket,
     url: `https://${domain}/${today().replaceAll('-', '/')}/transit-budget`,
@@ -84,7 +78,7 @@ export function coveredBucketInQuery(query: string): (typeof COVERED)[number] | 
 /**
  * The side panel (opened as a page; the feed brought to the front so it is the panel's active tab) shows the
  * comparison: coverage under Left, Center and Right, "No coverage found" under the two gaps, the agreed point quoting
- * the Left and Center sources, the registry line and the AI-generated badge. Returns the sheet.
+ * the Left and Center sources, the source list line and the AI-generated badge. Returns the sheet.
  */
 export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   const sheet = panel.getByRole('region', { name: PERSPECTIVES });
@@ -104,16 +98,16 @@ export async function expectComparisonSheet(panel: Page): Promise<Locator> {
   await expect(agreed.locator('blockquote')).toHaveText([first8(PASSAGES.left), first8(PASSAGES.center)]);
   await expect(
     sheet.getByText(
-      `Leans come from the UnAlgorithm outlet registry (${FIXTURE_REGISTRY.meta.version}), reviewed by people, never from AI.`,
+      `Leans come from unAlgorithm Cloud's source list (version ${FIXTURE_LIST.version}), set by people with evidence, never by AI.`,
       { exact: true },
     ),
   ).toBeVisible();
   return sheet;
 }
 
-/** A Facebook post's "Other perspectives" button. */
+/** A Facebook post's UnEcho Chamber button. */
 export const perspectivesButton = (post: Locator): Locator =>
-  post.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES, exact: true });
+  post.locator('unalgo-post').getByRole('button', { name: PERSPECTIVES_START, exact: true });
 
 /** The Facebook fixture feed's two posts: friends-only first, then the public link share. */
 export function facebookPosts(page: Page): { friends: Locator; share: Locator } {
@@ -121,7 +115,7 @@ export function facebookPosts(page: Page): { friends: Locator; share: Locator } 
   return { friends, share };
 }
 
-/** Other perspectives on the link share: the price line `price`, `beforeConfirm`, then Compare, then "See result". */
+/** UnEcho Chamber on the link share: the price line `price`, `beforeConfirm`, then Compare, then "See result". */
 export async function compare(share: Locator, price: string, beforeConfirm?: () => unknown): Promise<void> {
   const ui = share.locator('unalgo-post');
   await perspectivesButton(share).click();

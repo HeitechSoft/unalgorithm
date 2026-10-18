@@ -11,7 +11,28 @@
  * do, and changing the signed-in admin's own access or role answers 400. Inviting an address (CL4-06) adds it, as the
  * server keeps it (trimmed, lower case), to the next list's invites at `INVITED_AT`, or answers 400 when an account has
  * it; removing one takes it off. The overview (`adminOverview`) is answered as given.
+ *
+ * The public source list (`sourceList`) and its history (`outletChanges`) are answered as given, with or without a
+ * session, as P3-67's routes are: by default an empty list that was never changed.
+ *
+ * The source control page's routes (P3-73) keep their own copy of that list and history, for an admin only: a change
+ * is checked as the server checks it (the version the page showed, an id already listed or gone, the list rules) and,
+ * when it is accepted, changes the next list and adds a history line by the signed-in address at `OUTLET_CHANGED_AT`;
+ * the import adds `CANDIDATES` to an empty list. The public routes keep answering as given.
+ *
+ * The Pricing page's routes (PA-03) keep a price book (`DEFAULT_PRICE_BOOK` unless a test passes its own), its version
+ * and its history, for an admin only, and answer with the server's clock at `PRICES_NOW` and `billing` as the discovery
+ * document says. A change is checked as the server checks it, with the same functions: the version the page showed
+ * (409), PA-01's edits (404 for a cancel or a move of a change that isn't scheduled) and PA-02's
+ * `priceBookChangeIssues` at `PRICES_NOW` (400 with `priceIssuesText`). An accepted change replaces the book and adds a
+ * history line by the signed-in address, after a `seed` line the first time, as the server's `price_changes` does.
+ *
+ * The public `/prices.json` (PA-04) is answered as given (`prices`), with or without a session: by default `PRICES`, the
+ * code defaults never saved. It is a separate value from the Pricing routes' book, as a test sets what the account page
+ * reads.
  */
+import { priceIssuesText } from '@unalgorithm/core';
+import { type CandidateOutlet, listProblems, listProblemText } from '@unalgorithm/outlets';
 import {
   ACCOUNT_DELETE_PATH,
   ACCOUNT_DEVICE_REVOKE_PATH,
@@ -21,16 +42,43 @@ import {
   type AccountExport,
   ADMIN_INVITE_REMOVE_PATH,
   ADMIN_INVITES_PATH,
+  ADMIN_OUTLETS_IMPORT_PATH,
+  ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
+  ADMIN_PRICES_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
+  type AdminOutletChange,
   type AdminOverview,
   type AdminUsers,
   AUTHORIZE_API_PATH,
   adminUserActionPath,
+  cancelTaskChange,
   chromiumRedirectUri,
+  DEFAULT_PRICE_BOOK,
+  moveTaskChange,
+  type OfficialList,
+  type OfficialOutlet,
+  OUTLET_CHANGES_JSON_PATH,
+  OUTLETS_JSON_PATH,
+  type OutletChangeAction,
+  OutletChangeRequestSchema,
+  type OutletChanges,
+  PRICES_JSON_PATH,
+  type PriceBook,
+  type PriceChange,
+  type PriceChangeRequest,
+  PriceChangeRequestSchema,
+  type PriceChangeValue,
+  type PublishedPrices,
+  priceBookChangeIssues,
   SERVER_INFO_PATH,
   type ServerInfo,
+  scheduledTaskChanges,
+  starterCreditAt,
+  taskPriceAt,
+  withStarterCredit,
+  withTaskCard,
 } from '@unalgorithm/protocol';
 import { vi } from 'vitest';
 import {
@@ -161,6 +209,94 @@ export const SETUP_REFUSED = {
   body: { code: 'permission', message: "This setup link doesn't work. Ask for a new one." },
 };
 
+/** A server whose source list was never changed (P3-67): what the public routes answer unless a test passes its own. */
+export const EMPTY_SOURCE_LIST: OfficialList = { v: 1, version: '0', updatedAt: null, license: 'CC-BY-4.0', outlets: [] };
+export const NO_OUTLET_CHANGES: OutletChanges = { v: 1, changes: [] };
+
+/** When the fake server's source control routes make a change. */
+export const OUTLET_CHANGED_AT = '2026-10-16T12:00:00.000Z';
+/** The candidate list the fake server's import adds: fictional `.example` outlets, never a lean (as the real one). */
+export const CANDIDATES: readonly CandidateOutlet[] = [
+  { id: 'fx-candidate-b', name: 'Fixture Candidate B', domains: ['candidate-b.example'], country: 'CA', lean: null },
+  {
+    id: 'fx-candidate-a',
+    name: 'Fixture Candidate A',
+    domains: ['candidate-a.example', 'candidate-a-news.example'],
+    country: 'US',
+    lean: null,
+  },
+];
+/** What P3-73's routes answer for a change made on a list that changed since the page showed it. */
+export const LIST_CHANGED = {
+  status: 409,
+  body: { code: 'bad-request', message: 'The list changed since you opened it. Reload it and try again.' },
+};
+/** What they answer for an edit or a removal of an id the list doesn't have. */
+export const OUTLET_GONE = { status: 404, body: { code: 'not-found', message: 'Not found.' } };
+const ID_TAKEN = { status: 400, body: { code: 'bad-request', message: 'An outlet with this id already exists.' } };
+const LIST_NOT_EMPTY = { status: 400, body: { code: 'bad-request', message: "The source list isn't empty." } };
+const NOT_VALID = { status: 400, body: { code: 'bad-request', message: 'The request was not valid.' } };
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** The server's clock in every answer of the fake Pricing routes (PA-05): the 2026-10-18 prices are in effect. */
+export const PRICES_NOW = '2026-11-02T12:00:00Z';
+/** What PA-03's routes answer for a change made on a book that changed since the page showed it. */
+export const PRICES_CHANGED = {
+  status: 409,
+  body: { code: 'bad-request', message: 'The prices changed since you opened this page. Reload it and try again.' },
+};
+/** What they answer for a cancel or a move of a change that isn't scheduled. */
+export const PRICE_CHANGE_GONE = {
+  status: 404,
+  body: { code: 'bad-request', message: 'That scheduled change is no longer on the list.' },
+};
+
+/** What `/prices.json` answers unless a test passes its own: the code defaults, never saved (version '0'). */
+export const PRICES: PublishedPrices = { v: 1, version: '0', updatedAt: null, ...DEFAULT_PRICE_BOOK };
+
+/** The book a price change makes, and what it changed (the history's `before` and `after`). */
+interface PriceEdit {
+  head: PriceBook;
+  before: PriceChangeValue;
+  after: PriceChangeValue;
+  movedTo: string | null;
+}
+
+/**
+ * The book `req` makes from `book` at `now`, with PA-01's edits and PA-02's starter credit step, as the server's
+ * `editOf` does; null for a cancel or a move of a change `book` doesn't schedule.
+ */
+function priceEdit(book: PriceBook, req: PriceChangeRequest, now: Date): PriceEdit | null {
+  switch (req.action) {
+    case 'schedule': {
+      const price = taskPriceAt(new Date(req.effectiveFrom), req.task, book.schedule);
+      const schedule = withTaskCard(book.schedule, req.task, req.effectiveFrom, req.card);
+      return { head: { ...book, schedule }, before: price.offered ? price.card : null, after: req.card, movedTo: null };
+    }
+    case 'cancel':
+    case 'move': {
+      const schedule =
+        req.action === 'cancel'
+          ? cancelTaskChange(book.schedule, req.task, req.effectiveFrom)
+          : moveTaskChange(book.schedule, req.task, req.effectiveFrom, req.to);
+      const since = new Date(Date.parse(req.effectiveFrom) - 1);
+      const change = scheduledTaskChanges(book.schedule, req.task, since).find((c) => c.effectiveFrom === req.effectiveFrom);
+      if (schedule === null || change === undefined) return null;
+      const head = { ...book, schedule };
+      if (req.action === 'cancel') return { head, before: change.card, after: change.before, movedTo: null };
+      return { head, before: change.card, after: change.card, movedTo: req.to };
+    }
+    case 'starter': {
+      const before = starterCreditAt(now, book).amountMicros;
+      return { head: withStarterCredit(book, req.amountMicros, now), before, after: req.amountMicros, movedTo: null };
+    }
+    case 'purchase':
+      return { head: { ...book, purchase: req.purchase }, before: book.purchase, after: req.purchase, movedTo: null };
+    case 'auto-reload':
+      return { head: { ...book, autoReload: req.autoReload }, before: book.autoReload, after: req.autoReload, movedTo: null };
+  }
+}
+
 export const INFO: ServerInfo = {
   v: 1,
   name: 'Example AI',
@@ -217,6 +353,12 @@ export function fakeServer({
   role = null,
   adminUsers = NO_ADMIN_USERS,
   adminOverview = OVERVIEW,
+  sourceList = EMPTY_SOURCE_LIST,
+  outletChanges = NO_OUTLET_CHANGES,
+  priceBook = DEFAULT_PRICE_BOOK,
+  priceVersion = '0',
+  priceChanges = [],
+  prices = PRICES,
   info = INFO,
   devices = [],
   passkeys = [],
@@ -227,6 +369,14 @@ export function fakeServer({
   role?: string | null;
   adminUsers?: AdminUsers;
   adminOverview?: AdminOverview;
+  sourceList?: OfficialList;
+  outletChanges?: OutletChanges;
+  /** The Pricing routes' book, its version ('0': the code defaults, never saved) and history (newest first). */
+  priceBook?: PriceBook;
+  priceVersion?: string;
+  priceChanges?: readonly PriceChange[];
+  /** What the public `/prices.json` answers (the account page's prices). */
+  prices?: PublishedPrices;
   info?: ServerInfo;
   devices?: readonly AccountDevice[];
   passkeys?: readonly PasskeyRow[];
@@ -238,6 +388,39 @@ export function fakeServer({
   let passkeyList = [...passkeys];
   let setupClaimed = false;
   let accounts = structuredClone(adminUsers);
+  /** The source control routes' list and history (newest first), from the public ones; a history line keeps its `by`. */
+  let outletList = structuredClone(sourceList);
+  let outletHistory: AdminOutletChange[] = structuredClone(outletChanges.changes).map((c) => ({ by: null, ...c }));
+  /** Publishes `outlets` as the next version, with one history line per change, as P3-73's `outlet_changes` does. */
+  function publish(
+    outlets: OfficialOutlet[],
+    made: { action: OutletChangeAction; before: OfficialOutlet | null; after: OfficialOutlet | null }[],
+  ) {
+    let seq = Number(outletList.version);
+    const lines = made.map(({ action, before, after }) => ({
+      seq: ++seq,
+      at: OUTLET_CHANGED_AT,
+      action,
+      outletId: (after ?? before)?.id ?? '',
+      before,
+      after,
+      by: current,
+    }));
+    outletList = { ...outletList, version: String(seq), updatedAt: OUTLET_CHANGED_AT, outlets: [...outlets].sort(byId) };
+    outletHistory = [...lines.reverse(), ...outletHistory];
+    return { status: 200, body: { ok: true, version: outletList.version } };
+  }
+  /** The Pricing routes' book, its version and newest change, and its history (newest first). */
+  let book = priceBook;
+  let bookVersion = Number(priceVersion);
+  let bookUpdatedAt: string | null = priceChanges[0]?.at ?? null;
+  let bookHistory: PriceChange[] = structuredClone([...priceChanges]);
+  /** Adds one accepted change's history lines (a `seed` line first, the first time), each the next version. */
+  function recordPriceChange(lines: Omit<PriceChange, 'seq' | 'at' | 'by'>[]) {
+    const made = lines.map((line) => ({ ...line, seq: ++bookVersion, at: PRICES_NOW, by: current }));
+    bookHistory = [...made.reverse(), ...bookHistory];
+    bookUpdatedAt = PRICES_NOW;
+  }
   /** `answer` with a session, 401 without one. */
   const withSession =
     (answer: (call: Call) => Answer): Reply =>
@@ -254,6 +437,9 @@ export function fakeServer({
   };
   const all: Record<string, Reply> = {
     [`GET ${SERVER_INFO_PATH}`]: { status: 200, body: info },
+    [`GET ${OUTLETS_JSON_PATH}`]: { status: 200, body: sourceList },
+    [`GET ${OUTLET_CHANGES_JSON_PATH}`]: { status: 200, body: outletChanges },
+    [`GET ${PRICES_JSON_PATH}`]: { status: 200, body: prices },
     [`GET ${SESSION_PATH}`]: () => ({
       status: 200,
       body: current ? { session: { userId: 'u1' }, user: { email: current, role } } : null,
@@ -320,6 +506,69 @@ export function fakeServer({
       const email = field(call, 'email')?.trim().toLowerCase();
       accounts = { ...accounts, invites: accounts.invites.filter((i) => i.email !== email) };
       return { status: 200, body: { ok: true } };
+    }),
+    [`GET ${ADMIN_OUTLETS_PATH}`]: asAdmin(() => ({ status: 200, body: { list: outletList, changes: outletHistory } })),
+    [`POST ${ADMIN_OUTLETS_PATH}`]: asAdmin((call) => {
+      const parsed = OutletChangeRequestSchema.safeParse(call.body);
+      if (!parsed.success) return NOT_VALID;
+      const req = parsed.data;
+      if (req.baseVersion !== outletList.version) return LIST_CHANGED;
+      const id = req.action === 'remove' ? req.id : req.outlet.id;
+      const before = outletList.outlets.find((o) => o.id === id) ?? null;
+      if (req.action === 'add' && before) return ID_TAKEN;
+      if (req.action !== 'add' && !before) return OUTLET_GONE;
+      const after = req.action === 'remove' ? null : { ...req.outlet, changedOn: OUTLET_CHANGED_AT.slice(0, 10) };
+      const rest = outletList.outlets.filter((o) => o.id !== id);
+      const outlets = after ? [...rest, after] : rest;
+      const [problem] = listProblems(outlets);
+      if (problem) return { status: 400, body: { code: 'bad-request', message: listProblemText(problem) } };
+      return publish(outlets, [{ action: req.action, before, after }]);
+    }),
+    [`POST ${ADMIN_OUTLETS_IMPORT_PATH}`]: asAdmin((call) => {
+      const body = call.body;
+      if (typeof body !== 'object' || body === null || Object.keys(body).length > 0) return NOT_VALID;
+      if (outletList.outlets.length > 0) return LIST_NOT_EMPTY;
+      const imported = CANDIDATES.map((c) => ({ ...c, domains: [...c.domains], changedOn: OUTLET_CHANGED_AT.slice(0, 10) }));
+      return publish(
+        imported,
+        [...imported].sort(byId).map((after) => ({ action: 'import' as const, before: null, after })),
+      );
+    }),
+    [`GET ${ADMIN_PRICES_PATH}`]: asAdmin(() => ({
+      status: 200,
+      body: {
+        prices: { v: 1, version: String(bookVersion), updatedAt: bookUpdatedAt, ...book },
+        changes: bookHistory,
+        now: PRICES_NOW,
+        billing: info.billing,
+      },
+    })),
+    [`POST ${ADMIN_PRICES_PATH}`]: asAdmin((call) => {
+      const parsed = PriceChangeRequestSchema.safeParse(call.body);
+      if (!parsed.success) return NOT_VALID;
+      const req = parsed.data;
+      if (req.baseVersion !== String(bookVersion)) return PRICES_CHANGED;
+      const now = new Date(PRICES_NOW);
+      const edit = priceEdit(book, req, now);
+      if (!edit) return PRICE_CHANGE_GONE;
+      const issues = priceBookChangeIssues(book, edit.head, now);
+      if (issues.length > 0) return { status: 400, body: { code: 'bad-request', message: priceIssuesText(issues) } };
+      const scheduled = req.action === 'schedule' || req.action === 'cancel' || req.action === 'move';
+      const { before, after, movedTo } = edit;
+      const seed = { action: 'seed' as const, task: null, effectiveFrom: null, movedTo: null, before: null, after: null };
+      recordPriceChange([
+        ...(bookVersion === 0 ? [seed] : []),
+        {
+          action: req.action,
+          task: scheduled ? req.task : null,
+          effectiveFrom: scheduled ? req.effectiveFrom : null,
+          movedTo,
+          before,
+          after,
+        },
+      ]);
+      book = edit.head;
+      return { status: 200, body: { ok: true, version: String(bookVersion) } };
     }),
     ...Object.fromEntries(
       adminUsers.users.flatMap(({ id, email }) => {

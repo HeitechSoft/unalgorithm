@@ -152,7 +152,7 @@ describe('SSRF suite', () => {
     ]);
     expect(lookups.filter((h) => h === 'ok.test')).toHaveLength(1);
     expect(lookups.filter((h) => h === 'ok2.test')).toHaveLength(1);
-    expect(sends[0]?.userAgent).toBe('UnAlgorithm-LinkCheck/0.1.0 (+https://srv.test)');
+    expect(sends[0]?.userAgent).toBe('unAlgorithm-LinkCheck/0.1.0 (+https://srv.test)');
   });
 
   it('test_egress_rechecks_every_redirect', async () => {
@@ -424,7 +424,7 @@ describe('transport', () => {
         family: 4,
         method: 'HEAD',
         signal: AbortSignal.timeout(10_000),
-        userAgent: 'UnAlgorithm-LinkCheck/0.1.0 (+https://srv.test)',
+        userAgent: 'unAlgorithm-LinkCheck/0.1.0 (+https://srv.test)',
       });
 
     expect(await send('/redirect')).toEqual({ status: 302, location: 'http://elsewhere.invalid/next' });
@@ -434,7 +434,7 @@ describe('transport', () => {
       family: 4,
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
-      userAgent: 'UnAlgorithm-LinkCheck/0.1.0 (+https://srv.test)',
+      userAgent: 'unAlgorithm-LinkCheck/0.1.0 (+https://srv.test)',
     });
     expect(getHang).toEqual({ status: 200, location: null });
 
@@ -442,7 +442,7 @@ describe('transport', () => {
     for (const headers of seen) {
       expect(headers.cookie).toBeUndefined();
       expect(headers.authorization).toBeUndefined();
-      expect(headers['user-agent']).toBe('UnAlgorithm-LinkCheck/0.1.0 (+https://srv.test)');
+      expect(headers['user-agent']).toBe('unAlgorithm-LinkCheck/0.1.0 (+https://srv.test)');
       expect(headers.accept).toBe('*/*');
       expect(headers.host).toBe(`pinned.invalid:${port}`);
     }

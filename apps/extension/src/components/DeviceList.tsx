@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { type BgError, type PublicServerAccount, sendToBackground } from '../lib/messages.ts';
 import { accountPageUrl } from '../lib/server-label.ts';
 
-const NO_ANSWER: BgError = { code: 'unknown', message: "UnAlgorithm couldn't finish that. Reload this page and try again." };
+const NO_ANSWER: BgError = { code: 'unknown', message: "unAlgorithm couldn't finish that. Reload this page and try again." };
 
 const nameOf = (d: AccountDevice) => d.name ?? 'Unnamed device';
 

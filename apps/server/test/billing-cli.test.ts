@@ -2,11 +2,14 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_PRICE_BOOK } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { applyPriceChange, openPriceStore } from '../src/admin/prices.ts';
 import { type BillingCliDeps, main } from '../src/cli/billing.ts';
 import { CONFIG_VARIABLES, type Config } from '../src/config.ts';
 import type { DbHandle } from '../src/db/client.ts';
+import { user } from '../src/db/schema.ts';
 import { createTestDb } from './support/db.ts';
 import { TEST_ENV, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
@@ -23,6 +26,18 @@ const THROWING_CLI = [
   '}',
   'export async function runCli() {',
   "  throw Object.assign(new Error('db at 10.0.0.5 failed'), { code: 'ECONNREFUSED' });",
+  '}',
+  '',
+].join('\n');
+
+/** A module whose one command prints the least amount one purchase may add, from the host's prices. */
+const PRICES_CLI = [
+  'export async function createBillingProvider() {',
+  "  throw new Error('the CLI makes no provider');",
+  '}',
+  'export async function runCli(_args, host, out) {',
+  '  out(String(host.prices.current().purchase.minMicros));',
+  '  return 0;',
   '}',
   '',
 ].join('\n');
@@ -123,6 +138,24 @@ describe('refusals', { timeout: PGLITE_TIMEOUT }, () => {
 });
 
 describe('passthrough', { timeout: PGLITE_TIMEOUT }, () => {
+  it('test_cli_host_reads_stored_prices', async () => {
+    const db = await testDb();
+    const config = moduleConfig(await moduleFile('prices.mjs', PRICES_CLI));
+    // The code defaults while none is stored.
+    expect(await run([], { db, config })).toEqual({ code: 0, lines: [String(DEFAULT_PRICE_BOOK.purchase.minMicros)] });
+
+    // An admin saves the purchase amounts (as the Pricing page's route does): the next command reads them.
+    const at = new Date();
+    await db.db
+      .insert(user)
+      .values({ id: 'u-ada', name: '', email: 'ada@example.org', emailVerified: true, createdAt: at, updatedAt: at });
+    const server = await openPriceStore(db.db, { seed: DEFAULT_PRICE_BOOK });
+    const purchase = { minMicros: 10_000_000, maxMicros: 1_000_000_000, presetsMicros: [10_000_000], defaultMicros: 10_000_000 };
+    const saved = await applyPriceChange(db.db, server, 'u-ada', { action: 'purchase', baseVersion: '0', purchase });
+    expect(saved).toMatchObject({ ok: true, changed: true });
+    expect(await run([], { db, config })).toEqual({ code: 0, lines: ['10000000'] });
+  });
+
   it('test_billing_cli_runs_module_command', async () => {
     const db = await testDb();
 

@@ -187,6 +187,7 @@ describe('shape', () => {
       model: 'fake-model',
       promptVersion: 1,
       registryVersion: 'fixture-1',
+      list: 'cloud',
       story: {
         url: 'https://center-a.example/story',
         query: 'bridge vote',

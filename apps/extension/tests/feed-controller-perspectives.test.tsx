@@ -1,6 +1,7 @@
 /**
- * "Other perspectives" in the feed (P3-40): offered only by the P3-36 rule with a usable registry, never automatic, the
- * price shown before a comparison runs, only the shared link sent, and its own row beside fact-check's.
+ * UnEcho Chamber in the feed (P3-40, P3-77): offered only by the P3-36 rule with the chosen source list ready, never
+ * automatic, the price (and the list's balance warnings) shown before a comparison runs, only the shared link sent, and
+ * its own row beside fact-check's.
  */
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import {
@@ -9,10 +10,13 @@ import {
   defaultDevice,
   defaultSettings,
   EMPTY_LEARNED,
+  type OwnOutlet,
   type ServerOffer,
+  type Settings,
 } from '@unalgorithm/core';
+import { FIXTURE_LIST, FIXTURE_OFFICIAL_LIST } from '@unalgorithm/outlets/testing';
 import { facebookAdapter, linkedinAdapter, type PlatformAdapter } from '@unalgorithm/platforms';
-import type { Classification, FactcheckResult, PerspectivesResult, PostKey } from '@unalgorithm/protocol';
+import type { Classification, FactcheckResult, LeanBucket, PerspectivesResult, PostKey } from '@unalgorithm/protocol';
 import { FeedItem } from '@unalgorithm/ui';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { useSyncExternalStore } from 'react';
@@ -21,16 +25,7 @@ import { fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures
 import { FIRST_DEGREE_POST, feed2026 } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 import { type Bridge, type Entry, FeedController, type Runtime } from '../src/content/feed-controller.ts';
 import type { BgResponses, ClassifyItem } from '../src/lib/messages.ts';
-
-/** Whether this build has a usable registry: the fictional fixture, or none. */
-const registry = vi.hoisted(() => ({ ready: true }));
-vi.mock('../src/lib/outlets.ts', async (importOriginal) => {
-  const { FIXTURE_REGISTRY } = await import('@unalgorithm/outlets/testing');
-  return {
-    ...(await importOriginal<typeof import('../src/lib/outlets.ts')>()),
-    perspectivesRegistry: () => (registry.ready ? FIXTURE_REGISTRY : null),
-  };
-});
+import type { StoredOfficialList } from '../src/lib/storage.ts';
 
 const ANTHROPIC: AISourceConfig = { kind: 'anthropic', model: null };
 const PRICE = 'About $0.14 on your Anthropic account';
@@ -64,8 +59,34 @@ const device = (perspectives: boolean, factcheck = false, aiSource: AISourceConf
   labs: { factcheck, perspectives },
 });
 
-function runtime(d: Device, serverOffer: ServerOffer | null = null): Runtime {
-  return { settings: defaultSettings(), device: d, learned: EMPTY_LEARNED, votes: {}, serverOffer };
+/** unAlgorithm Cloud's list as the background stored it: the fictional fixture, balanced, two outlets per bucket. */
+const STORED: StoredOfficialList = { list: FIXTURE_OFFICIAL_LIST, checkedAt: 1 };
+const NOTHING_STORED: StoredOfficialList = { list: null, checkedAt: 0 };
+
+const own = (name: string, domains: string[], bucket: LeanBucket | null): OwnOutlet => ({ name, domains, bucket, addedAt: 1 });
+/** An own list: the fixture's outlets without its Right ones. Unbalanced: no outlet in Right. */
+const MY_OUTLETS: Record<string, OwnOutlet> = Object.fromEntries(
+  FIXTURE_LIST.outlets
+    .filter((o) => o.lean && o.lean.bucket !== 'right')
+    .map((o) => [`my-${o.id.slice(3)}`, own(`My ${o.name.slice('Fixture '.length)}`, [...o.domains], o.lean?.bucket ?? null)]),
+);
+/** Settings with the person's own list chosen. */
+function ownList(outlets: Record<string, OwnOutlet>): Settings {
+  const settings = defaultSettings();
+  settings.perspectives = { list: 'own', outlets };
+  return settings;
+}
+
+function runtime(d: Device, over: Partial<Runtime> = {}): Runtime {
+  return {
+    settings: defaultSettings(),
+    device: d,
+    learned: EMPTY_LEARNED,
+    votes: {},
+    serverOffer: null as ServerOffer | null,
+    officialList: STORED,
+    ...over,
+  };
 }
 
 function bridge(over: Partial<Bridge> = {}): Bridge {
@@ -114,14 +135,21 @@ class IO {
   }
 }
 
-async function feed(html: string, d: Device, b = bridge(), adapter: PlatformAdapter = linkedinAdapter) {
+async function feed(
+  html: string,
+  d: Device,
+  b = bridge(),
+  adapter: PlatformAdapter = linkedinAdapter,
+  over: Partial<Runtime> = {},
+) {
   vi.stubGlobal('IntersectionObserver', IO);
   document.body.innerHTML = html;
   const c = new FeedController(adapter, b, mountUi);
-  c.start(runtime(d));
+  const rt = runtime(d, over);
+  c.start(rt);
   await vi.advanceTimersByTimeAsync(10_000);
   expect(b.classify).toHaveBeenCalled();
-  return { c, b };
+  return { c, b, rt };
 }
 
 const offered = (c: FeedController) => c.mounted().filter((e) => c.modelFor(e).perspectives);
@@ -134,20 +162,26 @@ function Item({ c, e }: { c: FeedController; e: Entry }) {
 
 const flush = () => act(async () => {});
 
-/** One offered post rendered, with "Other perspectives" clicked (the price is showing). */
+/** The start button's accessible name: its visible text, "UnEcho Chamber", then what it does (D74). */
+const START = 'UnEcho Chamber: see how outlets across the spectrum covered this story';
+
+/** One offered post rendered, with its UnEcho Chamber button clicked (the price is showing). */
 async function started(
   b = bridge(),
   d = device(true),
   html = feed2026(postCard(NEWS_LINK)),
   adapter: PlatformAdapter = linkedinAdapter,
+  over: Partial<Runtime> = {},
 ) {
-  const f = await feed(html, d, b, adapter);
+  const f = await feed(html, d, b, adapter, over);
   vi.useRealTimers();
   const e = offered(f.c)[0] as Entry;
   const { container } = render(<Item c={f.c} e={e} />);
   await flush();
   const user = setupUser();
-  await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+  const start = screen.getByRole('button', { name: START });
+  expect(start.textContent).toBe('UnEcho Chamber');
+  await user.click(start);
   await flush();
   return { ...f, e, user, item: within(container) };
 }
@@ -163,7 +197,6 @@ const FAKE_CLOCK: Parameters<typeof vi.useFakeTimers>[0] = {
 };
 
 beforeEach(() => {
-  registry.ready = true;
   vi.useFakeTimers(FAKE_CLOCK);
   document.documentElement.lang = 'en';
 });
@@ -176,7 +209,7 @@ afterEach(() => {
 describe('Other perspectives: where it is offered', () => {
   it('test_feed_perspectives_offered_with_price', async () => {
     const { c, b } = await started();
-    expect(screen.getByRole('group', { name: 'Other perspectives' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'UnEcho Chamber' })).toBeTruthy();
     expect(screen.getByText(PRICE)).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Compare' }));
     expect(screen.queryByRole('group', { name: 'Fact-check' })).toBeNull();
@@ -192,17 +225,17 @@ describe('Other perspectives: where it is offered', () => {
     expect(ok.c.mounted()).toHaveLength(1);
     ok.c.stop();
 
-    // The Labs flag off.
+    // The UnEcho Chamber flag off.
     const off = await feed(feed2026(postCard(NEWS_LINK)), device(false));
     expect(off.c.mounted()).toHaveLength(0);
     off.c.stop();
 
-    // No usable registry in this build.
-    registry.ready = false;
-    const noRegistry = await feed(feed2026(postCard(NEWS_LINK)), device(true));
-    expect(noRegistry.c.mounted()).toHaveLength(0);
-    noRegistry.c.stop();
-    registry.ready = true;
+    // No source list ready: no row.
+    const noList = await feed(feed2026(postCard(NEWS_LINK)), device(true), bridge(), linkedinAdapter, {
+      officialList: NOTHING_STORED,
+    });
+    expect(noList.c.mounted()).toHaveLength(0);
+    noList.c.stop();
 
     // A Facebook post shared with friends: never; the same post shared publicly: offered.
     const friends = ORGANIC_LINK_SHARE.replace('Shared with Public', 'Shared with Friends');
@@ -212,6 +245,43 @@ describe('Other perspectives: where it is offered', () => {
     const fbPublic = await feed(fbFeed(ORGANIC_LINK_SHARE), device(true), bridge(), facebookAdapter);
     expect(offered(fbPublic.c).map((e) => e.post?.audience)).toStrictEqual(['public']);
     fbPublic.c.stop();
+  });
+
+  it('test_feed_perspectives_offered_only_with_ready_list', async () => {
+    const html = feed2026(postCard(NEWS_LINK));
+    const offeredWith = async (over: Partial<Runtime>) => {
+      const f = await feed(html, device(true), bridge(), linkedinAdapter, over);
+      const ids = offered(f.c).map((e) => e.id);
+      f.c.stop();
+      return ids;
+    };
+    const noLean = { ...FIXTURE_OFFICIAL_LIST, outlets: FIXTURE_OFFICIAL_LIST.outlets.map((o) => ({ ...o, lean: null })) };
+    // unAlgorithm Cloud's list (the default choice): offered once its stored copy has a lean.
+    expect(await offeredWith({})).toStrictEqual([id(NEWS_LINK)]);
+    expect(await offeredWith({ officialList: NOTHING_STORED })).toStrictEqual([]);
+    expect(await offeredWith({ officialList: { list: noLean, checkedAt: 1 } })).toStrictEqual([]);
+    // A stored copy that fails the list rules (content scripts can write storage) counts as none.
+    const unsound = { ...FIXTURE_OFFICIAL_LIST, outlets: [...FIXTURE_OFFICIAL_LIST.outlets, FIXTURE_OFFICIAL_LIST.outlets[0]] };
+    expect(await offeredWith({ officialList: { list: unsound as never, checkedAt: 1 } })).toStrictEqual([]);
+    // Your own list, whatever the Cloud's: an outlet with a lean and no list problem.
+    expect(await offeredWith({ settings: ownList(MY_OUTLETS), officialList: NOTHING_STORED })).toStrictEqual([id(NEWS_LINK)]);
+    expect(await offeredWith({ settings: ownList({}) })).toStrictEqual([]);
+    expect(await offeredWith({ settings: ownList({ 'my-a': own('My A', ['a.example'], null) }) })).toStrictEqual([]);
+    const taken = ownList({ ...MY_OUTLETS, 'my-zz-copy': own('My Copy', ['left-a.example'], 'right') });
+    expect(await offeredWith({ settings: taken })).toStrictEqual([]);
+
+    // The first good copy arrives while the feed is open: what bootstrap's `officialListItem.watch` does.
+    const f = await feed(html, device(true), bridge(), linkedinAdapter, { officialList: NOTHING_STORED });
+    expect(f.c.mounted()).toHaveLength(0);
+    f.rt.officialList = STORED;
+    f.c.update(f.rt);
+    expect(offered(f.c).map((e) => e.id)).toStrictEqual([id(NEWS_LINK)]);
+    // And the person switches to an own list with no lean: gone again.
+    f.rt.settings = ownList({});
+    f.c.update(f.rt);
+    expect(f.c.mounted()).toHaveLength(0);
+    expect(f.b.perspectives).not.toHaveBeenCalled();
+    f.c.stop();
   });
 
   it('test_feed_perspectives_never_automatic', async () => {
@@ -226,7 +296,7 @@ describe('Other perspectives: where it is offered', () => {
     const { container } = render(keys.map((k) => <Item key={k} c={f.c} e={entryOf(f.c, k)} />));
     const rows = within(container);
     await flush();
-    const starts = rows.getAllByRole('button', { name: 'Other perspectives' });
+    const starts = rows.getAllByRole('button', { name: START });
     expect(starts).toHaveLength(20);
     expect(b.perspectives).not.toHaveBeenCalled();
     const user = setupUser();
@@ -243,6 +313,49 @@ describe('Other perspectives: where it is offered', () => {
 });
 
 describe('Other perspectives: the comparison', () => {
+  it('test_feed_perspectives_price_with_balance_notice', async () => {
+    // An unbalanced own list: its warnings beside the price, before anything is sent.
+    const { c, b, e, user } = await started(bridge(), device(true), feed2026(postCard(NEWS_LINK)), linkedinAdapter, {
+      settings: ownList(MY_OUTLETS),
+    });
+    const line = `${PRICE} · Your list isn't balanced: No outlets in Right.`;
+    expect(screen.getByText(line)).toBeTruthy();
+    expect(c.modelFor(e).perspectives).toStrictEqual({
+      state: 'confirming',
+      price: PRICE,
+      notice: "Your list isn't balanced: No outlets in Right.",
+    });
+    expect(b.perspectives).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Compare' }));
+    await flush();
+    expect(b.perspectives).toHaveBeenCalledTimes(1);
+    c.stop();
+    cleanup();
+
+    // unAlgorithm Cloud's list, unbalanced: named as the Cloud's, every warning joined.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const leftHeavy = {
+      ...FIXTURE_OFFICIAL_LIST,
+      outlets: FIXTURE_OFFICIAL_LIST.outlets.filter((o) => o.lean?.bucket !== 'lean-right' && o.lean?.bucket !== 'right'),
+    };
+    const cloud = await started(bridge(), device(true), feed2026(postCard(NEWS_LINK)), linkedinAdapter, {
+      officialList: { list: leftHeavy, checkedAt: 1 },
+    });
+    const warnings =
+      'No outlets in Leans right. No outlets in Right. Left and Leans left have 4 outlets, Leans right and Right have 0.';
+    expect(screen.getByText(`${PRICE} · unAlgorithm Cloud's list isn't balanced: ${warnings}`)).toBeTruthy();
+    expect(cloud.b.perspectives).not.toHaveBeenCalled();
+    cloud.c.stop();
+    cleanup();
+
+    // A balanced list: the price alone.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const balanced = await started();
+    expect(screen.getByText(PRICE)).toBeTruthy();
+    expect(balanced.c.modelFor(balanced.e).perspectives).toStrictEqual({ state: 'confirming', price: PRICE });
+    balanced.c.stop();
+  });
+
   it('test_feed_perspectives_sends_link_only', async () => {
     const li = await started();
     await li.user.click(screen.getByRole('button', { name: 'Compare' }));
@@ -284,9 +397,9 @@ describe('Other perspectives: the comparison', () => {
     // Cancel from confirming returns to offered.
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await flush();
-    expect(screen.getByRole('button', { name: 'Other perspectives' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: START })).toBeTruthy();
     expect(screen.queryByText(PRICE)).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+    await user.click(screen.getByRole('button', { name: START }));
     await flush();
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();
@@ -303,7 +416,7 @@ describe('Other perspectives: the comparison', () => {
     vi.mocked(b.openFactcheck).mockResolvedValueOnce(false);
     await user.click(screen.getByRole('button', { name: 'See result' }));
     await flush();
-    expect(screen.getByText('Compared. Open UnAlgorithm from the toolbar to see it.')).toBeTruthy();
+    expect(screen.getByText('Compared. Open unAlgorithm from the toolbar to see it.')).toBeTruthy();
 
     // A failed answer shows its message; Try again asks for the price again.
     const message = 'Anthropic is busy right now. Try again in a minute.';
@@ -321,7 +434,7 @@ describe('Other perspectives: the comparison', () => {
     perspectives.mockRejectedValueOnce(new Error('Extension context invalidated.'));
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();
-    expect(screen.getByText("Couldn't reach UnAlgorithm. Reload the page.")).toBeTruthy();
+    expect(screen.getByText("Couldn't reach unAlgorithm. Reload the page.")).toBeTruthy();
     expect(perspectives).toHaveBeenCalledTimes(3);
     expect(b.factcheck).not.toHaveBeenCalled();
     c.stop();
@@ -342,9 +455,9 @@ describe('Other perspectives: the comparison', () => {
     render(<Item c={f.c} e={e} />);
     await flush();
     const groups = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'));
-    expect(groups).toStrictEqual(['Fact-check', 'Other perspectives']);
+    expect(groups).toStrictEqual(['Fact-check', 'UnEcho Chamber']);
     const user = setupUser();
-    await user.click(screen.getByRole('button', { name: 'Other perspectives' }));
+    await user.click(screen.getByRole('button', { name: START }));
     await flush();
     await user.click(screen.getByRole('button', { name: 'Compare' }));
     await flush();

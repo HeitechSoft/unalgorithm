@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type BrowserContext, test as base, chromium, type Locator, type Page } from '@playwright/test';
+import { type BrowserContext, test as base, chromium, type Locator, type Page, type Route } from '@playwright/test';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
   COMPANY_NOT_FOLLOWED,
@@ -125,7 +125,7 @@ export async function settled(el: Locator): Promise<void> {
 }
 
 /**
- * Opens Settings → Labs (`#/labs`) and saves the AI source `config` (with `apiKey`, if any) from it. With `test`, the
+ * Opens Settings → AI (`#/ai`) and saves the AI source `config` (with `apiKey`, if any) from it. With `test`, the
  * source is tested first and saved with the model the test picked, as the AI pane does. Returns the options page.
  */
 export async function saveSource(
@@ -136,7 +136,7 @@ export async function saveSource(
   opts: { test?: boolean } = {},
 ): Promise<Page> {
   const options = await context.newPage();
-  await options.goto(`chrome-extension://${extensionId}/options.html#/labs`);
+  await options.goto(`chrome-extension://${extensionId}/options.html#/ai`);
   const saved = await options.evaluate(
     async ([config, apiKey, test]) => {
       const key = apiKey ? { apiKey } : {};
@@ -151,8 +151,8 @@ export async function saveSource(
   return options;
 }
 
-/** Turns a Labs switch (default Fact-check) on through the options page (on `#/labs`); it must be enabled and off. */
-export async function turnOnLabs(options: Page, name: 'Fact-check' | 'Other perspectives' = 'Fact-check'): Promise<void> {
+/** Turns a switch on the AI pane (`#/ai`; default Fact-check) on through the options page; it must be enabled and off. */
+export async function turnOnLabs(options: Page, name: 'Fact-check' | 'UnEcho Chamber' = 'Fact-check'): Promise<void> {
   const toggle = options.getByRole('switch', { name });
   await expect(toggle).toBeEnabled();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -180,7 +180,7 @@ export async function facebookFeed(context: BrowserContext): Promise<Page> {
  */
 export async function seeResult(ui: Locator): Promise<void> {
   await ui.getByRole('button', { name: 'See result' }).click();
-  const hint = ui.getByText('Open UnAlgorithm from the toolbar to see it.');
+  const hint = ui.getByText('Open unAlgorithm from the toolbar to see it.');
   const refused = await hint.waitFor({ timeout: 2_000 }).then(
     () => true,
     () => false,
@@ -194,6 +194,29 @@ export const CORS = {
   'access-control-allow-headers': '*',
   'access-control-allow-methods': 'POST, GET, OPTIONS',
 };
+
+/**
+ * Answers the AI pane's model list (`GET /v1/models`) on a mocked api.anthropic.com, so a mock records only the
+ * requests that carry a post or a link. The specs save the source and turn the switches on from the AI pane (P3-64),
+ * whose model picker asks for the list. Returns false for any other request.
+ */
+export function answerAnthropicModels(route: Route): boolean {
+  const request = route.request();
+  if (request.method() !== 'GET' || new URL(request.url()).pathname !== '/v1/models') return false;
+  const data = ['claude-haiku-5-5', 'claude-sonnet-5-5'].map((id) => ({
+    type: 'model',
+    id,
+    display_name: id,
+    created_at: '2026-01-01T00:00:00Z',
+  }));
+  void route.fulfill({
+    status: 200,
+    headers: CORS,
+    contentType: 'application/json',
+    body: JSON.stringify({ data, has_more: false, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null }),
+  });
+  return true;
+}
 
 /** The three web pages the fact-check mocks find: the passage each one's search result carries, and the quote cited. */
 export const FACTCHECK_SOURCES = [

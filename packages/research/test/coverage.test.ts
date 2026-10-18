@@ -1,6 +1,6 @@
 import { type AIClient, AIError, type ResearchRequest } from '@unalgorithm/ai';
-import type { Registry } from '@unalgorithm/outlets';
-import { FIXTURE_REGISTRY } from '@unalgorithm/outlets/testing';
+import type { SourceList } from '@unalgorithm/outlets';
+import { FIXTURE_LIST } from '@unalgorithm/outlets/testing';
 import { LEAN_BUCKETS, type LeanBucket, type NormalizedUsage, ZERO_USAGE } from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
@@ -53,7 +53,7 @@ const run = (searcher: BucketSearcher, over: Partial<Parameters<typeof searchBuc
     query: 'bridge vote',
     from: FROM,
     to: TO,
-    registry: FIXTURE_REGISTRY,
+    registry: FIXTURE_LIST,
     searcher,
     nonce: 'n0nce',
     now: NOW,
@@ -136,9 +136,9 @@ describe('searchBuckets: spread and filters', () => {
   });
 
   it('test_search_buckets_unsearched_failed_abort', async () => {
-    const noRight: Registry = {
-      ...FIXTURE_REGISTRY,
-      outlets: FIXTURE_REGISTRY.outlets.map((o) => (o.lean?.bucket === 'right' ? { ...o, lean: null } : o)),
+    const noRight: SourceList = {
+      ...FIXTURE_LIST,
+      outlets: FIXTURE_LIST.outlets.map((o) => (o.lean?.bucket === 'right' ? { ...o, lean: null } : o)),
     };
     const a = fake();
     const ra = await run(a, { registry: noRight });
@@ -187,7 +187,7 @@ describe('searchBuckets: spread and filters', () => {
       'right',
     ]);
     for (const s of res.sources) {
-      const outlet = FIXTURE_REGISTRY.outlets.find((o) => o.id === s.outletId);
+      const outlet = FIXTURE_LIST.outlets.find((o) => o.id === s.outletId);
       expect(outlet?.lean?.bucket).toBe(s.bucket);
       expect(outlet?.name).toBe(s.outlet);
       expect(outlet?.domains.some((d) => s.domain.endsWith(d))).toBe(true);

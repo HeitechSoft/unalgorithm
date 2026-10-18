@@ -13,7 +13,7 @@ import { Authorize } from '../src/Authorize.tsx';
 import { SEND_CODE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
 import { fakeServer, INFO, PARAMS, REDIRECT, TOM } from './support/fake-server.ts';
 
-const INVALID_LINK = "This sign-in link isn't valid. Start again from the UnAlgorithm extension.";
+const INVALID_LINK = "This sign-in link isn't valid. Start again from the unAlgorithm extension.";
 const WRONG_CODE = "That code didn't work. Check it, or send a new one.";
 const TOO_MANY = 'Too many tries. Wait a minute and try again.';
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
@@ -183,7 +183,7 @@ describe('presentation', () => {
     fakeServer();
     openPage();
     expect(await screen.findByRole('heading', { level: 1, name: INFO.name })).toBeTruthy();
-    expect(screen.getByText('Sign in to use AI in the UnAlgorithm Feed extension.')).toBeTruthy();
+    expect(screen.getByText('Sign in to use AI in the unAlgorithm Feed extension.')).toBeTruthy();
     expect(document.title).toBe(`Sign in · ${INFO.name}`);
     const source = screen.getByRole('link', { name: 'Source' });
     expect(source.getAttribute('href')).toBe(INFO.source);
@@ -228,7 +228,7 @@ describe('presentation', () => {
     ];
     expect(files.length).toBeGreaterThan(3);
     for (const file of files) {
-      expect(await readFile(file, 'utf8'), file).not.toContain('UnAlgorithm Cloud');
+      expect(await readFile(file, 'utf8'), file).not.toContain('unAlgorithm Cloud');
     }
   });
 });

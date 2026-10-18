@@ -1,5 +1,5 @@
 /**
- * Server naming (R25): only HeitechSoft's pinned origin is ever called "UnAlgorithm Cloud", every other server
+ * Server naming (R25): only HeitechSoft's pinned origin is ever called "unAlgorithm Cloud", every other server
  * appears by its host, and the recipient text names who actually receives posts. The screens are rendered with the
  * WXT fake browser; the APIs it leaves unmocked (permissions, the toolbar pin check) are stubbed per test.
  */
@@ -19,10 +19,10 @@ const NEVER_SENT =
 
 describe('naming', () => {
   it('test_pinned_origin_is_cloud', () => {
-    const cloud = { title: 'UnAlgorithm Cloud', host: 'cloud.unalgorithm.app', isCloud: true };
+    const cloud = { title: 'unAlgorithm Cloud', host: 'cloud.unalgorithm.app', isCloud: true };
     expect(serverLabel('https://cloud.unalgorithm.app')).toStrictEqual(cloud);
     expect(serverLabel('https://cloud.unalgorithm.app/v1')).toStrictEqual(cloud);
-    expect(serverLabel(PINNED_CLOUD_ORIGIN, { name: 'UnAlgorithm Cloud' })).toStrictEqual(cloud);
+    expect(serverLabel(PINNED_CLOUD_ORIGIN, { name: 'unAlgorithm Cloud' })).toStrictEqual(cloud);
   });
 
   it('test_lookalike_origins_are_not_cloud', () => {
@@ -55,23 +55,23 @@ describe('naming', () => {
   });
 
   it('test_server_cannot_borrow_cloud_name', () => {
-    for (const name of ['UnAlgorithm Cloud', 'unalgorithm  cloud', 'UnAlgo​rithm Cloud']) {
+    for (const name of ['unAlgorithm Cloud', 'unalgorithm  cloud', 'unAlgo​rithm Cloud']) {
       const label = serverLabel('https://ai.example.org', { name });
       expect(label, name).toStrictEqual({ title: 'ai.example.org', host: 'ai.example.org', isCloud: false });
     }
     for (const name of [
       // Look-alike letters, written as code points so they can be told apart here: Cyrillic i, Cyrillic o, Greek and
       // Lisu capitals, all Lisu; then accents, a capital I for l, and "rn" for m.
-      `UnAlgor${cp(0x0456)}thm Cloud`,
+      `unAlgor${cp(0x0456)}thm Cloud`,
       `UnAlg${cp(0x043e)}rithm Cl${cp(0x043e)}ud`,
       `UNALG${cp(0x039f)}RITHM ${cp(0xa4da)}L${cp(0x039f)}UD`,
       `${cp(0xa4f4, 0xa4e0, 0xa4ee, 0xa4e1, 0xa4d6, 0xa4f3, 0xa4e3, 0xa4f2, 0xa4d4, 0xa4e7, 0xa4df)} ${cp(0xa4da, 0xa4e1, 0xa4f3, 0xa4f4, 0xa4d3)}`,
       'ÜnÀlgorithm Clöud',
       'UnAIgorithm Cloud',
-      'UnAlgorithrn Cloud',
+      'unAlgorithrn Cloud',
       // The Cloud's host, or both words in any order.
       'cloud.unalgorithm.app',
-      'Cloud by UnAlgorithm',
+      'Cloud by unAlgorithm',
     ]) {
       expect(serverLabel('https://evil.org', { name }), name).toStrictEqual({
         title: 'evil.org',
@@ -80,7 +80,7 @@ describe('naming', () => {
       });
     }
     // Names in other alphabets, or with only one of the two words, are still shown.
-    for (const name of ['Семейный AI', 'Ψηφιακό σύννεφο', 'UnAlgorithm at home', 'Family Cloud']) {
+    for (const name of ['Семейный AI', 'Ψηφιακό σύννεφο', 'unAlgorithm at home', 'Family Cloud']) {
       expect(serverLabel('https://ai.example.org', { name }).serverName, name).toBe(name);
     }
   });
@@ -89,19 +89,19 @@ describe('naming', () => {
 describe('recipient text', () => {
   it('test_cloud_recipient_text', () => {
     const r = recipientText(serverLabel(PINNED_CLOUD_ORIGIN));
-    expect(r.to).toBe('UnAlgorithm Cloud');
-    for (const s of ['UnAlgorithm Cloud', 'HeitechSoft', 'Anthropic', 'United States']) expect(r.text).toContain(s);
+    expect(r.to).toBe('unAlgorithm Cloud');
+    for (const s of ['unAlgorithm Cloud', 'HeitechSoft', 'Anthropic', 'United States']) expect(r.text).toContain(s);
     expect(r.text).not.toContain('Nothing is logged or kept');
     expect(r.text).not.toMatch(/zero/i);
     expect(r.text).toContain(NEVER_SENT);
   });
 
   it('test_self_hosted_recipient_text', () => {
-    const r = recipientText(serverLabel('https://ai.example.org', { name: 'UnAlgorithm Cloud' }));
+    const r = recipientText(serverLabel('https://ai.example.org', { name: 'unAlgorithm Cloud' }));
     expect(r.to).toBe('ai.example.org');
     expect(r.text).toContain('ai.example.org');
     expect(r.text).toContain('not HeitechSoft');
-    expect(r.text).not.toContain('UnAlgorithm Cloud');
+    expect(r.text).not.toContain('unAlgorithm Cloud');
     expect(r.text).not.toContain('Anthropic');
     expect(r.text).toContain(NEVER_SENT);
   });
@@ -152,7 +152,7 @@ describe('screens', () => {
 
   it('test_onboarding_done_server_label', async () => {
     for (const [baseUrl, shown] of [
-      [PINNED_CLOUD_ORIGIN, 'AI from UnAlgorithm Cloud'],
+      [PINNED_CLOUD_ORIGIN, 'AI from unAlgorithm Cloud'],
       ['https://ai.example.org', 'AI from ai.example.org'],
     ] as const) {
       await deviceItem.setValue(device({ kind: 'server', baseUrl }));

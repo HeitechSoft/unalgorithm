@@ -1,6 +1,6 @@
 # UX specification
 
-UnAlgorithm follows Apple's Human Interface Guidelines in spirit: **deference** (the feed is the content, we stay
+unAlgorithm follows Apple's Human Interface Guidelines in spirit: **deference** (the feed is the content, we stay
 out of the way), **clarity** (one primary action per screen, plain words) and **depth** (detail is one step away,
 never in the way).
 
@@ -44,7 +44,7 @@ Balanced is the default.
 1. AI never collapses a post that is on screen. Its verdict applies once the post scrolls away.
 2. Any error shows posts.
 3. If more than 50 / 80 / 95 % (Light / Balanced / Calm) of the first posts would be hidden, or no posts appear,
-   UnAlgorithm stops hiding on that page. The toolbar icon's tooltip says the layout looks different, and the popup
+   unAlgorithm stops hiding on that page. The toolbar icon's tooltip says the layout looks different, and the popup
    shows "Filtering is paused on this page" with **Report a problem**.
 
 ## Onboarding copy anchors
@@ -54,7 +54,7 @@ Balanced is the default.
 | Welcome | "See the posts you came for." | Feed-cleaning illustration plays once; static with reduced motion |
 | Strength | "How calm should your feed be?" | Three cards with mini feeds |
 | Interests | "What do you want more of?" | 16 starter topics, each with English keywords so matching works without AI, plus "Anything you'd like less of?" |
-| AI | "Want smarter filtering?" | On this device (live availability and download progress), Your own API key, Local or self-hosted, Set up later, and a disabled "UnAlgorithm Cloud · Coming soon" card that becomes selectable in Phase 2 |
+| AI | "Want smarter filtering?" | On this device (live availability and download progress), Your own API key, Local or self-hosted, Set up later, and a disabled "unAlgorithm Cloud · Coming soon" card that becomes selectable in Phase 2 |
 | Done | "You're all set." | Open LinkedIn / Facebook; pin-to-toolbar card that notices when it is pinned |
 
 ## Voice

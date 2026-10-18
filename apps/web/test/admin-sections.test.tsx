@@ -24,7 +24,7 @@ import { fakeServer, OVERVIEW, type Reply, SESSION_GONE, TOM } from './support/f
 
 const HAS_ACCOUNT = 'This address already has an account.';
 const STORE_LINE =
-  'Until the store version of UnAlgorithm Feed offers servers, they need a build of UnAlgorithm Feed that does, with ' +
+  'Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with ' +
   'its id in EXTENSION_IDS.';
 const BREAKER = "Today's AI spending limit is reached. AI resumes for everyone at 00:00 UTC.";
 const LOAD_FAILED = "Couldn't load usage.";
@@ -187,7 +187,7 @@ describe('invites', () => {
 
     await invite(user, 'New@Example.org');
     const sentence = await screen.findByText(
-      `Tell new@example.org: install UnAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`,
+      `Tell new@example.org: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`,
     );
     const line = screen.getByText(STORE_LINE);
     // A plain line: it links nowhere.

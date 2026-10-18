@@ -139,7 +139,7 @@ export async function clientFor(cfg: Exclude<AISourceConfig, { kind: 'server' }>
         ...(cfg.auth === 'bearer' && key ? { apiKey: key } : {}),
         capabilities,
         ...(cfg.preset === 'openrouter'
-          ? { extraHeaders: { 'HTTP-Referer': 'https://github.com/HeitechSoft/unalgorithm', 'X-Title': 'UnAlgorithm' } }
+          ? { extraHeaders: { 'HTTP-Referer': 'https://github.com/HeitechSoft/unalgorithm', 'X-Title': 'unAlgorithm' } }
           : {}),
       });
   }
@@ -434,7 +434,7 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
 }
 
 /**
- * A server source: discovery says whether the address is an UnAlgorithm server, then the probe post goes through the
+ * A server source: discovery says whether the address is an unAlgorithm server, then the probe post goes through the
  * signed-in device like any batch. The server chooses its model, so there is no list to pick from.
  */
 async function testServer(cfg: ServerSource, started: number): Promise<TestSourceResult> {

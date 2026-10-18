@@ -18,6 +18,14 @@ export const TASK_UNITS: Readonly<Record<CreditTask, CreditUnit>> = Object.freez
   factcheck: 'check',
   perspectives: 'comparison',
 });
+/**
+ * Each on-demand feature's name as people read it (decision D75, docs/brand.md). Every user-facing string takes the name
+ * from here; code identifiers stay the task ids (`perspectives` is UnEcho Chamber).
+ */
+export const FEATURE_NAMES: Readonly<Record<Exclude<CreditTask, 'classify'>, string>> = Object.freeze({
+  factcheck: 'Fact-check',
+  perspectives: 'UnEcho Chamber',
+});
 
 export interface CreditPriceCard {
   /**
@@ -72,7 +80,7 @@ export const CREDIT_CURRENCY = 'usd';
  * CREDIT_PRICE_SCHEDULE), and what "about N posts" it buys is `estimatePosts(micros, at)`, never stored.
  */
 export interface CreditAmount {
-  /** Whole US dollars, from 5 to 500. */
+  /** Whole US dollars, within the rules' limits (by default from 5 to 500). */
   dollars: number;
   /** The same amount in US cents, as a payment provider charges it (`dollars × 100`). */
   cents: number;
@@ -82,13 +90,23 @@ export interface CreditAmount {
 
 const WHOLE_DOLLARS = /^[1-9]\d{0,5}$/;
 
+/** The least and the most one purchase adds: the price book's purchase rules (`PurchaseRules`) are one. */
+export interface CreditAmountLimits {
+  minMicros: number;
+  maxMicros: number;
+}
+
 /**
  * The purchase of `amount` under the amount rules (the purchase page and auto-reload both use them), or null. `amount`
  * is `{ dollars }`, a whole number or the digits of a form field ("25"), or `{ micros }`, a whole number of
- * micro-dollars. Null for anything else: under $5, over $500, not a whole dollar, a fraction, NaN, a sign, spaces,
- * exponent notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
+ * micro-dollars. `rules` are the least and the most one purchase adds (by default $5 and $500, the constants). Null for
+ * anything else: under the least, over the most, not a whole dollar, a fraction, NaN, a sign, spaces, exponent
+ * notation or a non-object. Never throws: callers pass untrusted form values and request bodies.
  */
-export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
+export function creditAmount(
+  amount: unknown,
+  rules: Readonly<CreditAmountLimits> = { minMicros: CREDIT_AMOUNT_MIN_MICROS, maxMicros: CREDIT_AMOUNT_MAX_MICROS },
+): Readonly<CreditAmount> | null {
   if (typeof amount !== 'object' || amount === null) return null;
   let micros: number;
   try {
@@ -108,9 +126,7 @@ export function creditAmount(amount: unknown): Readonly<CreditAmount> | null {
   } catch {
     return null; // a throwing getter or proxy
   }
-  if (micros < CREDIT_AMOUNT_MIN_MICROS || micros > CREDIT_AMOUNT_MAX_MICROS || micros % CREDIT_AMOUNT_STEP_MICROS !== 0) {
-    return null;
-  }
+  if (micros < rules.minMicros || micros > rules.maxMicros || micros % CREDIT_AMOUNT_STEP_MICROS !== 0) return null;
   const dollars = micros / MICROS_PER_DOLLAR;
   return Object.freeze({ dollars, cents: dollars * 100, micros });
 }
@@ -246,7 +262,19 @@ export function estimatePosts(
   schedule: CreditPriceSchedule = CREDIT_PRICE_SCHEDULE,
 ): number {
   if (!Number.isFinite(balanceMicros) || balanceMicros <= 0) return 0;
-  let n = Math.floor((balanceMicros * 1000) / retailMicrosPer1000Posts(at, task, schedule));
+  return estimatePostsAtPrice(balanceMicros, retailMicrosPer1000Posts(at, task, schedule));
+}
+
+/**
+ * `estimatePosts` at a price already known, such as a server's price of 1,000 posts now (discovery's `classifyPrice`):
+ * the same rounding, in one place. $0 reads no price; a price that isn't a positive finite number is a `RangeError`.
+ */
+export function estimatePostsAtPrice(balanceMicros: number, microsPer1000Posts: number): number {
+  if (!Number.isFinite(balanceMicros) || balanceMicros <= 0) return 0;
+  if (!(Number.isFinite(microsPer1000Posts) && microsPer1000Posts > 0)) {
+    throw new RangeError('The price of 1,000 posts must be a positive number.');
+  }
+  let n = Math.floor((balanceMicros * 1000) / microsPer1000Posts);
   if (n >= 100) {
     const p = 10 ** (String(n).length - 2);
     n = Math.floor(n / p) * p;
@@ -254,14 +282,78 @@ export function estimatePosts(
   return n;
 }
 
-function isMidnightUtc(e: string): boolean {
-  if (typeof e !== 'string' || !MIDNIGHT_UTC.test(e)) return false;
-  const t = Date.parse(e);
+/** Whether `value` is a date a price may start on: 00:00 UTC of a real calendar day, written `YYYY-MM-DDT00:00:00Z`. */
+export function isPriceDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !MIDNIGHT_UTC.test(value)) return false;
+  const t = Date.parse(value);
   // Rejects a day the calendar does not have (2026-02-30 would roll over to 2 March).
-  return !Number.isNaN(t) && new Date(t).toISOString() === e.replace('Z', '.000Z');
+  return !Number.isNaN(t) && new Date(t).toISOString() === value.replace('Z', '.000Z');
 }
 
 const isCreditTask = (task: string): task is CreditTask => (CREDIT_TASKS as readonly string[]).includes(task);
+
+/**
+ * What a price rule found, one code per check. Only ever appended to: the server's save and the Pricing page read them,
+ * and `@unalgorithm/core`'s `priceIssueText` words each one.
+ */
+export const PRICE_ISSUE_CODES = [
+  // shape (priceScheduleIssues)
+  'empty',
+  'date-format',
+  'date-order',
+  'not-a-task',
+  'no-classify',
+  'drops-task',
+  'add-copies',
+  'multiplier',
+  'reference-cost',
+  'reference-model',
+  'unit',
+  'classify-cap',
+  'cap-below-typical',
+  // change (priceScheduleChangeIssues, priceRaiseIssues)
+  'in-effect-removed',
+  'in-effect-changed',
+  'starts-in-past',
+  'cap-raise',
+  'raise',
+  'rise',
+  // the price book (prices.ts: priceBookIssues, priceBookChangeIssues)
+  'reference-model-unknown',
+  'multiplier-range',
+  'cap-too-high',
+  'starter-order',
+  'starter-history',
+  'starter-range',
+  'purchase-order',
+  'purchase-default',
+  'purchase-presets',
+  'purchase-range',
+  'auto-reload-per-day',
+  'auto-reload-monthly',
+  'schedule-full',
+  'starter-full',
+] as const;
+export type PriceIssueCode = (typeof PRICE_ISSUE_CODES)[number];
+
+/** One rule failure: its code, the facts it is about, and its CI line. */
+export interface PriceIssue {
+  code: PriceIssueCode;
+  /** The entry the issue is about, as written (the instant `at` for cap-raise, raise and rise). */
+  effectiveFrom?: string;
+  task?: string;
+  /** starts-in-past: the next 00:00 UTC; cap-raise, raise, rise: the earliest date a raise may start now. */
+  earliest?: string;
+  /** cap-below-typical: the card's typical price in micro-dollars. */
+  typicalMicros?: number;
+  /**
+   * The CI line, character for character what the string functions returned before the issues had codes; for the
+   * price book's codes, a line in the same style.
+   */
+  text: string;
+}
+
+const texts = (issues: readonly PriceIssue[]): string[] => issues.map((issue) => issue.text);
 
 /**
  * One string per problem with the schedule's shape, entries numbered from 0; `[]` when it is sound. Tasks are only ever
@@ -269,59 +361,76 @@ const isCreditTask = (task: string): task is CreditTask => (CREDIT_TASKS as read
  * the other cards unchanged. There is deliberately no rule that the last entry prices every task.
  */
 export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
-  if (schedule.length === 0) return ['the schedule is empty'];
-  const problems: string[] = [];
+  return texts(priceScheduleIssues(schedule));
+}
+
+/** `priceScheduleProblems` as issues: each problem with its code and facts. */
+export function priceScheduleIssues(schedule: CreditPriceSchedule): PriceIssue[] {
+  if (schedule.length === 0) return [{ code: 'empty', text: 'the schedule is empty' }];
+  const issues: PriceIssue[] = [];
   let previous: number | undefined; // the previous entry's start, when its date passed the format check
   let before: Cards | undefined; // the previous entry's cards
   schedule.forEach((entry, i) => {
     const e = entry.effectiveFrom;
     const at = `entry ${i} (${e})`;
-    const valid = isMidnightUtc(e);
-    if (!valid) problems.push(`${at}: effectiveFrom must be YYYY-MM-DDT00:00:00Z on a real calendar day`);
-    else if (previous !== undefined && Date.parse(e) <= previous) {
-      problems.push(`${at}: effectiveFrom must be later than entry ${i - 1}'s`);
+    const valid = isPriceDate(e);
+    if (!valid) {
+      const text = `${at}: effectiveFrom must be YYYY-MM-DDT00:00:00Z on a real calendar day`;
+      issues.push({ code: 'date-format', effectiveFrom: e, text });
+    } else if (previous !== undefined && Date.parse(e) <= previous) {
+      issues.push({ code: 'date-order', effectiveFrom: e, text: `${at}: effectiveFrom must be later than entry ${i - 1}'s` });
     }
     previous = valid ? Date.parse(e) : undefined;
 
     const cards = cardsOf(entry);
     // A task key whose card is missing (null, undefined) prices nothing.
     const priced = (c: Cards, task: string) => Object.hasOwn(c, task) && typeof c[task] === 'object' && c[task] !== null;
-    for (const task of Object.keys(cards)) if (!isCreditTask(task)) problems.push(`${at}: ${task} is not a credit task`);
-    if (!priced(cards, 'classify')) problems.push(`${at}: cards must price classify`);
+    for (const task of Object.keys(cards)) {
+      if (!isCreditTask(task))
+        issues.push({ code: 'not-a-task', effectiveFrom: e, task, text: `${at}: ${task} is not a credit task` });
+    }
+    if (!priced(cards, 'classify')) {
+      issues.push({ code: 'no-classify', effectiveFrom: e, task: 'classify', text: `${at}: cards must price classify` });
+    }
     if (before !== undefined) {
       const was = before;
       // A missing classify is reported once, above.
       for (const task of Object.keys(was)) {
         if (task !== 'classify' && priced(was, task) && !priced(cards, task))
-          problems.push(`${at}: drops ${task}, which entry ${i - 1} priced`);
+          issues.push({ code: 'drops-task', effectiveFrom: e, task, text: `${at}: drops ${task}, which entry ${i - 1} priced` });
       }
       const added = Object.keys(cards).filter((task) => priced(cards, task) && !priced(was, task));
       const kept = Object.keys(was).filter((task) => priced(was, task) && priced(cards, task));
       if (added.length > 0 && !kept.every((task) => sameCard(was[task], cards[task]))) {
-        problems.push(`${at}: adds ${added.join(', ')}, so its other cards must equal entry ${i - 1}'s`);
+        const text = `${at}: adds ${added.join(', ')}, so its other cards must equal entry ${i - 1}'s`;
+        issues.push({ code: 'add-copies', effectiveFrom: e, text });
       }
     }
     before = cards;
     for (const [task, card] of Object.entries(cards)) {
       if (!card) continue;
+      const about = { effectiveFrom: e, task };
       try {
         retailMicros(1, card.multiplier);
       } catch {
-        problems.push(`${at}: ${task} multiplier must be positive, in whole basis points`);
+        issues.push({ code: 'multiplier', ...about, text: `${at}: ${task} multiplier must be positive, in whole basis points` });
       }
       if (!Number.isSafeInteger(card.referenceCostMicrosPer1000) || card.referenceCostMicrosPer1000 <= 0) {
-        problems.push(`${at}: ${task} referenceCostMicrosPer1000 must be a whole number above 0`);
+        const text = `${at}: ${task} referenceCostMicrosPer1000 must be a whole number above 0`;
+        issues.push({ code: 'reference-cost', ...about, text });
       }
       if (typeof card.referenceModel !== 'string' || card.referenceModel.trim() === '') {
-        problems.push(`${at}: ${task} referenceModel must be a non-empty model id`);
+        issues.push({ code: 'reference-model', ...about, text: `${at}: ${task} referenceModel must be a non-empty model id` });
       }
       if (!isCreditTask(task)) continue;
       const unit = TASK_UNITS[task];
       if (card.unit !== unit && (card.unit !== undefined || task !== 'classify')) {
-        problems.push(`${at}: ${task} unit must be ${unit}`);
+        issues.push({ code: 'unit', ...about, text: `${at}: ${task} unit must be ${unit}` });
       }
       if (task === 'classify') {
-        if (card.maxChargeMicros !== undefined) problems.push(`${at}: classify has no maxChargeMicros`);
+        if (card.maxChargeMicros !== undefined) {
+          issues.push({ code: 'classify-cap', ...about, text: `${at}: classify has no maxChargeMicros` });
+        }
         continue;
       }
       let typical = 1;
@@ -332,13 +441,16 @@ export function priceScheduleProblems(schedule: CreditPriceSchedule): string[] {
       }
       const cap = card.maxChargeMicros;
       if (cap === undefined || !Number.isSafeInteger(cap) || cap <= 0 || cap < typical) {
-        problems.push(
-          `${at}: ${task} maxChargeMicros must be a whole number of micro-dollars, at least its typical price of ${typical}`,
-        );
+        issues.push({
+          code: 'cap-below-typical',
+          ...about,
+          typicalMicros: typical,
+          text: `${at}: ${task} maxChargeMicros must be a whole number of micro-dollars, at least its typical price of ${typical}`,
+        });
       }
     }
   });
-  return problems;
+  return issues;
 }
 
 /** The same multiplier, reference model, reference cost, unit and hold cap. */
@@ -356,6 +468,17 @@ function sameCard(p: Readonly<CreditPriceCard> | undefined, q: Readonly<CreditPr
   );
 }
 
+/**
+ * The same multiplier, reference model, reference cost, unit and hold cap; two missing cards (the task not priced) are
+ * the same. The schedule edits (schedule-edits.ts) compare a task's cards with it.
+ */
+export function sameTaskCard(
+  a: Readonly<CreditPriceCard> | null | undefined,
+  b: Readonly<CreditPriceCard> | null | undefined,
+): boolean {
+  return (a == null && b == null) || sameCard(a ?? undefined, b ?? undefined);
+}
+
 /** The same task keys, and per task the same card (`sameCard`). */
 function sameCards(a: Readonly<CreditPriceScheduleEntry>, b: Readonly<CreditPriceScheduleEntry>): boolean {
   const x = cardsOf(a);
@@ -371,7 +494,21 @@ function checkNotice(noticeDays: number): void {
 }
 
 /**
- * The CI rule for a change from `base` to `head` at `now` (docs/release.md → Changing a price card). Problems, or `[]`
+ * The earliest effectiveFrom a raise may have at `now`: 00:00 UTC on or after now + noticeDays. Throws `RangeError` for
+ * an invalid Date, or unless `noticeDays` is a whole number, 0 or more.
+ */
+export function earliestRaise(now: Date, noticeDays: number = PRICE_NOTICE_DAYS): string {
+  checkNotice(noticeDays);
+  return iso(Math.ceil((instant(now) + noticeDays * DAY_MS) / DAY_MS) * DAY_MS);
+}
+
+/** The next 00:00 UTC after `now`: the earliest effectiveFrom of any new or changed price. `RangeError` for an invalid Date. */
+export function nextMidnight(now: Date): string {
+  return iso(Math.floor(instant(now) / DAY_MS) * DAY_MS + DAY_MS);
+}
+
+/**
+ * The CI rule for a change from `base` to `head` at `now` (docs/release.md → Prices). Problems, or `[]`
  * when the change is allowed. The head's shape comes first and alone. Rule 1: a base entry in effect stays on the head
  * unchanged. Rule 2a: a new or changed entry starts after `now`. Rule 2b (`priceRaisesWithinNotice`, only when nothing
  * else failed): no raise within `noticeDays`. A base entry not yet in effect may be removed (a cancellation), which 2b
@@ -385,33 +522,50 @@ export function checkPriceScheduleChange(
   noticeDays: number = PRICE_NOTICE_DAYS,
   rules: 'all' | 'in-effect' = 'all',
 ): string[] {
+  return texts(priceScheduleChangeIssues(base, head, now, noticeDays, rules));
+}
+
+/**
+ * `checkPriceScheduleChange` as issues: each problem with its code and facts. A head shape issue keeps the shape issue's
+ * code and facts; only its text gains the `head: ` prefix.
+ */
+export function priceScheduleChangeIssues(
+  base: CreditPriceSchedule,
+  head: CreditPriceSchedule,
+  now: Date,
+  noticeDays: number = PRICE_NOTICE_DAYS,
+  rules: 'all' | 'in-effect' = 'all',
+): PriceIssue[] {
   checkNotice(noticeDays);
   const t = instant(now);
-  const shape = priceScheduleProblems(head);
-  if (shape.length > 0) return shape.map((problem) => `head: ${problem}`);
+  const shape = priceScheduleIssues(head);
+  if (shape.length > 0) return shape.map((issue) => ({ ...issue, text: `head: ${issue.text}` }));
 
-  const problems: string[] = [];
+  const issues: PriceIssue[] = [];
   const changed = new Set<string>();
   for (const entry of base) {
     const e = entry.effectiveFrom;
     if (!(Date.parse(e) <= t)) continue;
     const kept = head.find((h) => h.effectiveFrom === e);
-    if (!kept) problems.push(`${e}: this price is in effect and cannot be removed`);
+    if (!kept)
+      issues.push({ code: 'in-effect-removed', effectiveFrom: e, text: `${e}: this price is in effect and cannot be removed` });
     else if (!sameCards(entry, kept)) {
-      problems.push(`${e}: this price is in effect and cannot change; add a new dated entry instead`);
+      const text = `${e}: this price is in effect and cannot change; add a new dated entry instead`;
+      issues.push({ code: 'in-effect-changed', effectiveFrom: e, text });
       changed.add(e);
     }
   }
-  if (rules === 'in-effect') return problems;
+  if (rules === 'in-effect') return issues;
 
-  const tomorrow = iso(Math.floor(t / DAY_MS) * DAY_MS + DAY_MS);
+  const tomorrow = nextMidnight(now);
   for (const entry of head) {
     const e = entry.effectiveFrom;
     if (changed.has(e) || Date.parse(e) > t) continue;
     if (base.some((b) => b.effectiveFrom === e && sameCards(b, entry))) continue;
-    problems.push(`${e}: a new or changed price cannot start in the past; the earliest effectiveFrom allowed now is ${tomorrow}`);
+    const text = `${e}: a new or changed price cannot start in the past; the earliest effectiveFrom allowed now is ${tomorrow}`;
+    issues.push({ code: 'starts-in-past', effectiveFrom: e, earliest: tomorrow, text });
   }
-  return problems.length > 0 ? problems : priceRaisesWithinNotice(base, head, now, noticeDays);
+  return issues.length > 0 ? issues : priceRaiseIssues(base, head, now, noticeDays);
 }
 
 /**
@@ -429,11 +583,24 @@ export function priceRaisesWithinNotice(
   now: Date,
   noticeDays: number = PRICE_NOTICE_DAYS,
 ): string[] {
+  return texts(priceRaiseIssues(base, head, now, noticeDays));
+}
+
+/**
+ * `priceRaisesWithinNotice` as issues: each raise with its code, task, the instant compared (`effectiveFrom`) and the
+ * earliest date the raise may start (`earliestRaise`).
+ */
+export function priceRaiseIssues(
+  base: CreditPriceSchedule,
+  head: CreditPriceSchedule,
+  now: Date,
+  noticeDays: number = PRICE_NOTICE_DAYS,
+): PriceIssue[] {
   checkNotice(noticeDays);
   const t0 = instant(now);
   if (base.length === 0 || head.length === 0) return [];
   const end = t0 + noticeDays * DAY_MS;
-  const earliest = iso(Math.ceil(end / DAY_MS) * DAY_MS);
+  const earliest = earliestRaise(now, noticeDays);
   const notice = `a price raise needs ${noticeDays} days' notice: the earliest effectiveFrom allowed now for it is ${earliest}`;
   const starts = [...base, ...head].map((entry) => Date.parse(entry.effectiveFrom)).filter((t) => t > t0 && t < end);
   const instants = [...new Set([t0, ...starts])].sort((a, b) => a - b);
@@ -441,7 +608,7 @@ export function priceRaisesWithinNotice(
   const higherCap = (x: Readonly<CreditPriceCard> | undefined, y: Readonly<CreditPriceCard> | undefined) =>
     !!x && !!y && x.maxChargeMicros !== undefined && y.maxChargeMicros !== undefined && x.maxChargeMicros > y.maxChargeMicros;
 
-  const problems: string[] = [];
+  const issues: PriceIssue[] = [];
   for (const t of instants) {
     const at = iso(t);
     const baseCards = cardsOf(priceCardsAt(new Date(t), base));
@@ -456,17 +623,22 @@ export function priceRaisesWithinNotice(
       const p = t === t0 ? undefined : headBefore[task] || undefined;
       const q = baseBefore[task] || undefined;
       const capRaisedFrom = higherCap(h, b) ? b : higherCap(h, p) && !higherCap(b, q) ? p : undefined;
+      const about = { effectiveFrom: at, task, earliest };
       if (capRaisedFrom) {
-        problems.push(
-          `${at}: ${task} would raise its maximum charge from ${capRaisedFrom.maxChargeMicros} to ${h.maxChargeMicros} micro-dollars; ${notice}`,
-        );
+        issues.push({
+          code: 'cap-raise',
+          ...about,
+          text: `${at}: ${task} would raise its maximum charge from ${capRaisedFrom.maxChargeMicros} to ${h.maxChargeMicros} micro-dollars; ${notice}`,
+        });
       }
       const hRetail = retail(h);
       const bRetail = b ? retail(b) : undefined;
       if (b && bRetail !== undefined && (h.multiplier > b.multiplier || hRetail > bRetail)) {
-        problems.push(
-          `${at}: ${task} would go from multiplier ${b.multiplier} and ${bRetail} micro-dollars per 1,000 posts to multiplier ${h.multiplier} and ${hRetail}; ${notice}`,
-        );
+        issues.push({
+          code: 'raise',
+          ...about,
+          text: `${at}: ${task} would go from multiplier ${b.multiplier} and ${bRetail} micro-dollars per 1,000 posts to multiplier ${h.multiplier} and ${hRetail}; ${notice}`,
+        });
         continue;
       }
       if (!p) continue;
@@ -474,13 +646,15 @@ export function priceRaisesWithinNotice(
       const baseRisesMultiplier = !!b && !!q && b.multiplier > q.multiplier;
       const baseRisesRetail = bRetail !== undefined && !!q && bRetail > retail(q);
       if ((h.multiplier > p.multiplier && !baseRisesMultiplier) || (hRetail > pRetail && !baseRisesRetail)) {
-        problems.push(
-          `${at}: ${task} would rise from multiplier ${p.multiplier} and ${pRetail} micro-dollars per 1,000 posts just before it to multiplier ${h.multiplier} and ${hRetail}, a rise the base does not have then; ${notice}`,
-        );
+        issues.push({
+          code: 'rise',
+          ...about,
+          text: `${at}: ${task} would rise from multiplier ${p.multiplier} and ${pRetail} micro-dollars per 1,000 posts just before it to multiplier ${h.multiplier} and ${hRetail}, a rise the base does not have then; ${notice}`,
+        });
       }
     }
   }
-  return problems;
+  return issues;
 }
 
 const Micros = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);

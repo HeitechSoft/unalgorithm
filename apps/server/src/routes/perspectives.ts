@@ -1,13 +1,15 @@
 /**
- * Other perspectives jobs (F22, F18): one shared link in, a comparison of its coverage across the registry's lean
+ * UnEcho Chamber jobs (F22, F18): one shared link in, a comparison of its coverage across the source list's lean
  * buckets out, on the job kit (`routes/jobs.ts`), which owns the lifecycle, the holds, the usage row and the no-content
- * logging. The request is the link alone (URL and link-card title) with the platform and audience: the schema is strict,
- * so a body carrying post text or any other field is refused, never stripped. The link is never logged or stored.
+ * logging. The request is the link alone (URL and link-card title) with the platform and audience, and the person's
+ * chosen source list as web addresses and buckets (decision D102): the schema is strict, so a body carrying post text or
+ * any other field is refused, never stripped. The link and the list are never logged or stored: the list lives in the
+ * request handler and the in-memory job only, and an unsound one is refused before anything is metered.
  */
 import { AIError } from '@unalgorithm/ai';
-import type { Registry } from '@unalgorithm/outlets';
+import { listProblems, sourceListFromWire } from '@unalgorithm/outlets';
 import {
-  type CreditPriceSchedule,
+  FEATURE_NAMES,
   PERSPECTIVES_JOBS_PATH,
   type PerspectivesJobRequest,
   PerspectivesJobRequestSchema,
@@ -28,15 +30,10 @@ import { mountJobRoutes } from './jobs.ts';
 /** Mounts the perspectives job endpoints: start, poll and cancel. `limits` is the app's one `LimitDeps`. */
 export function perspectivesRoutes(
   app: App,
-  deps: AppDeps & {
-    priceSchedule: CreditPriceSchedule;
-    perspectivesJobs: JobStore<PerspectivesResult>;
-    /** A usable registry, or null: then perspectives is not offered. */
-    outlets: Registry | null;
-  },
+  deps: AppDeps & { perspectivesJobs: JobStore<PerspectivesResult> },
   limits: LimitDeps,
 ): void {
-  const { config, db, log, ai, priceSchedule, outlets } = deps;
+  const { config, db, log, ai, prices } = deps;
   const search = deps.search ?? null;
   mountJobRoutes<PerspectivesJobRequest, PerspectivesResult>(
     app,
@@ -48,25 +45,30 @@ export function perspectivesRoutes(
       request: PerspectivesJobRequestSchema,
       view: PerspectivesJobSchema,
       texts: {
-        notOffered: 'Other perspectives is not offered on this server.',
+        notOffered: `${FEATURE_NAMES.perspectives} is not offered on this server.`,
         start: 'The comparison is running',
         refused400: 'The request was not valid, or the post is not public',
         refused429: "Too many requests, a comparison already running, or today's limit is reached",
-        unavailable503: 'Other perspectives is not offered, no AI route is available, or the server is busy',
+        unavailable503: `${FEATURE_NAMES.perspectives} is not offered, no AI route is available, or the server is busy`,
         busyUser: 'A comparison is already running for this account.',
         busyServer: 'The server is running as many comparisons as it can.',
       },
       // The comparison runs on the synthesis route (P3-33).
       refusedModel: config.factcheck.synthesisModel,
-      offer: () => perspectivesOffer(config, priceSchedule, outlets),
-      // F18: only a public post's link is ever compared; nothing is metered for another.
+      // The book in use at each request, as fact-check's.
+      offer: () => perspectivesOffer(config, prices.current().schedule),
+      // F18: only a public post's link is ever compared; nothing is metered for another. The list keeps P3-72's rules
+      // (one outlet per web address, none inside another's), so each search hit maps to one bucket.
       admit: (req) => {
         if (!serverMayReceive(req)) throw new AIError('bad-request', 'Only a public post can be compared.');
+        if (listProblems(sourceListFromWire(req.list).outlets).length > 0) {
+          throw new AIError('bad-request', 'The source list was not valid.');
+        }
       },
       limits: (account) => checkJobLimits(limits, account),
       prepare: async (maxCostMicros, req) => {
-        // `offer` refused without a registry, so it is here.
-        const registry = outlets as Registry;
+        // The request's own list, sound by `admit`: outlets `o1`…`oN`, named by web address.
+        const registry = sourceListFromWire(req.list);
         const routes = await resolveFactcheckRoutes(db.db, config, log);
         const pDeps = perspectivesDepsFor(routes, {
           ai,

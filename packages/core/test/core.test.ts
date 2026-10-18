@@ -1,4 +1,10 @@
-import { type Classification, type CreditPriceSchedule, MAX_MODEL_CHARS, ZERO_USAGE as ZERO } from '@unalgorithm/protocol';
+import {
+  type Classification,
+  CREDIT_PRICE_SCHEDULE,
+  type CreditPriceSchedule,
+  MAX_MODEL_CHARS,
+  ZERO_USAGE as ZERO,
+} from '@unalgorithm/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   adjustRelevance,
@@ -181,6 +187,33 @@ describe('settings migration', () => {
     expect(s.highlights).toEqual({ enabled: false, amount: 'more' });
     expect(s.futureFeature).toEqual({ on: true });
     expect(migrateSettings('garbage')).toEqual(defaultSettings());
+  });
+
+  it('test_settings_perspectives_defaults_and_migration', () => {
+    // The own UnEcho Chamber list (P3-76, D100): the Cloud's list by default, no outlets of one's own.
+    expect(defaultSettings().perspectives).toStrictEqual({ list: 'cloud', outlets: {} });
+
+    // Settings saved before the section existed gain it, and keep every other field.
+    const old: Record<string, unknown> = structuredClone(defaultSettings());
+    delete old.perspectives;
+    (old.display as { mode: string }).mode = 'dim';
+    (old.interests as { about: string }).about = 'Local news';
+    const s = migrateSettings(old);
+    expect(s.perspectives).toStrictEqual({ list: 'cloud', outlets: {} });
+    expect(s.display.mode).toBe('dim');
+    expect(s.interests.about).toBe('Local news');
+
+    // A bucket outside LEAN_BUCKETS breaks only that section; the rest is kept.
+    const outlet = { name: 'FX News', domains: ['fx-news.example'], bucket: 'center', addedAt: 1 };
+    const kept = migrateSettings({ ...old, perspectives: { list: 'own', outlets: { 'fx-news': outlet } } });
+    expect(kept.perspectives).toStrictEqual({ list: 'own', outlets: { 'fx-news': outlet } });
+    const broken = migrateSettings({
+      ...old,
+      perspectives: { list: 'own', outlets: { 'fx-news': outlet, 'fx-far': { ...outlet, bucket: 'far-left' } } },
+    });
+    expect(broken.perspectives.outlets).toStrictEqual({});
+    expect(broken.display.mode).toBe('dim');
+    expect(broken.interests.about).toBe('Local news');
   });
 
   it('stamps per-field clocks for changed leaves', () => {
@@ -468,5 +501,19 @@ describe('credit wording', () => {
     expect(formatPostsEstimate(0)).toBe('no posts');
     expect(formatPostsEstimate(1)).toBe('about 1 post');
     expect(formatPostsEstimate(33_000)).toBe('about 33,000 posts');
+  });
+
+  it('test_balance_line_at_server_price', () => {
+    const at = new Date('2026-10-14T12:00:00Z');
+    // The server's price per 1,000 posts (discovery's `classifyPrice`), 2.5× on the launch card: 182,500.
+    expect(balanceLine(970_000, at, undefined, 182_500)).toBe(`$0.97 left ${DOT} about 5,300 posts`);
+    expect(balanceLine(970_000, at, CREDIT_PRICE_SCHEDULE, 182_500)).toBe(`$0.97 left ${DOT} about 5,300 posts`);
+    // No price from the server: the schedule's, as before.
+    expect(balanceLine(970_000, at)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    expect(balanceLine(970_000, at, undefined, null)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    // A price that can't estimate (0) is no price; an empty balance reads none.
+    expect(balanceLine(970_000, at, undefined, 0)).toBe(`$0.97 left ${DOT} about 6,600 posts`);
+    expect(balanceLine(0, at, undefined, 182_500)).toBe('$0.00 left');
+    expect(balanceLine(146, at, undefined, 146_000)).toBe(`<$0.01 left ${DOT} about 1 post`);
   });
 });

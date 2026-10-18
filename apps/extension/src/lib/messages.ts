@@ -136,7 +136,7 @@ export type BgRequest =
   | { type: 'syncStatus' }
   | { type: 'syncSetEnabled'; enabled: boolean }
   | { type: 'syncNow' }
-  /** Fact-check one public post on the person's own Anthropic key (Labs). Opens the side panel for the tab. */
+  /** Fact-check one public post on the person's own Anthropic key. Opens the side panel for the tab. */
   | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
   /** Opens the side panel for the sending feed tab, where the newest check shows. */
   | { type: 'openFactcheck' }
@@ -146,7 +146,7 @@ export type BgRequest =
    */
   | { type: 'balanceCheck' }
   /**
-   * "Other perspectives" for one public post's shared link (Labs). Only the link (URL and link-card title) leaves the
+   * UnEcho Chamber for one public post's shared link. Only the link (URL and link-card title) leaves the
    * browser, never post text. Opens the side panel for the tab.
    */
   | {
@@ -211,7 +211,7 @@ export async function sendToBackground<T extends BgRequest['type']>(
 
 /** For requests nobody waits on (opening a page, a preset change): a failure is logged, never unhandled. */
 export function sendQuietly<T extends BgRequest['type']>(msg: Extract<BgRequest, { type: T }>): void {
-  sendToBackground(msg).catch((err: unknown) => console.debug('[UnAlgorithm]', msg.type, err));
+  sendToBackground(msg).catch((err: unknown) => console.debug('[unAlgorithm]', msg.type, err));
 }
 
 // ---------- extension pages -> content script ----------

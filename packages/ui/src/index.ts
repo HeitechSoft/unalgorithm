@@ -1,3 +1,4 @@
+export * from './components/balance.tsx';
 export * from './components/brand.tsx';
 export * from './components/choice.tsx';
 export * from './components/controls.tsx';

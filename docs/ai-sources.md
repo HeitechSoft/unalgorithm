@@ -13,10 +13,10 @@ AI is optional. Rules handle ads, suggested posts, activity and people you don't
 | **On this device** (Chrome built-in AI, Gemini Nano) | Free | Nothing leaves your computer | Chrome 138+ on a capable computer; Chrome downloads the model once |
 | **Your own key: Anthropic** | Pay Anthropic directly; about $0.07 per 1,000 posts with Claude Haiku 5.5 | Post text goes to Anthropic | Paste a key from console.anthropic.com |
 | **Your own key: OpenAI** | Pay OpenAI | Post text goes to OpenAI (`store: false`) | Paste a key from platform.openai.com |
-| **Google Gemini, OpenRouter, Groq** | Pay the provider | Post text goes to the provider | Paste a key; UnAlgorithm recognizes it by prefix |
+| **Google Gemini, OpenRouter, Groq** | Pay the provider | Post text goes to the provider | Paste a key; unAlgorithm recognizes it by prefix |
 | **Local: Ollama, LM Studio** | Free | Stays on your machine or network | Run the server and pick a model |
 | **Self-hosted or private** (any OpenAI-compatible server, HeitechSoft Private AI) | Your infrastructure | Goes to your server | Enter the base URL and, if needed, a key |
-| **UnAlgorithm Cloud** | Pay-as-you-go credits (Phase 2) | Goes to HeitechSoft's gateway (nothing logged or stored), then Anthropic; see the [privacy model](privacy-model.md#where-post-text-goes) | Coming soon |
+| **unAlgorithm Cloud** | Pay-as-you-go credits (Phase 2) | Goes to HeitechSoft's gateway (nothing logged or stored), then Anthropic; see the [privacy model](privacy-model.md#where-post-text-goes) | Coming soon |
 
 Set it up in onboarding or **Settings → AI**. **Test and save** asks for permission to reach that one server,
 lists its models, picks a small default and runs a one-post probe: "Connected · Claude Haiku 5.5 · 640 ms". To use
@@ -66,9 +66,9 @@ If it speaks the OpenAI chat completions API:
 Otherwise implement an `AIClient` in `packages/ai/src/` and add a source kind to `AISourceConfigSchema` in
 `packages/core/src/ai-source.ts`.
 
-## Fact-check (Labs)
+## Fact-check
 
-With your own Anthropic key, **Settings → Labs → Fact-check** checks the claims in a public post you choose. It is
+With your own Anthropic key, **Settings → AI → Fact-check** checks the claims in a public post you choose. It is
 three calls on your key, directly from your browser: Claude Haiku 5.5 picks up to 3 claims, Claude Sonnet 5.5
 researches them with Anthropic's web search (one search per claim plus one, at most 5; web search must be turned on for your Anthropic
 organization), and Sonnet gives a verdict per claim, keeping only citations that trace to the sources it found.
@@ -76,8 +76,8 @@ A check ends within 4 minutes. Its cost is added to today's cost in Settings but
 limit. Results stay in the tab's session storage (the 5 newest per tab) and go when the tab closes. Facebook posts
 that aren't public are never checked.
 
-With an UnAlgorithm server as your source, fact-check runs on that server when it offers it: the extension sends the
+With an unAlgorithm server as your source, fact-check runs on that server when it offers it: the extension sends the
 post (the same fields classification sends) to the server, which researches it with its own model and search provider
 and keeps nothing of the post once the check is gone from its memory (at most 10 minutes). On a server that charges,
 the price is shown before you confirm and a check that stops early costs nothing. Closing the tab cancels a running
-check. Other sources can't fact-check yet. See the [privacy model](privacy-model.md#fact-check-labs).
+check. See the [privacy model](privacy-model.md#fact-check).

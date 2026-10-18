@@ -1,5 +1,50 @@
 # @unalgorithm/server
 
+## 0.4.0
+
+### Minor Changes
+
+- [#27](https://github.com/HeitechSoft/unalgorithm/pull/27) [`553babb`](https://github.com/HeitechSoft/unalgorithm/commit/553babbde368378fcfc4871cf93d12bf4946b623) Thanks [@TomHeiber](https://github.com/TomHeiber)! - UnEcho Chamber and fact-check on unAlgorithm Cloud are priced from 18 October 2026 (00:00 UTC), at the same prices as
+  announced: a comparison costs about $0.27 at 2× and at most $0.50, a check about $0.24 at 2× and at most $0.40. The price
+  schedule prices both in one entry from 2026-10-18, which replaces the 2026-11-01 and 2026-12-01 entries before either
+  took effect. The classify price is unchanged.
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Every price the server shows or charges now comes from its price book, so a change saved on the Pricing page applies
+  at once, without a restart: discovery and the fact-check and UnEcho Chamber offers, and the billing module through
+  the billing host's `prices` (which replaces `priceSchedule`). The book is published at `/prices.json`, public and
+  cacheable with an ETag, on a server that charges. Discovery also gives a billing server's price of 1,000 classified
+  posts (`classifyPrice`). No price changes.
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The Pricing page at `/admin/prices`, linked from the admin page: an admin sees each task's price now and its scheduled
+  changes, schedules a change of Classifying posts, Fact-check or UnEcho Chamber from a day, and cancels or moves a
+  scheduled one. Before saving, the page says whether the change is a raise or a cut, the earliest day it can start, why
+  the price rules refuse it, and exactly what people will be shown: the account page's, the website's and the extension's
+  own lines (`taskPriceLines`). The server checks every rule again on save.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Each server publishes its source list at /outlets.json (CC BY 4.0) with its change history, and shows it at /outlets.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Admins can keep a source list for UnEcho Chamber: add, edit and remove outlets, each lean with evidence, with a change history.
+
+- [#30](https://github.com/HeitechSoft/unalgorithm/pull/30) [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Admins can set this server's prices; every change is kept with when and who made it.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - UnEcho Chamber runs on unAlgorithm Cloud's source list or your own, with warnings when a list isn't balanced. The comparison request carries the list.
+
+### Patch Changes
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - New `transparency` command: prints one quarter's counts of fact-checks and comparisons, and of the source list's changes, for a transparency report, with no post content and small numbers hidden.
+
+- [#29](https://github.com/HeitechSoft/unalgorithm/pull/29) [`7c240dd`](https://github.com/HeitechSoft/unalgorithm/commit/7c240dd79dfbd2277194a5ceb3750b436a837a07) Thanks [@TomHeiber](https://github.com/TomHeiber)! - The name is now written unAlgorithm, with a lowercase u: in Chrome ("unAlgorithm Feed"), the toolbar, onboarding,
+  Settings, messages, the sign-in and account pages, and the wordmark.
+
+- [#28](https://github.com/HeitechSoft/unalgorithm/pull/28) [`4952da0`](https://github.com/HeitechSoft/unalgorithm/commit/4952da0604dfaf947eb2a2d47d4bec19b66e462b) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives is now called UnEcho Chamber. Only its name changed.
+- Updated dependencies [[`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8), [`a6c924c`](https://github.com/HeitechSoft/unalgorithm/commit/a6c924c5050f902e2d696c33b7ab77b7d3e7dfc8)]:
+  - @unalgorithm/protocol@0.2.0
+  - @unalgorithm/core@0.2.0
+  - @unalgorithm/ai@0.0.3
+  - @unalgorithm/outlets@0.0.2
+  - @unalgorithm/research@0.0.3
+  - @unalgorithm/sync@0.0.3
+
 ## 0.3.1
 
 ### Patch Changes
@@ -42,7 +87,7 @@
   page shows what AI costs per 1,000 posts and the next scheduled price change, with its date. A billing module now
   receives `checkedAt`, the instant the server checked a request, in `check` and `settle`, and prices the request at it.
 
-- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`58fc51c`](https://github.com/HeitechSoft/unalgorithm/commit/58fc51cb934b351f40d149c416181a3c77b978b1) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Fact-check (Labs) can run on a billing server such as UnAlgorithm Cloud from 2026-12-01, at the same 2× our AI cost
+- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`58fc51c`](https://github.com/HeitechSoft/unalgorithm/commit/58fc51cb934b351f40d149c416181a3c77b978b1) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Fact-check (Labs) can run on a billing server such as unAlgorithm Cloud from 2026-12-01, at the same 2× our AI cost
   as everything else: typically about $0.24 a check, never more than $0.40. Before that date a billing server doesn't
   offer it.
 
@@ -50,7 +95,7 @@
   step sees only sources it can quote. The fact-check prompt version is now 2. Upgrade note for servers: fact-check and
   Other perspectives stay off until the admin runs `route-eval factcheck` again, about $3 with Anthropic.
 
-- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`17a8385`](https://github.com/HeitechSoft/unalgorithm/commit/17a8385ded5f776693a6cdf5a6b41d9062d4a924) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives (Labs) can run on a billing server such as UnAlgorithm Cloud from 2026-11-01, at the same 2× our AI
+- [#6](https://github.com/HeitechSoft/unalgorithm/pull/6) [`17a8385`](https://github.com/HeitechSoft/unalgorithm/commit/17a8385ded5f776693a6cdf5a6b41d9062d4a924) Thanks [@TomHeiber](https://github.com/TomHeiber)! - Other perspectives (Labs) can run on a billing server such as unAlgorithm Cloud from 2026-11-01, at the same 2× our AI
   cost as everything else: typically about $0.27 a comparison, never more than $0.50. Classifying is unchanged, so the
   account page shows no new price line for it. The discovery document can
   advertise `capabilities.perspectives` and `jobPrices.perspectives`; older documents still parse.

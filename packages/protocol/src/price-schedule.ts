@@ -1,7 +1,7 @@
 /**
  * Data only: no runtime import, only `import type`. scripts/check-price-schedule.mjs reads this file from the base
  * commit with `git show` and imports it with Node's type stripping from a temporary directory. Never edit an entry
- * that is in effect: add a new dated entry (docs/release.md → Changing a price card).
+ * that is in effect: add a new dated entry (docs/release.md → Prices).
  */
 import type { CreditPriceSchedule } from './billing.ts';
 
@@ -28,10 +28,11 @@ const CREDIT_PRICE_SCHEDULE_PERSPECTIVES_V1 = Object.freeze({
 });
 
 /**
- * 2026-10-01: the launch classify card. 2026-11-01: perspectives added (docs/release.md → Adding a task), the classify
- * card copied as the same object; a comparison ≈ $0.135 on Sonnet 5.5 at 2×, hold cap $0.50 (Tom, decision 1).
- * 2026-12-01: factcheck added (docs/release.md → Adding a task), every earlier card copied; a check ≈ $0.12 on Sonnet
- * 5.5 at 2×, hold cap $0.40 (Tom, decision 1). Its date is proposed (D42): until then it can be moved or cancelled.
+ * 2026-10-01: the launch classify card. 2026-10-18: perspectives (UnEcho Chamber) and factcheck added together
+ * (docs/release.md → Adding a task), the classify card copied as the same object. A comparison ≈ $0.135 on Sonnet 5.5
+ * at 2×, hold cap $0.50; a check ≈ $0.12 on Sonnet 5.5 at 2×, hold cap $0.40 (Tom, decision 1). This one entry replaced
+ * the 2026-11-01 (perspectives) and 2026-12-01 (factcheck) entries before either took effect, at the same prices
+ * (Tom, 2026-10-17).
  */
 export const CREDIT_PRICE_SCHEDULE: CreditPriceSchedule = Object.freeze([
   Object.freeze({
@@ -39,14 +40,7 @@ export const CREDIT_PRICE_SCHEDULE: CreditPriceSchedule = Object.freeze([
     cards: Object.freeze({ classify: CREDIT_PRICE_SCHEDULE_LAUNCH_CLASSIFY }),
   }),
   Object.freeze({
-    effectiveFrom: '2026-11-01T00:00:00Z',
-    cards: Object.freeze({
-      classify: CREDIT_PRICE_SCHEDULE_LAUNCH_CLASSIFY,
-      perspectives: CREDIT_PRICE_SCHEDULE_PERSPECTIVES_V1,
-    }),
-  }),
-  Object.freeze({
-    effectiveFrom: '2026-12-01T00:00:00Z',
+    effectiveFrom: '2026-10-18T00:00:00Z',
     cards: Object.freeze({
       classify: CREDIT_PRICE_SCHEDULE_LAUNCH_CLASSIFY,
       perspectives: CREDIT_PRICE_SCHEDULE_PERSPECTIVES_V1,

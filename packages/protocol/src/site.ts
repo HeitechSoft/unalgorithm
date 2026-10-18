@@ -4,9 +4,18 @@
  * link them in its legal footer; the extension links the same URLs. `test/site.test.ts` keeps each `source` real and its
  * first heading equal to `title`.
  */
+import { OUTLETS_PAGE_PATH } from './outlets.ts';
 
-/** The product website. `cloud.unalgorithm.app` is UnAlgorithm Cloud, never the website. */
+/** The product website. `cloud.unalgorithm.app` is unAlgorithm Cloud, never the website. */
 export const WEBSITE_ORIGIN = 'https://unalgorithmfeed.com';
+
+/** unAlgorithm Cloud, HeitechSoft's server: the one origin the extension names "unAlgorithm Cloud". */
+export const CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
+/** unAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
+export const SOURCE_LIST_PAGE_URL = `${CLOUD_ORIGIN}${OUTLETS_PAGE_PATH}`;
+
+/** The open-source repository, where issues are filed ("Report a problem", the correction form). */
+export const SOURCE_REPO = 'https://github.com/HeitechSoft/unalgorithm';
 
 export interface SiteDocument {
   /** The Markdown file, relative to this repo's root. */
@@ -22,14 +31,14 @@ export interface SiteDocument {
 export const CLOUD_BETA_NOTICE = {
   source: 'CLOUD-BETA-NOTICE.md',
   path: '/cloud/beta-privacy',
-  title: 'UnAlgorithm Cloud beta privacy notice',
+  title: 'unAlgorithm Cloud beta privacy notice',
   linkText: 'Beta privacy notice',
 } as const satisfies SiteDocument;
 
 export const CLOUD_BETA_TERMS = {
   source: 'CLOUD-BETA-TERMS.md',
   path: '/cloud/beta-terms',
-  title: 'UnAlgorithm Cloud beta terms',
+  title: 'unAlgorithm Cloud beta terms',
   linkText: 'Beta terms',
 } as const satisfies SiteDocument;
 
@@ -38,9 +47,9 @@ export const CLOUD_BETA_DOCUMENTS: readonly SiteDocument[] = [CLOUD_BETA_NOTICE,
 
 /**
  * "How credits work" (R30, CL2-14). Its source is a template: the website fills its `{{name}}` placeholders with
- * `creditsMarkdown(source, CREDIT_PRICE_SCHEDULE, buildTime)` from `@unalgorithm/core`, which fails on an unknown or
- * left-over placeholder, so every figure on the page comes from the price schedule the Cloud charges by. The `pricingUrl`
- * the Cloud sends is `siteUrl(CREDITS_PAGE)`.
+ * `creditsMarkdown(source, prices, buildTime)` from `@unalgorithm/core`, where `prices` is the Cloud's `/prices.json`
+ * (PA-10). It fails on an unknown or left-over placeholder, so every figure on the page comes from the price book the
+ * Cloud charges by. The `pricingUrl` the Cloud sends is `siteUrl(CREDITS_PAGE)`.
  */
 export const CREDITS_PAGE = {
   source: 'docs/site/credits.md',
@@ -48,6 +57,74 @@ export const CREDITS_PAGE = {
   title: 'How credits work',
   linkText: 'How credits work',
 } as const satisfies SiteDocument;
+
+/**
+ * "Published prompts" (F29, P3-65, decision D83): generated, never edited by hand. `pnpm docs:site` writes it from the
+ * prompts, builders, schemas, models and limits in `@unalgorithm/research`, and a test fails when the file differs.
+ */
+export const PROMPTS_PAGE = {
+  source: 'docs/site/prompts.md',
+  path: '/methodology/prompts',
+  title: 'Published prompts',
+  linkText: 'Prompts',
+} as const satisfies SiteDocument;
+
+/** "Evaluations and trust gates" (F29, P3-65): both eval sets in full and the gates, generated as PROMPTS_PAGE is. */
+export const EVALS_PAGE = {
+  source: 'docs/site/evals.md',
+  path: '/methodology/evals',
+  title: 'Evaluations and trust gates',
+  linkText: 'Evaluations',
+} as const satisfies SiteDocument;
+
+/**
+ * "How Fact-check and UnEcho Chamber work" (F29, P3-68): the methodology, written by hand. Every number it states is
+ * pinned to the code by the extension's `methodology-doc.test.ts`. It links the generated pages above and unAlgorithm
+ * Cloud's source list (`SOURCE_LIST_PAGE_URL`), which is not a site document: it lives on the Cloud (decision D97).
+ */
+export const METHODOLOGY_PAGE = {
+  source: 'docs/site/methodology.md',
+  path: '/methodology',
+  title: 'How Fact-check and UnEcho Chamber work',
+  linkText: 'Methodology',
+} as const satisfies SiteDocument;
+
+/** "Corrections and appeals" (F30, P3-68): how to ask for a correction or appeal a source list entry, and the audit. */
+export const CORRECTIONS_PAGE = {
+  source: 'docs/site/corrections.md',
+  path: '/corrections',
+  title: 'Corrections and appeals',
+  linkText: 'Corrections and appeals',
+} as const satisfies SiteDocument;
+
+/**
+ * "Transparency reports" (F29, P3-70, decisions D89, D90): what each quarterly report counts and can't, how it is made,
+ * and the reports themselves, each added as the server's `transparency` command printed it.
+ */
+export const TRANSPARENCY_PAGE = {
+  source: 'docs/site/transparency.md',
+  path: '/transparency',
+  title: 'Transparency reports',
+  linkText: 'Transparency reports',
+} as const satisfies SiteDocument;
+
+/** The website footer's "How checks work" links, in order (decision D109). */
+export const METHODOLOGY_DOCUMENTS: readonly SiteDocument[] = [
+  METHODOLOGY_PAGE,
+  PROMPTS_PAGE,
+  EVALS_PAGE,
+  CORRECTIONS_PAGE,
+  TRANSPARENCY_PAGE,
+];
+
+/**
+ * Text for one cell of a Markdown table in a generated site page: line breaks become spaces; \ | * _ ` [ ] < > are
+ * escaped. The one escape every generated page uses, so text from a set or a source list can never add a cell, a link, a
+ * tag or emphasis. Not for a code span, where a backslash shows as itself.
+ */
+export function markdownCell(text: string): string {
+  return text.replace(/\r\n|[\r\n]/g, ' ').replace(/[\\|*_`[\]<>]/g, '\\$&');
+}
 
 /** The website footer's Cloud links, in order: the beta notice and terms, then "How credits work". */
 export const CLOUD_FOOTER_LINKS: readonly SiteDocument[] = [...CLOUD_BETA_DOCUMENTS, CREDITS_PAGE];

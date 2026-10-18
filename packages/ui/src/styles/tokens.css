@@ -1,5 +1,5 @@
 /*
- * UnAlgorithm design tokens. Every color resolves through light-dark(), so a surface switches theme by setting
+ * unAlgorithm design tokens. Every color resolves through light-dark(), so a surface switches theme by setting
  * `color-scheme`. Extension pages follow the system; in-feed UI follows the host page's sampled theme.
  */
 @layer tokens {

@@ -1,4 +1,11 @@
-import { NOISE_LABELS, type PLATFORMS } from '@unalgorithm/protocol';
+import {
+  LEAN_BUCKETS,
+  LIST_KINDS,
+  MAX_OUTLET_DOMAINS,
+  NOISE_LABELS,
+  OutletDomainSchema,
+  type PLATFORMS,
+} from '@unalgorithm/protocol';
 import { z } from 'zod';
 import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
 
@@ -77,6 +84,19 @@ export type Topic = z.infer<typeof TopicSchema>;
 export const KeywordSchema = z.object({ label: z.string().trim().min(1).max(60), addedAt: z.number() });
 export type Keyword = z.infer<typeof KeywordSchema>;
 
+/**
+ * One outlet of the person's own UnEcho Chamber list (decision D100); the map key is its id. No evidence: the lean is
+ * the person's own call, which no one reviews.
+ */
+export const OwnOutletSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  domains: z.array(OutletDomainSchema).min(1).max(MAX_OUTLET_DOMAINS),
+  /** null: listed without a lean, so never searched. */
+  bucket: z.enum(LEAN_BUCKETS).nullable(),
+  addedAt: z.number(),
+});
+export type OwnOutlet = z.infer<typeof OwnOutletSchema>;
+
 export const DISPLAY_MODES = ['collapse', 'hide', 'dim'] as const;
 export type DisplayMode = (typeof DISPLAY_MODES)[number];
 
@@ -115,10 +135,23 @@ export const SettingsSchema = z.looseObject({
     redactMentions: z.boolean(),
     learnFromFeedback: z.boolean(),
   }),
+  /**
+   * UnEcho Chamber's source list: which list it uses, and the person's own (synced like the rest; the UnEcho Chamber
+   * switch itself stays device-local, `device.labs.perspectives`). At most MAX_LIST_OUTLETS outlets in use: the editor
+   * keeps to it, and a list over it is a list problem, never a broken setting.
+   */
+  perspectives: z.looseObject({
+    /** Which list UnEcho Chamber uses (decision D100). */
+    list: z.enum(LIST_KINDS),
+    outlets: z.record(z.string(), OwnOutletSchema),
+  }),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-/** Experimental features, per device: Labs flags are never synced (DeviceSchema is never synced or exported). */
+/**
+ * The Fact-check and UnEcho Chamber switches, per device (named `labs` from when they were Labs features; P3-64 kept
+ * the name and values): never synced (DeviceSchema is never synced or exported).
+ */
 export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
 export type Labs = z.infer<typeof LabsSchema>;
 

@@ -1,15 +1,27 @@
 import '@unalgorithm/ui/styles.css';
 import './web.css';
-import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, AUTHORIZE_PAGE_PATH, SETUP_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import {
+  ACCOUNT_PAGE_PATH,
+  ADMIN_PAGE_PATH,
+  ADMIN_PRICES_PAGE_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
+  AUTHORIZE_PAGE_PATH,
+  OUTLETS_PAGE_PATH,
+  SETUP_PAGE_PATH,
+  type ServerInfo,
+} from '@unalgorithm/protocol';
 import { Banner, ToastProvider } from '@unalgorithm/ui';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
 import { Admin } from './Admin.tsx';
+import { AdminPrices } from './AdminPrices.tsx';
+import { AdminSources } from './AdminSources.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
 import { Page } from './Page.tsx';
 import { Setup } from './Setup.tsx';
+import { SourceList } from './SourceList.tsx';
 
 /** Any other address on the server: what the server is for, and where to start. */
 export function Home() {
@@ -26,7 +38,7 @@ export function Home() {
   }, []);
   if (!info && !failed) return <div className="web-page" aria-busy="true" />;
   return (
-    <Page info={info} intro="This server provides AI for the UnAlgorithm Feed extension.">
+    <Page info={info} intro="This server provides AI for the unAlgorithm Feed extension.">
       {failed ? (
         <Banner tone="danger" title="Couldn't reach the server. Try again." />
       ) : (
@@ -56,6 +68,12 @@ if (root) {
           <Setup />
         ) : pathname === ADMIN_PAGE_PATH ? (
           <Admin />
+        ) : pathname === ADMIN_SOURCES_PAGE_PATH ? (
+          <AdminSources />
+        ) : pathname === ADMIN_PRICES_PAGE_PATH ? (
+          <AdminPrices />
+        ) : pathname === OUTLETS_PAGE_PATH ? (
+          <SourceList />
         ) : (
           <Home />
         )}

@@ -1,15 +1,22 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CLOUD_BETA_DOCUMENTS,
   CLOUD_BETA_NOTICE,
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
+  CORRECTIONS_PAGE,
   CREDITS_PAGE,
+  EVALS_PAGE,
+  FEATURE_NAMES,
+  METHODOLOGY_DOCUMENTS,
+  METHODOLOGY_PAGE,
   PRICING_FOOTER_LINK,
   PRICING_REDIRECT,
+  PROMPTS_PAGE,
   STARTER_CREDIT,
   siteUrl,
+  TRANSPARENCY_PAGE,
   WEBSITE_ORIGIN,
 } from '../src/index.ts';
 
@@ -26,6 +33,11 @@ const flat = (text: string): string => text.replace(/\s+/g, ' ');
 const notice = read(CLOUD_BETA_NOTICE.source);
 const terms = read(CLOUD_BETA_TERMS.source);
 
+/** P3-68: what a correction or an appeal must never carry, said the same way on the page and on both forms. */
+const NEVER_SEND = "Use your own words: never the post, a screenshot of it, a link to it, or anyone's name.";
+const CORRECTION_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml';
+const APPEAL_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=source_list_appeal.yml';
+
 describe('site documents', () => {
   it('test_site_documents_match_their_sources', () => {
     expect(CLOUD_BETA_DOCUMENTS.map((doc) => doc.source)).toEqual(['CLOUD-BETA-NOTICE.md', 'CLOUD-BETA-TERMS.md']);
@@ -33,6 +45,92 @@ describe('site documents', () => {
       expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
     }
     expect(read(CREDITS_PAGE.source).split('\n')[0]).toBe(`# ${CREDITS_PAGE.title}`);
+    // P3-65: the generated prompts and evaluations pages (`pnpm docs:site`); P3-68: the methodology and corrections;
+    // P3-70: the transparency reports.
+    for (const doc of [PROMPTS_PAGE, EVALS_PAGE, METHODOLOGY_PAGE, CORRECTIONS_PAGE, TRANSPARENCY_PAGE]) {
+      expect(existsSync(new URL(doc.source, REPO_ROOT)), doc.source).toBe(true);
+      expect(read(doc.source).split('\n')[0], doc.source).toBe(`# ${doc.title}`);
+    }
+    for (const name of Object.values(FEATURE_NAMES)) expect(METHODOLOGY_PAGE.title).toContain(name);
+    // Decision D109: the website footer's "How checks work" column, the transparency reports last (P3-70).
+    expect(TRANSPARENCY_PAGE).toStrictEqual({
+      source: 'docs/site/transparency.md',
+      path: '/transparency',
+      title: 'Transparency reports',
+      linkText: 'Transparency reports',
+    });
+    expect(METHODOLOGY_DOCUMENTS).toStrictEqual([
+      METHODOLOGY_PAGE,
+      PROMPTS_PAGE,
+      EVALS_PAGE,
+      CORRECTIONS_PAGE,
+      TRANSPARENCY_PAGE,
+    ]);
+    expect(siteUrl(TRANSPARENCY_PAGE)).toBe('https://unalgorithmfeed.com/transparency');
+  });
+
+  it('test_transparency_page_wording', () => {
+    // P3-70, decisions D89, D90, D106, D108: what the quarterly report counts, what it can't, and how it is made.
+    const md = read(TRANSPARENCY_PAGE.source);
+    const text = flat(md);
+    const headings = md.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual(['## What we count', "## What we can't count", '## How a report is made', '## Reports']);
+    const section = (from: string, to?: string) => flat(md.slice(md.indexOf(from), to ? md.indexOf(to) : undefined));
+    expect(section('## What we count', "## What we can't count")).toContain('fewer than 10');
+    const cannot = section("## What we can't count", '## How a report is made');
+    for (const phrase of ['verdict', 'your own key', 'your own server', 'own source lists'])
+      expect(cannot, phrase).toContain(phrase);
+    const how = section('## How a report is made', '## Reports');
+    for (const phrase of ['cli/transparency.ts --quarter', '`correction`', '`source-list-appeal`', 'Quarterly audit']) {
+      expect(how, phrase).toContain(phrase);
+    }
+    expect(section('## Reports')).toContain(
+      'The first report covers October to December 2026 and will be published in January 2027.',
+    );
+    expect(text).toContain('no verdict counts');
+    for (const name of Object.values(FEATURE_NAMES)) expect(text).toContain(name);
+    expect(text).not.toMatch(/panel|registry/i);
+  });
+
+  it('test_corrections_page_required_wording', () => {
+    const md = read(CORRECTIONS_PAGE.source);
+    const text = flat(md);
+    const headings = md.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual([
+      '## What never to send',
+      '## Ask for a correction',
+      '## Source list appeals',
+      '## Quarterly audit',
+    ]);
+    expect(text).toContain(NEVER_SEND);
+    for (const phrase of [
+      'never the post',
+      CORRECTION_FORM_URL,
+      APPEAL_FORM_URL,
+      'hello@heitechsoft.com',
+      'legal@heitechsoft.com',
+      '5 business days',
+      '30 days',
+      '10 %',
+      '12 months',
+      'did not make',
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+    // Decision D86: corrections go to one address, appeals (which outlets may send) to the other.
+    const section = (from: string, to?: string) => flat(md.slice(md.indexOf(from), to ? md.indexOf(to) : undefined));
+    const corrections = section('## Ask for a correction', '## Source list appeals');
+    expect(corrections).toContain('hello@heitechsoft.com');
+    expect(corrections).toContain(CORRECTION_FORM_URL);
+    const appeals = section('## Source list appeals', '## Quarterly audit');
+    expect(appeals).toContain('legal@heitechsoft.com');
+    expect(appeals).toContain(APPEAL_FORM_URL);
+    expect(appeals).toContain('did not make the change');
+    const audit = section('## Quarterly audit');
+    for (const phrase of ['10 %', 'at least 10', '12 months', 'did not make them', 'transparency report']) {
+      expect(audit, phrase).toContain(phrase);
+    }
+    expect(text).not.toMatch(/panel|registry/i);
   });
 
   it('test_site_urls', () => {
@@ -43,6 +141,15 @@ describe('site documents', () => {
     ]);
     expect(CLOUD_BETA_DOCUMENTS.map((doc) => doc.linkText)).toEqual(['Beta privacy notice', 'Beta terms']);
     expect(siteUrl(CREDITS_PAGE)).toBe('https://unalgorithmfeed.com/credits');
+    // Decision D83: the methodology's published pages.
+    expect([PROMPTS_PAGE, EVALS_PAGE].map((doc) => [siteUrl(doc), doc.title, doc.linkText])).toEqual([
+      ['https://unalgorithmfeed.com/methodology/prompts', 'Published prompts', 'Prompts'],
+      ['https://unalgorithmfeed.com/methodology/evals', 'Evaluations and trust gates', 'Evaluations'],
+    ]);
+    expect([METHODOLOGY_PAGE, CORRECTIONS_PAGE].map((doc) => [siteUrl(doc), doc.title, doc.linkText])).toEqual([
+      ['https://unalgorithmfeed.com/methodology', 'How Fact-check and UnEcho Chamber work', 'Methodology'],
+      ['https://unalgorithmfeed.com/corrections', 'Corrections and appeals', 'Corrections and appeals'],
+    ]);
   });
 
   it('test_footer_links_credits', () => {
@@ -51,6 +158,46 @@ describe('site documents', () => {
       ['Beta terms', '/cloud/beta-terms'],
       ['How credits work', '/credits'],
     ]);
+  });
+});
+
+describe('issue forms (P3-68)', () => {
+  const form = (name: string) => read(`.github/ISSUE_TEMPLATE/${name}`);
+  const ids = (yml: string) => [...yml.matchAll(/^\s+id: (\w+)$/gm)].map((m) => m[1]);
+  /** A dropdown's options: the `- ` items under `options:` in the field whose id is `id`. */
+  const options = (yml: string, id: string): string[] => {
+    const start = yml.indexOf(`id: ${id}\n`);
+    expect(start, id).toBeGreaterThan(-1);
+    const end = yml.indexOf('\n  - type:', start);
+    const field = yml.slice(start, end === -1 ? undefined : end);
+    const list = field.slice(field.indexOf('options:\n'));
+    return [...list.matchAll(/^ +- (.+)$/gm)].map((m) => (m[1] ?? '').replace(/^(["'])(.*)\1$/, '$2'));
+  };
+
+  it('test_issue_forms_warn_and_have_field_ids', () => {
+    const correction = form('correction.yml');
+    const appeal = form('source_list_appeal.yml');
+    for (const [yml, label] of [
+      [correction, 'correction'],
+      [appeal, 'source-list-appeal'],
+    ] as const) {
+      expect(yml, label).toContain(NEVER_SEND);
+      expect(yml.split('\n'), label).toContain(`labels: [${label}, triage]`);
+    }
+    expect(correction).toContain('https://unalgorithmfeed.com/corrections/');
+    expect(appeal).toContain('Outlets may appeal by email instead: legal@heitechsoft.com.');
+
+    expect(ids(correction)).toEqual(expect.arrayContaining(['feature', 'claim', 'version', 'prompt', 'list']));
+    expect(options(correction, 'feature')).toStrictEqual(Object.values(FEATURE_NAMES));
+    expect(options(correction, 'list')).toStrictEqual(["unAlgorithm Cloud's list", 'My own list']);
+    expect(ids(appeal)).toEqual(expect.arrayContaining(['outlet', 'what', 'version']));
+    for (const yml of [correction, appeal]) expect(new Set(ids(yml)).size).toBe(ids(yml).length);
+  });
+
+  it('test_issue_config_links_corrections', () => {
+    const config = form('config.yml');
+    expect(config).toMatch(/^blank_issues_enabled: false$/m);
+    expect(config).toContain('url: https://unalgorithmfeed.com/corrections/');
   });
 });
 
@@ -70,6 +217,13 @@ describe('cloud beta documents', () => {
       expect(notice, phrase).toContain(phrase);
     }
     expect(flat(notice)).toContain('Privacy contact: Tom Heiber, HeitechSoft, privacy@heitechsoft.com');
+    // P3-76: a person's own UnEcho Chamber list syncs with their settings, and is stored in their browser.
+    expect(flat(notice)).toContain('own UnEcho Chamber source list');
+    // P3-70: the quarterly transparency report publishes totals, small ones hidden.
+    expect(flat(notice.slice(notice.indexOf('## 3.'), notice.indexOf('## 4.')))).toContain(
+      "totals under 10 are shown as 'fewer than 10', and nothing in them identifies an account.",
+    );
+    expect(flat(read('PRIVACY.md'))).toContain('your own UnEcho Chamber source list');
   });
 
   it('test_beta_notice_has_ten_sections', () => {
@@ -149,7 +303,7 @@ describe('cloud beta documents', () => {
     for (const never of ['API keys', 'endpoint tokens', 'refresh tokens', 'learned topics', 'votes']) {
       expect(section, never).toMatch(new RegExp(`Sync never carries [^.]*${never}`));
     }
-    expect(section).toContain("Google knows you signed in to UnAlgorithm Cloud, under Google's own privacy policy");
+    expect(section).toContain("Google knows you signed in to unAlgorithm Cloud, under Google's own privacy policy");
     expect(flat(notice)).toContain('Google acts as a sign-in provider you choose, not as a processor of Cloud data.');
     const rights = flat(notice.slice(notice.indexOf('## 8.'), notice.indexOf('## 9.')));
     for (const text of [section, rights]) expect(text).toContain('`https://cloud.unalgorithm.app/account`');
@@ -163,13 +317,67 @@ describe('cloud beta documents', () => {
       ['notice', notice],
       ['terms', terms],
     ] as const) {
-      // The first "UnAlgorithm Cloud" says which service it is; no "zero retention" promise before an agreement exists.
-      const first = text.split('\n\n').find((paragraph) => !paragraph.startsWith('#') && paragraph.includes('UnAlgorithm Cloud'));
+      // The first "unAlgorithm Cloud" says which service it is; no "zero retention" promise before an agreement exists.
+      const first = text.split('\n\n').find((paragraph) => !paragraph.startsWith('#') && paragraph.includes('unAlgorithm Cloud'));
       expect(first && flat(first), name).toContain('`cloud.unalgorithm.app`');
       expect(text, name).not.toMatch(/zero[\s-]+(data[\s-]+)?retention/i);
       // No placeholder left for review to fill.
       expect(text, name).not.toMatch(/<[A-Z]+>|\bTODO\b|\bTBD\b/);
       expect(text, name).toMatch(/^Last updated: \d{1,2} \w+ \d{4}$/m);
+    }
+  });
+});
+
+describe('feature names (P3-63)', () => {
+  /** Every text file under `path` (a file or a directory), skipping dependencies, release history and changesets. */
+  const textFiles = (path: string): string[] => {
+    const url = new URL(path, REPO_ROOT);
+    // Read first and branch on the error, so no check comes before the use (CodeQL js/file-system-race).
+    let names: string[];
+    try {
+      names = readdirSync(url);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return [];
+      if (code !== 'ENOTDIR') throw error;
+      const bytes = readFileSync(url);
+      return /(^|\/)CHANGELOG\.md$/.test(path) || bytes.includes(0) ? [] : [path];
+    }
+    return names
+      .filter((name) => name !== 'node_modules' && name !== '.changeset')
+      .flatMap((name) => textFiles(`${path.replace(/\/$/, '')}/${name}`));
+  };
+  /** The directories directly inside `parent` (`apps`, `packages`). */
+  const children = (parent: string): string[] =>
+    readdirSync(new URL(`${parent}/`, REPO_ROOT)).filter((name) =>
+      statSync(new URL(`${parent}/${name}`, REPO_ROOT)).isDirectory(),
+    );
+  const markdownUnder = (path: string): string[] => textFiles(path).filter((file) => file.endsWith('.md'));
+
+  it('test_feature_names_unecho_chamber', () => {
+    expect(FEATURE_NAMES).toStrictEqual({ factcheck: 'Fact-check', perspectives: 'UnEcho Chamber' });
+    expect(Object.isFrozen(FEATURE_NAMES)).toBe(true);
+  });
+
+  it('test_old_feature_name_is_gone', () => {
+    const roots = [
+      ...children('apps').map((app) => `apps/${app}/src`),
+      ...children('packages').flatMap((pkg) => [`packages/${pkg}/src`, `packages/${pkg}/eval`, `packages/${pkg}/README.md`]),
+      'apps/server/.env.example',
+      '.github',
+      ...readdirSync(REPO_ROOT).filter((name) => name.endsWith('.md')),
+    ];
+    const files = [...roots.flatMap(textFiles), ...markdownUnder('docs')];
+    expect(files.length).toBeGreaterThan(100);
+    expect(files.filter((file) => /other\s+perspectives|reality\s+mode/i.test(read(file)))).toStrictEqual([]);
+  });
+
+  it('test_brand_doc_names_unecho_chamber', () => {
+    const brand = flat(read('docs/brand.md'));
+    const section = brand.slice(brand.indexOf('## Feature names'));
+    expect(brand).toContain('## Feature names');
+    for (const phrase of ['UnEcho Chamber', 'never a separate product', 'never shortened', '`perspectives`', 'FEATURE_NAMES']) {
+      expect(section, phrase).toContain(phrase);
     }
   });
 });

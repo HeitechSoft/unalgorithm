@@ -14,12 +14,11 @@ import { fileURLToPath } from 'node:url';
 import { createPostgresTestDb, databaseExists as databaseExistsOn } from '../../server/test/support/postgres.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-/** The server's entry points: as shipped, and with the fictional fixture outlet registry (test code, P3-35). */
-const SERVER_ENTRIES = {
-  default: resolve(REPO_ROOT, 'apps/server/src/index.ts'),
-  'fixture-outlets': resolve(REPO_ROOT, 'apps/server/test/support/fixture-outlets-entry.ts'),
-} as const;
-export type ServerEntry = keyof typeof SERVER_ENTRIES;
+/**
+ * The server's entry point, as shipped. UnEcho Chamber needs no other: each comparison request carries its source list
+ * (P3-77).
+ */
+const SERVER_ENTRY = resolve(REPO_ROOT, 'apps/server/src/index.ts');
 const ROUTE_EVAL = resolve(REPO_ROOT, 'apps/server/src/cli/route-eval.ts');
 const WEB_DIST = resolve(REPO_ROOT, 'apps/web/dist');
 /** The public test billing module (CL2-05), for `BILLING=module` and `BILLING_MODULE`. Test code, never shipped. */
@@ -63,13 +62,11 @@ export interface LocalServer {
  *
  * `env` is added after the harness's own variables, for the server and `route-eval` alike: a billing module
  * (`BILLING=module`, `BILLING_MODULE=BILLING_FIXTURE_MODULE` and the module's own `BILLING_*` variables), or a changed
- * default. `entry` picks the server's entry point: `'default'` (`src/index.ts`, as shipped) or `'fixture-outlets'`
- * (the same server with the fictional fixture registry, for Other perspectives).
+ * default.
  */
 export async function startLocalServer(opts: {
   aiBaseUrl: string;
   env?: Readonly<Record<string, string>>;
-  entry?: ServerEntry;
 }): Promise<LocalServer> {
   const db = await createPostgresTestDb('ua_e2e', ADMIN_DATABASE_URL);
   let child: ChildProcess | undefined;
@@ -96,7 +93,7 @@ export async function startLocalServer(opts: {
       ...opts.env,
     };
 
-    const server = spawn(process.execPath, [SERVER_ENTRIES[opts.entry ?? 'default']], {
+    const server = spawn(process.execPath, [SERVER_ENTRY], {
       cwd: REPO_ROOT,
       env: childEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],

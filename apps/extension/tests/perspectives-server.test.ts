@@ -1,6 +1,6 @@
 /**
- * Other perspectives through the person's UnAlgorithm server (P3-37): the link-only body, the job's start and long
- * polls, the 402 and the settlement, the refusals in comparison words, the cancel on abort and the lost job. The server
+ * Other perspectives through the person's unAlgorithm server (P3-37): the link-only body with the chosen list as web
+ * addresses and buckets (P3-77), the job's start and long polls, the 402 and the settlement, the refusals in comparison words, the cancel on abort and the lost job. The server
  * is a stubbed fetch answering the job paths and the device token a stubbed `getAccessToken`. Outlets are fictional.
  * Nothing real is called.
  */
@@ -9,6 +9,7 @@ import {
   LEAN_BUCKETS,
   PERSPECTIVES_JOBS_PATH,
   PerspectivesJobSchema,
+  type PerspectivesList,
   type PerspectivesResult,
   perspectivesJobCancelPath,
   perspectivesJobPath,
@@ -57,6 +58,7 @@ const RESULT: PerspectivesResult = {
   model: 'claude-sonnet-5-5',
   promptVersion: 1,
   registryVersion: 'fixture-1',
+  list: 'cloud',
   story: { url: 'https://news.example.com/a', query: 'Fixture story', from: '2026-10-12T12:00:00Z', to: AT },
   coverage: LEAN_BUCKETS.map((bucket, i) => ({ bucket, sourceIds: i === 0 ? ['s1'] : [] })),
   agreed: [{ text: 'The fixture outlet reports the vote.', citations: [{ sourceId: 's1', quote: 'a short quote' }] }],
@@ -77,8 +79,14 @@ const RESULT: PerspectivesResult = {
 };
 
 const LINK = { url: 'https://news.example.com/a', title: 'Council passes the budget' };
-const FB_REQ = { link: LINK, platform: 'facebook', audience: 'public' } as const;
-const LI_REQ = { link: { url: LINK.url }, platform: 'linkedin' } as const;
+/** The chosen list as it travels: fictional outlets, web addresses and buckets only. */
+const LIST: PerspectivesList = {
+  kind: 'cloud',
+  version: 'fixture-1',
+  outlets: [{ bucket: 'left', domains: ['fixture-outlet.example'] }],
+};
+const FB_REQ = { link: LINK, platform: 'facebook', audience: 'public', list: LIST } as const;
+const LI_REQ = { link: { url: LINK.url }, platform: 'linkedin', list: LIST } as const;
 
 const job = (status: string, over: Record<string, unknown> = {}) => ({ v: 1, id: JOB_ID, status, ...over });
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
@@ -140,18 +148,24 @@ describe('request', () => {
     expect(starts()).toHaveLength(1);
     expect(starts()[0]?.url.origin).toBe(ORIGIN);
     expect((starts()[0]?.init.headers as Record<string, string> | undefined)?.authorization).toBe(`Bearer ${TOKEN}`);
-    expect(startBody()).toEqual({ v: 1, link: LINK, platform: 'facebook', audience: 'public' });
+    expect(startBody()).toEqual({ v: 1, link: LINK, platform: 'facebook', audience: 'public', list: LIST });
 
     useServer(happyServer());
     await run(LI_REQ);
-    expect(startBody()).toEqual({ v: 1, link: { url: LINK.url }, platform: 'linkedin' });
+    expect(startBody()).toEqual({ v: 1, link: { url: LINK.url }, platform: 'linkedin', list: LIST });
 
-    // Extra fields on the caller's objects, at the top level or inside `link`, never reach the body.
+    // Extra fields on the caller's objects, at the top level or inside `link` or `list`, never reach the body.
     useServer(happyServer());
-    const sneaky = { ...FB_REQ, text: POST_TEXT, link: { ...LINK, text: POST_TEXT } };
-    await run(sneaky as typeof FB_REQ);
-    expect(startBody()).toEqual({ v: 1, link: LINK, platform: 'facebook', audience: 'public' });
+    const sneaky = {
+      ...FB_REQ,
+      text: POST_TEXT,
+      link: { ...LINK, text: POST_TEXT },
+      list: { ...LIST, note: POST_TEXT, outlets: [{ ...LIST.outlets[0], name: POST_TEXT, id: 'fixture-outlet' }] },
+    };
+    await run(sneaky as unknown as typeof FB_REQ);
+    expect(startBody()).toEqual({ v: 1, link: LINK, platform: 'facebook', audience: 'public', list: LIST });
     expect(String(starts()[0]?.init.body)).not.toContain(POST_TEXT);
+    expect(String(starts()[0]?.init.body)).not.toContain('"id"');
   });
 });
 
@@ -202,7 +216,7 @@ describe('lifecycle', () => {
     });
 
     useServer(() => serverError(503, 'not-available'));
-    expect(await run()).toMatchObject({ error: { message: "This server doesn't offer Other perspectives right now." } });
+    expect(await run()).toMatchObject({ error: { message: "This server doesn't offer UnEcho Chamber right now." } });
     expect(cancels()).toHaveLength(0);
   });
 

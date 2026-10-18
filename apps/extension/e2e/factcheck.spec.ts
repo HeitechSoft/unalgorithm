@@ -7,6 +7,7 @@ import {
   structuredMessage,
 } from '@unalgorithm/ai/testing/anthropic';
 import {
+  answerAnthropicModels,
   CHECK_FACTS,
   CORS,
   checkButtons,
@@ -54,6 +55,7 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   await context.route('https://api.anthropic.com/**', (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+    if (answerAnthropicModels(route)) return;
     const body: unknown = request.postDataJSON();
     const kind = requestKind(body);
     mock.kinds.push(kind);
@@ -121,7 +123,7 @@ async function mockAnthropic(context: BrowserContext): Promise<MockAnthropic> {
   return mock;
 }
 
-/** Save the Anthropic source from an extension page, and turn Labs → Fact-check on through the options page's switch. */
+/** Save the Anthropic source from an extension page, and turn Fact-check on through the AI pane's switch. */
 async function setUp(context: BrowserContext, extensionId: string, opts: { labs: boolean }): Promise<Page> {
   const options = await saveSource(context, extensionId, { kind: 'anthropic', model: null }, API_KEY);
   if (opts.labs) await turnOnLabs(options);

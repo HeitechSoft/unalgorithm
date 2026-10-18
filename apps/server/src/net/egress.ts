@@ -230,7 +230,7 @@ export function createEgress(opts: EgressOptions): Egress {
   const extra = denyList(opts.deny ?? []);
   const publicUrl = new URL(opts.publicUrl);
   const publicHost = bareHost(publicUrl.hostname);
-  const userAgent = `UnAlgorithm-LinkCheck/${opts.version} (+${opts.publicUrl})`;
+  const userAgent = `unAlgorithm-LinkCheck/${opts.version} (+${opts.publicUrl})`;
 
   let ownCache: { list: BlockList; at: number } | null = null;
   /** The `publicUrl` host's addresses, resolved at most once per 5 minutes; null when they were never resolved. */

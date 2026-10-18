@@ -25,8 +25,8 @@ export const CLOUD_ENABLED: boolean = import.meta.env.UA_CLOUD === true;
 
 const WHAT_IS_SENT = `What is sent: the text of posts that pass your filters (up to ${MAX_POST_CHARS.toLocaleString('en-US')} characters, emails and phone numbers masked), the kind of media and a shared link's site and title, whether the author is a person or a page, and your interests.`;
 const NEVER_SENT = "Never sent: author names, profile links, comments, images, and Facebook posts that aren't public.";
-const NO_PERMISSION = 'UnAlgorithm needs permission to open the sign-in window.';
-const NO_ANSWER = "UnAlgorithm couldn't finish that. Reload this page and try again.";
+const NO_PERMISSION = 'unAlgorithm needs permission to open the sign-in window.';
+const NO_ANSWER = "unAlgorithm couldn't finish that. Reload this page and try again.";
 
 type View =
   | { step: 'loading' }
@@ -36,7 +36,7 @@ type View =
   | { step: 'account'; account: PublicServerAccount };
 
 /**
- * Signing in to an UnAlgorithm server: its address, then who receives posts and what is sent, then an emailed code on
+ * Signing in to an unAlgorithm server: its address, then who receives posts and what is sent, then an emailed code on
  * the server's own page. The background does the work (ADR 0005): this page never sees a token. Consent is asked before
  * the first sign-in to an origin; "Sign in again" (R26) and "Turn on" reuse the account's origin without asking again.
  */
@@ -168,7 +168,7 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
           {label.serverName ? <p className="ua-footnote">{label.serverName}</p> : null}
         </div>
         <p>{recipientText(label).text}</p>
-        {label.isCloud ? <p className="ua-footnote">UnAlgorithm Cloud is invite-only during the beta.</p> : null}
+        {label.isCloud ? <p className="ua-footnote">unAlgorithm Cloud is invite-only during the beta.</p> : null}
         <p className="ua-footnote">{WHAT_IS_SENT}</p>
         <p className="ua-footnote">{NEVER_SENT}</p>
         {label.isCloud ? (

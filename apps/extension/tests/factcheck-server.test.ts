@@ -1,5 +1,5 @@
 /**
- * Fact-check through the person's UnAlgorithm server (P3-21): the gates, the job's start and long polls, the refusals
+ * Fact-check through the person's unAlgorithm server (P3-21): the gates, the job's start and long polls, the refusals
  * in fact-check words, the settlement, the cancel on tab close and at the deadline, and the derived offer item. The
  * server is a stubbed fetch answering the job paths and the device token a stubbed `getAccessToken`; extension storage
  * is the WXT fake browser. Nothing real is called.

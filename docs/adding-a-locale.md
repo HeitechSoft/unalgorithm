@@ -1,6 +1,6 @@
 # Adding a language
 
-UnAlgorithm has two kinds of language support: the **extension's own UI** (popup, settings, in-feed text) and
+unAlgorithm has two kinds of language support: the **extension's own UI** (popup, settings, in-feed text) and
 **reading a site in another language** (detecting "Sponsored" or "Suggested" when LinkedIn or Facebook is set to
 French, Spanish…). Today both are English only.
 

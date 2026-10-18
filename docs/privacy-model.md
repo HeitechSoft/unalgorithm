@@ -5,7 +5,9 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 ## Principles
 
 1. **Rules only means no network.** The extension's required host permissions are only linkedin.com and
-   facebook.com. With AI off, the service worker makes no requests.
+   facebook.com. With AI off, the service worker makes no requests. The one request that doesn't depend on the AI
+   source is unAlgorithm Cloud's source list, and only while UnEcho Chamber is on
+   ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)).
 2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose.
 3. **Nothing identifying is reported, and little is kept.** Caches, statistics, diagnostics and logs hold no post
    text and no names. Names are stored only where the user asked for them (always show/hide exceptions) and in the
@@ -53,19 +55,19 @@ and the E2E AI test checks the body received by the mock server.
 | On this device | Chrome's built-in model, in process | Nobody |
 | Local or self-hosted model (OpenAI-compatible) | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
 | Own key | The provider's API, directly from the browser | The provider, under their terms. OpenAI calls send `store: false` |
-| An UnAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
-| UnAlgorithm Cloud | HeitechSoft's gateway in Canada, then Anthropic | HeitechSoft (nothing logged or stored; the canary test) and Anthropic, under its commercial API terms (zero retention only once that agreement is signed) |
+| An unAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
+| unAlgorithm Cloud | HeitechSoft's gateway in Canada, then Anthropic | HeitechSoft (nothing logged or stored; the canary test) and Anthropic, under its commercial API terms (zero retention only once that agreement is signed) |
 
-For both kinds of UnAlgorithm server, Facebook posts that aren't public are never sent: the background leaves them out
+For both kinds of unAlgorithm server, Facebook posts that aren't public are never sent: the background leaves them out
 (`serverMayReceive`), and a server declines any that reach it without calling a model. The extension names each server
-by its address; only `https://cloud.unalgorithm.app` is called UnAlgorithm Cloud
+by its address; only `https://cloud.unalgorithm.app` is called unAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
 
-### Fact-check (Labs)
+### Fact-check
 
-Fact-check (RM1) runs on the user's own Anthropic key (or on their UnAlgorithm server, below), only when Settings → Labs → Fact-check is on, and only
+Fact-check (RM1) runs on the user's own Anthropic key (or on their unAlgorithm server, below), only when Settings → AI → Fact-check is on, and only
 after the user confirms a check of one post. The background (`apps/extension/src/background/factcheck.ts`) checks
-every gate again: Labs on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
+every gate again: Fact-check on, an `anthropic` source, the post parses with `PostForAISchema` (extra fields such as an
 author name are dropped, the text is capped at 2,000 characters with the same masking as above), and
 `serverMayReceive` passes, so a Facebook post that isn't public is never checked, on an own key too. Three calls go
 directly from the browser to Anthropic:
@@ -94,9 +96,9 @@ claims all hit sends only the claims call (step 1) and replays the kept verdicts
 costs that call. Expired rows are deleted on the next write. "Clear cache" empties the store; "Erase everything" also
 deletes the key. A `server` source never reads or writes it.
 
-With a `server` source (P3-21), the check runs on the person's UnAlgorithm server instead, and only when that server's
+With a `server` source (P3-21), the check runs on the person's unAlgorithm server instead, and only when that server's
 discovery document offers fact-check (`serverOfferFrom`, `sourceCapabilities(cfg, offer)`) on the source's own origin.
-The same gates apply first (Labs on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
+The same gates apply first (Fact-check on, the post parses with `PostForAISchema` at the server source's 2,000-character cap,
 `serverMayReceive`), then `apps/extension/src/background/factcheck-server.ts` sends one `POST /v1/jobs/factcheck` with
 `{ v: 1, post }` (the same fields classification sends, ref `p1`, no interests) and the device's bearer token, no
 cookies, and long-polls the job. The server keeps the job in memory only (at most 10 minutes after it ends; a restart
@@ -108,11 +110,81 @@ extension maps its codes to its own words. `local:serverOffer`, which content sc
 whether it bills, whether it offers fact-check and its price: no email, device id or token.
 
 Sync carries settings only. Post text never enters a sync request, and the server refuses sync items that look like API
-keys.
+keys. Settings include the person's own UnEcho Chamber source list (`perspectives.outlets`, one sync item per outlet: its
+name, web addresses and the lean the person gave it) and which list UnEcho Chamber uses (`perspectives.list`). These
+leans are the person's own opinions: stored and synced like their interests and exceptions, never shared or published.
+
+## UnEcho Chamber's source lists
+
+UnEcho Chamber sorts coverage by the outlets on a source list, and a lean comes only from a list people set, never from
+a model. Every extension reads unAlgorithm Cloud's published list, whatever its AI source:
+`apps/extension/src/background/official-list.ts` makes the one request, and nothing else fetches a list.
+
+- **When.** Only while Settings → AI → UnEcho Chamber is on as the switch shows it (`perspectivesSwitchOn`: the
+  device-local `device.labs.perspectives` and an AI source that can compare). The flag stays stored when the source
+  changes, but with AI off, on-device AI, an OpenAI-compatible source with no web search key, or a server that doesn't
+  offer UnEcho Chamber, the switch shows off and nothing is asked. Checked at each service-worker start and whenever it
+  comes on: the switch turned on, or, with the switch left on, a source that can compare chosen, a web search key added
+  or the server's offer arriving. At most one request per 24 hours, counted from the last request whether it was
+  answered or not: `checkedAt` is written before the request, so a crash, a failure or a second wake within the day
+  never asks again, and requests are serialised (`createLock`), so two wakes at once make one. No retry sooner after a
+  failure. E2E builds never make it: they use the fictional fixture.
+- **The request.** `GET https://cloud.unalgorithm.app/outlets.json` (`CLOUD_ORIGIN` + `OUTLETS_JSON_PATH`), a fixed
+  address with no query; never another server's list. Its options, and why:
+  - `credentials: 'omit'`: no cookie. The Cloud's account page keeps a session cookie on the same host, and it stays
+    off this request.
+  - `referrerPolicy: 'no-referrer'`: no `Referer`.
+  - `headers: { Accept: 'application/json' }` and no other header: never the device id, a token, the server account
+    or anything from settings or the feeds.
+  - `redirect: 'error'`: a redirect fails the request instead of taking it to another address.
+  - `cache: 'no-cache'`: the browser revalidates its copy with the ETag the Cloud sent, so an unchanged list costs a
+    304 and no body.
+  - `signal: AbortSignal.timeout(15_000)`: 15 seconds at most.
+
+  No host permission is needed: the endpoint answers `Access-Control-Allow-Origin: *`. Like any web request it comes
+  from the person's IP address; the Cloud logs it as its standard request line, without the IP address, and a failed
+  request can reach the web server's error log, kept 14 days ([CLOUD-BETA-NOTICE.md](../CLOUD-BETA-NOTICE.md) §3).
+- **What is kept.** Only a 200 whose body, read up to 1 MB (`readBoundedText` stops reading past the cap), is JSON,
+  passes `OfficialListSchema` (fields it doesn't know are dropped) and has no `listProblems`. Anything else (a network error,
+  the timeout, any other status, a larger body, bad JSON, a schema or list-rule failure) keeps the last good copy. A
+  valid list with no lean is a good copy and replaces the old one: it is what the Cloud publishes now. Nothing about the
+  list or the answer is logged.
+- **Where it lives.** `storage.local` `officialList` (`{ list, checkedAt }`), on this device only: never synced,
+  exported or sent anywhere. It is public data, with nothing about the person but when UnEcho Chamber last asked.
+  Content scripts can write `storage.local` (ADR 0005), so every reader takes the list through `storedOfficialList()`
+  (`apps/extension/src/lib/outlets.ts`), which checks it against the schema and the list rules again (and answers the
+  fixture in e2e builds).
+
+### A comparison carries its list
+
+A comparison runs on the list the person chose (`chosenList`: the Cloud's stored copy or their own), and only when that
+list is ready (`listReady`: an outlet with a lean, no list problem; decision D103). Before anything is sent, the
+background (`runPerspectivesForTab` in `apps/extension/src/background/factcheck.ts`) refuses a list that isn't, and
+keeps the list's balance warnings (fixed words from code) on the tab's entry for the side panel.
+
+- **Own key.** The pipeline runs in the browser on that list: each bucket's search sends the web addresses of that
+  bucket's outlets with a lean to the provider (or to Brave or Tavily), never a lean, a name or the post.
+- **Server.** `POST /v1/jobs/perspectives` carries `{ v: 1, link, platform, audience?, list }`, where `list` is
+  `wireList(chosen)` (`PerspectivesListSchema`): `kind`, `version` and the outlets with a lean as `{ bucket, domains }`,
+  sorted by id. No outlet name, id or evidence, and no outlet without a lean; at most 300 outlets and 400 web addresses,
+  so the largest request stays under the server's 128 KB `/v1` body limit. The server
+  (`apps/server/src/routes/perspectives.ts`) rebuilds a list from it (`sourceListFromWire`: outlets `o1`…`oN`, named by
+  their first web address), refuses one with a list problem (a web address in two outlets, or inside another's) with a
+  400 before anything is metered, and holds it only in the request handler and the in-memory job: no log line (the
+  `perspectives.done` line is counts), no table, no usage row. No server needs a list of its own.
+- **The answer.** The extension keeps a result only when every lean in it is the sent list's (`matchLeans`: each
+  source's web address and page address map to one outlet of the list with that bucket, each coverage row holds only its
+  own bucket's sources, and the result names the same list and version); it then shows the list's own outlet names and
+  ids, never the server's.
+
+The canary covers the field: every comparison in `apps/server/test/canary.test.ts` carries a list with one more outlet,
+on a marked web address, and one more comparison sends that address in two outlets. The address may reach the search
+provider and the done comparison's own answer; it must be in no log line, nothing written to standard output or standard
+error, no error answer and no table, after the done, failed and refused comparisons.
 
 ## What a server stores
 
-An UnAlgorithm server, self-hosted or UnAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
+An unAlgorithm server, self-hosted or unAlgorithm Cloud, keeps what sign-in, limits and usage records need, and
 nothing from the posts it classifies. Every table is listed in [ARCHITECTURE.md](ARCHITECTURE.md#database), except
 those a billing module adds of its own ([What a billing module sees](#what-a-billing-module-sees)).
 
@@ -162,10 +234,11 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   settings, interests and exceptions, one item per field, each with its edit time (a hybrid logical clock), the seq the
   server gave it and the device that wrote it (`sync_items`, in the account's one space, `sync_spaces`, which holds the
   space's epoch, counts and cleanup floor). Exceptions hold the name and profile identifier the person chose to always
-  show or hide. A deleted entry is kept as a marker without a value for 90 days, then removed. A record of each push
-  (its keys and the server's answers, no values, never a refused key) is kept for 24 hours (`sync_pushes`). Never
-  synced: API keys, endpoint tokens, refresh tokens, AI source settings, learned topics, votes, statistics or cached
-  results ([Sync](ARCHITECTURE.md#sync)).
+  show or hide. The person's own UnEcho Chamber source list is one item per outlet: its name, web addresses and the lean
+  the person gave it, their own opinion, never shared or published. A deleted entry is kept as a marker without a value
+  for 90 days, then removed. A record of each push (its keys and the server's answers, no values, never a refused key)
+  is kept for 24 hours (`sync_pushes`). Never synced: API keys, endpoint tokens, refresh tokens, AI source settings,
+  learned topics, votes, statistics or cached results ([Sync](ARCHITECTURE.md#sync)).
 - **Shared claim cache:** for each claim checked in a public post on this server, one row: a keyed hash of the
   normalized claim (HMAC-SHA-256 under a key derived from the server's `BETTER_AUTH_SECRET`, never stored), the verdict,
   the model's explanation of it (at most 280 characters; left out when it repeats six or more consecutive words of the
@@ -178,6 +251,19 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   another server, and a different server's key finds nothing in it; a new `BETTER_AUTH_SECRET` makes every row
   unreachable. A hit tells the next person on this server who checks the same claim that someone here checked that same
   public claim that day, never who.
+- **Source list for UnEcho Chamber:** the server's published list of news outlets: each outlet's name, web addresses,
+  country, lean bucket and the evidence for its lean (`outlets`), and every change to it, kept as long as the server
+  runs: what changed, when, and which admin made the change (`outlet_changes`). Only the server's admins change the
+  list. The history keeps the admin's account id for audits and appeals: the server's admins see that admin's address
+  beside each change, it is never published, and it is cleared when that account is deleted, while the change itself
+  stays. An account's export does not list its admin's changes: they are edits to a public list. No other user data.
+- **Prices:** the server's prices as its admins set them on the Pricing page (task prices, starter credit, buying
+  credit and auto-reload caps), with every change, kept as long as the server runs: what changed, when, the whole price
+  book after it, and which admin made the change (`price_changes`). The newest change's book is the one in use; until
+  an admin first saves, the server uses the prices its release ships with and stores nothing. The history keeps the
+  admin's account id for audits: the server's admins see that admin's address beside each change, it is never
+  published, and it is cleared when that account is deleted, while the change itself stays. An account's export does
+  not list its admin's changes: they are edits to the server's prices. No other user data.
 - **Background jobs:** the hourly purge of expired sign-in rows above, the hourly purge of expired claim cache rows
   (`factcheck.purge-claim-cache`), the sync cleanup every 6 hours (`sync.gc`, which
   removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers
@@ -196,9 +282,9 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
 - **Export and deletion:** the account page downloads everything above about the account as JSON: the address, its
   devices, passkeys (label, kind and when added; never the public key or credential id), linked sign-in methods, page
   sessions, daily usage counts and synced settings, with no token, hash or code. Deleting the account removes all of it
-  at once, in one transaction, and signs out every device. A billing module's own records (on UnAlgorithm Cloud, the
+  at once, in one transaction, and signs out every device. A billing module's own records (on unAlgorithm Cloud, the
   credit ledger and the keyed starter-credit hash) follow that module's deletion policy, not this cascade
-  ([What a billing module sees](#what-a-billing-module-sees)). On UnAlgorithm Cloud, the module puts the account's
+  ([What a billing module sees](#what-a-billing-module-sees)). On unAlgorithm Cloud, the module puts the account's
   credit ledger in the download and erases the account's promotional credit records with the account, keeping only the
   keyed starter-credit hash, which no longer names the account.
 
@@ -232,7 +318,7 @@ method, path, status and timing (`requestLog`). Other lines name an event and a 
 - Failures: an error's name, code and top stack frames, with the request id when there is one, never its message.
 
 No line carries a request body, a query string, an IP address or an email address. A web server or proxy in front of a
-server keeps logs of its own, under its operator's settings. On UnAlgorithm Cloud its access log holds no IP addresses
+server keeps logs of its own, under its operator's settings. On unAlgorithm Cloud its access log holds no IP addresses
 or query strings, and its error log can record the IP address and requested address of a request that fails.
 
 **Alerts and metrics** carry server-wide numbers, fixed alert keys and levels, and the server's name and address, never
@@ -242,7 +328,8 @@ an account, an address or a post. Alert emails go to the server's admins, or to 
 address or header; with the Ollama profile, posts are classified on the same machine and go nowhere else.
 
 The canary test (`apps/server/test/canary.test.ts`) proves the rule for the server's own code. It puts a marker in
-post text, link titles and the interest profile, and sends it down every classify path: a success, provider errors
+post text, link titles and the interest profile (and a marked web address in the source list each comparison carries,
+[above](#a-comparison-carries-its-list)), and sends it down every classify path: a success, provider errors
 that echo it back, invalid and unauthenticated requests, and a Facebook post that isn't public. The marker must then be
 in no log line, nothing the process wrote to standard output or standard error, no error answer and no row of any
 table. The test also checks that the marker did reach the mock model, and never from the non-public post. It runs on
@@ -251,7 +338,7 @@ PGlite in every `pnpm test` and on Postgres 17 in the CI `server` job.
 ## What a billing module sees
 
 A server started with `BILLING=module` loads a billing module into its own process
-([ARCHITECTURE.md → Billing seam](ARCHITECTURE.md#billing-seam)). UnAlgorithm Cloud runs HeitechSoft's module. A
+([ARCHITECTURE.md → Billing seam](ARCHITECTURE.md#billing-seam)). unAlgorithm Cloud runs HeitechSoft's module. A
 self-hosted server with `BILLING=off`, the default, loads none and keeps no ledger.
 
 What the seam passes to a module:
@@ -292,7 +379,16 @@ removes the account from the extension.
 
 "Report a problem" builds a GitHub issue URL with at most 2 KB of JSON: versions, Chrome major version, page
 language, health status, counts, detector hit counts and landmark counts. No text, names, ids or URLs. The user sees
-the issue before submitting it. `content/report.ts` is the only place that builds it.
+the issue before submitting it.
+
+A finished fact-check or UnEcho Chamber result in the side panel links the correction form (P3-69, decisions D88,
+D107): `correctionUrl` sets `template=correction.yml` and four fields only, `feature` (the feature's name), `version`
+(the extension's), `prompt` (the result's prompt version) and, for UnEcho Chamber, `list` ("unAlgorithm Cloud's list"
+or "My own list"). No date, verdict, claim, source, link, list content or anything from the post or about the person.
+The other links under a result are fixed: the methodology page on the website and unAlgorithm Cloud's public source
+list (a Cloud result only).
+
+`content/report.ts` and `lib/report-links.ts` are the only places that build a GitHub issue URL.
 
 ## Untrusted input
 

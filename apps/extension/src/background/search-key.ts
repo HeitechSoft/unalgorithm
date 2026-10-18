@@ -42,10 +42,10 @@ export async function saveSearchKey(provider: unknown, apiKey: unknown): Promise
   }
   if (!(await hasOrigin(provider))) {
     const host = new URL(webSearchOrigin(provider)).hostname;
-    return { ok: false, error: { code: 'host-permission', message: `UnAlgorithm needs permission to reach ${host}.` } };
+    return { ok: false, error: { code: 'host-permission', message: `unAlgorithm needs permission to reach ${host}.` } };
   }
   try {
-    await createSearchProvider({ provider, apiKey: key }).search('UnAlgorithm', { count: 1 });
+    await createSearchProvider({ provider, apiKey: key }).search('unAlgorithm', { count: 1 });
   } catch (err) {
     return { ok: false, error: searchError(err, provider) };
   }
