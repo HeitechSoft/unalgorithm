@@ -159,7 +159,9 @@ describe('manifest per browser', () => {
         return;
       }
       // The Chromium sign-in redirect host is Chrome's and Edge's only.
-      expect(firefox.host_permissions).toEqual(chrome.host_permissions?.filter((h) => !/^https:\/\/[a-p]{32}\.chromiumapp\.org\/\*$/.test(h)));
+      expect(firefox.host_permissions).toEqual(
+        chrome.host_permissions?.filter((h) => !/^https:\/\/[a-p]{32}\.chromiumapp\.org\/\*$/.test(h)),
+      );
       expect(firefox.host_permissions).toEqual(
         expect.arrayContaining(['http://127.0.0.1/*', ANTHROPIC_HOST, OPENAI_HOST, BRAVE_SEARCH_HOST]),
       );
