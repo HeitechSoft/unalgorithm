@@ -15,6 +15,8 @@ export const FB_SEL = {
   button: 'button, [role="button"]',
   permalink:
     'a[href*="/posts/"], a[href*="story_fbid="], a[href*="/permalink/"], a[href*="/reel/"], a[href*="/videos/"], a[href*="/photo"]',
+  /** Inside a header link: the 2026 timestamp's age ("6 hours ago") or, on ads, "Ad". */
+  timestampLabel: '[aria-labelledby]',
   outboundLink: 'a[href*="l.facebook.com/l.php"], a[href^="https://l.facebook.com/"]',
   groupLink: 'a[href*="/groups/"]',
   audience: '[aria-label^="Shared with"], [title^="Shared with"]',
@@ -137,9 +139,12 @@ function sponsoredEvidence(root: Element, m: FacebookMarkers): Evidence[] {
   );
   if (cta && root.querySelector(FB_SEL.outboundLink))
     ev.push({ signal: 'sponsored', detector: 'fb.sponsored.cta', strength: 'weak' });
-  // 6. No timestamp/permalink where organic posts have one (weak).
-  if (!root.querySelector(FB_SEL.permalink))
-    ev.push({ signal: 'sponsored', detector: 'fb.sponsored.no-timestamp', strength: 'weak' });
+  // 6. No timestamp/permalink where organic posts have one (weak). Since 2026 the timestamp links to "/" until
+  //    hovered and its age is an aria-labelledby span inside the link, so that counts as a timestamp too.
+  const timestamp =
+    !!root.querySelector(FB_SEL.permalink) ||
+    headerEls.some((el) => el.tagName === 'A' && !!el.querySelector(FB_SEL.timestampLabel));
+  if (!timestamp) ev.push({ signal: 'sponsored', detector: 'fb.sponsored.no-timestamp', strength: 'weak' });
   return ev;
 }
 
@@ -185,7 +190,11 @@ function authorOf(root: Element): { name?: string; url?: string } {
   return { ...(name ? { name } : {}), ...(url ? { url } : {}) };
 }
 
-/** Facebook's own id for the post, from its permalink; a stable hash otherwise (never ages or counts). */
+/**
+ * Facebook's own id for the post, from its permalink; a stable hash otherwise (never ages or counts). Since 2026 most
+ * posts have no id up front: the timestamp links to "/?__cft__…" (an opaque tracking token) until hovered, and the
+ * post node carries no id. Photo, video and reel links still do, and are read here.
+ */
 export function postIdFrom(root: Element, author: string, text: string, media: string): PostKey {
   for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>(FB_SEL.permalink))) {
     if (inNestedPost(root, a)) continue;
