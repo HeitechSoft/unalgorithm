@@ -9,8 +9,6 @@
   unAlgorithm read that as "no timestamp", a weak sign of an ad, so one more uncertain sign was enough to hide an ordinary
   post. The timestamp now counts as a timestamp. Photo posts keep Facebook's own id; other posts still get a stable id made
   from the author, text and media, because nothing else on the page identifies them before you hover.
-- Updated dependencies [[`07f613c`](https://github.com/HeitechSoft/unalgorithm/commit/07f613c2a5d2fdf1452d195605388bf623d658b8)]:
-  - @unalgorithm/platforms@0.0.5
 
 ## 0.3.0
 
