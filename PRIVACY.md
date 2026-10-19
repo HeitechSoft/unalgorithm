@@ -5,8 +5,10 @@ preview) for Chrome, Microsoft Edge and Firefox, and its website, unalgorithmfee
 linked from the Chrome Web Store, Microsoft Edge Add-ons and Firefox Add-ons listings.*
 
 unAlgorithm is made by HeitechSoft (Ontario, Canada). It hides noise in your LinkedIn and Facebook feeds. **The
-extension does not collect your data, and it has no analytics or tracking.** The website counts visits without
-cookies; see [This website](#this-website).
+extension has no analytics or tracking, and it sends nothing unless you choose to:** to the AI you pick and, if you
+sign in to an unAlgorithm server such as unAlgorithm Cloud, to that server (see [When you sign in to an unAlgorithm
+server](#when-you-sign-in-to-an-unalgorithm-server)). The website counts visits without cookies; see
+[This website](#this-website).
 
 ## What happens on your computer
 
@@ -160,9 +162,9 @@ included). Never post text, link titles, interests, the source list a comparison
 [unAlgorithm Cloud beta privacy notice](https://unalgorithmfeed.com/cloud/beta-privacy) has the details, how long each
 item is kept, and how to download your data or delete your account.
 
-**Sign-in.** Signing in opens the server's own sign-in page with the browser's identity permission, which Chrome and
-Edge ask you for only when you click Sign in (Firefox grants it with the extension, without asking). In Firefox the same
-click asks for the consent described in [Firefox's consent](#when-you-turn-on-ai). Your refresh token is stored in the
+**Sign-in.** Signing in opens the server's own sign-in page with the browser's identity permission. In Chrome and Edge
+the extension requests it only when you click Sign in, and they grant it without a prompt; Firefox grants it with the
+extension. In Firefox the same click asks for the consent described in [Firefox's consent](#when-you-turn-on-ai). Your refresh token is stored in the
 extension's own storage, which web pages cannot read; signing out or Erase everything ends it on the server.
 
 ### Sync between your computers
@@ -198,11 +200,11 @@ public list.
 | Storage | To keep your settings and statistics in your browser |
 | Side panel (Chrome and Edge), sidebar (Firefox) | To show Highlights: the posts picked for you and the ones that were hidden |
 | Scripting (Chrome and Edge) | To start working in LinkedIn/Facebook tabs that were already open when you installed it. Firefox does this by itself, without this permission |
-| Identity | Used only when you click Sign in on an unAlgorithm server: it opens that server's sign-in page and receives a one-time code back. Chrome and Edge ask for it when you click Sign in; Firefox grants it with the extension, without asking. unAlgorithm Feed does not access your Google, Microsoft or Firefox account |
+| Identity | Used only when you click Sign in on an unAlgorithm server: it opens that server's sign-in page and receives a one-time code back. In Chrome and Edge the extension requests it only from that click, and they grant it without a prompt; Firefox grants it with the extension. unAlgorithm Feed does not access your Google, Microsoft or Firefox account |
 | Alarms | To run settings sync on a short timer, only while you have sync turned on |
 | Optional: access to an AI server | Asked only when you set up AI, for that one server |
 | Optional: access to a web search service | Asked only when you save a Brave or Tavily key in Settings → AI, for that one service |
-| Change requests to your local AI server (optional in Chrome and Edge; Firefox grants it with the extension, since it can't be optional there) | Asked for in Chrome and Edge, and used in every browser, only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
+| Change requests to your local AI server (optional in Chrome and Edge; Firefox grants it with the extension, since it can't be optional there) | Requested in Chrome and Edge (granted without a prompt), and used in every browser, only if you click Fix it for me because a local server (such as Ollama) refuses unAlgorithm. It removes the `Origin` header from unAlgorithm's own requests to that one server |
 | Firefox only, optional: share website content and personal communications; with the unAlgorithm server sign-in, also personally identifying information, authentication information and technical and interaction data | As described in [Firefox's consent](#when-you-turn-on-ai). Technical and interaction data is never asked for: it only decides whether a sign-in sends the device's name |
 
 ## This website

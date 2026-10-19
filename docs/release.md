@@ -219,8 +219,8 @@ The working card, which signs in to unAlgorithm Cloud or another unAlgorithm ser
 `alarms` permission settings sync runs on are added only when `UA_CLOUD=1` is set (`cloudEnabled()` in
 `apps/extension/wxt.config.ts`; development and e2e builds always have them). The switch reaches every browser at once:
 `release.yml` builds all of them in its one `pnpm zip` step, and CI refuses a second build step or a package script
-that sets it (`apps/extension/tests/privacy-gate.test.ts`). In Chrome and Edge, `identity` is asked for in the click
-that signs in; Firefox grants `identity` and `alarms` with the extension, without a prompt, and asks for its
+that sets it (`apps/extension/tests/privacy-gate.test.ts`). In Chrome and Edge, `identity` is requested in the click
+that signs in and granted without a prompt; Firefox grants `identity` and `alarms` with the extension, without a prompt, and asks for its
 data-collection consent in that click instead (ADR 0008). A store build may carry them only when all ten of these are
 done, for all three stores:
 
