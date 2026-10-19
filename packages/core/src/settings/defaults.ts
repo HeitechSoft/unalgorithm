@@ -46,5 +46,6 @@ export function defaultDevice(deviceId: string): Device {
     dev: { debugOverlay: false },
     labs: { factcheck: false, perspectives: false },
     webSearch: null,
+    notices: { enabled: true, snoozed: {} },
   };
 }

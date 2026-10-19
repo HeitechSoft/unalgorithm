@@ -1,7 +1,7 @@
 /**
  * What a release ships besides the store zips (ADR 0008): the sideload builds, with the development identity so
- * servers accept their sign-in, and the Firefox sources zip AMO builds from, checked for anything private; and the
- * add-on linter's reviewed warnings, which are all a Firefox build may have.
+ * servers accept their sign-in and problem reports say where they came from, and the Firefox sources zip AMO builds
+ * from, checked for anything private; and the add-on linter's reviewed warnings, which are all a Firefox build may have.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { lintProblems } from '../../../scripts/check-firefox-lint.mjs';
 import { folderDifferences, reviewerEnv, sourcesProblems, trackedFiles } from '../../../scripts/check-firefox-sources.mjs';
 import devKey from '../dev-key.json' with { type: 'json' };
+import { reportChannel } from '../src/background/report.ts';
 import config, { manifestFor, sideloadManifest } from '../wxt.config.ts';
 
 afterEach(() => {
@@ -59,6 +60,17 @@ describe('sideload builds', () => {
     const hook = manifestHook(config);
     hook({ config: { browser: 'chrome', mode: 'production' } }, manifest);
     expect(manifest).not.toHaveProperty('key');
+  });
+
+  it('test_sideload_builds_report_as_sideload', () => {
+    // A problem report says where its copy came from (ADR 0009 §4): the sideload identity is how it tells a release's
+    // sideload build from the store build it is otherwise byte for byte.
+    expect(reportChannel('production', 'chrome', devKey.id)).toBe('sideload');
+    expect(reportChannel('production', 'edge', devKey.id)).toBe('sideload');
+    expect(reportChannel('production', 'firefox', FIREFOX_DEV_ADDON_ID)).toBe('sideload');
+    expect(reportChannel('production', 'firefox', FIREFOX_ADDON_ID)).toBe('firefox-store');
+    expect(reportChannel('production', 'chrome', 'abcdefghijklmnopabcdefghijklmnop')).toBe('chrome-store');
+    expect(reportChannel('production', 'edge', 'abcdefghijklmnopabcdefghijklmnop')).toBe('edge-store');
   });
 
   it('test_sideload_switch_names_its_own_folder_and_zip', async () => {

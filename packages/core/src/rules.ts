@@ -1,3 +1,4 @@
+import { signalStrength } from './evidence.ts';
 import type { ModuleInfo, PostData, PostSignals } from './post.ts';
 import type { FilterDecision } from './reasons.ts';
 import type { PlatformSettings } from './settings/schema.ts';
@@ -32,27 +33,33 @@ function matchesRule(rules: PlatformSettings['alwaysShow'], key: string | undefi
  * Rule-based decision (no AI, no network). Same order as the proven LinkedIn tool: an ad is decided first
  * (when ads are allowed, nothing else hides it), then suggested, network activity, reshares, groups, reels,
  * and finally "not followed", which only fires on positive evidence.
+ *
+ * `cautious` (ADR 0009 §9): the adapter is finding items with a fallback strategy, so an item may not be one whole
+ * post. Only a signal some detector saw strongly hides, and "not followed" is off. The person's own lists still apply.
  */
-export function ruleFilter(post: PostData, ps: PlatformSettings, degraded: DegradedSignals = NONE): FilterDecision | null {
+export function ruleFilter(
+  post: PostData,
+  ps: PlatformSettings,
+  degraded: DegradedSignals = NONE,
+  cautious = false,
+): FilterDecision | null {
   const f = ps.filters;
   const s = post.signals;
   const key = authorKey(post);
+  /** The signal is on, trusted on this page, and in cautious mode seen by a strong detector. */
+  const on = (signal: keyof PostSignals) =>
+    s[signal] && !degraded.has(signal) && (!cautious || signalStrength(post.evidence, signal) === 'strong');
   if (matchesRule(ps.alwaysHide, key)) return { reason: 'always-hide', source: 'user' };
-  if (s.sponsored && !degraded.has('sponsored')) return f.sponsored ? { reason: 'sponsored', source: 'rule' } : null;
+  if (on('sponsored')) return f.sponsored ? { reason: 'sponsored', source: 'rule' } : null;
   if (matchesRule(ps.alwaysShow, key)) return null;
-  if (s.suggested && f.suggested && !degraded.has('suggested')) return { reason: 'suggested', source: 'rule' };
-  if (
-    s.networkActivity &&
-    f.networkActivity &&
-    !degraded.has('networkActivity') &&
-    (post.author.relationship !== 'followed' || degraded.has('relationship'))
-  ) {
+  if (on('suggested') && f.suggested) return { reason: 'suggested', source: 'rule' };
+  if (on('networkActivity') && f.networkActivity && (post.author.relationship !== 'followed' || degraded.has('relationship'))) {
     return { reason: 'network-activity', source: 'rule' };
   }
-  if (s.reshare && f.reshares && !degraded.has('reshare')) return { reason: 'reshare', source: 'rule' };
-  if (s.unjoinedGroup && f.unjoinedGroups && !degraded.has('unjoinedGroup')) return { reason: 'unjoined-group', source: 'rule' };
-  if (s.reel && f.reels && !degraded.has('reel')) return { reason: 'reel', source: 'rule' };
-  if (f.notFollowed && post.author.relationship === 'not-followed' && !degraded.has('relationship')) {
+  if (on('reshare') && f.reshares) return { reason: 'reshare', source: 'rule' };
+  if (on('unjoinedGroup') && f.unjoinedGroups) return { reason: 'unjoined-group', source: 'rule' };
+  if (on('reel') && f.reels) return { reason: 'reel', source: 'rule' };
+  if (f.notFollowed && !cautious && post.author.relationship === 'not-followed' && !degraded.has('relationship')) {
     return { reason: 'not-followed', source: 'rule' };
   }
   return null;

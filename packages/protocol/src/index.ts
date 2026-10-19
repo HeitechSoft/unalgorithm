@@ -10,6 +10,8 @@ export * from './outlets.ts';
 export * from './perspectives.ts';
 export * from './platform.ts';
 export * from './prices.ts';
+export * from './report.ts';
+export * from './report-codes.ts';
 export * from './schedule-edits.ts';
 export * from './server.ts';
 export * from './sha1.ts';

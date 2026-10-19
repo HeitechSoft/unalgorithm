@@ -1,4 +1,4 @@
-import type { AIErrorCode, PlatformId, PostKey } from '@unalgorithm/protocol';
+import type { AIErrorCode, NoticeKind, PlatformId, PostKey } from '@unalgorithm/protocol';
 import type { HealthReport } from './health.ts';
 
 export interface HighlightItem {
@@ -44,6 +44,15 @@ export interface TabState {
   highlights: HighlightItem[];
   ai: { state: AiState; code?: AIErrorCode; message?: string };
   health: HealthReport;
+  /**
+   * The breakage notice for this page (ADR 0009 §3), whatever the snoozes: the popup and side panel show it as a banner
+   * even when the in-feed card is snoozed. `issues` are the health issue codes behind it.
+   */
+  notice?: { kind: NoticeKind; issues: string[] };
+  /** A page unAlgorithm didn't start on, but whose watchdog found a working feed: "isn't running on this feed". */
+  feedLike?: boolean;
+  /** Running on an address unAlgorithm didn't know, because the page had a strong home signature (`route-new`). */
+  routeNew?: boolean;
   updatedAt: number;
 }
 

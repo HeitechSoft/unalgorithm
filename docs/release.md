@@ -59,7 +59,9 @@ The store zips never carry a key: each store gives its own id (the Firefox one i
    prompt, so Firefox's technical and interaction data starts off there and its device is unnamed: turn it on in
    `about:addons` (unAlgorithm Feed → Permissions and data) before signing in. An unpacked store zip gets an id of
    its own in Chrome and Edge, which the Cloud doesn't accept: test sign-in there with the sideload zip, the same
-   build with the development id. The firefox zip keeps its store id.
+   build with the development id. The firefox zip keeps its store id. **Report a problem** in the popup opens the
+   report page with what it would send; *Cancel* closes it without sending (the [live report
+   test](#before-a-release-carries-problem-reports) sends the one real report).
 4. If the release changes the permissions, the data use or the listing, save those changes in each store before the
    tag: the Chrome Web Store developer dashboard, without submitting (the tag submits the zip with whatever the
    dashboard holds, [what the API leaves to the dashboard](#chrome-web-store-credentials)); the listing pages of the
@@ -268,6 +270,44 @@ of `release.yml`, for all three browsers at once. Taking it out takes the card o
         env:
           UA_CLOUD: "1"
 ```
+
+## Before a release carries problem reports
+
+From 0.4.0, every build sends the problem reports people choose to send to unAlgorithm Cloud (`REPORTS_URL`,
+[ADR 0009](adr/0009-problem-reports-and-resilient-detection.md)), whatever AI they use. 0.4.0 waits for this work, and
+a release that adds report codes or changes what a report holds goes through the same list. Tag it only when all of
+these are done:
+
+1. **Reports are on at the Cloud.** unAlgorithm Cloud runs a pinned commit that knows every report code this release
+   can send (`packages/protocol/src/report-codes.ts`: the server keeps only codes it knows), with `REPORTS=on`, which
+   its deploy preflight requires. With `REPORTS=off`, `POST /v1/reports` doesn't exist and every report page offers
+   email instead.
+2. **Every store id is in `EXTENSION_IDS`**, Edge's included: the Chrome Web Store id, the Microsoft Edge Add-ons id
+   ([its credentials](#microsoft-edge-add-ons-credentials), step 2) and `feed@unalgorithmfeed.com`. The report route
+   takes any extension's report, but a correction from an id the Cloud doesn't list is refused (the page offers email
+   instead), and its other reports never open an alert. The admin page's *Problem reports* counts unlisted reports,
+   which shows a missing id.
+3. **The live report test passes** after the Cloud's deploy, as its private repository describes: one report sent from
+   a build that posts to the Cloud (any build but e2e) arrives, is found by its reference on the admin page
+   (`/admin/reports`) and is deleted there; and `alerts test --key reports-linkedin-broken` delivers its alert.
+4. **Each store's answers are saved before the tag** ([Steps](#steps), step 4), since the tag submits the zips:
+   - Chrome Web Store: *Personally identifiable information* and *Personal communications* ticked, with their texts,
+     and the reasons *Web history* and *User activity* stay unticked ([store-listing.md](store-listing.md#data-usage)),
+     and the description's *Report a problem* line.
+   - Microsoft Edge Add-ons: the same answers, the description and the Notes for certification, before the draft is
+     submitted ([store-listing-edge.md](store-listing-edge.md)).
+   - Firefox Add-ons: the description, the privacy policy text and the Notes for Reviewers
+     ([store-listing-firefox.md](store-listing-firefox.md)). The manifest declares `technicalAndInteraction` in every
+     build, so Firefox now offers a data choice at install.
+
+   The answers for builds with the Cloud card, in HeitechSoft's private repository, carry the same additions.
+5. **PRIVACY.md's *Report a problem*** and the website's corrections page, which no longer sends anyone to GitHub,
+   are live on unalgorithmfeed.com. CI's privacy-gate test (`apps/extension/tests/privacy-gate.test.ts`) refuses an
+   extension that can send reports while PRIVACY.md lacks that section. The privacy impact assessment covers problem
+   reports, in HeitechSoft's private repository.
+6. **support@heitechsoft.com answers**: replies to corrections, and the reports people email instead, go there.
+
+Installs of 0.3 and older keep opening GitHub issue forms until they update.
 
 ## The server
 

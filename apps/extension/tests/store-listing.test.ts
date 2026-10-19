@@ -1,7 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FEATURE_NAMES, FIREFOX_ADDON_ID } from '@unalgorithm/protocol';
+import {
+  CLOUD_ORIGIN,
+  FEATURE_NAMES,
+  FIREFOX_ADDON_ID,
+  REPORT_CONTACT_KEEP_DAYS,
+  REPORT_KEEP_DAYS,
+  REPORTS_URL,
+} from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REVIEWED_WARNINGS } from '../../../scripts/check-firefox-lint.mjs';
 import { FIREFOX_MIN_VERSION, manifestFor } from '../wxt.config.ts';
@@ -187,6 +194,60 @@ describe('Chrome Web Store material', () => {
   });
 });
 
+describe('problem reports in every store', () => {
+  /** The sentence ADR 0009 §5 adds to every store's description. */
+  const REPORT_LINE = "Report a problem sends a report you review to HeitechSoft, unAlgorithm's maker.";
+
+  it('test_every_description_says_reports_go_to_heitechsoft', () => {
+    for (const [name, md] of [
+      ['chrome', listing()],
+      ['edge', edgeListing()],
+      ['firefox', firefoxListing()],
+    ] as const) {
+      const lines = pasteText(md, 'Description');
+      expect(
+        lines.some((line) => line.startsWith(`• ${REPORT_LINE}`)),
+        name,
+      ).toBe(true);
+      // "Nothing leaves your browser" names the report too, so the description never says less than PRIVACY.md.
+      expect(lines.join('\n'), name).toContain('Nothing leaves your browser unless you turn on AI or send a report.');
+      expect(md, name).not.toMatch(/GitHub issue|None of it goes to HeitechSoft/);
+    }
+  });
+
+  it('test_chrome_data_usage_answers_for_corrections', () => {
+    // The answers Edge's Partner Center takes word for word: PII for a correction's reply email, personal communications
+    // for its words, and why web history and user activity stay unticked.
+    const usage = oneLine(section(listing(), 'Data usage'));
+    expect(usage).toContain('Tick **Website content**, **Personally identifiable information** and **Personal communications**;');
+    expect(usage).toContain(
+      `| Personally identifiable information | **Yes** | An email address the user may type into a correction request so HeitechSoft can reply; kept at most ${REPORT_CONTACT_KEEP_DAYS} days |`,
+    );
+    expect(usage).toContain(
+      `| Personal communications | **Yes** | A message the user writes to HeitechSoft to correct a Fact-check or UnEcho Chamber result, with emails, phone numbers and links removed; used only to review that result; kept ${REPORT_KEEP_DAYS} days |`,
+    );
+    expect(usage).toContain(
+      '| Web history | No | Only the route class of the LinkedIn or Facebook page being reported is sent (the home feed, a page that looks like a feed, or another page) and, for a feed at a new address, that one word (such as foryou), never its address |',
+    );
+    expect(usage).toContain('| User activity | No | No time, clicks or scrolling are sent |');
+    expect(usage).toContain(`(\`${new URL(CLOUD_ORIGIN).host}/v1/reports\`)`);
+    // Each category in one row: a ticked one never also appears among the unticked.
+    const rows = usage
+      .split('| ')
+      .filter((cell) => /^(Personally identifiable|Personal communications|Web history|User activity)/.test(cell));
+    expect(rows.map((cell) => cell.trim())).toEqual([
+      'Personally identifiable information',
+      'Personal communications',
+      'Web history',
+      'User activity',
+    ]);
+    // Edge's reviewers read where reports go in the notes.
+    expect(oneLine(section(edgeListing(), 'Notes for certification'))).toContain(
+      `only the Send report click posts it, to ${REPORTS_URL.replace('https://', '')}, with no account, cookie or identifier.`,
+    );
+  });
+});
+
 /** The Chrome description's lines that name neither Chrome nor its side panel: the ones every store repeats. */
 function sharedLines(): string[] {
   return pasteText(listing(), 'Description').filter((line) => line.trim() && !/Chrome|side panel/.test(line));
@@ -260,10 +321,13 @@ describe('Firefox Add-ons material', () => {
       ...(gecko?.data_collection_permissions?.required ?? []).map((type) => ['required', type]),
       ...(gecko?.data_collection_permissions?.optional ?? []).map((type) => ['optional', type]),
     ];
+    // ADR 0009 §5: technical and interaction data, which problem reports need and the add-on never asks for, is in
+    // every build, so Firefox offers it at install.
     expect(declared).toEqual([
       ['required', 'none'],
       ['optional', 'websiteContent'],
       ['optional', 'personalCommunications'],
+      ['optional', 'technicalAndInteraction'],
     ]);
     expect(rows(store).map(keyAndType)).toEqual(declared);
     vi.stubEnv('UA_CLOUD', '1');
@@ -271,9 +335,25 @@ describe('Firefox Add-ons material', () => {
     const added = (cloud?.data_collection_permissions?.optional ?? []).filter(
       (type) => !gecko?.data_collection_permissions?.optional?.includes(type),
     );
-    expect(added).toEqual(['personallyIdentifyingInfo', 'authenticationInfo', 'technicalAndInteraction']);
+    expect(added).toEqual(['personallyIdentifyingInfo', 'authenticationInfo']);
     expect(cloud?.data_collection_permissions?.required).toEqual(['none']);
     expect(rows(withCloud).map((row) => row.split('|')[1]?.trim().replaceAll('`', ''))).toEqual(added);
+  });
+
+  it('test_firefox_listing_describes_problem_reports', () => {
+    // ADR 0009 §5: a report is technical data, sent only while that type is allowed, never asked for; otherwise email.
+    const collection = oneLine(section(firefoxListing(), 'Data collection'));
+    expect(collection).not.toContain('Report a problem is not data collection');
+    expect(collection).not.toContain('No data choice at install');
+    expect(collection).toContain('**One data choice at install.**');
+    expect(collection).toContain(`*Send report* click posts it, once, to unAlgorithm Cloud (\`${REPORTS_URL}\`)`);
+    expect(collection).toContain('no `browsingActivity` is declared');
+    expect(oneLine(section(firefoxListing(), 'Notes for Reviewers'))).toContain(
+      `Report a problem opens an extension page that shows every field of the report; only the Send report click posts it, to ${REPORTS_URL.replace('https://', '')}, with no account, cookie or identifier in the report (the server checks the moz-extension Origin, which is random per install, and never stores or logs it). It is technical data and is sent only while technical and interaction data is allowed; otherwise the page offers to email it. The add-on never requests that type, and nothing else depends on it.`,
+    );
+    // Firefox's Origin is unique to the install: the listing never claims a report request carries no identifier at all.
+    expect(collection).toContain('no identifier in the report');
+    expect(collection).toContain('random per install, is checked by the server and never stored or logged');
   });
 
   it('test_firefox_description_repeats_chrome_without_built_in_ai', () => {

@@ -5,8 +5,10 @@ translations, accessibility improvements and ideas are all welcome.
 
 ## Before you start
 
-- **Layout broke?** Use *Why? → Wrong call* on a hidden post, or **Report a problem** in the popup. It opens an issue
-  with anonymized diagnostics (versions, counts, detector names; never post text).
+- **GitHub issues are for contributors:** work on the code, fixtures, docs and translations. People who use
+  unAlgorithm report problems inside it (*Why? → Wrong call?*, **Report a problem** in the popup), which sends a report
+  they review to HeitechSoft privately, or email support@heitechsoft.com ([SUPPORT.md](SUPPORT.md)). If you landed
+  here with a broken feed, use those: an issue is public.
 - **Bigger change?** Open an issue or a Discussion first so we can agree on the approach.
 - **Security issue?** Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
@@ -61,12 +63,28 @@ Useful commands:
    like or fetch anything on someone's behalf. The adapter contract test enforces this.
 2. **Fail open.** When detection is unsure, show the post. Weak signals never hide a post on their own.
 3. **Privacy by construction.** Nothing that identifies an author (names, profile URLs, group names) may reach an
-   AI request, a cache, a log or a diagnostic report. If you add a field to `PostForAI`, explain why in the PR.
+   AI request, a cache, a log or a problem report. If you add a field to `PostForAI` or `ProblemReport`, explain why
+   in the PR.
 4. **Rules work without AI.** AI is optional; every core feature must work with it off.
 5. **Accessible and calm.** Follow the design system in `packages/ui` (tokens, components, copy voice). Run the
    axe E2E check. Ordinary posts get no injected UI.
 6. **Anonymized fixtures only.** Use the capture scripts in `scripts/capture/`. Never commit a real person's name,
    photo, post or profile link.
+
+## Problem reports
+
+The extension sends problem reports, only when someone clicks **Send report**, to unAlgorithm Cloud (ADR 0009,
+[privacy model](docs/privacy-model.md#problem-reports)):
+
+- **A report a user sent is never committed, attached to an issue or published.** Not in a fixture, a test, a pull
+  request or a discussion, not even in part. When a report shows a site changed, capture the new markup yourself from
+  the report's route, versions and issues ([docs/fixtures.md](docs/fixtures.md)).
+- **A new report code goes into the registry first** (`packages/protocol/src/report-codes.ts`), and unAlgorithm Cloud
+  is deployed with it before an extension that sends it ships: the server keeps only codes it knows.
+- **A fork that ships its own extension** must change `CLOUD_ORIGIN` (`packages/protocol/src/site.ts`) and with it
+  `REPORTS_URL` (`packages/protocol/src/report.ts`) to a server of its own (`REPORTS=on`), with its own privacy policy.
+  Otherwise its users' reports go to HeitechSoft, under a privacy policy that isn't theirs; unAlgorithm Cloud refuses
+  corrections from extension ids it doesn't list.
 
 ## Pull requests
 

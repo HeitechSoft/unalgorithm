@@ -62,7 +62,7 @@ export function App() {
       content = <PlatformPane platform={pane} settings={settings} save={save} device={device} />;
       break;
     case 'display':
-      content = <DisplayPane settings={settings} save={save} saveDevice={saveDevice} />;
+      content = <DisplayPane settings={settings} device={device} save={save} saveDevice={saveDevice} />;
       break;
     case 'interests':
       content = <InterestsPane settings={settings} save={save} />;

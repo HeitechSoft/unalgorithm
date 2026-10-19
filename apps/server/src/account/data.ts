@@ -20,6 +20,7 @@ import {
   account,
   devices,
   passkey,
+  problemReports,
   session,
   setupTokens,
   signupInvites,
@@ -197,8 +198,8 @@ export async function exportAccount(
  * Deletes the account `userId` and everything stored about it; returns whether it was there to delete. The billing
  * module is asked first: when it rejects, nothing is deleted and the rejection propagates. Then one transaction removes
  * the `verification` rows Better Auth keeps for the account outside any foreign key (unused codes keyed by the address;
- * an unfinished passkey registration, whose value holds the user's id) and the user row, whose cascade takes every
- * other row. With the devices gone, every device token and refresh token is refused from the next request on.
+ * an unfinished passkey registration, whose value holds the user's id), clears the address from any problem report
+ * that gave it for a reply, and deletes the user row, whose cascade takes every other row. With the devices gone, every device token and refresh token is refused from the next request on.
  */
 export async function deleteAccount({ db, billing }: Pick<AppDeps, 'db' | 'billing'>, userId: string): Promise<boolean> {
   await billing.deleteAccount?.(userId);
@@ -220,6 +221,12 @@ export async function deleteAccount({ db, billing }: Pick<AppDeps, 'db' | 'billi
     await tx.delete(signupInvites).where(eq(signupInvites.email, normalizeEmail(owner.email)));
     // Setup links (CL4-04) are keyed by address too, and a used one is kept until now.
     await tx.delete(setupTokens).where(eq(setupTokens.email, normalizeEmail(owner.email)));
+    // A reply address given in a correction (ADR 0009) is tied to no account, so only the address finds it. The report
+    // stays, without a way to reply.
+    await tx
+      .update(problemReports)
+      .set({ contact: null })
+      .where(eq(problemReports.contact, normalizeEmail(owner.email)));
     await tx.delete(user).where(eq(user.id, userId));
     return true;
   });

@@ -1,0 +1,95 @@
+{
+  "setup": {
+    "url": "https://www.linkedin.com/feed/",
+    "list": ".scaffold-finite-scroll__content"
+  },
+  "notes": [
+    "NORMAL_POST: 1st-degree connection",
+    "PROMOTED_POST: \"Promoted\" page",
+    "SUGGESTED_POST: \"Suggested\" header, 3rd+",
+    "ACTIVITY_POST: \"… likes this\", 2nd-degree",
+    "ACTIVITY_FOLLOWED_AUTHOR: \"… commented on this\", 1st-degree",
+    "CONNECTION_REPOST: \"… reposted this\", page",
+    "EVENT_POST: page you follow, an event",
+    "PYMK_MODULE: People you may know"
+  ],
+  "decisions": {
+    "light": [
+      "show/followed",
+      "sponsored/not-followed",
+      "show/not-followed",
+      "show/not-followed",
+      "show/followed",
+      "show/not-followed",
+      "show/followed",
+      "panel"
+    ],
+    "balanced": [
+      "show/followed",
+      "sponsored/not-followed",
+      "suggested/not-followed",
+      "network-activity/not-followed",
+      "show/followed",
+      "not-followed/not-followed",
+      "show/followed",
+      "panel"
+    ],
+    "calm": [
+      "show/followed",
+      "sponsored/not-followed",
+      "suggested/not-followed",
+      "network-activity/not-followed",
+      "show/followed",
+      "reshare/not-followed",
+      "show/followed",
+      "panel"
+    ]
+  },
+  "ids": [
+    "li:urn:li:activity:7001",
+    "li:urn:li:activity:7002",
+    "li:urn:li:activity:7003",
+    "li:urn:li:activity:7004",
+    "li:urn:li:activity:7005",
+    "li:urn:li:activity:7006",
+    "li:urn:li:activity:7007",
+    null
+  ],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "li.items.card-key",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "weak",
+    "signedIn": false,
+    "loadMore": false
+  },
+  "emitted": {
+    "detectors": {
+      "li.promoted.age-slot": 1,
+      "li.follow-button": 4,
+      "li.header.suggested": 1,
+      "li.header.activity": 2,
+      "li.header.repost": 1
+    },
+    "observations": {}
+  },
+  "errors": {}
+}

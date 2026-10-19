@@ -39,7 +39,7 @@ actually follow.
 | **For you** | Pick a few interests and matching posts get a quiet highlight. Works with simple keyword matching, or with AI if you turn it on. |
 | **Optional AI, your choice** | Spot off-topic posts, engagement bait and rage bait with **your browser's built-in on-device AI** (free, private; Chrome, and Edge's preview builds), **your own API key** (Anthropic, OpenAI, Gemini, OpenRouter, Groq), or **a local or self-hosted model** (Ollama, LM Studio, any OpenAI-compatible server). |
 | **Private by design** | Rules run in your browser. When AI is on, only what's needed to classify a post goes to the AI you chose: its text (with emails, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images. Your API keys stay in this browser. No analytics, no tracking, no account. |
-| **Fails open** | If a site changes its layout and detection looks wrong, unAlgorithm stops hiding and tells you, rather than hiding posts by mistake. |
+| **Fails open** | If a site changes its layout and detection looks wrong, unAlgorithm stops hiding and tells you, rather than hiding posts by mistake. **Report a problem**, in unAlgorithm itself, tells us: it shows you exactly what it sends, and sends it only when you click Send report. |
 
 <p align="center">
   <img src="docs/images/popup-light.png" width="300" alt="The unAlgorithm toolbar popup showing 6 posts hidden and the Strength control" />
@@ -129,7 +129,8 @@ When a site changes its layout, [docs/adding-a-platform.md](docs/adding-a-platfo
 ## Privacy
 
 The short version: nothing leaves your browser unless you turn on AI, and then only what's needed to classify each
-post goes to the AI you picked, never who wrote it. Read [PRIVACY.md](PRIVACY.md).
+post goes to the AI you picked, never who wrote it, or unless you send us a problem report, which you see in full
+first and which holds no post text or names. Read [PRIVACY.md](PRIVACY.md).
 
 ## License and trademarks
 

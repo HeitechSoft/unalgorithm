@@ -306,7 +306,10 @@ describe('routes', { timeout: PGLITE_TIMEOUT }, () => {
           [BEA, 'user'],
         ]);
       } else {
-        expect(AdminOverviewSchema.parse(body).users).toBe(2);
+        const overview = AdminOverviewSchema.parse(body);
+        expect(overview.users).toBe(2);
+        // Problem reports' line (ADR 0009 §7): off on this server, and none kept.
+        expect(overview.reports).toEqual({ enabled: false, open: 0, last24h: 0 });
       }
     }
   });

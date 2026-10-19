@@ -1,33 +1,37 @@
 /**
  * What differs by browser outside the manifest (ADR 0008): the on-device card (hidden in Firefox, Edge's preview named
- * in Edge), the local server's Origin fix, the toolbar pin instructions, copy that names the browser, problem-report
- * diagnostics, content-script styles, and install-time injection. Vitest builds for Chrome, so `browserKind()` is
+ * in Edge), the local server's Origin fix, the toolbar pin instructions, copy that names the browser, what a problem
+ * report says about the browser, content-script styles, and install-time injection. Vitest builds for Chrome, so `browserKind()` is
  * switched here; tests/browser-kind.test.ts covers how the real one decides.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { describeError } from '@unalgorithm/ai';
 import { type AISourceConfig, type Device, defaultDevice, defaultSettings } from '@unalgorithm/core';
-import type { PlatformAdapter } from '@unalgorithm/platforms';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { providerName } from '../src/background/ai.ts';
+import { reportEnv } from '../src/background/report.ts';
 import { AiSetup } from '../src/components/AiSetup.tsx';
-import type { Entry, FeedController } from '../src/content/feed-controller.ts';
-import { reportProblemUrl } from '../src/content/report.ts';
+import type { Entry } from '../src/content/feed-controller.ts';
 import { mountUiHost } from '../src/content/ui-layer.tsx';
 import background from '../src/entrypoints/background.ts';
 import { App as Onboarding } from '../src/entrypoints/onboarding/App.tsx';
 import { AiPane, PlatformPane, PrivacyPane } from '../src/entrypoints/options/panes.tsx';
-import type { BrowserKind } from '../src/lib/browser-kind.ts';
+import { type BrowserKind, browserMajor } from '../src/lib/browser-kind.ts';
 import { type BgRequest, sendToBackground } from '../src/lib/messages.ts';
 import { ORIGIN_RULE_ID } from '../src/lib/storage.ts';
 
 const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
-vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
-  browserKind: () => env.kind,
-}));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/lib/browser-kind.ts')>();
+  return {
+    ...real,
+    browserKind: () => env.kind,
+    // The build's target decides Firefox; Chrome and Edge are told apart by their brands, as in a real browser.
+    reportBrowser: () => real.reportBrowser({ firefox: env.kind === 'firefox', brands: real.brandNames() }),
+  };
+});
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
   sendToBackground: vi.fn(),
@@ -318,31 +322,46 @@ describe('content scripts', () => {
   });
 
   it('test_report_names_browser_and_major_version_only', () => {
-    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '0.3.1' } as never);
-    const adapter = { id: 'linkedin', version: 'linkedin@2026.10.1' } as PlatformAdapter;
-    const controller = {
-      diagnostics: () => ({ counts: {}, detectors: {}, landmarks: {} }),
-      getHealth: () => ({ status: 'ok' }),
-    } as unknown as FeedController;
-    for (const [ua, expected] of [
-      ['Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0', 'Firefox 147'],
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '0.4.0' } as never);
+    for (const [ua, kind, brands, browser, major] of [
+      ['Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0', 'firefox', [], 'firefox', 147],
       [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.55 Safari/537.36 Edg/141.0.3537.57',
-        'Edge 141',
+        'edge',
+        ['Chromium', 'Microsoft Edge', 'Not=A?Brand'],
+        'edge',
+        141,
       ],
       [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.55 Safari/537.36',
-        'Chrome 141',
+        'chrome',
+        ['Chromium', 'Google Chrome', 'Not=A?Brand'],
+        'chrome',
+        141,
       ],
-    ]) {
-      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua as string);
-      const url = new URL(reportProblemUrl(adapter, controller));
-      const diagnostics = JSON.parse(url.searchParams.get('diagnostics') ?? '{}') as Record<string, unknown>;
-      expect(diagnostics.browser, ua).toBe(expected);
-      expect(diagnostics).not.toHaveProperty('chrome');
+      // Another Chromium on the Chrome build: named as another browser, not as Chrome.
+      [
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.54 Safari/537.36',
+        'chrome',
+        ['Chromium', 'Brave', 'Not=A?Brand'],
+        'other',
+        141,
+      ],
+    ] as const) {
+      env.kind = kind;
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua);
+      Object.defineProperty(navigator, 'userAgentData', {
+        value: { brands: brands.map((brand) => ({ brand })) },
+        configurable: true,
+      });
+      const facts = reportEnv();
+      expect(facts.browser, ua).toBe(browser);
+      expect(facts.browserMajor, ua).toBe(major);
       // No full version, platform or user agent string.
-      expect(url.toString()).not.toMatch(/7390|3537|Win64|X11|Gecko/);
+      expect(JSON.stringify(facts)).not.toMatch(/7390|3537|Win64|X11|Gecko|Linux|Windows/);
     }
+    expect(browserMajor('Mozilla/5.0 (compatible; Unknown/1.0)')).toBe(0);
+    Object.defineProperty(navigator, 'userAgentData', { value: undefined, configurable: true });
   });
 
   it('test_install_injects_into_open_tabs_except_in_firefox', async () => {

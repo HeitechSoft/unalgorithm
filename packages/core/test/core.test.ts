@@ -19,7 +19,6 @@ import {
   decide,
   defaultSettings,
   EMPTY_LEARNED,
-  evaluateHealth,
   findKeyword,
   formatBalance,
   formatBytes,
@@ -102,6 +101,36 @@ describe('rules', () => {
     expect(ruleFilter(suggested, { ...li, alwaysShow: { a: rule } })).toBeNull();
     expect(ruleFilter(post(), { ...li, alwaysHide: { a: rule } })?.reason).toBe('always-hide');
   });
+
+  it('test_cautious_mode_hides_only_strong_signals', () => {
+    // A fallback discovery strategy is winning (ADR 0009 §9): an item may not be one whole post.
+    const strongAd = post({
+      signals: { ...NO_SIGNALS, sponsored: true },
+      evidence: [{ signal: 'sponsored', detector: 'li.promoted.age-slot', strength: 'strong' }],
+    });
+    const mediumAd = post({
+      signals: { ...NO_SIGNALS, sponsored: true },
+      evidence: [
+        { signal: 'sponsored', detector: 'li.promoted.near', strength: 'medium' },
+        { signal: 'sponsored', detector: 'li.age-slot.no-age', strength: 'weak' },
+      ],
+    });
+    // A signal with no evidence at all (an adapter that doesn't record it) is never strong.
+    const bare = post({ signals: { ...NO_SIGNALS, suggested: true } });
+    expect(ruleFilter(strongAd, li, undefined, true)?.reason).toBe('sponsored');
+    expect(ruleFilter(mediumAd, li)?.reason).toBe('sponsored');
+    expect(ruleFilter(mediumAd, li, undefined, true)).toBeNull();
+    expect(ruleFilter(bare, li)?.reason).toBe('suggested');
+    expect(ruleFilter(bare, li, undefined, true)).toBeNull();
+  });
+
+  it('test_cautious_mode_turns_not_followed_off_and_keeps_your_lists', () => {
+    const notFollowed = post({ author: { ...post().author, relationship: 'not-followed' } });
+    expect(ruleFilter(notFollowed, li)?.reason).toBe('not-followed');
+    expect(ruleFilter(notFollowed, li, undefined, true)).toBeNull();
+    const rule = { label: 'Jane Doe', match: '/in/janedoe', addedAt: 1 };
+    expect(ruleFilter(post(), { ...li, alwaysHide: { a: rule } }, undefined, true)?.reason).toBe('always-hide');
+  });
 });
 
 describe('presets', () => {
@@ -158,6 +187,14 @@ describe('decide', () => {
     expect(decide({ item: { kind: 'post', post: post() }, settings, aiActive: false, vote: 'less' }).filter?.reason).toBe(
       'less-like-this',
     );
+  });
+
+  it('test_decide_passes_cautious_to_the_rules', () => {
+    const notFollowed = post({ author: { ...post().author, relationship: 'not-followed' } });
+    const item = { kind: 'post' as const, post: notFollowed };
+    expect(decide({ item, settings, aiActive: false }).filter?.reason).toBe('not-followed');
+    expect(decide({ item, settings, aiActive: false, cautious: false }).filter?.reason).toBe('not-followed');
+    expect(decide({ item, settings, aiActive: false, cautious: true }).filter).toBeNull();
   });
 
   it('modules follow the feed panels switch for their own platform', () => {
@@ -361,41 +398,6 @@ describe('learning', () => {
     expect(local).toEqual(['Public post.', 'Friends-only post.', 'Older rating, unmarked.']);
     const server = buildInterestProfile(defaultSettings(), prefs, { forServer: true }).examples;
     expect(server).toEqual([{ summary: 'Public post.', verdict: 'more' }]);
-  });
-});
-
-describe('health', () => {
-  const sample = (over = {}) => ({
-    kind: 'post' as const,
-    authorFound: true,
-    textFound: true,
-    sponsored: false,
-    hidden: false,
-    ageMs: 1000,
-    ...over,
-  });
-
-  it('stops hiding when nearly everything would be hidden', () => {
-    const samples = Array.from({ length: 20 }, () => sample({ hidden: true }));
-    expect(
-      evaluateHealth({ feedFound: true, elapsedMs: 20_000, samples, localeSupported: true, preset: 'balanced' }).status,
-    ).toBe('broken');
-  });
-
-  it('switches off relationship rules when authors cannot be found', () => {
-    const samples = Array.from({ length: 12 }, (_, i) => sample({ authorFound: i < 3 }));
-    const r = evaluateHealth({ feedFound: true, elapsedMs: 20_000, samples, localeSupported: true, preset: 'balanced' });
-    expect(r.status).toBe('degraded');
-    expect(r.degraded).toContain('relationship');
-  });
-
-  it('is patient before the feed appears', () => {
-    expect(
-      evaluateHealth({ feedFound: false, elapsedMs: 3000, samples: [], localeSupported: true, preset: 'balanced' }).status,
-    ).toBe('ok');
-    expect(
-      evaluateHealth({ feedFound: false, elapsedMs: 11_000, samples: [], localeSupported: true, preset: 'balanced' }).issues,
-    ).toEqual(['no-feed']);
   });
 });
 

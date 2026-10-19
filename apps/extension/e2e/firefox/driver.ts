@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REPORTS_PATH } from '@unalgorithm/protocol';
 import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer-core';
 import { type EgressProxy, proxyPrefs, startEgressProxy } from '../egress-proxy.ts';
 
@@ -42,7 +43,11 @@ export interface FirefoxProfile {
   onboarding: Page;
   /** Opens an extension page (`options.html#/ai`) in a new tab and waits for it to load. */
   open(path: string): Promise<Page>;
-  /** Firefox and its proxy stop; the temporary profile is deleted. */
+  /**
+   * Firefox and its proxy stop; the temporary profile is deleted. Then the e2e guard (ADR 0009 §1): it throws when the
+   * profile sent a problem report more often than its page's *Send report* or *Try again* was clicked
+   * (`unaskedReports`), whatever the test did.
+   */
   close(): Promise<void>;
 }
 
@@ -73,6 +78,7 @@ export async function launchFirefox(opts: LaunchOptions = {}): Promise<FirefoxPr
     const onboarding = await extensionPage(browser, '/onboarding.html');
     const base = `moz-extension://${new URL(await hrefOf(onboarding)).host}`;
     const opened = browser;
+    reportClicks.set(browser, new Map());
     return {
       browser,
       proxy,
@@ -90,6 +96,8 @@ export async function launchFirefox(opts: LaunchOptions = {}): Promise<FirefoxPr
         } finally {
           await proxy.close();
         }
+        const unasked = unaskedReports({ browser: opened, proxy });
+        if (unasked.length) throw new Error(`Problem reports sent without a Send click:\n${unasked.join('\n')}`);
       },
     };
   } catch (err) {
@@ -174,9 +182,49 @@ export function text(value: string): string {
   return `::-p-text(${JSON.stringify(value)})`;
 }
 
+/**
+ * The e2e guard in Firefox (ADR 0009 §1), as `fixtures.ts` keeps it for Chromium: a problem report may leave the
+ * browser only after the person clicked *Send report* (or *Try again*) on that report's page. Every such click a test
+ * makes goes through `click`, with trusted input, and is counted here by the report id in the page's address; every
+ * POST to the report route the profile's proxy saw, the background's included, is counted by the id in its body.
+ */
+const reportClicks = new WeakMap<Browser, Map<string, number>>();
+const SEND_BUTTONS = new Set([aria('button', 'Send report'), aria('button', 'Try again')]);
+
+/** The report id of a report page, from its address; null for any other page. */
+async function reportPageId(page: Page): Promise<string | null> {
+  const href = await hrefOf(page);
+  if (!href.startsWith('moz-extension://')) return null;
+  const url = new URL(href);
+  return url.pathname === '/report.html' ? url.hash.slice(1) : null;
+}
+
+/** Reports the profile sent more often than their Send button was clicked: empty when every report was asked for. */
+export function unaskedReports(profile: Pick<FirefoxProfile, 'browser' | 'proxy'>): string[] {
+  const clicks = reportClicks.get(profile.browser) ?? new Map<string, number>();
+  const sent = new Map<string, number>();
+  for (const r of profile.proxy.requests) {
+    if (r.method !== 'POST' || new URL(r.url).pathname !== REPORTS_PATH) continue;
+    let id = '?';
+    try {
+      id = String((JSON.parse(r.body) as { id?: unknown }).id ?? '?');
+    } catch {
+      // Not a report body: counted under '?', which no click ever covers.
+    }
+    sent.set(id, (sent.get(id) ?? 0) + 1);
+  }
+  return [...sent]
+    .filter(([id, n]) => n > (clicks.get(id) ?? 0))
+    .map(([id, n]) => `${id}: ${n} sent, ${clicks.get(id) ?? 0} clicked`);
+}
+
 /** Clicks the element, once it is visible, enabled and still, with trusted input (a user action to Firefox). */
 export async function click(page: Page, selector: string): Promise<void> {
+  const report = SEND_BUTTONS.has(selector) ? await reportPageId(page) : null;
   await page.locator(selector).click();
+  if (report === null) return;
+  const clicks = reportClicks.get(page.browser());
+  clicks?.set(report, (clicks.get(report) ?? 0) + 1);
 }
 
 /**

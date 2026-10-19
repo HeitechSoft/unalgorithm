@@ -1,19 +1,20 @@
-import { cyrb53, type Evidence, type ModuleInfo, NO_SIGNALS, type PostData } from '@unalgorithm/core';
+import { atLeast, cyrb53, type Evidence, type ModuleInfo, NO_SIGNALS, type PostData, signalStrength } from '@unalgorithm/core';
 import type { MediaKind, PostKey } from '@unalgorithm/protocol';
 import {
+  accessibleName,
   ageToHours,
   getLines,
-  hasTextNode,
   linkDomain,
   linkedNames,
   outermost,
-  precedes,
   richText,
   textOf,
   walkText,
 } from '../shared/dom.ts';
+import { type LabelHit, labelStrength, matchLabel } from '../shared/labels.ts';
 import type { LinkedInMarkers } from './markers/en.ts';
-import { CARD_KEY_PREFIX, POST_ROOT_SELECTOR, POST_URN_RE, SEL, URN_ATTRIBUTES } from './selectors.ts';
+import { CARD_KEY_PREFIX, FEED_TYPE_SUFFIX, POST_ROOT_SELECTOR, POST_URN_RE, SEL, URN_ATTRIBUTES } from './selectors.ts';
+import { isInCommentsArea, type PostHead, readHead, slotObservations, startsWithName } from './slots.ts';
 
 const ORIGIN = 'https://www.linkedin.com';
 
@@ -31,9 +32,13 @@ export function contentLines(root: Element, m: LinkedInMarkers): string[] {
   return lines.length && lines[0] && m.cardHeading.test(lines[0]) ? lines.slice(1) : lines;
 }
 
+/**
+ * The card's opaque key, without the feed's sort that the "For you" feed appends ("…FeedType_MAIN_FEED_RELEVANCE"),
+ * so a post keeps its id whichever way the feed is sorted.
+ */
 function cardKey(root: Element): string | undefined {
   const key = root.getAttribute('componentkey');
-  return key?.startsWith(CARD_KEY_PREFIX) ? key.slice(CARD_KEY_PREFIX.length) : undefined;
+  return key?.startsWith(CARD_KEY_PREFIX) ? key.slice(CARD_KEY_PREFIX.length).replace(FEED_TYPE_SUFFIX, '') : undefined;
 }
 
 function permalinkUrn(root: Element): string | undefined {
@@ -41,53 +46,38 @@ function permalinkUrn(root: Element): string | undefined {
   return POST_URN_RE.exec(decodeURIComponent(link?.getAttribute('href') ?? ''))?.[0];
 }
 
-function isInCommentsArea(el: Element): boolean {
-  return !!el.closest(SEL.commentsArea);
-}
-
 export type HeaderKind = 'suggested' | 'activity' | 'repost' | null;
 
-export function classifyHeader(text: string | undefined, m: LinkedInMarkers): HeaderKind {
-  if (!text) return null;
-  const t = text.replace(/\s+/g, ' ').trim();
-  if (m.suggested.test(t)) return 'suggested';
-  if (m.repost.test(t)) return 'repost';
-  if (m.followedBy.test(t)) return 'activity';
-  if (m.activity.test(t)) return 'activity';
+interface HeaderRead {
+  kind: Exclude<HeaderKind, null>;
+  strength: 'strong' | 'medium';
+  /** The suggested label was a near miss ("Suggested by your network"). */
+  near?: boolean;
+}
+
+/** What a header line says about why the post is shown, and how sure that is. Only ever given header lines. */
+function readHeaderLine(line: string, m: LinkedInMarkers): HeaderRead | null {
+  const t = line.replace(/\s+/g, ' ').trim();
+  const suggested = matchLabel(t, m.labels.suggested);
+  if (suggested)
+    return { kind: 'suggested', strength: labelStrength(suggested), ...(suggested.match === 'near' ? { near: true } : {}) };
+  if (m.repost.test(t)) return { kind: 'repost', strength: 'strong' };
+  if (m.followedBy.test(t) || m.activity.test(t)) return { kind: 'activity', strength: 'strong' };
   return null;
 }
 
-/** Header line above the actor ("Jane likes this", "Followed by Jane", "Suggested"), only if it is one. */
-function findHeader(root: Element, lines: string[], m: LinkedInMarkers): string | undefined {
-  const fromClass = textOf(root, SEL.header);
-  if (fromClass && classifyHeader(fromClass, m)) return fromClass;
-  const first = lines[0];
-  if (first && (classifyHeader(first, m) || m.promoted.test(first))) return first;
-  return undefined;
+/** The kind of a header line above the author ("Jane likes this", "Followed by Jane", "Suggested"), if it is one. */
+export function classifyHeader(text: string | undefined, m: LinkedInMarkers): HeaderKind {
+  return text ? (readHeaderLine(text, m)?.kind ?? null) : null;
 }
 
-/** The first text box of the post itself (not of a reshared post or a comment). */
-function firstTextBox(root: Element): Element | undefined {
-  return Array.from(root.querySelectorAll(SEL.text)).find((el) => !isInCommentsArea(el));
-}
+const HEADER_SIGNAL = { suggested: 'suggested', activity: 'networkActivity', repost: 'reshare' } as const;
 
-/**
- * Buttons that belong to the post's own header: before the post text in page order and outside comments.
- * A reshared post inside the card has its own actor and Follow button after the outer text, which must not count.
- */
-function headerButtons(root: Element, m: LinkedInMarkers): Element[] {
-  const text = firstTextBox(root);
-  const bar = Array.from(root.querySelectorAll(m.actionBarSelector)).find((el) => !isInCommentsArea(el));
-  const limit = text ?? bar;
-  return Array.from(root.querySelectorAll('button, [role="button"]')).filter(
-    (b) => !isInCommentsArea(b) && (!limit || precedes(b, limit)),
-  );
-}
-
-function hasFollowButton(root: Element, m: LinkedInMarkers): boolean {
-  return headerButtons(root, m).some((b) => {
+/** A Follow button among the post's head buttons ("Follow Jane Doe", "+ Follow"); never one inside a reshared post. */
+function hasFollowButton(head: PostHead, m: LinkedInMarkers): boolean {
+  return head.buttons.some((b) => {
     const label = b.getAttribute('aria-label')?.trim() ?? '';
-    return m.followAria.test(label) || m.followButton.test(getLines(b).join(' '));
+    return m.followAria.test(label) || matchLabel(getLines(b).join(' '), m.labels.follow)?.match === 'exact';
   });
 }
 
@@ -109,7 +99,8 @@ interface Actor {
   isCompany: boolean;
 }
 
-function nameFromMenu(root: Element, m: LinkedInMarkers): string | undefined {
+/** The author's name from the post's menu button ("Open control menu for post by Jane Doe"). */
+export function nameFromMenu(root: Element, m: LinkedInMarkers): string | undefined {
   const label = root.querySelector(m.authorMenuSelector)?.getAttribute('aria-label');
   return label?.replace(m.authorMenuPrefix, '').trim() || undefined;
 }
@@ -149,7 +140,7 @@ function extractActor(root: Element, header: string | undefined, lines: string[]
   const actorLabel = name
     ? Array.from(root.querySelectorAll('[aria-label]'))
         .map((e) => e.getAttribute('aria-label') ?? '')
-        .find((l) => l.startsWith(name) && /\b(1st|2nd|3rd\+?)\s*$/.test(l))
+        .find((l) => l.startsWith(name) && (/\b(1st|2nd|3rd\+?)\s*$/.test(l) || m.followingLabel.test(l)))
     : undefined;
   let degree = m.degree.exec(textOf(root, SEL.actorSupplementary) ?? titleText)?.[1] ?? m.degree.exec(actorLabel ?? '')?.[1];
   if (!degree) {
@@ -157,6 +148,8 @@ function extractActor(root: Element, header: string | undefined, lines: string[]
     const near = nameIdx >= 0 ? lines.slice(nameIdx, nameIdx + 3) : lines.slice(0, 10);
     const line = near.find((l) => /^•?\s*(1st|2nd|3rd\+?)$/.test(l) || (!!name && l.startsWith(name) && m.degree.test(l)));
     degree = line ? m.degree.exec(line)?.[1] : undefined;
+    // Someone you follow without being connected: "• Following" where the degree would be.
+    if (!degree && (m.followingLabel.test(actorLabel ?? '') || near.some((l) => m.followingBadge.test(l)))) degree = 'following';
   }
   return { name, ...(url ? { url } : {}), ...(degree ? { degree } : {}), isCompany };
 }
@@ -185,7 +178,8 @@ export function parseAge(line: string, m: LinkedInMarkers, now = new Date()): { 
   return undefined;
 }
 
-function extractAge(root: Element, lines: string[], m: LinkedInMarkers, now: Date) {
+/** The age anywhere near the top: only for a post whose head has no age slot (a layout we can't read the head of). */
+function ageNearTop(root: Element, lines: string[], m: LinkedInMarkers, now: Date) {
   const sources = [textOf(root, SEL.actorSubDescription), ...lines.slice(0, 14)].filter((s): s is string => !!s);
   for (const s of sources) {
     const age = parseAge(s, m, now);
@@ -256,17 +250,24 @@ function extractSharedLink(root: Element): PostData['sharedLink'] {
   return undefined;
 }
 
+/** The 2026 card's screen-reader heading ("Feed post"), which posts and feed panels both have. */
+function hasCardHeading(el: Element, m: LinkedInMarkers): boolean {
+  return Array.from(el.querySelectorAll('h2, h3, [role="heading"]'))
+    .slice(0, 3)
+    .some((h) => m.cardHeading.test(getLines(h).join(' ')));
+}
+
 /**
  * Feed modules (People You May Know, jobs, games...) that are not posts. Needs positive evidence: a known module
- * title, or a 2026 card with content but no author menu, no post text and no action bar (every real post has
- * Like/Comment/Repost buttons, even image-only ones).
+ * title, or a 2026 card (its key or its "Feed post" heading) with content but no author menu, no post text and no action
+ * bar (every real post has Like/Comment/Repost buttons, even image-only ones).
  */
 export function moduleInfo(el: Element, m: LinkedInMarkers): ModuleInfo | undefined {
   const lines = contentLines(el, m);
   const titled = lines.slice(0, 2).find((l) => m.module.test(l));
   if (titled) return { kind: moduleKind(titled), title: titled };
   if (
-    cardKey(el) &&
+    (cardKey(el) || hasCardHeading(el, m)) &&
     lines.length &&
     !el.querySelector(m.authorMenuSelector) &&
     !el.querySelector(SEL.text) &&
@@ -319,40 +320,118 @@ function permalinkFor(id: string, actorUrl: string | undefined): string | undefi
   return undefined;
 }
 
+/** Ad labels found in the post's label positions: the strong ones by position, and the first near miss. */
+interface AdLabels {
+  strong: Array<'li.promoted.age-slot' | 'li.promoted.header' | 'li.promoted.actor'>;
+  /** The first near-miss label, normalised (its in-memory hash feeds `ad-label-near-miss`). */
+  near?: string;
+  /** What the age slot itself matched, if anything. */
+  slot: LabelHit | null;
+}
+
+/**
+ * Read "Promoted" where LinkedIn puts it (ADR 0009 §9): the age slot, header lines, the author's block (not the
+ * author's own name) and the accessible names of the head's buttons. Never post text, comments or reshared posts.
+ *
+ * The author's block also holds their headline, which may start with a label word ("Sponsored Products Manager at
+ * Amazon", "Sponsored by Specialized | Pro cyclist"), so a line there other than the age slot counts only as a label
+ * would read: the bare label, or the label and a separator ("Promoted • Partnership with LinkedIn", moved up a line).
+ * Otherwise a known tail would hide a member's post, and a near miss shared by two of their posts would say ads are
+ * getting through on a healthy feed.
+ */
+function readAdLabels(head: PostHead, author: string, m: LinkedInMarkers): AdLabels {
+  const out: AdLabels = { strong: [], slot: null };
+  const read = (text: string, at: AdLabels['strong'][number], labelOnly = false) => {
+    const hit = matchLabel(text, m.labels.promoted);
+    if (!hit || (labelOnly && hit.match !== 'exact' && !hit.separated)) return null;
+    if (hit.match !== 'near') {
+      if (!out.strong.includes(at)) out.strong.push(at);
+    } else out.near ??= hit.label;
+    return hit;
+  };
+  if (head.ageSlot !== undefined) out.slot = read(head.ageSlot, 'li.promoted.age-slot');
+  for (const line of head.header) read(line, 'li.promoted.header');
+  for (const line of head.actor)
+    if (line !== head.ageSlot && !startsWithName(line, author)) read(line, 'li.promoted.actor', true);
+  for (const button of head.buttons) read(accessibleName(button), 'li.promoted.header');
+  return out;
+}
+
+/** One post as read, and what was noticed on the way (registry observation ids, never content). */
+export interface ReadPost {
+  post: PostData;
+  observations: string[];
+}
+
 /** Read one LinkedIn post. Read-only: never clicks, scrolls or changes the page. */
-export function extractPost(root: HTMLElement, m: LinkedInMarkers, now = new Date()): PostData {
+export function readPost(root: HTMLElement, m: LinkedInMarkers, now = new Date()): ReadPost {
   const lines = contentLines(root, m);
-  const header = findHeader(root, lines, m);
-  const actor = extractActor(root, header, lines, m);
+  const head = readHead(root, m, nameFromMenu(root, m));
+  const actor = extractActor(root, head.header.join(' ') || undefined, lines, m);
   const { text, mentions } = extractText(root, m);
   const id = postId(root, actor.name, text);
   const evidence: Evidence[] = [];
+  const observations = new Set<string>();
+  /** One entry per detector, at its strongest. */
+  const add = (e: Evidence) => {
+    const at = evidence.findIndex((x) => x.detector === e.detector);
+    if (at < 0) evidence.push(e);
+    else if (atLeast(e.strength, (evidence[at] as Evidence).strength)) evidence[at] = e;
+  };
 
-  const sponsoredLine = lines.slice(0, 16).some((l) => m.promoted.test(l));
-  const sponsored = sponsoredLine || hasTextNode(root, m.promoted, 300);
-  if (sponsored)
-    evidence.push({ signal: 'sponsored', detector: sponsoredLine ? 'li.promoted.line' : 'li.promoted.text', strength: 'strong' });
+  // Ads: a label where LinkedIn puts it. A near miss is medium evidence, and with no post age (weak) it still hides.
+  const ads = readAdLabels(head, actor.name, m);
+  for (const detector of ads.strong) add({ signal: 'sponsored', detector, strength: 'strong' });
+  if (ads.near !== undefined && !ads.strong.length) {
+    add({ signal: 'sponsored', detector: 'li.promoted.near', strength: 'medium' });
+    observations.add('li.label.promoted.near');
+  }
+  const slotAge = head.ageSlot !== undefined ? parseAge(head.ageSlot, m, now) : undefined;
+  // With an age slot, its line is the post's age; a headline such as "3D printing" is never read as one.
+  const age = head.ageSlot !== undefined ? slotAge : ageNearTop(root, lines, m, now);
+  if (head.ageSlot !== undefined && !age && !ads.strong.length)
+    add({ signal: 'sponsored', detector: 'li.age-slot.no-age', strength: 'weak' });
+  if (head.ageSlot !== undefined && !slotAge && !ads.slot) observations.add('li.slot.age.unrecognised');
 
-  const kind = header && !m.promoted.test(header) ? classifyHeader(header, m) : null;
-  if (kind === 'suggested') evidence.push({ signal: 'suggested', detector: 'li.header.suggested', strength: 'strong' });
-  if (kind === 'activity') evidence.push({ signal: 'networkActivity', detector: 'li.header.activity', strength: 'strong' });
-  if (kind === 'repost') evidence.push({ signal: 'reshare', detector: 'li.header.repost', strength: 'strong' });
+  // Header lines: why LinkedIn shows the post. One it doesn't recognise is counted, never guessed at.
+  let contextLine: string | undefined;
+  let headerKnown = false;
+  let headerUnknown = false;
+  for (const line of head.header) {
+    const why = readHeaderLine(line, m);
+    if (why || matchLabel(line, m.labels.promoted)) headerKnown = true;
+    else headerUnknown = true;
+    if (!why) continue;
+    contextLine ??= line;
+    if (why.near) observations.add('li.label.suggested.near');
+    add({ signal: HEADER_SIGNAL[why.kind], detector: `li.header.${why.kind}`, strength: why.strength });
+  }
+  if (headerUnknown) observations.add('li.header.unknown');
 
-  const follow = hasFollowButton(root, m);
+  const follow = hasFollowButton(head, m);
   const relationship = follow
     ? 'not-followed'
-    : actor.degree === '1st' || (actor.isCompany && !!actor.url)
+    : actor.degree === '1st' || actor.degree === 'following' || (actor.isCompany && !!actor.url)
       ? 'followed'
       : 'unknown';
-  if (follow) evidence.push({ signal: 'relationship', detector: 'li.follow-button', strength: 'strong' });
+  if (follow) add({ signal: 'relationship', detector: 'li.follow-button', strength: 'strong' });
 
   const group = extractGroup(root, m);
-  if (group && !group.joined) evidence.push({ signal: 'unjoinedGroup', detector: 'li.group.join-button', strength: 'strong' });
+  if (group && !group.joined) add({ signal: 'unjoinedGroup', detector: 'li.group.join-button', strength: 'strong' });
 
-  const age = extractAge(root, lines, m, now);
+  const shows = (signal: Evidence['signal']) => atLeast(signalStrength(evidence, signal), 'medium');
+  const sponsored = shows('sponsored');
+  // Looks like an ad without its label: LinkedIn shows no age on ads, and asks you to follow their author.
+  const adCue = !age && follow && !sponsored;
+  if (adCue) observations.add('li.ad-cue');
+
+  // Which locators found the post's parts: a later one means LinkedIn's markup moved on (ADR 0009 §9, phase B).
+  for (const o of slotObservations(head.found)) observations.add(o);
+  if (!head.found.text && text) observations.add('li.slot.text.structure');
+
   const sharedLink = extractSharedLink(root);
   const found = actor.name.length > 0;
-  return {
+  const post: PostData = {
     id,
     platform: 'linkedin',
     ...(permalinkFor(id, actor.url) ? { permalink: permalinkFor(id, actor.url) } : {}),
@@ -363,14 +442,14 @@ export function extractPost(root: HTMLElement, m: LinkedInMarkers, now = new Dat
       relationship,
     },
     ...(group ? { group } : {}),
-    ...(header && !m.promoted.test(header) ? { contextLine: header } : {}),
+    ...(contextLine ? { contextLine } : {}),
     signals: {
       ...NO_SIGNALS,
       sponsored,
-      suggested: kind === 'suggested',
-      networkActivity: kind === 'activity',
-      reshare: kind === 'repost',
-      unjoinedGroup: !!group && !group.joined,
+      suggested: shows('suggested'),
+      networkActivity: shows('networkActivity'),
+      reshare: shows('reshare'),
+      unjoinedGroup: shows('unjoinedGroup'),
     },
     evidence,
     text,
@@ -379,6 +458,19 @@ export function extractPost(root: HTMLElement, m: LinkedInMarkers, now = new Dat
     media: extractMedia(root),
     ...(sharedLink ? { sharedLink } : {}),
     ...(age ? { age } : {}),
-    quality: { authorFound: found, textFound: text.length > 0 },
+    quality: {
+      authorFound: found,
+      textFound: text.length > 0,
+      ...(ads.near !== undefined && !ads.strong.length ? { adNearMiss: cyrb53(ads.near) } : {}),
+      ...(adCue ? { adCue } : {}),
+      ...(headerKnown ? { headerKnown } : {}),
+      ...(headerUnknown ? { headerUnknown } : {}),
+    },
   };
+  return { post, observations: [...observations] };
+}
+
+/** Read one LinkedIn post (`readPost` without what was noticed). Read-only. */
+export function extractPost(root: HTMLElement, m: LinkedInMarkers, now = new Date()): PostData {
+  return readPost(root, m, now).post;
 }

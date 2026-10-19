@@ -7,13 +7,45 @@
 
 let seq = 0;
 
+/**
+ * Facebook's top bar when signed in: the Home tab (marked current on the feed) and links to the app's sections, then
+ * the account controls. `current: null` is any other page.
+ */
+export function fbBanner(current: 'home' | null = 'home'): string {
+  return `<div role="banner"><div><a aria-label="Facebook" href="/" role="link"><svg></svg></a><input type="search" aria-label="Search Facebook"></div>
+<div role="navigation" aria-label="Facebook"><ul>
+<li><a aria-label="Home" href="/" role="link"${current === 'home' ? ' aria-current="page"' : ''}><svg></svg></a></li>
+<li><a aria-label="Video" href="/watch/?ref=tab" role="link"><svg></svg></a></li>
+<li><a aria-label="Marketplace" href="/marketplace/?ref=app_tab" role="link"><svg></svg></a></li>
+<li><a aria-label="Groups" href="/groups/feed/" role="link"><svg></svg></a></li>
+</ul></div>
+<div role="navigation" aria-label="Account controls and settings"><div aria-label="Your profile" role="button" tabindex="0"><svg></svg></div></div></div>`;
+}
+
+/**
+ * Facebook while signed out: the login page, which also links to Marketplace and Groups (in its footer, not in a
+ * navigation landmark). Its cookie wall and checkpoints are the same kind of page: no feed, and no reason to report.
+ */
+export function fbLoggedOut(): string {
+  return `<div><div><h2>Connect with friends and the world around you on Facebook.</h2></div>
+<div><form action="/login/?privacy_mutation_token=x" method="post"><input type="text" name="email" placeholder="Email or phone number"><input type="password" name="pass" placeholder="Password"><button name="login" type="submit">Log in</button></form>
+<a href="/recover/initiate/">Forgot password?</a><a href="/r.php" role="button">Create new account</a></div></div>
+<footer><ul><li><a href="/marketplace/">Marketplace</a></li><li><a href="/watch/">Video</a></li><li><a href="/groups/explore/">Groups</a></li></ul></footer>`;
+}
+
+/** A security checkpoint: a logo in a banner and a form, no navigation and no feed. */
+export function fbCheckpoint(): string {
+  return `<div role="banner"><a aria-label="Facebook" href="/" role="link"><svg></svg></a></div>
+<div role="main"><h2>Confirm it's you</h2><form action="/checkpoint/?next" method="post"><button type="submit">Continue</button></form></div>`;
+}
+
 const RAIL_AND_LABELS = `<div role="complementary"><div><h3>Sponsored</h3><div><a href="https://l.facebook.com/l.php?u=https%3A%2F%2Fshop.example%2F">Ad</a></div></div><div><h3>Contacts</h3></div></div>
 <div hidden><span id="lbl-sponsored"><span>Spon</span><span data-ua-hidden>q7z</span><span>sored</span></span>
 <span id="lbl-ad">Ad</span><span id="lbl-time">6 hours ago</span>
 <svg><defs><text id="svg-sponsored">Sponsored</text></defs></svg></div>`;
 
 export function fbFeed(...items: string[]): string {
-  return `<div role="banner"></div>
+  return `${fbBanner()}
 <div role="main"><div><div role="feed">${items.join('\n')}</div></div></div>
 ${RAIL_AND_LABELS}`;
 }
@@ -24,7 +56,7 @@ ${RAIL_AND_LABELS}`;
  * from the viewport are emptied or left as virtualized placeholders until they scroll back.
  */
 export function fbFeed2026(...items: string[]): string {
-  return `<div role="banner"></div>
+  return `${fbBanner()}
 <div role="main"><div><div>
   <div><h3>Create a post</h3><div><div role="button"><span>What's on your mind?</span></div></div></div>
   <div><h3>Stories</h3><div><a href="https://www.facebook.com/stories/123/"><span>Story</span></a></div></div>

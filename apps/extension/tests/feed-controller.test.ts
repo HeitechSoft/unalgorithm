@@ -1,6 +1,6 @@
 import { defaultDevice, defaultSettings, EMPTY_LEARNED } from '@unalgorithm/core';
 import { facebookAdapter, linkedinAdapter } from '@unalgorithm/platforms';
-import type { Classification, PostKey } from '@unalgorithm/protocol';
+import { type Classification, type PostKey, REPORT_ID_PATTERN, ReportDetectionSchema } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
@@ -171,6 +171,66 @@ describe('FeedController on LinkedIn', () => {
     expect(sent.map((i) => i.key)).toEqual(['li:ck:EEEkeyFirstDegree5']);
     // Nothing that identifies the author leaves the content script.
     expect(JSON.stringify(sent)).not.toContain('Morgan Ellis');
+    c.stop();
+  });
+
+  it('test_wrong_call_opens_a_report_about_that_post', async () => {
+    const b = bridge();
+    const c = new FeedController(linkedinAdapter, b, mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    const ad = c.mounted().find((e) => e.id === 'li:ck:BBBkeyPromoted0002');
+    ad?.handlers?.onWhyAction('report');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.report).toHaveBeenCalledWith({ kind: 'wrong-call', from: 'why', key: 'li:ck:BBBkeyPromoted0002' });
+    const summary = c.postReportSummary('li:ck:BBBkeyPromoted0002');
+    expect(summary).toMatchObject({ reason: 'sponsored', source: 'rule' });
+    // What the report says about the post is codes only: no name, text or key from the card.
+    expect(JSON.stringify(summary)).not.toMatch(/BBBkey|Promoted0002|linkedin\.com/);
+    c.stop();
+  });
+
+  it('test_diagnostics_fit_the_report_wire_and_count_each_post_once', async () => {
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    const first = c.diagnostics();
+    // The page changes and every post is read again: the counts stay per post.
+    for (const card of document.querySelectorAll('[componentkey]')) card.append(document.createElement('span'));
+    await vi.advanceTimersByTimeAsync(2000);
+    const d = c.diagnostics();
+    expect(d.detectors).toStrictEqual(first.detectors);
+    expect(Object.keys(d.counts)).toEqual([
+      'items',
+      'posts',
+      'modules',
+      'pending',
+      'offscreen',
+      'hidden',
+      'classified',
+      'unknownAuthor',
+    ]);
+    expect(d.counts.items).toBe(5);
+    for (const [id, n] of Object.entries(d.detectors)) {
+      expect(id).toMatch(REPORT_ID_PATTERN);
+      expect(n).toBeLessThanOrEqual(d.counts.posts);
+    }
+    expect(Object.values(d.hiddenBy).reduce((a, n) => a + n, 0)).toBe(d.counts.hidden);
+    expect(d.errors).toStrictEqual({});
+    expect(ReportDetectionSchema.safeParse(d).success).toBe(true);
+    c.stop();
+  });
+
+  it('test_a_healthy_feed_raises_no_notice', async () => {
+    const b = bridge();
+    const c = new FeedController(linkedinAdapter, b, mountUi);
+    c.start(runtime());
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(c.getHealth()).toMatchObject({ status: 'ok', issues: [] });
+    expect(c.notice()).toBeNull();
+    const pushed = vi.mocked(b.pushTabState).mock.lastCall?.[0];
+    expect(pushed).toMatchObject({ onFeed: true, routeNew: false, health: { status: 'ok' } });
+    expect(pushed?.notice).toBeUndefined();
     c.stop();
   });
 

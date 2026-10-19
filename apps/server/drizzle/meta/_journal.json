@@ -120,6 +120,13 @@
       "when": 1792256915981,
       "tag": "0016_nappy_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792408071269,
+      "tag": "0017_first_stature",
+      "breakpoints": true
     }
   ]
 }

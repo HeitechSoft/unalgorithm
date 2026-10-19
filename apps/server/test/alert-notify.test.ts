@@ -518,6 +518,8 @@ describe('command', { timeout: PGLITE_TIMEOUT }, () => {
       expect.stringMatching(/^database-size-high: ok \(\d+ MB, alert above 10\.0 GB\)$/),
       'spend-breaker: ok',
       'backups: not watched (BACKUP_STATUS_DIR is unset)',
+      // The problem report alerts are checked only with REPORTS=on (reports-alerts.test.ts).
+      'reports: off (REPORTS is off)',
       'errors-high: not checked here (the server process counts its own errors)',
     ]);
 
@@ -545,6 +547,7 @@ describe('command', { timeout: PGLITE_TIMEOUT }, () => {
       expect.stringMatching(/^database-size-high: ok /),
       'spend-breaker: ok',
       'backup-local: FIRING critical (last run ok, last success 30 hours ago)',
+      'reports: off (REPORTS is off)',
       'errors-high: not checked here (the server process counts its own errors)',
     ]);
     expect(await handle.db.select().from(opsAlerts)).toEqual([]);

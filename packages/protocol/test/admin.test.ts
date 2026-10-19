@@ -6,6 +6,7 @@ import {
   ADMIN_INVITES_PATH,
   ADMIN_OVERVIEW_PATH,
   ADMIN_PAGE_PATH,
+  ADMIN_REPORTS_PAGE_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_SOURCES_PAGE_PATH,
   ADMIN_USER_ACCESS_ROUTE,
@@ -14,17 +15,31 @@ import {
   ADMIN_USERS_PATH,
   AdminOkSchema,
   AdminOverviewSchema,
+  AdminReportDetailSchema,
+  AdminReportListSchema,
+  AdminReportRowSchema,
+  AdminReportsListQuerySchema,
+  AdminReportsSummarySchema,
   AdminUserSchema,
   AdminUsersSchema,
+  adminReportPath,
   adminUserActionPath,
   BackupStatusSchema,
+  DeleteReportsRequestSchema,
+  ForgetContactRequestSchema,
+  HandleReportsRequestSchema,
   InviteRequestSchema,
   InviteSchema,
   OpenAlertSchema,
   OpsStatusSchema,
+  parseReportGroupKey,
+  REPORT_GROUP_DAYS,
+  ReportGroupSchema,
+  reportGroupKey,
   SETUP_PAGE_PATH,
   SetAccessRequestSchema,
   SetCapRequestSchema,
+  SetFloorRequestSchema,
   SetRoleRequestSchema,
   SetupRequestSchema,
   UsageDaySchema,
@@ -88,6 +103,7 @@ describe('admin paths', () => {
       SETUP_PAGE_PATH,
       ADMIN_PAGE_PATH,
       ADMIN_SOURCES_PAGE_PATH,
+      ADMIN_REPORTS_PAGE_PATH,
       ADMIN_SETUP_PATH,
       ADMIN_OVERVIEW_PATH,
       ADMIN_USERS_PATH,
@@ -100,6 +116,7 @@ describe('admin paths', () => {
       SETUP_PAGE_PATH: '/setup',
       ADMIN_PAGE_PATH: '/admin',
       ADMIN_SOURCES_PAGE_PATH: '/admin/sources',
+      ADMIN_REPORTS_PAGE_PATH: '/admin/reports',
       ADMIN_SETUP_PATH: '/v1/admin/setup',
       ADMIN_OVERVIEW_PATH: '/v1/admin/overview',
       ADMIN_USERS_PATH: '/v1/admin/users',
@@ -168,6 +185,16 @@ describe('admin schemas', () => {
     expect(UsageDaySchema.safeParse(day('2026-10-14T00:00:00Z')).success).toBe(false);
   });
 
+  it('test_admin_overview_reports_optional', () => {
+    // ADR 0009 §7: absent on servers older than reports, so the admin page keeps working against them.
+    expect(AdminOverviewSchema.parse(overview()).reports).toBeUndefined();
+    const reports = { enabled: true, open: 7, last24h: 3 };
+    expect(AdminOverviewSchema.parse(overview({ reports })).reports).toEqual(reports);
+    expect(AdminOverviewSchema.safeParse(overview({ reports: { ...reports, enabled: false, open: 0 } })).success).toBe(true);
+    expect(AdminOverviewSchema.safeParse(overview({ reports: { ...reports, open: -1 } })).success).toBe(false);
+    expect(AdminOverviewSchema.safeParse(overview({ reports: { enabled: true } })).success).toBe(false);
+  });
+
   it('test_backup_status_schema_kinds_and_errors', () => {
     expect(BackupStatusSchema.safeParse(backup({ kind: 'local' })).success).toBe(true);
     expect(BackupStatusSchema.safeParse(backup({ kind: 'offsite' })).success).toBe(true);
@@ -209,6 +236,143 @@ describe('admin schemas', () => {
   });
 });
 
+describe('problem report admin (ADR 0009 §7)', () => {
+  const REPORT_ID = '0b6f7d3c-5a2e-4f1b-9c8d-7e6a5b4c3d2e';
+  const row = {
+    id: REPORT_ID,
+    ref: '7KQ3-M2PA',
+    receivedAt: '2026-10-18T12:00:00Z',
+    kind: 'detection',
+    from: 'notice',
+    channel: 'chrome-store',
+    listed: true,
+    extension: '0.4.1',
+    browser: 'chrome',
+    browserMajor: 141,
+    platform: 'linkedin',
+    adapter: 'linkedin@2026.11.0',
+    topic: 'feed-not-started',
+    choices: [],
+    firstFromNetwork: true,
+    handledAt: null,
+    resolution: null,
+    hasMessage: false,
+    hasContact: false,
+  };
+  const group = {
+    key: 'linkedin|linkedin@2026.11.0|detection|feed-not-started',
+    platform: 'linkedin',
+    adapter: 'linkedin@2026.11.0',
+    kind: 'detection',
+    topic: 'feed-not-started',
+    total: 7,
+    open: 7,
+    networks: 5,
+    lastAt: AT,
+    perDay: Array.from({ length: REPORT_GROUP_DAYS }, (_, i) => (i === 13 ? 7 : 0)),
+  };
+
+  it('test_report_group_keys_round_trip', () => {
+    const parts = { platform: 'linkedin', adapter: 'linkedin@2026.11.0', kind: 'detection', topic: 'feed-not-started' } as const;
+    expect(reportGroupKey(parts)).toBe(group.key);
+    expect(parseReportGroupKey(group.key)).toEqual(parts);
+    // Corrections and other reports have no platform; a report may have no topic.
+    const correction = { platform: null, adapter: null, kind: 'correction', topic: 'factcheck' } as const;
+    expect(reportGroupKey(correction)).toBe('||correction|factcheck');
+    expect(parseReportGroupKey('||correction|factcheck')).toEqual(correction);
+    expect(parseReportGroupKey('facebook|facebook@2026.10.3|other|')).toEqual({
+      platform: 'facebook',
+      adapter: 'facebook@2026.10.3',
+      kind: 'other',
+      topic: null,
+    });
+    for (const bad of ['', 'linkedin|x|detection|a', 'linkedin||bug|a', 'linkedin||detection|Jane Doe', 'a|b|c|d|e']) {
+      expect(parseReportGroupKey(bad), bad).toBeNull();
+    }
+  });
+
+  it('test_admin_report_schemas', () => {
+    const summary = {
+      enabled: true,
+      today: 12,
+      dailyMax: 1000,
+      unlisted7d: 1,
+      days: [{ day: '2026-10-18', linkedin: 9, facebook: 2, other: 1 }],
+      groups: [group],
+      floors: [{ platform: 'linkedin', adapter: 'linkedin@2026.10.2', setAt: AT }],
+    };
+    expect(AdminReportsSummarySchema.parse(summary)).toEqual(summary);
+    expect(ReportGroupSchema.safeParse({ ...group, perDay: [1, 2] }).success).toBe(false);
+    expect(ReportGroupSchema.safeParse({ ...group, key: 'linkedin|Jane|detection|x' }).success).toBe(false);
+    expect(AdminReportRowSchema.parse(row)).toEqual(row);
+    expect(AdminReportRowSchema.safeParse({ ...row, ref: '7kq3-m2pa' }).success).toBe(false);
+    expect(AdminReportRowSchema.safeParse({ ...row, resolution: 'wontfix' }).success).toBe(false);
+    expect(AdminReportListSchema.safeParse({ rows: [row], nextBefore: null }).success).toBe(true);
+    expect(AdminReportListSchema.safeParse({ rows: Array.from({ length: 51 }, () => row), nextBefore: null }).success).toBe(
+      false,
+    );
+    const detail = {
+      ...row,
+      kind: 'correction',
+      from: 'sidepanel',
+      platform: null,
+      adapter: null,
+      topic: 'factcheck',
+      choices: ['verdict-wrong'],
+      hasMessage: true,
+      hasContact: true,
+      details: { correction: { feature: 'factcheck', promptVersion: 3, via: 'cloud' } },
+      unknownCodes: 0,
+      message: 'Wrong year.',
+      contact: 'ann@example.org',
+      lines: ['unAlgorithm 0.4.1 from the Chrome Web Store'],
+      handledBy: null,
+    };
+    expect(AdminReportDetailSchema.parse(detail)).toEqual(detail);
+    // The stored details never repeat the message or the contact (they are their own columns).
+    const withWords = { ...detail, details: { correction: { ...detail.details.correction, message: 'x', contact: 'a@b.co' } } };
+    expect(AdminReportDetailSchema.parse(withWords).details).toEqual(detail.details);
+    expect(AdminReportDetailSchema.safeParse({ ...detail, contact: 'not an address' }).success).toBe(false);
+    expect(AdminReportsListQuerySchema.parse({})).toEqual({ status: 'open' });
+    expect(AdminReportsListQuerySchema.safeParse({ ref: '7KQ3-M2PA', status: 'all' }).success).toBe(true);
+    expect(AdminReportsListQuerySchema.safeParse({ status: 'closed' }).success).toBe(false);
+  });
+
+  it('test_admin_report_requests', () => {
+    expect(HandleReportsRequestSchema.safeParse({ ids: [REPORT_ID], handled: true, resolution: 'fixed' }).success).toBe(true);
+    expect(HandleReportsRequestSchema.safeParse({ group: group.key, handled: true, resolution: 'corrected' }).success).toBe(true);
+    expect(HandleReportsRequestSchema.safeParse({ ids: [REPORT_ID], handled: false }).success).toBe(true);
+    for (const bad of [
+      { ids: [REPORT_ID], group: group.key, handled: true, resolution: 'fixed' },
+      { handled: true, resolution: 'fixed' },
+      { ids: [REPORT_ID], handled: true },
+      { ids: [REPORT_ID], handled: false, resolution: 'fixed' },
+      { ids: [], handled: false },
+      { ids: ['1'], handled: false },
+      { ids: Array.from({ length: 501 }, () => REPORT_ID), handled: false },
+      { ids: [REPORT_ID], handled: true, resolution: 'wontfix' },
+    ]) {
+      expect(HandleReportsRequestSchema.safeParse(bad).success, JSON.stringify(bad).slice(0, 80)).toBe(false);
+    }
+    expect(SetFloorRequestSchema.safeParse({ platform: 'linkedin', adapter: 'linkedin@2026.11.0' }).success).toBe(true);
+    expect(SetFloorRequestSchema.safeParse({ platform: 'linkedin', adapter: null }).success).toBe(true);
+    expect(SetFloorRequestSchema.safeParse({ platform: 'linkedin', adapter: 'facebook@2026.11.0' }).success).toBe(false);
+    expect(SetFloorRequestSchema.safeParse({ platform: 'linkedin', adapter: '2026.11.0' }).success).toBe(false);
+    expect(ForgetContactRequestSchema.safeParse({ id: REPORT_ID }).success).toBe(true);
+    expect(ForgetContactRequestSchema.safeParse({ id: 'x' }).success).toBe(false);
+    expect(DeleteReportsRequestSchema.safeParse({ ids: Array.from({ length: 100 }, () => REPORT_ID) }).success).toBe(true);
+    expect(DeleteReportsRequestSchema.safeParse({ ids: Array.from({ length: 101 }, () => REPORT_ID) }).success).toBe(false);
+    expect(DeleteReportsRequestSchema.safeParse({ ids: [] }).success).toBe(false);
+  });
+
+  it('test_admin_report_path_rejects_bad_ids', () => {
+    expect(adminReportPath(REPORT_ID)).toBe(`/v1/admin/reports/${REPORT_ID}`);
+    for (const bad of ['', 'summary', '../users', `${REPORT_ID}/x`]) {
+      expect(() => adminReportPath(bad), bad).toThrow(new TypeError('Not a report id.'));
+    }
+  });
+});
+
 describe('content-free contract', () => {
   it('test_admin_schemas_field_sets', () => {
     const fields = Object.fromEntries(
@@ -245,6 +409,7 @@ describe('content-free contract', () => {
           "breakerTripped",
           "defaultDailyPostCap",
           "ops",
+          "reports",
         ],
         "AdminUserSchema": [
           "id",

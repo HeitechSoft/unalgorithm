@@ -63,7 +63,8 @@ For posts in your feed, with your own Anthropic or OpenAI key, or your own AI se
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
-• Nothing leaves your browser unless you turn on AI. Then only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Nothing leaves your browser unless you turn on AI or send a report. With AI on, only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Report a problem sends a report you review to HeitechSoft, unAlgorithm's maker. It holds versions, counts and your answers, never what posts say or who wrote them, and goes only when you click Send report.
 • Firefox asks for your consent before post text goes to the AI or web search service you chose, even one on your computer.
 • Your API keys stay in this browser.
 • unAlgorithm only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses for you.
@@ -90,15 +91,17 @@ notes below. Every permission in `manifestFor('production', 'firefox')`:
 
 **storage**: the person's settings, interests, exceptions, feedback, daily counts and cached AI results, in the
 browser; the popup's and sidebar's lists in session storage while a feed tab is open. An API key is stored only in
-the add-on's own storage, which pages can't read.
+the add-on's own storage, which pages can't read. A problem report the person opens waits in session storage, for an
+hour at most, until they send it or close its page, and the times of the reports sent in the last day are kept to
+limit how many go out.
 
 **declarativeNetRequestWithHostAccess**: required, because Firefox can't make it optional; it shows no prompt. Used
 only after the person clicks Fix it for me because their local AI server (such as Ollama) refuses the add-on: one rule
 removes the Origin header from the add-on's own requests to that one server, a host the person already granted.
 
 **Host permissions: `https://www.linkedin.com/*` and `https://www.facebook.com/*`**: the content scripts read the
-feed to fold posts away and add the Why?, Show and For you controls. They read only what is on the screen and never
-click, scroll, post, follow or browse.
+feed to fold posts away and add the Why?, Show and For you controls, and check that detection still works there. They
+read only what is on the screen and never click, scroll, post, follow or browse.
 
 **Optional host permissions: `https://*/*` and `http://*/*`**: not granted at install. Asked for one origin at a time,
 from the person's click, only for a service they chose: their AI provider's API, their own AI server (http for local
@@ -113,31 +116,46 @@ The Firefox build has no `scripting` permission (Firefox starts the content scri
 AMO and Firefox read these from `browser_specific_settings.gecko.data_collection_permissions`; Firefox shows them in
 its add-ons page. The manifest declares only the types its build uses. The add-on asks for an optional type only from a
 click, in Firefox's own prompt, and asks for a service on this computer (such as Ollama on `localhost`) as for any
-other: a local server is outside the browser and can pass on what it receives.
+other: a local server is outside the browser and can pass on what it receives. It never asks for
+`technicalAndInteraction`.
 
 | Key | Type | When and what |
 |---|---|---|
 | `required` | `none` | Rules alone send nothing anywhere |
 | `optional` | `websiteContent` | Asked, with `personalCommunications`, in the click that turns on any AI source but on-device AI (which Firefox doesn't have): the person's own key, or an AI server on this computer, their network or the internet; and in the click that saves a web search key. Same prompt as that service's host permission. The two cover what goes there: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the person turns that off), the kind of media, a shared link's domain and title, and, for Fact-check and UnEcho Chamber, one post, or the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber), and the claims or the story's search words to Brave or Tavily |
-| `optional` | `personalCommunications` | Asked with `websiteContent`, in the same clicks: the posts are other people's social media posts, which Mozilla lists under personal communications |
+| `optional` | `personalCommunications` | Asked with `websiteContent`, in the same clicks: the posts are other people's social media posts, which Mozilla lists under personal communications. The same type covers the words a person writes in a correction request to HeitechSoft (below), which they can only make about a result this type already let them get |
+| `optional` | `technicalAndInteraction` | Never asked for, and nothing else depends on it, as Mozilla's add-on policies require. Firefox's install prompt offers it, on unless the person turns it off, and its add-ons page changes it at any time. It decides whether *Send report* posts a problem report (versions, the browser, counts and codes: Mozilla lists crash and error reports under this type) or the report page offers *Email this report* instead, and, with the server card, whether signing in sends the device name, such as "Firefox on Linux" (from Firefox's name for itself and the operating system). A sign-in without it leaves the device unnamed on the server ("Unnamed device" in the devices list), a change applies from the next sign-in, and everything else works the same |
 
 Consent withdrawn in Firefox's add-ons page stops that sending, like a removed permission, and the add-on offers to ask
-again. In this build none of it goes to HeitechSoft. The download of unAlgorithm Cloud's public source list (below)
-carries no user data and needs no type.
+again (for `technicalAndInteraction`, it only offers email). What goes to an AI or web search service never goes to
+HeitechSoft. The download of unAlgorithm Cloud's public source list (below) carries no user data and needs no type.
 
-**No data choice at install.** Firefox's install prompt offers an optional data type only when the manifest declares
-*technical and interaction data*, which Firefox shows as a choice that is on unless the person turns it off. This build
-declares neither that type nor any other it doesn't use, so the prompt has no data choice, and nothing is granted until
-the person turns on an AI source or saves a web search key.
+**One data choice at install.** Firefox's install prompt offers *technical and interaction data*, the one optional type
+it shows as a choice, on unless the person turns it off. Nothing else is granted until the person turns on an AI source
+or saves a web search key.
 
-**With the server card** (`UA_CLOUD=1`), the manifest declares three more optional types, and the add-on uses them as
+**Problem reports.** *Report a problem* (in the popup, under *Why? → Wrong call?*, in Settings → About, and *Let us
+know* on a note that detection stopped working) opens an extension page that shows every field of the report. Only its
+*Send report* click posts it, once, to unAlgorithm Cloud (`https://cloud.unalgorithm.app/v1/reports`), whatever AI the
+person uses, with no account or cookie and no identifier in the report: versions, the browser, the page's route class
+(and, for a feed at a new address, its one word), counts and codes, and the person's answers. Firefox's
+`moz-extension://` Origin header, random per install, is checked by the server and never stored or logged. Never post
+text, names, links or ids. It goes only while `technicalAndInteraction` is granted; otherwise the page offers *Email
+this report*, a `mailto:` the person's own email program sends. A correction of a Fact-check or UnEcho Chamber result
+adds the person's own words (`personalCommunications`) and an optional reply email, whose field shows only while
+`personallyIdentifyingInfo` is granted (in builds with the server card, signing in grants it); without the words' type,
+the page offers email too. A report never asks for a type, so sending one changes nothing that AI, sync or sign-in
+check. The route class and site are the subject of the report, not browsing history, so no `browsingActivity` is
+declared. The report also carries the add-on id, so the Cloud can tell its own add-on from a fork's; the Cloud doesn't
+keep it.
+
+**With the server card** (`UA_CLOUD=1`), the manifest declares two more optional types, and the add-on uses them as
 follows (the store answers for that build are drafted in HeitechSoft's private repository):
 
 | Type | When and what |
 |---|---|
 | `personallyIdentifyingInfo` | Asked, with `websiteContent`, `personalCommunications` and `authenticationInfo`, in the click that signs in to an unAlgorithm server (one on this computer included), and again from *Turn on*, *Turn on sync* or *Allow* if it was withdrawn: with sync, the names and profile identifiers of the people the person chose to always show or hide, in the synced settings |
 | `authenticationInfo` | Asked in the same clicks: the account the sign-in registers with that server, and this device's sign-in to it, whose tokens go only back to that server |
-| `technicalAndInteraction` | Never asked for, and nothing depends on it, as Mozilla's add-on policies require. Firefox's install prompt offers it, on unless the person turns it off, and its add-ons page changes it at any time. It decides one thing: whether signing in sends the device name, such as "Firefox on Linux" (from Firefox's name for itself and the operating system). A sign-in without it leaves the device unnamed on the server ("Unnamed device" in the devices list), a change applies from the next sign-in, and everything works the same |
 
 The server, with its AI labels, Fact-check, UnEcho Chamber, settings sync, credit balance and device list, is used only
 while `websiteContent`, `personalCommunications`, `personallyIdentifyingInfo` and `authenticationInfo` are all granted.
@@ -147,15 +165,6 @@ cookie, token or user data) need no type and don't wait for consent: the server'
 `/.well-known/unalgorithm.json`, read whenever the add-on checks what a server offers, starting when the person chooses
 one; and, with UnEcho Chamber on, the download of unAlgorithm Cloud's public source list (below), a request to the Cloud
 whether or not the person signed in to it.
-
-**Report a problem is not data collection.** The link (in the popup, and under *Why? → Wrong call?*) opens a new GitHub
-issue form in a new tab, with diagnostics in its address: the versions, the browser's name and major version, the page's
-language, whether detection looked healthy, counts and detector names, and the date. No post text, names, ids or links.
-The add-on itself sends and keeps nothing: the browser opens the github.com page the person asked for, as for any link,
-and GitHub handles that page load under its own terms. The person sees every diagnostic in the form, and can change or
-delete it, before anything is filed; it is filed only when they submit it themselves, under their own GitHub account.
-Until then nothing reaches HeitechSoft, and what HeitechSoft then reads is a public issue the person chose to post. So no
-data type covers it.
 
 ### Remote code
 
@@ -181,9 +190,9 @@ To try it: open https://www.linkedin.com/feed/ or https://www.facebook.com/ sign
 
 AI is optional (Settings → AI): the person's own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq) or an AI server they run. The click that turns on a source asks for that site's host permission and, in the same prompt, consent to share website content and personal communications (the feed posts are other people's social media posts); nothing is sent before. A local server such as Ollama on localhost is asked for in the same way, since it is outside the browser. "Fix it for me" uses declarativeNetRequestWithHostAccess to remove the Origin header from the add-on's own requests to that one local server.
 
-Data collection: required is none, and the only optional types are website content and personal communications, asked for as above and when a web search key is saved. The manifest declares no other type, so Firefox offers no data choice at install.
+Data collection: required is none. The optional types are website content and personal communications, asked for as above and when a web search key is saved, and technical and interaction data, which Firefox offers at install and the add-on never asks for.
 
-Report a problem (popup, and Why? → Wrong call?) opens a prefilled GitHub issue form in a new tab, with counts and versions in its address and no post text, names, ids or links. Nothing is filed until the person submits the issue on GitHub themselves, and nothing reaches us before that, so we don't count it as data collection.
+Report a problem opens an extension page that shows every field of the report; only the Send report click posts it, to cloud.unalgorithm.app/v1/reports, with no account, cookie or identifier in the report (the server checks the moz-extension Origin, which is random per install, and never stores or logs it). It is technical data and is sent only while technical and interaction data is allowed; otherwise the page offers to email it. The add-on never requests that type, and nothing else depends on it. A correction of a Fact-check or UnEcho Chamber result also carries the person's own words (personal communications, which the result already needed) and, if they want a reply, an email address; the report never asks for those types either.
 
 Source code: the uploaded sources zip. docs/amo-build.md in it has the build: Node.js 22, pnpm 10.34.6 through corepack, "pnpm install --frozen-lockfile", then "pnpm --filter @unalgorithm/extension exec wxt build -b firefox". The output, apps/extension/.output/firefox-mv3, is identical to the uploaded zip.
 
@@ -193,7 +202,7 @@ The add-on loads no remote code. With UnEcho Chamber on, it downloads unAlgorith
 ```
 
 With the Cloud card, the notes also explain `identity` (it opens the chosen server's sign-in page with
-`launchWebAuthFlow` and receives a one-time code back), `alarms` (settings sync on a short timer) and the three data
+`launchWebAuthFlow` and receives a one-time code back), `alarms` (settings sync on a short timer) and the two data
 types the build adds ([above](#data-collection)), and give the reviewer account
 ([release.md](release.md#before-a-store-build-carries-the-cloud-card), item 10). That text is drafted with the store
 answers in HeitechSoft's private repository.

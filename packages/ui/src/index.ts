@@ -8,6 +8,7 @@ export * from './components/illustrations.tsx';
 export * from './components/lists.tsx';
 export * from './components/perspectives.tsx';
 export * from './feed/FeedItem.tsx';
+export * from './feed/Notice.tsx';
 export * from './feed/Toasts.tsx';
 export * from './feed/why.ts';
 export * from './icons.ts';

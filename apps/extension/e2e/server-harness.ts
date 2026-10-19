@@ -8,6 +8,7 @@
  */
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +44,13 @@ const POLL_MS = 200;
  */
 export const E2E_EXTENSION_IDS = [DEV_CHROMIUM_ID, FIREFOX_DEV_ADDON_ID].join(',');
 
+/**
+ * Where e2e builds send problem reports: `wxt.config.ts`'s `E2E_REPORTS_URL` names this port, since a build can't
+ * know a free one (tests/manifest.test.ts keeps the two equal). The report specs start their server here
+ * (`env: { PORT: String(E2E_REPORTS_PORT) }`); every other spec takes a free port.
+ */
+export const E2E_REPORTS_PORT = 47911;
+
 /** Variables a child process needs from this one to run at all; nothing of the developer's own server settings. */
 const PLATFORM_ENV = ['PATH', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE'];
 
@@ -62,7 +70,8 @@ export interface LocalServer {
 }
 
 /**
- * Starts the server on a free port and a new database, waits for `/health`, then opens the eval gate with
+ * Starts the server on a free port (or `env.PORT`) and a new database, with problem reports on (`REPORTS=on`, ADR
+ * 0009), waits for `/health`, then opens the eval gate with
  * `route-eval`, and with `FACTCHECK=on` then `route-eval factcheck`. `ROUTE_EVAL_MIN_AGREEMENT=0` is an operator's
  * explicit choice that the server and the CLI both read: the mock's default verdicts agree at most 0.4 with the eval set, so with the default minimum every classify would
  * answer 503. The gate itself still runs (`recordEval`, then `resolveRoute` on every request).
@@ -79,7 +88,7 @@ export async function startLocalServer(opts: {
   let child: ChildProcess | undefined;
   let output = '';
   try {
-    const port = await freePort();
+    const port = opts.env?.PORT ? Number(opts.env.PORT) : await freePort();
     const url = `http://127.0.0.1:${port}`;
     const env: Record<string, string> = {
       PUBLIC_URL: url,
@@ -96,6 +105,8 @@ export async function startLocalServer(opts: {
       AI_DATA_POLICY: 'self-hosted',
       SIGNUP_ALLOWLIST: 'tester@example.com',
       EXTENSION_IDS: E2E_EXTENSION_IDS,
+      // POST /v1/reports is mounted only with it; the e2e builds send reports here (E2E_REPORTS_PORT).
+      REPORTS: 'on',
       ROUTE_EVAL_MIN_AGREEMENT: '0',
       WEB_DIST,
       ...opts.env,
@@ -139,6 +150,42 @@ export async function startLocalServer(opts: {
 /** Whether the Postgres server has a database of this name (read through `TEST_DATABASE_URL`). */
 export function databaseExists(name: string): Promise<boolean> {
   return databaseExistsOn(name, ADMIN_DATABASE_URL);
+}
+
+/** A stored problem report, as the server's `problem_reports` table holds it. */
+export interface ReportRow {
+  id: string;
+  ref: string;
+  kind: string;
+  from: string | null;
+  channel: string;
+  listed: boolean;
+  extension: string;
+  browser: string;
+  browser_major: number;
+  platform: string | null;
+  adapter: string | null;
+  topic: string | null;
+  choices: string[];
+  details: Record<string, unknown>;
+  unknown_codes: number;
+  message: string | null;
+  contact: string | null;
+}
+
+/**
+ * Every problem report the run's server stored, oldest first, read straight from its database with the server's own
+ * `pg` (apps/extension has no Postgres client of its own).
+ */
+export async function reportRows(server: LocalServer): Promise<ReportRow[]> {
+  const { Client } = createRequire(resolve(REPO_ROOT, 'apps/server/package.json'))('pg') as typeof import('pg');
+  const client = new Client({ connectionString: server.env.DATABASE_URL });
+  await client.connect();
+  try {
+    return (await client.query<ReportRow>('select * from problem_reports order by received_at, ref')).rows;
+  } finally {
+    await client.end();
+  }
 }
 
 /** Empties Mailpit's mailbox, so the next message is this test's. */

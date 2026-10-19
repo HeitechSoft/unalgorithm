@@ -11,7 +11,17 @@ import {
   type TabState,
   type UsageLedger,
 } from '@unalgorithm/core';
-import { type FactcheckResult, type OfficialList, type PerspectivesResult, type PostKey, uuid } from '@unalgorithm/protocol';
+import {
+  type FactcheckResult,
+  type NoticeKind,
+  type OfficialList,
+  type PerspectivesResult,
+  type PlatformId,
+  type PostKey,
+  type ProblemReport,
+  type ReportCorrection,
+  uuid,
+} from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
 import type { BgError } from './messages.ts';
 
@@ -139,6 +149,44 @@ export interface FactcheckEntry {
 /** A tab's fact-checks and comparisons, newest first (at most 5). Removed when the tab closes. */
 export const factcheckItem = (tabId: number) =>
   storage.defineItem<{ entries: FactcheckEntry[] }>(`session:factcheck:${tabId}`, { fallback: { entries: [] } });
+
+/**
+ * A problem report waiting on its report page (ADR 0009 §2): the draft the page shows, as the background checked it
+ * and with `env` added; the person's answers are never stored. Session storage, which only the extension's own pages
+ * and its background can read; gone after an hour, when its tab closes, when the browser closes, or with *Erase
+ * everything*.
+ */
+export interface StoredReport {
+  /** The report as it will be sent, without the person's answers (`choices` empty, a correction without its words). */
+  drafts: ReportDraft[];
+  /** The tab it was opened from (a feed tab, or Settings), for *Back to LinkedIn* and to tell it a report was sent. */
+  openerTabId?: number;
+  /** The report page's own tab, so closing it forgets the draft. */
+  tabId?: number;
+  /** The feed the opener shows, for *Back to LinkedIn*; absent when it was opened from Settings or the side panel. */
+  site?: PlatformId;
+  /** The in-feed card the report came from, snoozed once it is sent. */
+  notice?: NoticeKind;
+  createdAt: number;
+  state: 'open' | 'sent';
+  /** The server's reference, once sent. */
+  ref?: string;
+}
+
+/** A report minus what only the person adds: their choices, and a correction's words and reply email. */
+export type ReportDraft = Omit<ProblemReport, 'choices' | 'correction'> & {
+  correction?: Omit<ReportCorrection, 'message' | 'contact'>;
+};
+
+export const REPORT_KEY_PREFIX = 'report:';
+export const reportItem = (id: string) =>
+  storage.defineItem<StoredReport | null>(`session:${REPORT_KEY_PREFIX}${id}`, { fallback: null });
+
+/**
+ * When this browser sent problem reports (epoch ms), for the local limits: timestamps only, never sent, pruned after
+ * a day, and erased with *Erase everything*.
+ */
+export const reportLogItem = storage.defineItem<number[]>('local:reportLog', { fallback: [] });
 
 export async function readSettings(): Promise<Settings> {
   return migrateSettings(await settingsItem.getValue());

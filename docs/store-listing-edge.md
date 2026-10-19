@@ -64,7 +64,8 @@ For posts in your feed, with your own Anthropic or OpenAI key, or your own AI se
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
-• Nothing leaves your browser unless you turn on AI. Then only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Nothing leaves your browser unless you turn on AI or send a report. With AI on, only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Report a problem sends a report you review to HeitechSoft, unAlgorithm's maker. It holds versions, counts and your answers, never what posts say or who wrote them, and goes only when you click Send report.
 • Your API keys stay in this browser.
 • unAlgorithm only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses for you.
 
@@ -103,6 +104,8 @@ unAlgorithm Feed folds away ads, suggested posts and other noise on LinkedIn and
 To try it: open https://www.linkedin.com/feed/ or https://www.facebook.com/ signed in with an English-language account. Ads and suggested posts fold into thin lines, each with Why?. The toolbar popup shows the counts, and Open Highlights in the popup opens the side panel.
 
 AI is optional (Settings → AI): the person's own API key (Anthropic, OpenAI, Google Gemini, OpenRouter, Groq), an AI server they run, or Edge's built-in AI where Edge offers it (a preview in Edge Canary and Dev). Each AI service is an optional host permission, asked for one origin at a time from the click that sets it up; nothing is sent before. "Fix it for me" asks for the optional declarativeNetRequestWithHostAccess permission to remove the Origin header from the extension's own requests to the person's local AI server (such as Ollama).
+
+Report a problem (popup, Why? → Wrong call?, Settings → About, and a note in the feed when detection stops working) opens an extension page that shows every field of the report; only the Send report click posts it, to cloud.unalgorithm.app/v1/reports, with no account, cookie or identifier. It holds versions, the browser, counts and the person's answers; a correction of a Fact-check or UnEcho Chamber result adds their own words and, if they want a reply, an email address.
 
 The extension loads no remote code. With UnEcho Chamber on, it downloads unAlgorithm Cloud's public source list (JSON, no cookie or user data) from cloud.unalgorithm.app at most once a day.
 

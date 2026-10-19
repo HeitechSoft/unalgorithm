@@ -39,6 +39,8 @@ import {
   DEVICE_NAME_DATA,
   hasConsent,
   POST_DATA,
+  REPORT_DATA,
+  reportConsent,
   requestConsent,
   sourceConsent,
   withConsent,
@@ -109,8 +111,17 @@ describe('data-collection consent', () => {
     expect(POST_DATA).toEqual(['websiteContent', 'personalCommunications']);
     // A server also gets the people sync carries and the account, with this device's sign-in to it.
     expect(CLOUD_DATA).toEqual(['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo']);
-    // The device name only: Firefox offers it at install, and it is never part of what a source needs.
+    // The device name and problem reports: Firefox offers it at install, and it is never part of what a source needs.
     expect(DEVICE_NAME_DATA).toEqual(['technicalAndInteraction']);
+    expect(REPORT_DATA).toEqual(['technicalAndInteraction']);
+    // A report: technical data; a correction's words, personal communications; its reply email, personal identifiers.
+    expect(reportConsent({})).toEqual(['technicalAndInteraction']);
+    expect(reportConsent({ correction: {} })).toEqual(['technicalAndInteraction', 'personalCommunications']);
+    expect(reportConsent({ correction: { contact: 'ada@example.org' } })).toEqual([
+      'technicalAndInteraction',
+      'personalCommunications',
+      'personallyIdentifyingInfo',
+    ]);
     expect(sourceConsent(CLOUD)).toEqual(CLOUD_DATA);
     expect(sourceConsent(ANTHROPIC)).toEqual(POST_DATA);
     expect(sourceConsent({ kind: 'openai', model: null })).toEqual(POST_DATA);
@@ -132,7 +143,8 @@ describe('data-collection consent', () => {
     for (const types of [POST_DATA, CLOUD_DATA, ...sources.map(sourceConsent)]) {
       expect(types).not.toContain('technicalAndInteraction');
     }
-    // Only the sign-in's device name reads it, and nothing in the extension names the type anywhere else.
+    // Only the sign-in's device name and problem reports read it (ADR 0009 §5), and nothing in the extension names the
+    // type anywhere else: a report never asks for it, it offers email instead.
     const src = join(import.meta.dirname, '../src');
     const files = (await readdir(src, { recursive: true })).filter((f) => /\.tsx?$/.test(f));
     const naming: string[] = [];
@@ -140,14 +152,23 @@ describe('data-collection consent', () => {
     for (const file of files) {
       const text = await readFile(join(src, file), 'utf8');
       if (text.includes("'technicalAndInteraction'")) naming.push(file.replaceAll('\\', '/'));
-      for (const [line] of text.matchAll(/^.*\bDEVICE_NAME_DATA\b.*$/gm))
+      for (const [line] of text.matchAll(/^.*\b(DEVICE_NAME_DATA|REPORT_DATA|reportConsent)\b.*$/gm))
         reading.push(`${file.replaceAll('\\', '/')}: ${line.trim()}`);
     }
     expect(naming.sort()).toEqual(['lib/data-consent.ts', 'types/firefox.d.ts']);
-    expect(reading.filter((r) => !r.startsWith('lib/data-consent.ts: '))).toEqual([
-      "background/server-auth.ts: import { CLOUD_DATA, DEVICE_NAME_DATA, hasConsent } from '../lib/data-consent.ts';",
+    expect(reading.filter((r) => !r.startsWith('lib/data-consent.ts: ')).sort()).toEqual([
+      "background/report.ts: if (!(await hasConsent(reportConsent(report)))) return { ok: false, code: 'consent' };",
+      "background/report.ts: import { hasConsent, reportConsent } from '../lib/data-consent.ts';",
       'background/server-auth.ts: const name = (await hasConsent(DEVICE_NAME_DATA)) ? await deviceName() : undefined;',
+      "background/server-auth.ts: import { CLOUD_DATA, DEVICE_NAME_DATA, hasConsent } from '../lib/data-consent.ts';",
+      'entrypoints/report/App.tsx: const technical = useConsent(REPORT_DATA);',
+      "entrypoints/report/App.tsx: import { REPORT_DATA } from '../../lib/data-consent.ts';",
     ]);
+    // Never in a request: no `requestConsent` or `withConsent` call anywhere names a report's types.
+    for (const file of files) {
+      const text = await readFile(join(src, file), 'utf8');
+      expect(text, file).not.toMatch(/(requestConsent|withConsent)\([^)]*(REPORT_DATA|reportConsent|DEVICE_NAME_DATA)/);
+    }
   });
 
   it('test_requests_carry_consent_in_firefox_only', async () => {

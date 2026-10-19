@@ -23,7 +23,16 @@ import {
   type Topic,
 } from '@unalgorithm/core';
 import { listBalance, officialSourceList, ownSourceList, type SourceList } from '@unalgorithm/outlets';
-import { FEATURE_NAMES, type ListKind, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
+import {
+  FEATURE_NAMES,
+  type ListKind,
+  NOISE_LABELS,
+  type NoiseLabel,
+  type PlatformId,
+  SOURCE_REPO,
+  uuidv7,
+  WEBSITE_ORIGIN,
+} from '@unalgorithm/protocol';
 import {
   Badge,
   BalanceNotice,
@@ -35,7 +44,6 @@ import {
   Dialog,
   DisplayModeThumb,
   Download,
-  ExternalLink,
   ListGroup,
   ListProblemsNotice,
   ListRow,
@@ -350,12 +358,21 @@ function ExceptionsGroup({
 
 // ---------- Display ----------
 
+/** Settings → Display's breakage notices switch (ADR 0009 §3). */
+export const NOTICES_COPY = {
+  title: 'Tell me when something breaks',
+  footer:
+    "If LinkedIn or Facebook changes and unAlgorithm can't keep up, a short note appears in your feed. Nothing is sent unless you choose to.",
+} as const;
+
 export function DisplayPane({
   settings,
+  device,
   save,
   saveDevice,
 }: {
   settings: Settings;
+  device: Device;
   save: Save;
   saveDevice: (m: (d: Device) => void) => Promise<void>;
 }) {
@@ -455,6 +472,18 @@ export function DisplayPane({
           title="Replay setup"
           accessory="chevron"
           onSelect={() => sendQuietly({ type: 'openPage', page: 'onboarding' })}
+        />
+      </ListGroup>
+      <ListGroup footer={NOTICES_COPY.footer}>
+        <ListRow
+          title={NOTICES_COPY.title}
+          control={
+            <Switch
+              checked={device.notices.enabled}
+              label={NOTICES_COPY.title}
+              onCheckedChange={(v) => void saveDevice((dev) => void (dev.notices.enabled = v))}
+            />
+          }
         />
       </ListGroup>
     </>
@@ -1089,10 +1118,17 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
 
 // ---------- About ----------
 
+/** Settings → About's word on reporting: everything goes through the extension, never a GitHub form (ADR 0009 §2). */
+export const ABOUT_REPORT_COPY = {
+  row: 'Report a problem',
+  bannerTitle: 'Built in the open',
+  banner: 'Found a post that was hidden by mistake? Use Why? → Wrong call? on the post, or Report a problem in the toolbar menu.',
+} as const;
+
 export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: SaveDevice }) {
   const version = browser.runtime.getManifest().version;
-  const site = 'https://unalgorithmfeed.com';
-  const repo = 'https://github.com/HeitechSoft/unalgorithm';
+  const site = WEBSITE_ORIGIN;
+  const repo = SOURCE_REPO;
   const devBuild = import.meta.env.MODE !== 'production';
   return (
     <>
@@ -1106,7 +1142,11 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
         <ListRow title="Website" accessory="external" href={`${site}/`} />
         <ListRow title="Help" accessory="external" href={`${site}/help/`} />
         <ListRow title="Source code" accessory="external" href={repo} />
-        <ListRow title="Report a problem" accessory="external" href={`${repo}/issues/new/choose`} />
+        <ListRow
+          title={ABOUT_REPORT_COPY.row}
+          accessory="chevron"
+          onSelect={() => sendQuietly({ type: 'openReport', about: { from: 'settings' } })}
+        />
         <ListRow title="Privacy policy" accessory="external" href={`${site}/privacy/`} />
         <ListRow title="What's new" accessory="external" href={`${site}/whats-new/`} />
         <ListRow title="Licenses & acknowledgements" accessory="external" href={`${repo}/blob/main/THIRD_PARTY_NOTICES.md`} />
@@ -1133,10 +1173,7 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
           />
         </ListGroup>
       ) : null}
-      <Banner title="Built in the open">
-        Found a post that was hidden by mistake? Use Why? → Wrong call on the post, or open an issue.{' '}
-        <ExternalLink size={12} aria-hidden="true" style={{ display: 'inline' }} />
-      </Banner>
+      <Banner title={ABOUT_REPORT_COPY.bannerTitle}>{ABOUT_REPORT_COPY.banner}</Banner>
     </>
   );
 }

@@ -5,6 +5,8 @@ import {
   CLOUD_BETA_NOTICE,
   CLOUD_BETA_TERMS,
   CLOUD_FOOTER_LINKS,
+  CLOUD_ORIGIN,
+  CORRECTION_ANSWER_BUSINESS_DAYS,
   CORRECTIONS_PAGE,
   CREDITS_PAGE,
   EVALS_PAGE,
@@ -14,8 +16,12 @@ import {
   PRICING_FOOTER_LINK,
   PRICING_REDIRECT,
   PROMPTS_PAGE,
+  REPORTS_URL,
+  SOURCE_REPO,
   STARTER_CREDIT,
+  SUPPORT_EMAIL,
   siteUrl,
+  supportMailto,
   TRANSPARENCY_PAGE,
   WEBSITE_ORIGIN,
 } from '../src/index.ts';
@@ -33,9 +39,10 @@ const flat = (text: string): string => text.replace(/\s+/g, ' ');
 const notice = read(CLOUD_BETA_NOTICE.source);
 const terms = read(CLOUD_BETA_TERMS.source);
 
-/** P3-68: what a correction or an appeal must never carry, said the same way on the page and on both forms. */
+/** P3-68: what a correction or an appeal must never carry, said the same way on the page and on the appeal form. */
 const NEVER_SEND = "Use your own words: never the post, a screenshot of it, a link to it, or anyone's name.";
-const CORRECTION_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml';
+/** ADR 0009: corrections leave GitHub for the extension's report page; outlets' source list appeals keep their form. */
+const CORRECTION_FORM = 'issues/new?template=correction.yml';
 const APPEAL_FORM_URL = 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=source_list_appeal.yml';
 
 describe('site documents', () => {
@@ -105,11 +112,10 @@ describe('site documents', () => {
     expect(text).toContain(NEVER_SEND);
     for (const phrase of [
       'never the post',
-      CORRECTION_FORM_URL,
       APPEAL_FORM_URL,
-      'hello@heitechsoft.com',
+      SUPPORT_EMAIL,
       'legal@heitechsoft.com',
-      '5 business days',
+      `${CORRECTION_ANSWER_BUSINESS_DAYS} business days`,
       '30 days',
       '10 %',
       '12 months',
@@ -117,11 +123,16 @@ describe('site documents', () => {
     ]) {
       expect(text, phrase).toContain(phrase);
     }
-    // Decision D86: corrections go to one address, appeals (which outlets may send) to the other.
+    // Decision D86: corrections go to one address, appeals (which outlets may send) to the other. ADR 0009: a
+    // correction is asked from the side panel's own links, or by email to the support address; never on GitHub.
     const section = (from: string, to?: string) => flat(md.slice(md.indexOf(from), to ? md.indexOf(to) : undefined));
     const corrections = section('## Ask for a correction', '## Source list appeals');
-    expect(corrections).toContain('hello@heitechsoft.com');
-    expect(corrections).toContain(CORRECTION_FORM_URL);
+    for (const phrase of [SUPPORT_EMAIL, 'Report a wrong verdict', 'Report a mistake']) {
+      expect(corrections, phrase).toContain(phrase);
+    }
+    expect(corrections).not.toContain('github.com');
+    expect(corrections).not.toContain('hello@heitechsoft.com');
+    expect(text).not.toContain(CORRECTION_FORM);
     const appeals = section('## Source list appeals', '## Quarterly audit');
     expect(appeals).toContain('legal@heitechsoft.com');
     expect(appeals).toContain(APPEAL_FORM_URL);
@@ -152,6 +163,23 @@ describe('site documents', () => {
     ]);
   });
 
+  it('test_support_and_source_addresses', () => {
+    // ADR 0009: one support mailbox, and the repository only for source code and contributors.
+    expect(SUPPORT_EMAIL).toBe('support@heitechsoft.com');
+    expect(SOURCE_REPO).toBe('https://github.com/HeitechSoft/unalgorithm');
+    expect(REPORTS_URL).toBe(`${CLOUD_ORIGIN}/v1/reports`);
+    expect(supportMailto({ subject: 'unAlgorithm report 7KQ3-M2PA' })).toBe(
+      'mailto:support@heitechsoft.com?subject=unAlgorithm%20report%207KQ3-M2PA',
+    );
+    // Spaces as %20 (a + shows as a plus in mail programs), line breaks as CRLF, & and ? escaped.
+    expect(supportMailto({ subject: 'a+b & c?', body: 'Line one\nLine two: 50%' })).toBe(
+      'mailto:support@heitechsoft.com?subject=a%2Bb%20%26%20c%3F&body=Line%20one%0D%0ALine%20two%3A%2050%25',
+    );
+    const url = new URL(supportMailto({ subject: 'Hi', body: 'x\r\ny' }));
+    expect(url.protocol).toBe('mailto:');
+    expect(url.pathname).toBe(SUPPORT_EMAIL);
+  });
+
   it('test_footer_links_credits', () => {
     expect(CLOUD_FOOTER_LINKS.map((doc) => [doc.linkText, doc.path])).toEqual([
       ['Beta privacy notice', '/cloud/beta-privacy'],
@@ -164,34 +192,24 @@ describe('site documents', () => {
 describe('issue forms (P3-68)', () => {
   const form = (name: string) => read(`.github/ISSUE_TEMPLATE/${name}`);
   const ids = (yml: string) => [...yml.matchAll(/^\s+id: (\w+)$/gm)].map((m) => m[1]);
-  /** A dropdown's options: the `- ` items under `options:` in the field whose id is `id`. */
-  const options = (yml: string, id: string): string[] => {
-    const start = yml.indexOf(`id: ${id}\n`);
-    expect(start, id).toBeGreaterThan(-1);
-    const end = yml.indexOf('\n  - type:', start);
-    const field = yml.slice(start, end === -1 ? undefined : end);
-    const list = field.slice(field.indexOf('options:\n'));
-    return [...list.matchAll(/^ +- (.+)$/gm)].map((m) => (m[1] ?? '').replace(/^(["'])(.*)\1$/, '$2'));
-  };
 
   it('test_issue_forms_warn_and_have_field_ids', () => {
-    const correction = form('correction.yml');
     const appeal = form('source_list_appeal.yml');
-    for (const [yml, label] of [
-      [correction, 'correction'],
-      [appeal, 'source-list-appeal'],
-    ] as const) {
-      expect(yml, label).toContain(NEVER_SEND);
-      expect(yml.split('\n'), label).toContain(`labels: [${label}, triage]`);
-    }
-    expect(correction).toContain('https://unalgorithmfeed.com/corrections/');
+    expect(appeal).toContain(NEVER_SEND);
+    expect(appeal.split('\n')).toContain('labels: [source-list-appeal, triage]');
     expect(appeal).toContain('Outlets may appeal by email instead: legal@heitechsoft.com.');
-
-    expect(ids(correction)).toEqual(expect.arrayContaining(['feature', 'claim', 'version', 'prompt', 'list']));
-    expect(options(correction, 'feature')).toStrictEqual(Object.values(FEATURE_NAMES));
-    expect(options(correction, 'list')).toStrictEqual(["unAlgorithm Cloud's list", 'My own list']);
     expect(ids(appeal)).toEqual(expect.arrayContaining(['outlet', 'what', 'version']));
-    for (const yml of [correction, appeal]) expect(new Set(ids(yml)).size).toBe(ids(yml).length);
+    expect(new Set(ids(appeal)).size).toBe(ids(appeal).length);
+  });
+
+  it('test_correction_form_sends_people_to_the_extension', () => {
+    // ADR 0009: a correction on GitHub would make the person's username public. If the template stays for
+    // contributors, it sends people to the side panel's report link or the support address instead.
+    if (!existsSync(new URL('.github/ISSUE_TEMPLATE/correction.yml', REPO_ROOT))) return;
+    const correction = flat(form('correction.yml'));
+    expect(correction).toContain(SUPPORT_EMAIL);
+    expect(correction).toMatch(/Report a wrong verdict|Report a mistake/);
+    expect(correction).not.toContain('hello@heitechsoft.com');
   });
 
   it('test_issue_config_links_corrections', () => {

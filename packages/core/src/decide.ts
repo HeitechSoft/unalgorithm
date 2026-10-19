@@ -32,6 +32,8 @@ export interface DecideInput {
   /** The user's explicit vote on this exact post. */
   vote?: 'more' | 'less';
   degraded?: DegradedSignals;
+  /** Cautious mode (ADR 0009 §9): only strongly seen signals hide, and "not followed" is off (`ruleFilter`). */
+  cautious?: boolean;
 }
 
 const NO_DECISION: Decision = { filter: null, highlight: null };
@@ -60,7 +62,7 @@ export function decide(input: DecideInput): Decision {
 
   if (input.vote === 'less') return { filter: { reason: 'less-like-this', source: 'user' }, highlight: null };
 
-  const rule = ruleFilter(post, ps, input.degraded);
+  const rule = ruleFilter(post, ps, input.degraded, input.cautious);
   if (rule) return { filter: rule, highlight: null };
   const pinned = Object.values(ps.alwaysShow).some((r) => r.match === authorKey(post));
 

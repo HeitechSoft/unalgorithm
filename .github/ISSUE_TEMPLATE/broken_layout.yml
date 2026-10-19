@@ -1,13 +1,18 @@
 name: Filtering looks wrong
-description: A post was hidden that shouldn't be, noise got through, or unAlgorithm says the layout looks different.
+description: For contributors working on detection. Using unAlgorithm? Use Why? → Wrong call? or Report a problem inside unAlgorithm instead, which sends us a report privately.
 title: '[platform] Filtering looks wrong'
 labels: [detection, triage]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. Please **don't paste screenshots or text of other people's posts**, names or profile
-        links. Describe the post instead ("an ad for a course", "a post from a group I joined").
+        **Using unAlgorithm and your feed looks wrong?** Please don't use this form: an issue is public. Use
+        **Why? → Wrong call?** on the post, or **Report a problem** in the toolbar popup. unAlgorithm shows you the
+        report and sends it to us privately when you click Send report. Or email support@heitechsoft.com.
+
+        This form is for contributors tracking detection work. **Don't paste screenshots or text of other people's
+        posts**, names or profile links, and never a problem report someone sent us. Describe the post instead ("an ad
+        for a course", "a post from a group I joined").
   - type: dropdown
     id: platform
     attributes:
@@ -24,7 +29,7 @@ body:
       options:
         - A post I wanted was hidden
         - Noise (ad, suggested post, activity) was not hidden
-        - The "layout looks different" banner appeared
+        - unAlgorithm says filtering is paused, or that it isn't running on the feed
         - The feed stopped loading or got slow
         - Something else
     validations:
@@ -49,7 +54,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: Filled in automatically when you use "Report a problem". Contains versions, counts and detector names only.
+      description: "From a development build on your own feed (the popup's Developer: copy diagnostics). Versions, counts and detector names only."
       render: json
   - type: input
     id: language

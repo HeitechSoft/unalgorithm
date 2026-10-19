@@ -1,10 +1,11 @@
 /**
  * The HTTP rules every route depends on, fixed once: a request log that holds no bodies, query strings, headers or
- * addresses; the client address taken from exactly one proxy hop; and CORS that answers extension pages only.
+ * addresses; the client address taken from exactly one proxy hop; and CORS that answers extension pages only. The
+ * problem report route has CORS of its own (`reportsCors`, `extensionOriginOnly`).
  */
 import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
-import { clientKind } from '@unalgorithm/protocol';
+import { clientKind, REPORT_ERRORS } from '@unalgorithm/protocol';
 import type { Context, MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import type { Config } from '../config.ts';
@@ -177,4 +178,40 @@ export function extensionCors(extensionIds: readonly string[]): MiddlewareHandle
     exposeHeaders: ['Retry-After'],
     maxAge: 600,
   });
+}
+
+/** A Chrome or Edge extension page's origin: any extension id. */
+const CHROMIUM_EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/;
+
+/** Whether `origin` is an extension page's: Chrome's or Edge's (any id), or Firefox's (any UUID). */
+export function isExtensionOrigin(origin: string | undefined): boolean {
+  return origin !== undefined && (CHROMIUM_EXTENSION_ORIGIN.test(origin) || MOZ_EXTENSION_ORIGIN.test(origin));
+}
+
+/**
+ * CORS for `POST /v1/reports` only (ADR 0009 §6): any extension page's origin, whatever `EXTENSION_IDS` lists, so a
+ * report from Edge works before the Edge Add-ons id is listed (the route reduces the origin to `listed`). POST and
+ * `content-type` only; never `Access-Control-Allow-Credentials`, since the route reads no cookie or token.
+ * `Retry-After` is exposed so the report page can read it.
+ */
+export function reportsCors(): MiddlewareHandler {
+  return cors({
+    origin: (origin) => (isExtensionOrigin(origin) ? origin : null),
+    allowMethods: ['POST', 'OPTIONS'],
+    allowHeaders: ['content-type'],
+    exposeHeaders: ['Retry-After'],
+    maxAge: 600,
+  });
+}
+
+/**
+ * 403 (`REPORT_ERRORS.origin`) before the body is read, unless the request comes from an extension page: no Origin
+ * (a script, a server) or a web page's. CORS alone would only stop a page from reading the answer, not the write. The
+ * Origin is never kept: the route reduces it to whether the extension is listed.
+ */
+export function extensionOriginOnly(): MiddlewareHandler {
+  return async (c, next) => {
+    if (!isExtensionOrigin(c.req.header('origin'))) return c.json(REPORT_ERRORS.origin, 403);
+    await next();
+  };
 }

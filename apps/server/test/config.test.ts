@@ -315,6 +315,36 @@ describe('validation', () => {
   });
 });
 
+describe('problem reports', () => {
+  it('test_config_reports_defaults_and_rules', () => {
+    // Off by default: a self-hosted server gets no anonymous write route.
+    expect(loadConfig(minimalEnv()).reports).toEqual({ enabled: false, dailyMax: 1000, perHour: 6, alertNetworks: 2 });
+    expect(
+      loadConfig({
+        ...minimalEnv(),
+        REPORTS: 'on',
+        REPORTS_DAILY_MAX: '50',
+        REPORTS_PER_HOUR: '3',
+        REPORTS_ALERT_NETWORKS: '0',
+      }).reports,
+    ).toEqual({ enabled: true, dailyMax: 50, perHour: 3, alertNetworks: 0 });
+
+    const cases: [string, string, string][] = [
+      ['REPORTS', 'yes', 'must be one of off, on'],
+      ['REPORTS_DAILY_MAX', '0', 'must be a whole number from 1 to 1000000'],
+      ['REPORTS_DAILY_MAX', '2000000', 'must be a whole number from 1 to 1000000'],
+      ['REPORTS_PER_HOUR', '0', 'must be a whole number from 1 to 1000'],
+      ['REPORTS_PER_HOUR', '2.5', 'must be a whole number from 1 to 1000'],
+      ['REPORTS_ALERT_NETWORKS', '-1', 'must be a whole number from 0 to 1000'],
+    ];
+    for (const [name, value, reason] of cases) {
+      const err = configError({ ...minimalEnv(), REPORTS: 'on', [name]: value });
+      expect(err.invalid, name).toEqual([{ name, reason }]);
+      expect(err.message, 'never the value').not.toContain(`(${value})`);
+    }
+  });
+});
+
 describe('billing variables', () => {
   /** A distinctive path: a module path may say where the private code lives, so no error repeats it. */
   const MODULE_PATH = '/srv/QXZ7-billing/index.ts';

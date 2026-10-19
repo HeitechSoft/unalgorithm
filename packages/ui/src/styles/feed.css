@@ -391,6 +391,109 @@
     pointer-events: none;
   }
 
+  /* The page layer's corner: the breakage notice sits above the toasts, never inside the platform's feed. */
+  .ua-dock {
+    position: fixed;
+    left: 24px;
+    bottom: 24px;
+    z-index: 2147483000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .ua-dock > .ua-toasts {
+    position: static;
+  }
+
+  /* Breakage notice (ADR 0009 §3) */
+  .ua-notice {
+    pointer-events: auto;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: min(360px, calc(100vw - 48px));
+    padding: 14px 44px 12px 14px;
+    border-radius: var(--ua-radius-lg);
+    background: var(--ua-bg-elevated);
+    color: var(--ua-text);
+    box-shadow: var(--ua-shadow-2);
+    font: var(--ua-type-callout);
+    color-scheme: var(--ua-scheme, light);
+    animation: ua-toast-in var(--ua-dur-4) var(--ua-ease-spring);
+  }
+
+  @supports (backdrop-filter: blur(1px)) {
+    .ua-notice {
+      background: var(--ua-material-thick);
+      backdrop-filter: var(--ua-material-filter);
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .ua-notice {
+      background: var(--ua-bg-elevated);
+      backdrop-filter: none;
+    }
+  }
+
+  .ua-notice-glyph {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    color: var(--ua-warning);
+  }
+
+  .ua-notice-main {
+    min-width: 0;
+  }
+
+  .ua-notice-title {
+    margin: 0 0 2px;
+    font: 600 14px / 20px var(--ua-font-sans);
+  }
+
+  .ua-notice-body {
+    margin: 0;
+    color: var(--ua-text-secondary);
+  }
+
+  .ua-notice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .ua-notice-foot {
+    margin: 8px 0 0;
+    font: var(--ua-type-footnote);
+    color: var(--ua-text-secondary);
+  }
+
+  /* On our own surface, not the host's card: the buttons take our text colors. */
+  .ua-notice .ua-btn {
+    color: var(--ua-text-secondary);
+  }
+
+  .ua-notice .ua-btn:hover {
+    background: var(--ua-fill-3);
+    color: var(--ua-text);
+  }
+
+  .ua-notice-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    padding: 0;
+  }
+
   .ua-toast {
     pointer-events: auto;
     display: flex;
@@ -445,11 +548,13 @@
       border: 1px solid CanvasText;
     }
     .ua-popover,
-    .ua-toast {
+    .ua-toast,
+    .ua-notice {
       border: 1px solid CanvasText;
       background: Canvas;
     }
     .ua-glyph,
+    .ua-notice-glyph,
     .ua-btn svg {
       color: CanvasText;
     }

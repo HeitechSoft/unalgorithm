@@ -3,14 +3,15 @@ import { type Browser, browser } from 'wxt/browser';
 import { browserKind } from './browser-kind.ts';
 
 /**
- * Firefox's data-collection consent (ADR 0008). Its manifest declares `required: ['none']` (rules only sends nothing)
- * and, as optional, only the types its build can use: post text's two, and in builds with the server card the server's
- * and `technicalAndInteraction`. `POST_DATA` and `CLOUD_DATA` are each asked for in the click that first sends that kind
- * of data to a service, together with any host permission, and checked again before every send, so consent withdrawn in
- * Firefox's add-on settings stops the sending like a removed host permission. A service on this computer needs it too:
- * a local model server or unAlgorithm server is outside the browser, and an unAlgorithm server passes posts on to the AI
- * its owner chose. `DEVICE_NAME_DATA` is never asked for and turns nothing on or off. Chrome and Edge have no such
- * consent: nothing here asks or refuses there.
+ * Firefox's data-collection consent (ADR 0008, ADR 0009 §5). Its manifest declares `required: ['none']` (rules only
+ * sends nothing) and, as optional, only the types its build can use: post text's two and `technicalAndInteraction` in
+ * every build, and the server's in builds with the server card. `POST_DATA` and `CLOUD_DATA` are each asked for in the
+ * click that first sends that kind of data to a service, together with any host permission, and checked again before
+ * every send, so consent withdrawn in Firefox's add-on settings stops the sending like a removed host permission. A
+ * service on this computer needs it too: a local model server or unAlgorithm server is outside the browser, and an
+ * unAlgorithm server passes posts on to the AI its owner chose. `technicalAndInteraction` (`DEVICE_NAME_DATA`,
+ * `REPORT_DATA`) is never asked for and only read. Chrome and Edge have no such consent: nothing here asks or refuses
+ * there.
  */
 
 export type DataCollection = Browser.permissions.DataCollection;
@@ -27,12 +28,31 @@ export const POST_DATA: readonly DataCollection[] = ['websiteContent', 'personal
  */
 export const CLOUD_DATA: readonly DataCollection[] = [...POST_DATA, 'personallyIdentifyingInfo', 'authenticationInfo'];
 /**
- * The device name ("Firefox on Linux") a sign-in sends. Firefox offers this type in its install prompt, on unless the
- * person turns it off, and in its add-ons page; Mozilla's add-on policies let nothing depend on it. So it is
- * never asked for (no `requestConsent` or `withConsent`), and it decides one thing only: whether the sign-in sends the
- * name (`background/server-auth.ts`). Without it the device has no name, and everything works the same.
+ * Technical and interaction data: the device name ("Firefox on Linux") a sign-in sends, and problem reports (versions,
+ * the browser, counts and codes; Mozilla lists crash and error reports under it). Declared in every Firefox build.
+ * Firefox offers it in its install prompt, on unless the person turns it off, and in its add-ons page; Mozilla's add-on
+ * policies let nothing else depend on it. So it is never asked for (no `requestConsent` or `withConsent`), and it
+ * decides two things only: whether the sign-in sends the name (`background/server-auth.ts`), and whether *Send report*
+ * posts a report or hands it to the person's email program instead (`background/report.ts`, the report page). Without
+ * it the device has no name, reports go by email, and everything else works the same.
  */
 export const DEVICE_NAME_DATA: readonly DataCollection[] = ['technicalAndInteraction'];
+/** What every problem report needs in Firefox (ADR 0009 §5): the same type as the device name, read the same way. */
+export const REPORT_DATA: readonly DataCollection[] = DEVICE_NAME_DATA;
+
+/**
+ * What sending this report needs in Firefox: technical data for every report; for a correction, also the person's own
+ * words (personal communications, the type post text already needed for the result being corrected) and, with a reply
+ * email, personally identifying information. None of these is ever asked for by a report: without one, the report page
+ * offers to email the report instead.
+ */
+export function reportConsent(report: { correction?: { contact?: string | undefined } | undefined }): DataCollection[] {
+  return [
+    ...REPORT_DATA,
+    ...(report.correction ? (['personalCommunications'] as const) : []),
+    ...(report.correction?.contact ? (['personallyIdentifyingInfo'] as const) : []),
+  ];
+}
 
 /**
  * What a refused request to a server says while Firefox's consent to send it posts is missing. The server card's

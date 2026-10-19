@@ -1,5 +1,5 @@
 import { checkCostLine, dateKey, type HiddenItem, type HighlightItem } from '@unalgorithm/core';
-import { FEATURE_NAMES, type PlatformId, type PostKey, SOURCE_LIST_PAGE_URL } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, PLATFORM_NAMES, type PostKey, SOURCE_LIST_PAGE_URL } from '@unalgorithm/protocol';
 import {
   Banner,
   Button,
@@ -10,6 +10,8 @@ import {
   IconButton,
   ListFilter,
   Newspaper,
+  NOTICE_ACTIONS,
+  NOTICE_COPY,
   PerspectivesSheet,
   SearchCheck,
   SegmentedControl,
@@ -18,12 +20,12 @@ import {
 } from '@unalgorithm/ui';
 import { useMemo, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { FEED_URLS, platformOfUrl, useActiveTab, useStorageItem, useTabState } from '../../lib/hooks.ts';
-import { sendQuietly, sendToTab } from '../../lib/messages.ts';
+import { FEED_URLS, platformOfUrl, useActiveTab, useDevice, useStorageItem, useTabState } from '../../lib/hooks.ts';
+import { type ReportDraftInput, sendQuietly, sendToTab } from '../../lib/messages.ts';
 import { sheetLinks } from '../../lib/report-links.ts';
 import { type FactcheckEntry, factcheckItem, statsItem } from '../../lib/storage.ts';
 
-const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
+const SITE = PLATFORM_NAMES;
 const NO_CHECKS: { entries: FactcheckEntry[] } = { entries: [] };
 /** No tab yet: an item nothing writes, so the hook has something to subscribe to. */
 const NO_TAB = -1;
@@ -41,6 +43,7 @@ interface SheetNav {
 export function App() {
   const tab = useActiveTab();
   const state = useTabState(tab?.id);
+  const [device] = useDevice();
   const stats = useStorageItem(statsItem, {});
   const [view, setView] = useState<'foryou' | 'hidden'>('foryou');
   const [filter, setFilter] = useState<string | null>(null);
@@ -77,13 +80,32 @@ export function App() {
     </>
   );
 
+  // *Report a wrong verdict* / *Report a mistake*: the report page, beside this window's tab (ADR 0009 §2).
+  const reportCorrection = (draft: ReportDraftInput) =>
+    sendQuietly({ type: 'openReport', draft, ...(tab ? { nextTo: tab.id } : {}) });
+
+  // The page's breakage notice, whatever the in-feed card's snoozes (ADR 0009 §3): unAlgorithm isn't running, or paused.
+  const notice = platform && (state.notice?.kind === 'not-running' || state.notice?.kind === 'paused') ? state.notice.kind : null;
+  const noticeBanner =
+    notice && platform ? (
+      <Banner
+        tone="warning"
+        title={NOTICE_COPY[notice].title}
+        action={{
+          label: NOTICE_ACTIONS.report,
+          onAction: () => tab && void sendToTab(tab.id, { type: 'reportSnapshot', from: 'sidepanel' }),
+        }}
+      >
+        {NOTICE_COPY[notice].body(SITE[platform])}
+      </Banner>
+    ) : null;
+
   if (openEntry) {
-    const version = browser.runtime.getManifest().version;
     const sheet = {
       label: openEntry.label,
       status: openEntry.status,
       errorMessage: openEntry.error?.message,
-      links: sheetLinks(openEntry, version),
+      links: sheetLinks(openEntry, reportCorrection, device?.aiSource ?? null),
       earlier: entries
         .filter((e) => e !== openEntry)
         .slice(0, 4)
@@ -113,6 +135,7 @@ export function App() {
     return (
       <main className="panel" data-density="compact">
         {head}
+        {noticeBanner}
         <EmptyState
           icon={Newspaper}
           title="Open your feed to see highlights"
@@ -148,6 +171,7 @@ export function App() {
             { value: 'hidden', label: `Hidden ${state.counts.hiddenTotal}` },
           ]}
         />
+        {noticeBanner}
         {state.ai.state === 'paused' ? (
           <Banner
             tone="warning"

@@ -14,8 +14,27 @@ export const CLOUD_ORIGIN = 'https://cloud.unalgorithm.app';
 /** unAlgorithm Cloud's public source list page (decision D97): on the Cloud, not the website, so it never lags the list. */
 export const SOURCE_LIST_PAGE_URL = `${CLOUD_ORIGIN}${OUTLETS_PAGE_PATH}`;
 
-/** The open-source repository, where issues are filed ("Report a problem", the correction form). */
+/**
+ * The open-source repository, for "Source code" links and contributors. People who use unAlgorithm never report here:
+ * problems and corrections go through the extension's report page to unAlgorithm Cloud (ADR 0009).
+ */
 export const SOURCE_REPO = 'https://github.com/HeitechSoft/unalgorithm';
+
+/**
+ * Where people write to HeitechSoft about unAlgorithm: replies to corrections, and the report page's "Email it instead"
+ * (the person's own email program sends it; the extension transmits nothing). The one place the address is set.
+ */
+export const SUPPORT_EMAIL = 'support@heitechsoft.com';
+
+/**
+ * A `mailto:` link to SUPPORT_EMAIL. Spaces are `%20`, never `+`, which mail programs show as a plus; line breaks are
+ * CRLF, as RFC 6068 asks.
+ */
+export function supportMailto(mail: { subject: string; body?: string }): string {
+  const enc = (text: string) => encodeURIComponent(text.replace(/\r\n|[\r\n]/g, '\r\n'));
+  const body = mail.body === undefined ? '' : `&body=${enc(mail.body)}`;
+  return `mailto:${SUPPORT_EMAIL}?subject=${enc(mail.subject)}${body}`;
+}
 
 export interface SiteDocument {
   /** The Markdown file, relative to this repo's root. */

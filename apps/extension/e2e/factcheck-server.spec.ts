@@ -4,6 +4,7 @@ import { type MockSearxng, startMockSearxng } from '@unalgorithm/research/testin
 import {
   CHECK_FACTS,
   expect,
+  expectReportsAsked,
   extensionIdOf,
   FB_FRIENDS_FLAGGED,
   FLAGGED,
@@ -63,9 +64,14 @@ test.describe
     // Declared before the server's, so the profile closes first, also when a test failed.
     test.afterAll(async () => {
       try {
-        await context?.close();
+        // No problem report without a Send click (ADR 0009 §1), as the `context` fixture checks its own.
+        if (context) expectReportsAsked(context);
       } finally {
-        await searx?.close();
+        try {
+          await context?.close();
+        } finally {
+          await searx?.close();
+        }
       }
     });
 

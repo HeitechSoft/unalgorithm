@@ -2,6 +2,11 @@ name: Idea or feature request
 description: Suggest something that would make your feed calmer.
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome here, or by email to support@heitechsoft.com. Something broken? Use **Report a problem**
+        inside unAlgorithm instead, which sends us a report privately.
   - type: textarea
     id: problem
     attributes:

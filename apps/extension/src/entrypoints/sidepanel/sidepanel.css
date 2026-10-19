@@ -1,0 +1,18 @@
+/*
+ * An action that reads as a link: the sheet footer's "Report a wrong verdict" and "Report a mistake" open the report
+ * page in the extension rather than a web page, so they are buttons (`FootLinks`). The in-feed layer has its own copy
+ * of this class in feed.css.
+ */
+.ua-link {
+  all: unset;
+  cursor: pointer;
+  color: var(--ua-accent);
+}
+.ua-link:hover {
+  text-decoration: underline;
+}
+.ua-link:focus-visible {
+  outline: 2px solid var(--ua-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

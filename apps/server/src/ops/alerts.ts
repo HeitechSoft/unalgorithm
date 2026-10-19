@@ -1,8 +1,9 @@
 /**
  * Alerts (R43, CL4-15): five content-free rules over the server's own status (`readOpsStatus`, CL4-14) and the spend
- * breaker, checked every five minutes by the `ops.check-alerts` task on the server's job registry (CL2-03). The alerts
- * open now are rows of `ops_alerts`: an alert opens once, stays open (its row seen again) while its rule still fires, and
- * closes (its row deleted) when it no longer does. The admin page lists them (`listOpenAlerts`); CL4-16 tells someone.
+ * breaker, and with `REPORTS=on` the problem report alerts (`report-alerts.ts`, ADR 0009 §8), checked every five minutes
+ * by the `ops.check-alerts` task on the server's job registry (CL2-03). The alerts open now are rows of `ops_alerts`: an
+ * alert opens once, stays open (its row seen again) while its rule still fires, and closes (its row deleted) when it no
+ * longer does. The admin page lists them (`listOpenAlerts`); CL4-16 tells someone.
  *
  * Content-free: fixed keys, levels, times and numbers. The `alert.*` log lines are warnings and information, never
  * errors, so an alert never feeds `errors-high`.
@@ -18,9 +19,13 @@ import { opsAlerts } from '../db/schema.ts';
 import type { JobRegistry } from '../jobs/worker.ts';
 import { errorFields, type Logger } from '../log.ts';
 import type { ErrorWindow } from './error-window.ts';
+import { evaluateReportAlerts, reportAlertCounts } from './report-alerts.ts';
 import { readOpsStatus } from './status.ts';
 
-/** The fixed keys; each watched backup kind adds `backup-<kind>`. */
+/**
+ * The fixed keys; each watched backup kind adds `backup-<kind>`, and the problem report alerts are `reports-<…>`
+ * (`report-alerts.ts`).
+ */
 export const ALERT_RULE_KEYS = ['disk-free-low', 'database-size-high', 'errors-high', 'spend-breaker'] as const;
 const BACKUP_KEY_PREFIX = 'backup-';
 
@@ -243,16 +248,21 @@ export interface AlertDeps {
 }
 
 /**
- * One check: measure (`readOpsStatus` and the spend breaker, at once), evaluate, add the billing module's findings,
- * apply, then notify.
+ * One check: measure (`readOpsStatus`, the spend breaker and, with reports on and their alerts not turned off, the
+ * report counts, at once), evaluate, add the billing module's findings, apply, then notify.
  */
 export async function checkAlerts(deps: AlertDeps, now: number = Date.now()): Promise<AlertTransitions> {
   const { db, config, log, errors, statfs, billing } = deps;
-  const [status, breakerTripped] = await Promise.all([
+  const reportsWatched = config.reports.enabled && config.reports.alertNetworks > 0;
+  const [status, breakerTripped, reportCounts] = await Promise.all([
     readOpsStatus({ db, config, log, errors, statfs, now }),
     spendBreakerTripped(db, config, new Date(now)),
+    reportsWatched ? reportAlertCounts(db, now) : [],
   ]);
-  const own = evaluateAlerts({ status, breakerTripped, now }, config.alerts);
+  const own = [
+    ...evaluateAlerts({ status, breakerTripped, now }, config.alerts),
+    ...evaluateReportAlerts(reportCounts, config.reports, now),
+  ];
   const openModuleRows = () =>
     db
       .select({ key: opsAlerts.key, level: opsAlerts.level, lastValue: opsAlerts.lastValue })

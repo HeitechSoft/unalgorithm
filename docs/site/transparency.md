@@ -24,7 +24,10 @@ Each report also lists:
 - unAlgorithm Cloud's source list: its version at the end of the quarter, how many of its outlets had a lean in each
   bucket (Left, Leans left, Center, Leans right, Right), and how many outlets were added, edited, removed and imported
   during the quarter;
-- the corrections and source list appeals we received, and how they ended;
+- the corrections people sent us, for each feature, and how they ended: corrected, no change, out of scope, closed
+  another way (a duplicate, spam and the like), or not answered yet. These are shown exactly: they count requests, not
+  people, and nothing in them identifies anyone;
+- the source list appeals we received, and how they ended;
 - the quarterly audit's findings.
 
 ## What we can't count
@@ -48,9 +51,14 @@ docker compose exec server node apps/server/src/cli/transparency.ts --quarter 20
 It reads the counts above from the rows the Cloud keeps without content, prints the report and changes nothing. A
 self-hosted server can print its own report with the same command.
 
-Corrections and appeals are counted by hand: the GitHub issues labelled `correction` and `source-list-appeal` opened in
-the quarter, by how they ended (closed as fixed or changed, closed with no change, still open), plus the requests sent by
-email, counted without names.
+The same command counts corrections, from what unAlgorithm Cloud keeps: the problem reports of kind `correction` that
+people sent from unAlgorithm in the quarter, by feature and by how they ended. A correction is deleted after 90 days
+and leaves only one more in its quarter's count, by feature and outcome, so the command adds those counts to the
+corrections still kept. Corrections sent by email are added by hand, counted without names.
+
+Source list appeals are counted by hand: the GitHub issues labelled `source-list-appeal` opened in the quarter, by how
+they ended (closed as changed, closed with no change, still open), plus the appeals sent by email, counted without
+names.
 
 The audit's findings follow the [Quarterly audit](corrections.md#quarterly-audit), with the quarter's list changes
 taken from the source list's public change history at
@@ -59,4 +67,4 @@ taken from the source list's public change history at
 ## Reports
 
 The first report covers October to December 2026 and will be published in January 2027. Each report is added below,
-newest first, as the command printed it, followed by the hand-counted corrections, appeals and audit lines.
+newest first, as the command printed it, followed by the hand-counted appeals, emailed corrections and audit lines.

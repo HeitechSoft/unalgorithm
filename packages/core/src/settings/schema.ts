@@ -3,8 +3,10 @@ import {
   LIST_KINDS,
   MAX_OUTLET_DOMAINS,
   NOISE_LABELS,
+  type NoticeKind,
   OutletDomainSchema,
   type PLATFORMS,
+  type PlatformId,
 } from '@unalgorithm/protocol';
 import { z } from 'zod';
 import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
@@ -155,6 +157,24 @@ export type Settings = z.infer<typeof SettingsSchema>;
 export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
 export type Labs = z.infer<typeof LabsSchema>;
 
+/** A notice snooze's key: the platform and the notice kind, `linkedin:ads-through`. */
+export type NoticeSnoozeKey = `${PlatformId}:${NoticeKind}`;
+export const NoticeSnoozeKeySchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,39}$/);
+export function noticeSnoozeKey(platform: PlatformId, kind: NoticeKind): NoticeSnoozeKey {
+  return `${platform}:${kind}`;
+}
+
+/**
+ * The in-feed breakage notices (ADR 0009 §3), per device: Settings → Display's "Tell me when something breaks", and
+ * the snoozes *Not now* (24 hours) and a sent report (7 days) set. A snooze names the adapter version it was set under
+ * and ends early when that changes. Device-local like everything here: shared by this browser's tabs, never synced.
+ */
+export const NoticePrefsSchema = z.looseObject({
+  enabled: z.boolean(),
+  snoozed: z.record(NoticeSnoozeKeySchema, z.looseObject({ until: z.number(), adapter: z.string().max(64) })),
+});
+export type NoticePrefs = z.infer<typeof NoticePrefsSchema>;
+
 /** Device-local state, never synced or exported. */
 export const DeviceSchema = z.looseObject({
   version: z.literal(1),
@@ -175,6 +195,7 @@ export const DeviceSchema = z.looseObject({
   labs: LabsSchema,
   /** The web search key this device uses with an OpenAI-compatible source (which provider; the key is a secret). */
   webSearch: WebSearchKeySchema.nullable(),
+  notices: NoticePrefsSchema,
 });
 export type Device = z.infer<typeof DeviceSchema>;
 

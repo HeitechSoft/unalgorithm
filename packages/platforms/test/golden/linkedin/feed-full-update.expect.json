@@ -1,0 +1,53 @@
+{
+  "setup": {
+    "url": "https://www.linkedin.com/feed/",
+    "list": ".scaffold-finite-scroll__content"
+  },
+  "notes": [
+    "NEW_LAYOUT_POST: feed-full-update layout, 2nd-degree",
+    "NEW_LAYOUT_POST, another author",
+    "NEW_LAYOUT_POST, another author"
+  ],
+  "decisions": {
+    "light": ["show/unknown", "show/unknown", "show/unknown"],
+    "balanced": ["show/unknown", "show/unknown", "show/unknown"],
+    "calm": ["show/unknown", "show/unknown", "show/unknown"]
+  },
+  "ids": ["li:urn:li:activity:7010", "li:urn:li:activity:7011", "li:urn:li:activity:7012"],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "li.items.card-key",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "weak",
+    "signedIn": false,
+    "loadMore": false
+  },
+  "emitted": {
+    "detectors": {},
+    "observations": {
+      "li.slot.action-bar.aria": 3,
+      "li.slot.actor.structure": 3,
+      "li.slot.age.structure": 3,
+      "li.slot.text.structure": 3
+    }
+  },
+  "errors": {}
+}

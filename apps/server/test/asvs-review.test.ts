@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { openSevereFindings, parseReview, readIdFile, reviewProblems } from './support/asvs-review.ts';
+import { ACCEPT_LANGUAGE, LISTED_GECKO_ID, MOZ_ORIGIN, report, reportApp, USER_AGENT } from './support/reports.ts';
+import { scanAllTables } from './support/scan-tables.ts';
+import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
 /**
  * The OWASP ASVS 5.0.0 level 2 self-review (CL5-11): the requirement list is the pinned standard's, and the checks of
@@ -193,5 +196,58 @@ describe('gate', () => {
       }
       expect(openSevereFindings(parseReview(md))).toEqual([]);
     });
+  });
+});
+
+/**
+ * Evidence for the review's privacy rows on the one anonymous write route (ADR 0009 §6): a problem report keeps no
+ * address, Origin, extension id or request header. Not a column, a log line or a limiter key holds the client's IP
+ * address (or its network), the Firefox page's UUID, the add-on id, the User-Agent, Accept-Language or a client hint.
+ */
+describe('problem reports keep no request identity', { timeout: PGLITE_TIMEOUT }, () => {
+  const cleanup: (() => Promise<unknown>)[] = [];
+  afterEach(async () => {
+    for (const step of cleanup.splice(0).reverse()) await step();
+  });
+
+  it('test_reports_keep_no_address_origin_or_headers', async () => {
+    const r = await reportApp({ TRUST_PROXY: 'one-hop' });
+    cleanup.push(() => r.t.close());
+    const uuid = MOZ_ORIGIN.slice('moz-extension://'.length);
+    const ipv4 = '203.0.113.77';
+    const ipv6 = '2001:db8:abcd:12::77';
+    const hint = '"Chromium";v="141", "QXZ7-hint-marker";v="1"';
+    const env = { extension: '0.4.1', channel: 'firefox-store', browser: 'firefox', browserMajor: 158, client: LISTED_GECKO_ID };
+    const headers = { 'User-Agent': USER_AGENT, 'Accept-Language': ACCEPT_LANGUAGE, 'Sec-CH-UA': hint };
+    for (const [kind, ip] of [
+      ['detection', ipv4],
+      ['correction', ipv4],
+      ['wrong-call', ipv6],
+      ['other', ipv6],
+    ] as const) {
+      const res = await r.send(report(kind, { env }), { origin: MOZ_ORIGIN, ip, headers });
+      expect(res.status, kind).toBe(201);
+    }
+
+    const needles = [
+      ipv4,
+      '203.0.113',
+      ipv6,
+      '2001:db8:abcd',
+      uuid,
+      MOZ_ORIGIN,
+      LISTED_GECKO_ID,
+      'QXZ7-ua-marker',
+      'qxz7-lang-marker',
+      'QXZ7-hint-marker',
+      'fr-CA',
+    ];
+    const tables = await scanAllTables(r.t.deps.db);
+    expect(tables.get('public.problem_reports')).toBeDefined();
+    for (const [table, json] of tables) for (const needle of needles) expect(json, `${table}: ${needle}`).not.toContain(needle);
+    for (const line of r.t.lines) for (const needle of needles) expect(line, needle).not.toContain(needle);
+    const keys = r.limits.keys();
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) for (const needle of needles) expect(key, needle).not.toContain(needle);
   });
 });

@@ -37,6 +37,10 @@ export function migrateSettings(raw: unknown): Settings {
   return repair(SettingsSchema, merged, defaults as unknown as Record<string, unknown>) as Settings;
 }
 
+/**
+ * Bring stored device state to the current shape, as `migrateSettings` does. A section added later is filled in from
+ * the defaults (devices stored before ADR 0009 get `notices`, on and with nothing snoozed); a broken one is reset alone.
+ */
 export function migrateDevice(raw: unknown, newDeviceId: () => string): Device {
   const id = isPlainObject(raw) && typeof raw.deviceId === 'string' && raw.deviceId ? raw.deviceId : newDeviceId();
   const defaults = defaultDevice(id);

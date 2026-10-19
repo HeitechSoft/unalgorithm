@@ -69,6 +69,10 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'DAILY_SPEND_LIMIT_USD',
   'USER_DAILY_CHECK_CAP',
   'EGRESS_DENY',
+  'REPORTS',
+  'REPORTS_DAILY_MAX',
+  'REPORTS_PER_HOUR',
+  'REPORTS_ALERT_NETWORKS',
   'ALERT_DISK_FREE_MIN_GB',
   'ALERT_DATABASE_MAX_GB',
   'ALERT_ERRORS_PER_15M',
@@ -153,6 +157,19 @@ export interface Config {
   perspectives: { enabled: boolean };
   /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
   egressDeny: string[];
+  /**
+   * Problem reports (ADR 0009): `POST /v1/reports`, the server's one anonymous write route, is mounted only when
+   * `REPORTS=on`; the admin page's reports and the report alerts follow it.
+   */
+  reports: {
+    enabled: boolean;
+    /** Reports accepted per UTC day across all clients; past it, 503 until 00:00 UTC and `reports-cap`. */
+    dailyMax: number;
+    /** Reports per network address (IPv6 by /64) an hour. */
+    perHour: number;
+    /** Distinct networks that open a `reports-<platform>-broken` alert; 0 turns the report alerts off. */
+    alertNetworks: number;
+  };
   routeEvalMinAgreement: number;
   userDailyPostCap: number;
   userRequestsPerMinute: number;
@@ -483,6 +500,12 @@ export function loadConfig(env: Env = process.env): Config {
     bad('EGRESS_DENY', 'must be IP addresses or ip/prefix ranges (prefix up to 32 for IPv4, 128 for IPv6), comma-separated');
   }
 
+  // Problem reports (ADR 0009): off unless REPORTS=on. The limits are read either way, and unused while it is off.
+  const reports = oneOf('REPORTS', ['off', 'on'] as const, 'off');
+  const reportsDailyMax = integer('REPORTS_DAILY_MAX', 1000, 1, 1_000_000);
+  const reportsPerHour = integer('REPORTS_PER_HOUR', 6, 1, 1000);
+  const reportsAlertNetworks = integer('REPORTS_ALERT_NETWORKS', 2, 0, 1000);
+
   // Alerts (CL4-15): 0 turns a rule off.
   const gigabytes = (name: string, fallback: number, alert: string) =>
     decimal(name, fallback, (n) => n >= 0, `must be a number of GB, 0 or more (0 turns ${alert} off)`);
@@ -560,6 +583,12 @@ export function loadConfig(env: Env = process.env): Config {
     },
     perspectives: { enabled: perspectives === 'on' && factcheckOn },
     egressDeny,
+    reports: {
+      enabled: reports === 'on',
+      dailyMax: reportsDailyMax,
+      perHour: reportsPerHour,
+      alertNetworks: reportsAlertNetworks,
+    },
     routeEvalMinAgreement,
     userDailyPostCap,
     userRequestsPerMinute,

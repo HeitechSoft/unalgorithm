@@ -81,6 +81,18 @@ export function cloudEnabled(mode: string): boolean {
   return process.env.UA_CLOUD === '1' || mode === 'development' || mode === 'e2e';
 }
 
+/**
+ * Where e2e builds send problem reports instead of unAlgorithm Cloud (ADR 0009 §1): the test server, which the report
+ * specs start on this fixed port (`e2e/server-harness.ts`, `E2E_REPORTS_PORT`), since the address is built in. Every
+ * other build sends to the protocol's `REPORTS_URL` and nowhere else.
+ */
+export const E2E_REPORTS_URL = 'http://127.0.0.1:47911/v1/reports';
+
+/** The problem report address a build mode bakes in, or null for `REPORTS_URL` (every build but e2e). */
+export function reportsUrlFor(mode: string): string | null {
+  return mode === 'e2e' ? E2E_REPORTS_URL : null;
+}
+
 /** Store and development builds ask for it at setup, as an optional permission; only e2e builds have it from the start. */
 export const ANTHROPIC_HOST = 'https://api.anthropic.com/*';
 /** As Anthropic: asked for at setup (OpenAI) or from the web search key's Save click (Brave), except in e2e builds. */
@@ -139,17 +151,19 @@ export function manifestFor(mode: string, browser = 'chrome'): UserManifest {
           id: mode === 'production' ? FIREFOX_ADDON_ID : FIREFOX_DEV_ADDON_ID,
           strict_min_version: FIREFOX_MIN_VERSION,
           // Rules only sends nothing. Turning on any AI source but on-device, or saving a web search key, asks for post
-          // text (websiteContent, personalCommunications) from the same click. Only builds with the server card declare
-          // the rest: signing in to an unAlgorithm server asks for post text, the people sync carries and the account
-          // (personallyIdentifyingInfo, authenticationInfo), and technicalAndInteraction, which Firefox offers at install,
-          // only decides whether the sign-in sends the device name. A service on this computer is asked for like any
-          // other (`src/lib/data-consent.ts`).
+          // text (websiteContent, personalCommunications) from the same click. technicalAndInteraction, which Firefox
+          // offers at install and unAlgorithm never asks for, is declared in every build (ADR 0009 §5): it decides
+          // whether Report a problem posts a report or offers to email it, and whether a sign-in sends the device
+          // name. Only builds with the server card declare the rest: signing in to an unAlgorithm server asks for post
+          // text, the people sync carries and the account (personallyIdentifyingInfo, authenticationInfo). A service
+          // on this computer is asked for like any other (`src/lib/data-consent.ts`).
           data_collection_permissions: {
             required: ['none'],
             optional: [
               'websiteContent',
               'personalCommunications',
-              ...(cloudEnabled(mode) ? ['personallyIdentifyingInfo', 'authenticationInfo', 'technicalAndInteraction'] : []),
+              'technicalAndInteraction',
+              ...(cloudEnabled(mode) ? ['personallyIdentifyingInfo', 'authenticationInfo'] : []),
             ],
           },
         },
@@ -213,7 +227,10 @@ export default defineConfig({
   vite: (env) => ({
     resolve: { dedupe: ['react', 'react-dom', 'zod'] },
     build: { sourcemap: licenses },
-    define: { 'import.meta.env.UA_CLOUD': JSON.stringify(cloudEnabled(env.mode)) },
+    define: {
+      'import.meta.env.UA_CLOUD': JSON.stringify(cloudEnabled(env.mode)),
+      'import.meta.env.UA_REPORTS_URL': JSON.stringify(reportsUrlFor(env.mode)),
+    },
     plugins: [
       {
         // src/lib/zod-jitless.ts runs before anything else in every entrypoint. Same line, so no line moves.

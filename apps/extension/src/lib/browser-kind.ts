@@ -41,18 +41,43 @@ export function browserLabel(kind: BrowserKind): string {
   return LABELS[kind];
 }
 
+const VERSION_PATTERNS = [
+  ['Firefox', /Firefox\/(\d+)/],
+  ['Edge', /Edg\/(\d+)/],
+  ['Chrome', /Chrome\/(\d+)/],
+] as const;
+
 /**
- * "Firefox 147", "Edge 141" or "Chrome 141" for problem reports: the name and major version only, from the user agent
- * string the page already sees. "unknown" when it names none of them.
+ * "Firefox 147", "Edge 141" or "Chrome 141" for the developer diagnostics: the name and major version only, from the
+ * user agent string the page already sees. "unknown" when it names none of them.
  */
 export function browserVersion(userAgent: string): string {
-  for (const [name, pattern] of [
-    ['Firefox', /Firefox\/(\d+)/],
-    ['Edge', /Edg\/(\d+)/],
-    ['Chrome', /Chrome\/(\d+)/],
-  ] as const) {
+  for (const [name, pattern] of VERSION_PATTERNS) {
     const major = userAgent.match(pattern)?.[1];
     if (major) return `${name} ${major}`;
   }
   return 'unknown';
+}
+
+/** The browser's major version for a problem report (141), from the user agent string; 0 when it names none. */
+export function browserMajor(userAgent: string): number {
+  for (const [, pattern] of VERSION_PATTERNS) {
+    const major = Number(userAgent.match(pattern)?.[1]);
+    if (Number.isInteger(major) && major > 0 && major < 10_000) return major;
+  }
+  return 0;
+}
+
+/**
+ * The browser a problem report names (ADR 0009 §4). Unlike `browserKind`, another Chromium browser that runs the Chrome
+ * build (Brave, Opera, Vivaldi) is `other`: a report should say where it came from. A Chromium that names no brands at
+ * all is taken as Chrome, as `browserKind` does.
+ */
+export function reportBrowser(
+  facts: BrowserFacts = { firefox: import.meta.env.BROWSER === 'firefox', brands: brandNames() },
+): 'chrome' | 'edge' | 'firefox' | 'other' {
+  if (facts.firefox) return 'firefox';
+  if (facts.brands.includes('Microsoft Edge')) return 'edge';
+  if (facts.brands.includes('Google Chrome') || !facts.brands.length) return 'chrome';
+  return 'other';
 }

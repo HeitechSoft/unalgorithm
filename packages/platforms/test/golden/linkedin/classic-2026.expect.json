@@ -1,0 +1,125 @@
+{
+  "setup": {
+    "url": "https://www.linkedin.com/feed/",
+    "list": "[data-testid=\"mainFeed\"]"
+  },
+  "notes": [
+    "\"Start a post\"",
+    "FOLLOWED_BY_POST: \"Followed by …\", 2nd-degree, Follow button",
+    "PROMOTED_FOLLOWS_PAGE: \"… follows this page\", Promoted page",
+    "LIKES_GROUP_POST: \"… likes this\", group post, Join",
+    "UNJOINED_GROUP_POST: 1st-degree post in a group you're not in",
+    "JOINED_GROUP_POST: 1st-degree post in a group you're in",
+    "HIRING_PROMO: \"See who's hiring\" panel",
+    "FIRST_DEGREE_POST: 1st-degree connection",
+    "COMPANY_NOT_FOLLOWED: page with a Follow button",
+    "PARTNERSHIP_AD: \"Promoted • Partnership with LinkedIn\", person's post",
+    "FOLLOWING_POST: \"• Following\" instead of a degree",
+    "POST_WITH_COMMENTS: 1st-degree post with its comments open",
+    "empty load-more marker"
+  ],
+  "decisions": {
+    "light": [
+      "-",
+      "show/not-followed",
+      "sponsored/followed",
+      "show/unknown",
+      "show/followed",
+      "show/followed",
+      "panel",
+      "show/followed",
+      "show/not-followed",
+      "sponsored/not-followed",
+      "show/followed",
+      "show/followed",
+      "-"
+    ],
+    "balanced": [
+      "-",
+      "network-activity/not-followed",
+      "sponsored/followed",
+      "network-activity/unknown",
+      "unjoined-group/followed",
+      "show/followed",
+      "panel",
+      "show/followed",
+      "not-followed/not-followed",
+      "sponsored/not-followed",
+      "show/followed",
+      "show/followed",
+      "-"
+    ],
+    "calm": [
+      "-",
+      "network-activity/not-followed",
+      "sponsored/followed",
+      "network-activity/unknown",
+      "unjoined-group/followed",
+      "show/followed",
+      "panel",
+      "show/followed",
+      "not-followed/not-followed",
+      "sponsored/not-followed",
+      "show/followed",
+      "show/followed",
+      "-"
+    ]
+  },
+  "ids": [
+    null,
+    "li:ck:AAAkeyFollowedBy01",
+    "li:ck:BBBkeyPromoted0002",
+    "li:ck:CCCkeyGroupPost003",
+    "li:ck:HHHkeyGroupNotIn01",
+    "li:ck:IIIkeyGroupJoined1",
+    null,
+    "li:ck:EEEkeyFirstDegree5",
+    "li:ck:FFFkeyCompanyNF006",
+    "li:ck:JJJkeyPartnerAd01",
+    "li:ck:KKKkeyFollowing01",
+    "li:ck:GGGkeyWithComments",
+    null
+  ],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "li.items.card-key",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "strong",
+    "signedIn": true,
+    "loadMore": true
+  },
+  "emitted": {
+    "detectors": {
+      "li.header.activity": 3,
+      "li.follow-button": 3,
+      "li.promoted.age-slot": 2,
+      "li.group.join-button": 2
+    },
+    "observations": {
+      "li.slot.text.testid": 10,
+      "li.slot.action-bar.aria": 10,
+      "li.slot.actor.aria": 10,
+      "li.slot.header.structure": 3,
+      "li.slot.age.structure": 10
+    }
+  },
+  "errors": {}
+}

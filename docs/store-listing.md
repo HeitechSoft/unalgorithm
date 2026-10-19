@@ -62,7 +62,8 @@ For posts in your feed, with your own Anthropic or OpenAI key, or your own AI se
 
 PRIVATE BY DESIGN
 • No analytics, no tracking, no account.
-• Nothing leaves your browser unless you turn on AI. Then only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Nothing leaves your browser unless you turn on AI or send a report. With AI on, only what's needed to classify a post goes to the AI you chose: its text (with email addresses, phone numbers, @mentions and tagged names masked), the kind of media, a shared link's site and title, and your interests. Never author names, profile links, comments or images.
+• Report a problem sends a report you review to HeitechSoft, unAlgorithm's maker. It holds versions, counts and your answers, never what posts say or who wrote them, and goes only when you click Send report.
 • Your API keys stay in this browser.
 • unAlgorithm only reads what is already on your screen. It never clicks, scrolls, posts, follows or browses for you.
 
@@ -120,7 +121,7 @@ One field per permission in `manifestFor('production', 'chrome')`. These follow 
 **storage**
 
 ```text
-Keeps the user's settings, interests, exceptions ("always show/hide"), feedback ("more/less like this"), daily counts and cached AI results in the browser. While a LinkedIn or Facebook tab is open, it also keeps the lists the popup and side panel show in session storage, which is cleared when the tab closes. An API key the user enters for their own AI provider is stored only in the extension's storage, which web pages cannot read. Nothing in storage is sent to HeitechSoft.
+Keeps the user's settings, interests, exceptions ("always show/hide"), feedback ("more/less like this"), daily counts and cached AI results in the browser. While a LinkedIn or Facebook tab is open, it also keeps the lists the popup and side panel show in session storage, which is cleared when the tab closes. An API key the user enters for their own AI provider is stored only in the extension's storage, which web pages cannot read. A problem report the user opens waits in session storage, for an hour at most, until they send it or close its page, and the times of the reports they sent in the last day are kept to limit how many go out. Nothing else in storage is sent to HeitechSoft.
 ```
 
 **sidePanel**
@@ -138,7 +139,7 @@ When the extension is first installed, it starts its own content script, package
 **Host permissions: `https://www.linkedin.com/*` and `https://www.facebook.com/*`**
 
 ```text
-The content scripts read the feed on these two sites to find posts and fold away the ones the user doesn't want, and add the Why?, Show and For you controls to the page. They read only what is already on the screen and never click, scroll, post, follow or browse for the user. What they read stays in the browser unless the user turns on AI, and then only the fields needed to classify a post go to the AI service the user chose.
+The content scripts read the feed on these two sites to find posts and fold away the ones the user doesn't want, and add the Why?, Show and For you controls to the page. They read only what is already on the screen and never click, scroll, post, follow or browse for the user. They also check that detection still works on the page, and say so in the feed when it doesn't. What they read stays in the browser unless the user turns on AI (then only the fields needed to classify a post go to the AI service the user chose) or sends a problem report (counts and codes about the page, never its content).
 ```
 
 **Optional host permissions: `https://*/*` and `http://*/*`**
@@ -161,12 +162,18 @@ data, never run as code.
 
 ### Data usage
 
-What user data does unAlgorithm Feed collect? Tick only **Website content**; leave every other category unticked.
+What user data does unAlgorithm Feed collect? Tick **Website content**, **Personally identifiable information** and
+**Personal communications**; leave every other category unticked. The last two cover only what a person writes when
+they ask HeitechSoft to correct a Fact-check or UnEcho Chamber result ([PRIVACY.md](../PRIVACY.md#report-a-problem)).
 
 | Category | Answer | Why |
 |---|---|---|
-| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Fact-check and UnEcho Chamber, when the user turns them on and confirms a check or a comparison, send to that same service one post (Fact-check) or the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber), and the claims or the story's search words to Brave or Tavily with the user's own key. None of it goes to HeitechSoft |
-| Personally identifiable information, health, financial and payment, authentication, personal communications, location, web history, user activity | No | Author names, profile links, comments, images and browsing history are never sent. API keys stay in the browser and go only to the provider they belong to |
+| Website content | **Yes** | Only when the user turns on AI, and only to the AI service the user chose: the text of feed posts (capped, with email addresses and phone numbers always masked and @mentions and tagged names masked unless the user turns that off), the kind of media and a shared link's domain and title. Fact-check and UnEcho Chamber, when the user turns them on and confirms a check or a comparison, send to that same service one post (Fact-check) or the shared link, its title and the chosen source list's web addresses and leans (UnEcho Chamber), and the claims or the story's search words to Brave or Tavily with the user's own key |
+| Personally identifiable information | **Yes** | An email address the user may type into a correction request so HeitechSoft can reply; kept at most 60 days |
+| Personal communications | **Yes** | A message the user writes to HeitechSoft to correct a Fact-check or UnEcho Chamber result, with emails, phone numbers and links removed; used only to review that result; kept 90 days |
+| Health, financial and payment, authentication, location | No | Author names, profile links, comments, images and browsing history are never sent. API keys stay in the browser and go only to the provider they belong to |
+| Web history | No | Only the route class of the LinkedIn or Facebook page being reported is sent (the home feed, a page that looks like a feed, or another page) and, for a feed at a new address, that one word (such as foryou), never its address |
+| User activity | No | No time, clicks or scrolling are sent |
 
 With each classification, the AI service also receives the user's interests, the optional "About you" note and, if
 the user turned on learning from ratings, short AI-written summaries of up to 4 posts they rated. These are the user's
@@ -174,11 +181,19 @@ own settings for the same feed, sent to the service the user chose, not one of t
 asks, point to *When you turn on AI* in the privacy policy. While UnEcho Chamber is on, the extension downloads
 unAlgorithm Cloud's public source list at most once a day; the request carries no user data.
 
+*Report a problem* opens an extension page that shows the whole report; only its *Send report* click posts it, to
+unAlgorithm Cloud (`cloud.unalgorithm.app/v1/reports`), with no account, cookie or identifier. Its versions, browser
+and counts are technical diagnostics with no category, and PRIVACY.md discloses them (*Report a problem*).
+
 Tick all three certifications:
 
 - I do not sell or transfer user data to third parties, outside of the approved use cases.
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose.
 - I do not use or transfer user data to determine creditworthiness or for lending purposes.
+
+They hold for problem reports too: HeitechSoft uses them only to fix unAlgorithm and to review and answer corrections,
+and they add no subprocessor (OVHcloud hosts unAlgorithm Cloud; alert emails go through SMTP2GO and carry counts
+only).
 
 ### Privacy policy URL
 

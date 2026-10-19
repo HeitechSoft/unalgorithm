@@ -1,39 +1,59 @@
-import { cyrb53, type Evidence, type ModuleInfo, NO_SIGNALS, type PostData } from '@unalgorithm/core';
+import { atLeast, cyrb53, type Evidence, type ModuleInfo, NO_SIGNALS, type PostData, signalStrength } from '@unalgorithm/core';
 import type { MediaKind, PostKey } from '@unalgorithm/protocol';
-import { getLines, linkDomain, linkedNames, normalizeText, precedes, richText } from '../shared/dom.ts';
+import { accessibleName, getLines, linkDomain, linkedNames, normalizeText, precedes, richText } from '../shared/dom.ts';
+import { type LabelHit, type LabelPattern, matchLabel } from '../shared/labels.ts';
+import type { FacebookDetector, FacebookObservation } from './ids.ts';
 import type { FacebookMarkers } from './markers/en.ts';
+import { FB_ORIGIN, FB_SEL, isFacebookProfileHref } from './selectors.ts';
+import {
+  headerButtons,
+  type ItemSlots,
+  inComment,
+  inHeader,
+  inNestedPost,
+  messageBox,
+  slotLink,
+  slotsOf,
+  withSlots,
+} from './slots.ts';
 
-const ORIGIN = 'https://www.facebook.com';
+export { FB_SEL } from './selectors.ts';
 
-/** Hooks Facebook renders for ads previews and the story layout; they also mark ordinary posts. */
-export const FB_SEL = {
-  feed: '[role="feed"]',
-  post: '[aria-posinset]',
-  message: '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-ad-rendering-role="story_message"]',
-  profileName: '[data-ad-rendering-role="profile_name"]',
-  heading: 'h2, h3, h4',
-  button: 'button, [role="button"]',
-  permalink:
-    'a[href*="/posts/"], a[href*="story_fbid="], a[href*="/permalink/"], a[href*="/reel/"], a[href*="/videos/"], a[href*="/photo"]',
-  /** Inside a header link: the 2026 timestamp's age ("6 hours ago") or, on ads, "Ad". */
-  timestampLabel: '[aria-labelledby]',
-  outboundLink: 'a[href*="l.facebook.com/l.php"], a[href^="https://l.facebook.com/"]',
-  groupLink: 'a[href*="/groups/"]',
-  audience: '[aria-label^="Shared with"], [title^="Shared with"]',
-} as const;
+/** Evidence from one of the ids the adapter declares (ids.ts), so nothing outside the registry is ever emitted. */
+function ev(signal: Evidence['signal'], detector: FacebookDetector, strength: Evidence['strength']): Evidence {
+  return { signal, detector, strength };
+}
 
-/** Elements Facebook renders but hides (anti-adblock decoys). The capture script marks them `data-ua-hidden`. */
+/**
+ * Elements Facebook renders but hides (anti-adblock decoys). The capture script marks them `data-ua-hidden`.
+ * An element's own display:none is checked before layout, because such an element has no client rects either.
+ * Without rects, the other styles are not trusted: everything inside an item we folded has none, and display is
+ * not inherited, so a folded item's labels still read as they look on screen.
+ */
 function isHidden(el: Element): boolean {
   if (el.hasAttribute('data-ua-hidden') || el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return true;
   const view = el.ownerDocument.defaultView;
-  const html = el as HTMLElement;
-  if (!view || typeof html.getClientRects !== 'function' || html.getClientRects().length === 0) return false;
+  if (!view) return false;
+  // With no style sheet, only the element's own style can hide it: skip getComputedStyle, which may recalculate
+  // styles (and takes a millisecond a call in jsdom, where the captures are tested).
+  if (el.ownerDocument.styleSheets.length === 0 && !el.hasAttribute('style')) return false;
   const s = view.getComputedStyle(el);
-  return s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0 || s.fontSize === '0px';
+  if (s.display === 'none') return true;
+  const html = el as HTMLElement;
+  if (typeof html.getClientRects !== 'function' || html.getClientRects().length === 0) return false;
+  return s.visibility === 'hidden' || Number(s.opacity) === 0 || s.fontSize === '0px';
 }
 
-/** Text built only from characters a person can see, so "Spo<hidden>x</hidden>nsored" reads "Sponsored". */
-function visibleText(root: Element, limit = 40): string {
+/** Without spaces and U+034F, an invisible joiner Facebook puts after each character of some labels. */
+function squash(s: string): string {
+  return s.replace(/\s|\u034F/g, '');
+}
+
+/**
+ * Text built only from characters a person can see, so "Spo<hidden>x</hidden>nsored" reads "Sponsored".
+ * `hiddenRoot` reads a root that is itself hidden, as an aria-labelledby target may be.
+ */
+function visibleText(root: Element, limit = 40, hiddenRoot = false): string {
   let out = '';
   let nodes = 0;
   const visit = (n: Node) => {
@@ -44,7 +64,7 @@ function visibleText(root: Element, limit = 40): string {
     }
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     const el = n as Element;
-    if (isHidden(el)) return;
+    if (!(hiddenRoot && el === root) && isHidden(el)) return;
     // Facebook draws some labels as SVG <use> pointing at a <text> elsewhere in the page.
     if (el.tagName.toLowerCase() === 'use') {
       const ref = el.getAttribute('href') ?? el.getAttribute('xlink:href');
@@ -55,65 +75,114 @@ function visibleText(root: Element, limit = 40): string {
     for (const c of Array.from(el.childNodes)) visit(c);
   };
   visit(root);
-  return normalizeText(out).replace(/\s+/g, '');
+  return normalizeText(out);
 }
 
-function messageBox(root: Element): Element | null {
-  return root.querySelector(FB_SEL.message);
+/** The visible text of the elements an element's aria-labelledby names (read even when they are hidden). */
+function labelledText(el: Element): string {
+  const doc = el.ownerDocument;
+  return (el.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => doc.getElementById(id))
+    .filter((x): x is HTMLElement => !!x)
+    .map((x) => visibleText(x, 40, true))
+    .join('');
 }
 
-/** The post's own header: everything before the message box (or the first 30 % of the item if there is none). */
-function inHeader(root: Element, el: Element): boolean {
-  const msg = messageBox(root);
-  if (msg) return precedes(el, msg) && !msg.contains(el);
-  const author = root.querySelector(FB_SEL.profileName) ?? root.querySelector(FB_SEL.heading);
-  if (!author) return false;
-  const container = author.parentElement?.parentElement ?? author;
-  return container.contains(el);
+/**
+ * The label `text` is, as the page shows it or with its spaces removed (letters spread across spans, "S p o n s o r e
+ * d"). A full match (exact or known) wins over a near miss.
+ */
+function labelHit(text: string, pattern: LabelPattern): LabelHit | null {
+  const shown = matchLabel(text, pattern);
+  if (shown && shown.match !== 'near') return shown;
+  const squashed = matchLabel(squash(text), pattern);
+  if (squashed && squashed.match !== 'near') return squashed;
+  return shown ?? squashed;
 }
 
-/** A shared post nested inside this one has its own header; its buttons and labels are not ours. */
-function inNestedPost(root: Element, el: Element): boolean {
-  const names = Array.from(root.querySelectorAll(FB_SEL.profileName));
-  if (names.length < 2) return false;
-  const second = names[1] as Element;
-  let block: Element | null = second;
-  while (block?.parentElement && block.parentElement !== root && !block.parentElement.contains(names[0] as Element))
-    block = block.parentElement;
-  return !!block && block !== root && block.contains(el);
-}
-
-function headerButtons(root: Element): Element[] {
-  return Array.from(root.querySelectorAll(FB_SEL.button)).filter((b) => inHeader(root, b) && !inNestedPost(root, b));
-}
+const isFull = (hit: LabelHit | null): boolean => !!hit && hit.match !== 'near';
 
 function label(el: Element): string {
   return normalizeText(el.getAttribute('aria-label') ?? getLines(el).join(' '));
 }
 
-/** Sponsored detection: several independent detectors, each with a strength. Weak signals never hide alone. */
-function sponsoredEvidence(root: Element, m: FacebookMarkers): Evidence[] {
-  const ev: Evidence[] = [];
-  const doc = root.ownerDocument;
+/** A button whose aria-label or visible text is exactly the label ("Follow", "+ Follow"; never "Following"). */
+function isButton(el: Element, pattern: LabelPattern): boolean {
+  const own = el.getAttribute('aria-label');
+  return (!!own && isFull(matchLabel(normalizeText(own), pattern))) || isFull(matchLabel(getLines(el).join(' '), pattern));
+}
+
+/** What the slot link says, from its SVG text, its aria-labelledby label or its visible characters. */
+function slotLabel(a: Element): string {
+  const doc = a.ownerDocument;
+  for (const use of Array.from(a.querySelectorAll('use'))) {
+    const ref = use.getAttribute('href') ?? use.getAttribute('xlink:href');
+    const target = ref?.startsWith('#') ? doc.getElementById(ref.slice(1)) : null;
+    const text = target && !isHidden(use.closest('svg') ?? use) ? normalizeText(target.textContent ?? '') : '';
+    if (text) return text;
+  }
+  for (const el of [a, ...Array.from(a.querySelectorAll('[aria-labelledby]'))]) {
+    const text = labelledText(el);
+    if (text) return text;
+  }
+  return visibleText(a);
+}
+
+const isNameLink = (a: Element) => {
+  const href = a.getAttribute('href') ?? '';
+  return isFacebookProfileHref(href) || /\/groups\//.test(href);
+};
+
+/**
+ * The author's name block (or a wrapper of it), or a link to a person, page or group: a near miss there is a name
+ * ("Ad Astra"), not a label, and must never raise "Some ads may be getting through".
+ */
+function inName(root: Element, el: Element): boolean {
+  const { actor } = slotsOf(root);
+  if (actor && (actor.contains(el) || el.contains(actor))) return true;
+  const link = el.closest('a[href]');
+  if (link && root.contains(link) && isNameLink(link)) return true;
+  return Array.from(el.querySelectorAll('a[href]')).some(isNameLink);
+}
+
+interface AdLabels {
+  evidence: Evidence[];
+  /** A near-miss ad label ("Ad · Paid"): the age slot's first, else the first in another label position. */
+  near?: LabelHit;
+  /** The age slot holds something that is neither an age nor an ad label. */
+  ageUnrecognised: boolean;
+}
+
+/**
+ * Sponsored detection: several independent detectors, each with a strength. Weak signals never hide alone. Labels
+ * are read only in label positions (ADR 0009 §9): the age slot, the header's elements and its buttons, never the
+ * post's text, comments or a nested post.
+ */
+function sponsoredEvidence(root: Element, m: FacebookMarkers): AdLabels {
+  const out: Evidence[] = [];
+  const pattern = m.labels.sponsored;
+  const nearMisses: LabelHit[] = [];
+  /** A full label; a near miss outside names is kept for the one medium `fb.sponsored.near`. */
+  const full = (hit: LabelHit | null, el: Element): boolean => {
+    if (hit?.match === 'near' && !inName(root, el)) nearMisses.push(hit);
+    return isFull(hit);
+  };
   const headerEls = Array.from(root.querySelectorAll('a, span, div')).filter(
     (el) => inHeader(root, el) && !inNestedPost(root, el),
   );
 
-  // 1. aria-label / aria-labelledby resolving to "Sponsored".
+  // 1. aria-label / aria-labelledby naming the label.
   for (const el of headerEls) {
     const own = el.getAttribute('aria-label');
-    if (own && m.sponsored.test(normalizeText(own))) {
-      ev.push({ signal: 'sponsored', detector: 'fb.sponsored.aria-label', strength: 'strong' });
+    if (own && full(labelHit(normalizeText(own), pattern), el)) {
+      out.push(ev('sponsored', 'fb.sponsored.aria-label', 'strong'));
       break;
     }
-    const ids = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean);
-    const text = ids
-      .map((id) => doc.getElementById(id))
-      .filter((x): x is HTMLElement => !!x)
-      .map((x) => visibleText(x))
-      .join('');
-    if (text && m.sponsored.test(text)) {
-      ev.push({ signal: 'sponsored', detector: 'fb.sponsored.labelledby', strength: 'strong' });
+    const text = labelledText(el);
+    if (text && full(labelHit(text, pattern), el)) {
+      out.push(ev('sponsored', 'fb.sponsored.labelledby', 'strong'));
       break;
     }
   }
@@ -121,39 +190,50 @@ function sponsoredEvidence(root: Element, m: FacebookMarkers): Evidence[] {
   if (
     headerEls.some((el) => el.tagName === 'A' && /\/ads\/(about|preferences)|\/ad_?choices/.test(el.getAttribute('href') ?? ''))
   ) {
-    ev.push({ signal: 'sponsored', detector: 'fb.sponsored.adlink', strength: 'strong' });
+    out.push(ev('sponsored', 'fb.sponsored.adlink', 'strong'));
   }
   // 3. "Paid partnership" (branded content).
   if (headerEls.some((el) => el.childElementCount === 0 && m.paidPartnership.test(normalizeText(el.textContent ?? '')))) {
-    ev.push({ signal: 'sponsored', detector: 'fb.sponsored.paid-partnership', strength: 'strong' });
+    out.push(ev('sponsored', 'fb.sponsored.paid-partnership', 'strong'));
   }
   // 4. The label rebuilt from visible characters only (defeats letters split across hidden decoy spans).
   const small = headerEls.filter(
     (el) => el.tagName === 'SPAN' && el.querySelectorAll('*').length <= 40 && (el.textContent?.length ?? 0) <= 60,
   );
-  if (small.some((el) => m.sponsored.test(visibleText(el))))
-    ev.push({ signal: 'sponsored', detector: 'fb.sponsored.rendered-label', strength: 'medium' });
-  // 5. A call-to-action button with an outbound link (weak: organic shares can have these too).
+  if (small.some((el) => full(labelHit(visibleText(el), pattern), el)))
+    out.push(ev('sponsored', 'fb.sponsored.rendered-label', 'medium'));
+  // 5. A header button named by the label. Buttons with an aria-label or aria-labelledby were read in 1.
+  for (const b of headerButtons(root).buttons) {
+    if (b.tagName !== 'BUTTON' && (b.hasAttribute('aria-label') || b.hasAttribute('aria-labelledby'))) continue;
+    if (full(labelHit(accessibleName(b), pattern), b)) {
+      out.push(ev('sponsored', 'fb.sponsored.header', 'strong'));
+      break;
+    }
+  }
+  // 6. A call-to-action button with an outbound link (weak: organic shares can have these too).
   const cta = Array.from(root.querySelectorAll(`${FB_SEL.button}, a`)).some(
     (b) => !inNestedPost(root, b) && m.ctaButtons.test(label(b)),
   );
-  if (cta && root.querySelector(FB_SEL.outboundLink))
-    ev.push({ signal: 'sponsored', detector: 'fb.sponsored.cta', strength: 'weak' });
-  // 6. No timestamp/permalink where organic posts have one (weak). Since 2026 the timestamp links to "/" until
-  //    hovered and its age is an aria-labelledby span inside the link, so that counts as a timestamp too.
-  const timestamp =
-    !!root.querySelector(FB_SEL.permalink) ||
-    headerEls.some((el) => el.tagName === 'A' && !!el.querySelector(FB_SEL.timestampLabel));
-  if (!timestamp) ev.push({ signal: 'sponsored', detector: 'fb.sponsored.no-timestamp', strength: 'weak' });
-  return ev;
+  if (cta && root.querySelector(FB_SEL.outboundLink)) out.push(ev('sponsored', 'fb.sponsored.cta', 'weak'));
+  // 7. The label where organic posts show their age: the link after the author's name (strong).
+  const slot = slotLink(root);
+  const age = slot ? slotLabel(slot) : '';
+  const slotHit = age ? labelHit(age, pattern) : null;
+  if (isFull(slotHit)) out.push(ev('sponsored', 'fb.sponsored.slot-label', 'strong'));
+  // 8. No timestamp/permalink where organic posts have one (weak). Since 2026 the timestamp links to "/" until
+  //    hovered and its age is SVG text (later also an aria-labelledby span): an age there counts; a label, or words
+  //    that are no age, do not.
+  const isAge = !!age && !slotHit && (/\d/.test(age) || m.ageWords.test(age));
+  if (!root.querySelector(FB_SEL.permalink) && !isAge) out.push(ev('sponsored', 'fb.sponsored.no-timestamp', 'weak'));
+  // 9. A near miss ("Ad · Paid"): medium, so with the missing timestamp it still hides, and the change is reported.
+  const near = slotHit?.match === 'near' ? slotHit : nearMisses[0];
+  if (near) out.push(ev('sponsored', 'fb.sponsored.near', 'medium'));
+  return { evidence: out, ...(near ? { near } : {}), ageUnrecognised: !!age && !slotHit && !isAge };
 }
 
+/** True when the evidence is enough to hide a post as an ad: core's rule, the same on every platform. */
 export function isSponsored(ev: Evidence[]): boolean {
-  const s = ev.filter((e) => e.signal === 'sponsored');
-  const strong = s.filter((e) => e.strength === 'strong').length;
-  const medium = s.filter((e) => e.strength === 'medium').length;
-  const weak = s.filter((e) => e.strength === 'weak').length;
-  return strong >= 1 || medium >= 2 || (medium >= 1 && weak >= 1);
+  return atLeast(signalStrength(ev, 'sponsored'), 'medium');
 }
 
 function headerLines(root: Element): string[] {
@@ -161,7 +241,11 @@ function headerLines(root: Element): string[] {
   const lines: string[] = [];
   for (const el of Array.from(root.querySelectorAll('span, h2, h3, h4, div[dir="auto"]'))) {
     if (el.childElementCount > 3) continue;
+    // 2026: the message box sits inside a div[dir=auto], which comes "before" it in document order.
+    if (msg && el.contains(msg)) continue;
     if (msg && !precedes(el, msg)) break;
+    // Off-screen aria-hidden blocks of filler words at the top of every 2026 item.
+    if (el.closest('[aria-hidden="true"]')) continue;
     if (inNestedPost(root, el)) continue;
     const t = normalizeText(el.textContent ?? '');
     if (t && t.length < 120 && !lines.includes(t)) lines.push(t);
@@ -170,18 +254,32 @@ function headerLines(root: Element): string[] {
   return lines;
 }
 
+/** Lines above the author's name ("Jamie Park commented on this."), for telling known header lines from new ones. */
+function contextLines(root: Element): string[] {
+  const { actor } = slotsOf(root);
+  if (!actor) return [];
+  const lines: string[] = [];
+  for (const el of Array.from(root.querySelectorAll('span[dir="auto"], div[dir="auto"], h2, h3, h4'))) {
+    if (!precedes(el, actor)) break;
+    if (el.contains(actor) || el.childElementCount > 3 || el.closest('[aria-hidden="true"]') || inNestedPost(root, el)) continue;
+    const t = normalizeText(el.textContent ?? '');
+    if (t && t.length < 120 && !lines.includes(t)) lines.push(t);
+  }
+  return lines;
+}
+
 function authorOf(root: Element): { name?: string; url?: string } {
-  const box = root.querySelector(FB_SEL.profileName) ?? root.querySelector(FB_SEL.heading);
+  const box = slotsOf(root).actor;
   const link = box?.querySelector<HTMLAnchorElement>('a[href]') ?? (box?.closest('a[href]') as HTMLAnchorElement | null);
   const name = normalizeText((box ? getLines(box)[0] : undefined) ?? link?.textContent ?? '');
   const href = link?.getAttribute('href');
   let url: string | undefined;
   if (href && href !== '#') {
     try {
-      const u = new URL(href, ORIGIN);
+      const u = new URL(href, FB_ORIGIN);
       if (u.hostname.endsWith('facebook.com')) {
         const id = u.searchParams.get('id');
-        url = `${ORIGIN}${u.pathname.replace(/\/+$/, '')}${u.pathname.includes('profile.php') && id ? `?id=${id}` : ''}`;
+        url = `${FB_ORIGIN}${u.pathname.replace(/\/+$/, '')}${u.pathname.includes('profile.php') && id ? `?id=${id}` : ''}`;
       }
     } catch {
       // ignore
@@ -229,7 +327,7 @@ function permalinkOf(root: Element): string | undefined {
   );
   if (!a) return undefined;
   try {
-    const u = new URL(a.getAttribute('href') ?? '', ORIGIN);
+    const u = new URL(a.getAttribute('href') ?? '', FB_ORIGIN);
     dropParams(u, (k) => k.startsWith('__'));
     return u.href;
   } catch {
@@ -241,11 +339,11 @@ function sharedLinkOf(root: Element): PostData['sharedLink'] {
   const a = root.querySelector<HTMLAnchorElement>(FB_SEL.outboundLink);
   if (!a) return undefined;
   try {
-    const target = new URL(a.getAttribute('href') ?? '', ORIGIN).searchParams.get('u');
+    const target = new URL(a.getAttribute('href') ?? '', FB_ORIGIN).searchParams.get('u');
     if (!target) return undefined;
     const u = new URL(target);
     dropParams(u, (k) => /^(utm_|fbclid)/.test(k));
-    const domain = linkDomain(u.href, ORIGIN);
+    const domain = linkDomain(u.href, FB_ORIGIN);
     if (!domain) return undefined;
     const pieces = Array.from(a.querySelectorAll('span, div'))
       .filter((el) => el.childElementCount === 0)
@@ -292,67 +390,81 @@ function textOf(root: Element, m: FacebookMarkers): { text: string; complete: bo
   return { text: (best?.text ?? '').slice(0, 4000), complete: !expander, source: best?.el ?? null };
 }
 
-/** Comments are nested articles ("Comment by …") or live in a labelled comment section. */
-function inComment(root: Element, el: Element): boolean {
-  const article = el.parentElement?.closest('[role="article"]');
-  if (article && article !== root && root.contains(article)) return true;
-  const section = el.closest('[aria-label*="comment" i], ul');
-  return !!section && section !== root && root.contains(section);
-}
+/** Elements that can title a feed panel, in page order. */
+const PANEL_TITLES = 'h1, h2, h3, h4, h5, h6, [role="heading"], span[dir="auto"]';
 
-/** Profile and page links (tags), not hashtags, groups, media, outbound or Facebook's own pages. */
-function isFacebookProfileHref(href: string): boolean {
-  let u: URL;
-  try {
-    u = new URL(href, 'https://www.facebook.com');
-  } catch {
-    return false;
-  }
-  if (!/(^|\.)facebook\.com$/.test(u.hostname) || u.hostname.startsWith('l.')) return false;
-  if (u.pathname === '/profile.php') return true;
-  // Members tagged in group posts, and classic page URLs.
-  if (/^\/groups\/[^/]+\/user\/[^/]+/.test(u.pathname) || /^\/pages\/[^/]+\/\d+/.test(u.pathname)) return true;
-  const first = u.pathname.split('/').filter(Boolean)[0] ?? '';
-  return (
-    !!first &&
-    !/^(hashtag|groups|events|watch|reel|reels|photo|photos|videos|stories|marketplace|gaming|ads|pages|help|policies|privacy|login|l\.php|share|sharer\.php)$/i.test(
-      first,
-    )
-  );
-}
-
-/** A feed panel rather than a post: its heading names a known panel and it has no message box. */
-export function moduleOf(root: Element, m: FacebookMarkers): ModuleInfo | undefined {
-  if (messageBox(root)) return undefined;
-  for (const h of Array.from(root.querySelectorAll('h2, h3, h4, span[dir="auto"]')).slice(0, 8)) {
-    const t = normalizeText(h.textContent ?? '');
-    for (const [kind, re] of Object.entries(m.modules) as [ModuleInfo['kind'], RegExp][]) {
-      if (re.test(t)) return { kind, title: t };
-    }
+/** The panel's title: the first heading a screen reader would read (not aria-hidden filler) that has a name. */
+function panelTitle(root: Element): string | undefined {
+  for (const h of Array.from(root.querySelectorAll(PANEL_TITLES))) {
+    if (h.closest('[aria-hidden="true"], [hidden], [data-ua-hidden]')) continue;
+    const name = accessibleName(h);
+    if (name) return name;
   }
   return undefined;
 }
 
+/** A feed panel rather than a post: its title names a known panel and it has no message box. */
+export function moduleOf(root: Element, m: FacebookMarkers): ModuleInfo | undefined {
+  if (messageBox(root)) return undefined;
+  const title = panelTitle(root);
+  if (!title) return undefined;
+  for (const [kind, pattern] of Object.entries(m.modules) as [ModuleInfo['kind'], LabelPattern][]) {
+    if (isFull(matchLabel(title, pattern))) return { kind, title };
+  }
+  return undefined;
+}
+
+/** One post as read, and what the adapter noticed while reading it (ids only, for health and reports). */
+export interface FacebookRead {
+  post: PostData;
+  observations: FacebookObservation[];
+}
+
 /** Read one Facebook feed item into a post. Read-only: never clicks "See more" or anything else. */
+export function readFacebookPost(root: HTMLElement, m: FacebookMarkers): FacebookRead {
+  return withSlots(root, (slots) => readPost(root, m, slots));
+}
+
+/** Read one Facebook feed item into a post (without the observations). */
 export function extractFacebookPost(root: HTMLElement, m: FacebookMarkers): PostData {
+  return readFacebookPost(root, m).post;
+}
+
+function readPost(root: HTMLElement, m: FacebookMarkers, slots: ItemSlots): FacebookRead {
+  const observations = new Set<FacebookObservation>(slots.observations);
   const author = authorOf(root);
   const lines = headerLines(root);
-  const evidence = sponsoredEvidence(root, m);
+  const ads = sponsoredEvidence(root, m);
+  const evidence = ads.evidence;
+  if (ads.near) observations.add('fb.label.sponsored.near');
+  if (ads.ageUnrecognised) observations.add('fb.slot.age.unrecognised');
   const sponsored = isSponsored(evidence);
   const suggested = lines.some((l) => m.suggestedHeader.test(l));
-  if (suggested) evidence.push({ signal: 'suggested', detector: 'fb.header.suggested', strength: 'strong' });
+  if (suggested) evidence.push(ev('suggested', 'fb.header.suggested', 'strong'));
   const activity = lines.find(
     (l) => m.activity.test(l) && (!author.name || !l.startsWith(`${author.name} `) || /\b(this|'s)\b/.test(l)),
   );
   const reshare = lines.some((l) => m.reshare.test(l)) || root.querySelectorAll(FB_SEL.profileName).length > 1;
-  if (activity) evidence.push({ signal: 'networkActivity', detector: 'fb.header.activity', strength: 'strong' });
-  if (reshare) evidence.push({ signal: 'reshare', detector: 'fb.reshare', strength: 'medium' });
+  if (activity) evidence.push(ev('networkActivity', 'fb.header.activity', 'strong'));
+  if (reshare) evidence.push(ev('reshare', 'fb.reshare', 'medium'));
 
-  const buttons = headerButtons(root);
-  const follow = buttons.some((b) => m.follow.test(label(b)));
-  const join = buttons.some((b) => m.join.test(label(b)));
-  if (follow) evidence.push({ signal: 'relationship', detector: 'fb.follow-button', strength: 'strong' });
-  if (join) evidence.push({ signal: 'unjoinedGroup', detector: 'fb.join-button', strength: 'strong' });
+  const context = contextLines(root);
+  const known = context.filter((l) => m.suggestedHeader.test(l) || m.activity.test(l) || m.reshare.test(l));
+  const headerUnknown = context.length > known.length;
+  if (headerUnknown) observations.add('fb.header.unknown');
+
+  // Header buttons by role; buttons that lost their role only when those have none, which reports say.
+  const { buttons, fallback } = headerButtons(root);
+  const pressed = (pattern: LabelPattern): boolean => {
+    if (buttons.some((b) => isButton(b, pattern))) return true;
+    if (!fallback.some((b) => isButton(b, pattern))) return false;
+    observations.add('fb.slot.header-buttons.structure');
+    return true;
+  };
+  const follow = pressed(m.labels.follow);
+  const join = pressed(m.labels.join);
+  if (follow) evidence.push(ev('relationship', 'fb.follow-button', 'strong'));
+  if (join) evidence.push(ev('unjoinedGroup', 'fb.join-button', 'strong'));
 
   const groupLink = Array.from(root.querySelectorAll<HTMLAnchorElement>(FB_SEL.groupLink)).find(
     (a) => inHeader(root, a) && !inNestedPost(root, a),
@@ -370,12 +482,17 @@ export function extractFacebookPost(root: HTMLElement, m: FacebookMarkers): Post
         : 'custom';
 
   const { text, complete, source } = textOf(root, m);
+  // Text without Facebook's message box: found by structure, and the header with it.
+  if (!slots.message && text) {
+    observations.add('fb.slot.text.structure');
+    observations.add('fb.slot.header.structure');
+  }
   const mentions = source ? linkedNames([source], isFacebookProfileHref) : [];
   const media = mediaOf(root);
   const id = postIdFrom(root, author.name ?? '', text, media);
   const permalink = permalinkOf(root);
   const sharedLink = sharedLinkOf(root);
-  return {
+  const post: PostData = {
     id,
     platform: 'facebook',
     ...(permalink ? { permalink } : {}),
@@ -402,6 +519,13 @@ export function extractFacebookPost(root: HTMLElement, m: FacebookMarkers): Post
     media,
     ...(sharedLink ? { sharedLink } : {}),
     audience,
-    quality: { authorFound: !!author.name, textFound: text.length > 0 || media !== 'none' },
+    quality: {
+      authorFound: !!author.name,
+      textFound: text.length > 0 || media !== 'none',
+      // In memory only, never sent: two posts with the same near-miss label raise `ad-label-near-miss`.
+      ...(ads.near ? { adNearMiss: cyrb53(ads.near.label) } : {}),
+      ...(context.length ? { headerKnown: known.length > 0, headerUnknown } : {}),
+    },
   };
+  return { post, observations: [...observations] };
 }

@@ -206,3 +206,155 @@
   list-style: none;
   overflow-wrap: anywhere;
 }
+/* The problem reports page (ADR 0009 §7). Its groups: the title and counts, the last 14 days, then the buttons, which
+   wrap under the text on a narrow screen. */
+.web-groups {
+  display: grid;
+  gap: var(--ua-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.web-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ua-space-2) var(--ua-space-3);
+  align-items: center;
+  padding: var(--ua-space-3);
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  overflow-wrap: anywhere;
+}
+.web-group > .ua-hstack {
+  grid-column: 1 / -1;
+}
+.web-group-text {
+  display: grid;
+  gap: var(--ua-space-1);
+}
+.web-group-title {
+  font: var(--ua-type-headline);
+}
+.web-group-stats {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.web-group-tools {
+  justify-content: space-between;
+}
+/* A group's last 14 days: one thin bar a day, a day without reports a hairline. */
+.web-spark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+}
+.web-spark-day {
+  width: 4px;
+  min-height: 2px;
+  border-radius: 1px;
+  background: var(--ua-accent);
+}
+.web-spark-none {
+  background: var(--ua-fill);
+}
+/* The last 30 days as bars: a row a day, one color per platform, the total at the end. Screen readers read the table
+   under it instead, so the colors need no words of their own. */
+.web-bars {
+  display: grid;
+  gap: 2px;
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.web-bars-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ua-space-1) var(--ua-space-3);
+  margin-bottom: var(--ua-space-1);
+}
+.web-bars-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ua-space-1);
+}
+.web-bars-key .web-bar {
+  width: 10px;
+  height: 10px;
+}
+.web-bar-row {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr) 3em;
+  align-items: center;
+  gap: var(--ua-space-2);
+}
+.web-bar-row > .web-amount {
+  text-align: end;
+}
+.web-bar-track {
+  display: flex;
+  height: 10px;
+}
+.web-bar {
+  display: inline-block;
+  height: 100%;
+  border-radius: 2px;
+}
+.web-bar--linkedin {
+  background: var(--ua-accent);
+}
+.web-bar--facebook {
+  background: var(--ua-ai);
+}
+.web-bar--other {
+  background: var(--ua-text-tertiary);
+}
+/* A report in full: its facts as label and value, the plain lines, the person's words as they wrote them (line breaks
+   kept), and the stored details as JSON that scrolls inside its own box. */
+.web-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--ua-space-1) var(--ua-space-4);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.web-facts dt {
+  color: var(--ua-text-secondary);
+}
+.web-facts dd {
+  margin: 0;
+}
+.web-lines {
+  display: grid;
+  gap: var(--ua-space-1);
+  margin: 0;
+  padding-inline-start: var(--ua-space-5);
+  overflow-wrap: anywhere;
+}
+.web-message {
+  padding: var(--ua-space-3);
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-bg-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.web-contact {
+  overflow-wrap: anywhere;
+}
+.web-contact a {
+  text-decoration: underline;
+}
+.web-json {
+  margin: 0;
+  padding: var(--ua-space-3);
+  max-height: 480px;
+  overflow: auto;
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-bg-secondary);
+  font: 0.75rem / 1.125rem var(--ua-font-mono);
+}
+.web-find {
+  display: grid;
+  gap: var(--ua-space-3);
+}

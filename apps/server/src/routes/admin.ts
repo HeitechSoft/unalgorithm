@@ -1,7 +1,8 @@
 /**
  * The admin routes (R38). `GET /v1/admin/users` and `GET /v1/admin/overview` are what the admin page reads
  * (`admin/queries.ts`): they need a web session with the admin role, and log only the app's `http` line, since every
- * answer names accounts. The overview carries the server's content-free status (`ops`, `fullOverview`, CL4-14). `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
+ * answer names accounts. The overview carries the server's content-free status (`ops`, `fullOverview`, CL4-14) and
+ * the problem reports' counts (`reports`, ADR 0009 §7). `POST /v1/admin/setup` claims the one-time setup link (`admin/setup.ts`) for the person signed
  * in on the setup page: it needs a web session and the page's own `Origin`, not the admin role, since it makes the
  * first admin. Every refusal gets one answer, so the page cannot tell an unknown link from a spent, expired or
  * other-address one; the log names the reason with a fixed code. No line logs a token, its hash or an address.

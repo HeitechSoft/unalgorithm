@@ -17,6 +17,9 @@ export {
 export { LINKEDIN_EN, type LinkedInMarkers } from './linkedin/markers/en.ts';
 export * from './shared/dom.ts';
 export * from './shared/keep-loading.ts';
+export * from './shared/labels.ts';
+export * from './shared/route.ts';
+export * from './shared/structure.ts';
 export * from './types.ts';
 
 export function adapterFor(platform: PlatformId): PlatformAdapter | undefined {

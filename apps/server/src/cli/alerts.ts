@@ -10,6 +10,14 @@ import { type Mailer, smtpMailer } from '../mail/mailer.ts';
 import { evaluateAlerts, type Finding } from '../ops/alerts.ts';
 import { createErrorWindow } from '../ops/error-window.ts';
 import { createAlertNotifier, plural } from '../ops/notify.ts';
+import {
+  brokenKey,
+  CAP_KEY,
+  evaluateReportAlerts,
+  readReportCounts,
+  reportAlertCounts,
+  WAITING_KEY,
+} from '../ops/report-alerts.ts';
 import { readOpsStatus } from '../ops/status.ts';
 
 /**
@@ -24,7 +32,8 @@ import { readOpsStatus } from '../ops/status.ts';
  *
  * `test` sends one test notification to every configured destination (the alert emails' recipients and the webhook),
  * printing a count of recipients and the webhook's HTTP status, never an address or the URL: exit 0 when every
- * destination took it, 1 otherwise.
+ * destination took it, 1 otherwise. `--key` names the alert the test is about, a problem report alert
+ * (`reports-linkedin-broken`, `reports-waiting`…) included, whose message links to the reports page.
  */
 
 export interface AlertsCliDeps {
@@ -125,11 +134,16 @@ async function check(
   statfs: AlertsCliDeps['statfs'],
 ): Promise<number> {
   const now = Date.now();
-  const [status, breakerTripped] = await Promise.all([
+  const reportsWatched = config.reports.enabled && config.reports.alertNetworks > 0;
+  const [status, breakerTripped, reportCounts] = await Promise.all([
     readOpsStatus({ db: handle.db, config, log, errors: createErrorWindow(), statfs, now }),
     spendBreakerTripped(handle.db, config, new Date(now)),
+    reportsWatched ? reportAlertCounts(handle.db, now) : [],
   ]);
-  const findings = evaluateAlerts({ status, breakerTripped, now }, config.alerts);
+  const findings = [
+    ...evaluateAlerts({ status, breakerTripped, now }, config.alerts),
+    ...evaluateReportAlerts(reportCounts, config.reports, now),
+  ];
   const byKey = new Map(findings.map((f) => [f.key, f]));
   const t = config.alerts;
   const line = (key: string, detail?: string) => {
@@ -149,6 +163,20 @@ async function check(
   if (status.backups === null) out('backups: not watched (BACKUP_STATUS_DIR is unset)');
   else if (status.backups.length === 0) out('backups: no backup has reported yet');
   for (const backup of status.backups ?? []) line(`backup-${backup.kind}`, backupDetail(backup, now));
+  if (!config.reports.enabled) out('reports: off (REPORTS is off)');
+  else if (!reportsWatched) out('reports: alerts off (REPORTS_ALERT_NETWORKS is 0)');
+  else {
+    const reading = readReportCounts(reportCounts, now);
+    const opens = config.reports.alertNetworks;
+    for (const [platform, { networks }] of Object.entries(reading.platforms)) {
+      line(
+        brokenKey(platform as keyof typeof reading.platforms),
+        `${plural(networks, 'network')} in 24 hours, alert at ${opens} with a sign of breakage or ${2 * opens} without`,
+      );
+    }
+    line(WAITING_KEY, `${plural(reading.waiting, 'report')} unhandled for more than 24 hours`);
+    line(CAP_KEY, `${plural(reading.today, 'report')} today, limit ${config.reports.dailyMax}`);
+  }
   out('errors-high: not checked here (the server process counts its own errors)');
   return findings.length > 0 ? EXIT_FIRING : 0;
 }

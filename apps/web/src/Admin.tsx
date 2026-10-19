@@ -5,19 +5,27 @@
  * server (CL4-05, CL4-06): the page is the same for everyone, and tells a signed-in non-admin so. It names the server
  * only by its discovery document. The page keeps the accounts list and hands its sections a way to ask for it again; a
  * section that finds the session gone sends the person back to the sign-in, saying so. Links lead to the source
- * control page (`/admin/sources`, P3-74) and the Pricing page (`/admin/prices`, PA-05).
+ * control page (`/admin/sources`, P3-74), the Pricing page (`/admin/prices`, PA-05) and, while the server takes them,
+ * the problem reports page with how many are open (`/admin/reports`, ADR 0009 §7).
  *
- * `useAdminSession` and `AdminGate` are the admin pages' shared session flow (this page's, the source control page's
- * and the Pricing page's): the discovery document, who is signed in, the page's own data that only an admin gets, and every step before
- * that data has loaded.
+ * `useAdminSession` and `AdminGate` are the admin pages' shared session flow (this page's, the source control page's,
+ * the Pricing page's and the problem reports page's): the discovery document, who is signed in, the page's own data
+ * that only an admin gets, and every step before that data has loaded.
  */
-import { ADMIN_PAGE_PATH, ADMIN_PRICES_PAGE_PATH, ADMIN_SOURCES_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import {
+  ADMIN_PAGE_PATH,
+  ADMIN_PRICES_PAGE_PATH,
+  ADMIN_REPORTS_PAGE_PATH,
+  ADMIN_SOURCES_PAGE_PATH,
+  type AdminOverview,
+  type ServerInfo,
+} from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { AdminInvites } from './AdminInvites.tsx';
 import { AdminUsage } from './AdminUsage.tsx';
 import { AdminUsers } from './AdminUsers.tsx';
-import { ApiError, adminUsers, getSession, serverInfo, signOut } from './api.ts';
+import { ApiError, adminOverview, adminUsers, getSession, serverInfo, signOut } from './api.ts';
 import { Page } from './Page.tsx';
 import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
@@ -25,6 +33,7 @@ const INTRO = 'Who uses this server, and what each person may do.';
 const SIGN_IN_INTRO = 'Sign in to manage this server.';
 const NOT_ADMIN = "This account isn't an admin of this server.";
 const UNREACHABLE = "Couldn't reach the server. Try again.";
+const COUNT = new Intl.NumberFormat('en-US');
 
 /** Where an admin page is; `data` is what the page's own admin route answered. */
 export type AdminStep<T> =
@@ -193,6 +202,7 @@ export function Admin() {
     <Page info={info} heading={heading} intro={INTRO} wide>
       <p className="web-status">
         <a href={ADMIN_SOURCES_PAGE_PATH}>Source list</a> · <a href={ADMIN_PRICES_PAGE_PATH}>Pricing</a>
+        <ReportsLink />
       </p>
       <div className="web-admin">
         <div className="web-admin-column">
@@ -204,5 +214,27 @@ export function Admin() {
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * " · Problem reports (N open)" after the other links, once the overview says the server takes reports. It reads the
+ * overview on its own: the usage section says when that fails or the session is gone, so here a failure just leaves
+ * the link out. A server older than reports, or one with `REPORTS=off`, gets no link.
+ */
+function ReportsLink() {
+  const [reports, setReports] = useState<AdminOverview['reports'] | null>(null);
+  useEffect(() => {
+    adminOverview().then(
+      (overview) => setReports(overview.reports ?? null),
+      () => setReports(null),
+    );
+  }, []);
+  if (!reports?.enabled) return null;
+  return (
+    <>
+      {' · '}
+      <a href={ADMIN_REPORTS_PAGE_PATH}>{`Problem reports (${COUNT.format(reports.open)} open)`}</a>
+    </>
   );
 }

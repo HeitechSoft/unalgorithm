@@ -4,14 +4,21 @@
  * balance warnings, all as plain text; the side panel picks it for a `task: 'perspectives'` entry. Outlets are
  * fictional fixtures.
  */
-import { cleanup, render, screen, within } from '@testing-library/react';
-import { emptyTabState } from '@unalgorithm/core';
-import { type FactcheckResult, type LeanBucket, type PerspectivesResult, SOURCE_LIST_PAGE_URL } from '@unalgorithm/protocol';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { defaultDevice, emptyTabState } from '@unalgorithm/core';
+import {
+  CLOUD_ORIGIN,
+  type FactcheckResult,
+  type LeanBucket,
+  type PerspectivesResult,
+  SOURCE_LIST_PAGE_URL,
+} from '@unalgorithm/protocol';
 import { PerspectivesSheet, type PerspectivesSheetProps } from '@unalgorithm/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App as SidePanel } from '../src/entrypoints/sidepanel/App.tsx';
-import { type FactcheckEntry, factcheckItem, tabStateItem } from '../src/lib/storage.ts';
+import { sendQuietly } from '../src/lib/messages.ts';
+import { deviceItem, type FactcheckEntry, factcheckItem, tabStateItem } from '../src/lib/storage.ts';
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
@@ -221,7 +228,6 @@ describe('PerspectivesSheet', () => {
     fakeBrowser.reset();
     const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
-    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
     const entry: FactcheckEntry = {
       key: 'li:1' as FactcheckEntry['key'],
@@ -271,27 +277,26 @@ describe('PerspectivesSheet', () => {
     expect(screen.queryByRole('link', { name: /source list/ })).toBeNull();
     cleanup();
 
-    // The footer's links follow the existing lines, in one line of their own.
+    // The footer's links follow the existing lines, in one line of their own: how it works, a web page; the report,
+    // an action in the extension.
     const links = [
       { text: 'How UnEcho Chamber works', href: 'https://unalgorithmfeed.com/methodology' },
-      { text: 'Report a mistake', href: 'https://github.com/HeitechSoft/unalgorithm/issues/new?template=correction.yml' },
+      { text: 'Report a mistake', onSelect: vi.fn() },
     ];
     const linked = sheet({ links });
     const foot = linked.container.querySelector('.ua-factcheck-foot') as HTMLElement;
     expect(foot.lastElementChild?.textContent).toBe('How UnEcho Chamber works · Report a mistake');
-    for (const { text, href } of links) {
-      const a = within(foot).getByRole('link', { name: text });
-      expect(a.getAttribute('href')).toBe(href);
-      expect(a.getAttribute('target')).toBe('_blank');
-      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
-    }
+    const how = within(foot).getByRole('link', { name: 'How UnEcho Chamber works' });
+    expect(how.getAttribute('href')).toBe('https://unalgorithmfeed.com/methodology');
+    expect(how.getAttribute('target')).toBe('_blank');
+    expect(how.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(within(foot).getByRole('button', { name: 'Report a mistake' }).className).toBe('ua-link');
     cleanup();
 
     // The side panel passes the Cloud list's page and the links for a Cloud comparison.
     fakeBrowser.reset();
     const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
-    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
     await factcheckItem(TAB.id).setValue({
       entries: [
@@ -306,14 +311,26 @@ describe('PerspectivesSheet', () => {
         },
       ],
     });
+    await deviceItem.setValue({ ...defaultDevice('dev1'), aiSource: { kind: 'server', baseUrl: CLOUD_ORIGIN } });
+    vi.mocked(sendQuietly).mockClear();
     render(<SidePanel />);
     const panelLink = await screen.findByRole('link', { name: "unAlgorithm Cloud's source list" });
     expect(panelLink.getAttribute('href')).toBe(SOURCE_LIST_PAGE_URL);
-    const report = new URL(screen.getByRole('link', { name: 'Report a mistake' }).getAttribute('href') as string);
-    expect(report.searchParams.get('feature')).toBe('UnEcho Chamber');
-    expect(report.searchParams.get('list')).toBe("unAlgorithm Cloud's list");
-    expect(report.searchParams.get('version')).toBe('9.8.7');
     expect(screen.getByRole('link', { name: 'How UnEcho Chamber works' })).toBeTruthy();
+    // Report a mistake: the report page, with the feature, prompt version, list and AI only.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Report a mistake' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Report a mistake' }));
+    await waitFor(() =>
+      expect(vi.mocked(sendQuietly)).toHaveBeenCalledWith({
+        type: 'openReport',
+        draft: {
+          kind: 'correction',
+          from: 'sidepanel',
+          correction: { feature: 'perspectives', promptVersion: 1, list: 'cloud', via: 'cloud' },
+        },
+        nextTo: TAB.id,
+      }),
+    );
   });
 
   it('test_perspectives_sheet_text_only', () => {
@@ -354,7 +371,6 @@ describe('side panel', () => {
   beforeEach(async () => {
     fakeBrowser.reset();
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
-    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: '9.8.7' } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
   });
 

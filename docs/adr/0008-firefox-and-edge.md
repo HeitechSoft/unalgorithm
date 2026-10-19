@@ -195,3 +195,24 @@ reaches every store's build or none (`apps/extension/tests/privacy-gate.test.ts`
   (staged), AMO (listed: an approved version goes live) and Edge Add-ons (a draft a person submits), so the smoke test
   comes before the tag ([release.md](../release.md#steps)).
 - ADR 0006 (Chromium for development and tests) still holds for the Chrome build; this ADR adds Edge and Firefox.
+
+## Amendment (2026-10-18)
+
+[ADR 0009](0009-problem-reports-and-resilient-detection.md) moves *Report a problem* into the extension, with reports
+sent to unAlgorithm Cloud, and changes the data collection above as follows. The rest of this ADR stands.
+
+- **`technicalAndInteraction` is declared optional in every Firefox build,** no longer only with the server card. It
+  covers two things: the device name a sign-in sends (builds with the server card), and problem reports (versions, the
+  browser, counts and codes; Mozilla lists crash and error reports under this type). Firefox's install prompt now
+  offers it in every build, on unless the person turns it off, so store builds without the server card offer a data
+  choice at install too. Builds with the server card add only `personallyIdentifyingInfo` and `authenticationInfo`.
+- **It is still never requested (D6),** and nothing else depends on it. *Send report* posts a report only while it is
+  granted; while it isn't, the report page offers *Email this report*, a `mailto:` the person's own email program
+  sends, and nothing else changes. The page follows `permissions.onAdded`, so sending comes back once the person allows
+  the type in Firefox's add-ons page.
+- **"*Report a problem* declares no type" is replaced.** A report is technical and interaction data. A correction also
+  carries the person's own words (`personalCommunications`, already granted for the result being corrected) and maybe
+  a reply email (`personallyIdentifyingInfo`, which the email field waits for). A report never asks for any of these
+  types, so sending one never changes the consent that AI, sync or sign-in check.
+- The route class and site in a report are the report's subject, not browsing history, so no `browsingActivity` is
+  declared.

@@ -18,6 +18,7 @@ import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
 import { keepAwake } from '../background/keep-awake.ts';
 import { startOfficialListUpdates } from '../background/official-list.ts';
+import { forgetReportTab, fromReportPage, openReport, reportDraft, sendReport, snoozeNotice } from '../background/report.ts';
 import { forgetSearchKey, saveSearchKey } from '../background/search-key.ts';
 import {
   clientRefusal,
@@ -41,6 +42,7 @@ import { updateDevice } from '../lib/settings-store.ts';
 import {
   learnedItem,
   readDevice,
+  reportLogItem,
   settingsClocksItem,
   settingsItem,
   statsItem,
@@ -203,8 +205,11 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
         () => serverAccountItem.removeValue(),
         () => usageItem.removeValue(),
         clearAiCapabilities,
-        // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes.
+        // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes, and so do
+        // problem report drafts.
         () => browser.storage.session.clear(),
+        // When this browser sent problem reports, for the local limits.
+        () => reportLogItem.removeValue(),
         // Settings and their clocks go too: the defaults written next then stay at clock 0, so they never travel to
         // the person's other computers, and the server's values win on the next sync.
         () => settingsItem.removeValue(),
@@ -323,6 +328,31 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     // Field by field: anything else on the message (post text included) goes nowhere.
     return runPerspectivesForTab(tabId, msg.key, { link: msg.link, platform: msg.platform, audience: msg.audience });
   },
+  // Problem reports (ADR 0009 §2). A draft of a page comes from that page's content script (`openReport` checks which
+  // sender may send which draft); the popup and Settings ask for one about no page facts. Only the report page reads a
+  // draft back or sends it.
+  openReport: async (msg, sender) => {
+    if (!fromOwnUi(sender)) deny('openReport');
+    if ('about' in msg) {
+      if (!fromExtensionPage(sender)) deny('openReport');
+      return openReport({ about: msg.about }, sender);
+    }
+    return openReport({ draft: msg.draft, notice: msg.notice, nextTo: msg.nextTo }, sender);
+  },
+  reportDraft: async (msg, sender) => {
+    if (!fromReportPage(sender)) deny('reportDraft');
+    return { report: await reportDraft(String(msg.id)) };
+  },
+  sendReport: async (msg, sender) => {
+    if (!fromReportPage(sender)) deny('sendReport');
+    if (typeof msg.body !== 'string') return { ok: false, code: 'refused' };
+    return sendReport(String(msg.id), msg.body);
+  },
+  snoozeNotice: async (msg, sender) => {
+    if (!fromOwnUi(sender)) deny('snoozeNotice');
+    await snoozeNotice(msg);
+    return { ok: true };
+  },
 };
 
 /** Put unAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. */
@@ -378,7 +408,11 @@ export default defineBackground(() => {
     });
   }
 
-  browser.tabs.onRemoved.addListener((tabId) => void forgetTab(tabId));
+  browser.tabs.onRemoved.addListener((tabId) => {
+    void forgetTab(tabId);
+    // A closed report page forgets its draft.
+    void forgetReportTab(tabId).catch(() => undefined);
+  });
   // A popup is the toolbar action; the side panel ("Highlights") opens from it.
   void browser.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => undefined);
 });

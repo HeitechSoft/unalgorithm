@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type BrowserContext, test as base, chromium, type Locator, type Page, type Route } from '@playwright/test';
+import { REPORTS_PATH } from '@unalgorithm/protocol';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
   COMPANY_NOT_FOLLOWED,
@@ -94,7 +95,76 @@ export async function launchExtensionContext(browser: ExtensionBrowser = 'chromi
     if (url.startsWith('chrome-extension://') || url.startsWith('data:')) return route.continue();
     return route.abort();
   });
+  await guardReports(context);
   return context;
+}
+
+/**
+ * The e2e guard (ADR 0009 §1): a problem report may leave the browser only after the person clicked *Send report* (or
+ * *Try again*) on that report's page. Every page of the context reports such clicks, with the report's id from the
+ * page's address; every POST to the report route, the background's included, is counted by the id in its body. A
+ * report sent more often than its page was clicked, or one whose id no page was clicked for, fails the test (the
+ * `context` fixture, and `expectReportsAsked` for a context a spec launched itself).
+ */
+export interface ReportGuard {
+  /** Send clicks, by report id. */
+  clicks: Map<string, number>;
+  /** Report requests, by report id (`?` when the body named none). */
+  sent: Map<string, number>;
+}
+
+const guards = new WeakMap<BrowserContext, ReportGuard>();
+
+/** The guard of a context from `launchExtensionContext`. */
+export function reportGuard(context: BrowserContext): ReportGuard {
+  const guard = guards.get(context);
+  if (!guard) throw new Error('This context was not launched with launchExtensionContext.');
+  return guard;
+}
+
+/** Reports `context` sent without a Send click for them: empty when every report was asked for. */
+export function unaskedReports(context: BrowserContext): string[] {
+  const { clicks, sent } = reportGuard(context);
+  return [...sent]
+    .filter(([id, n]) => n > (clicks.get(id) ?? 0))
+    .map(([id, n]) => `${id}: ${n} sent, ${clicks.get(id) ?? 0} clicked`);
+}
+
+/** Fails when `context` sent a report nobody clicked Send for. */
+export function expectReportsAsked(context: BrowserContext): void {
+  const unasked = unaskedReports(context);
+  expect(unasked, `problem reports sent without a Send click:\n${unasked.join('\n')}`).toEqual([]);
+}
+
+async function guardReports(context: BrowserContext): Promise<void> {
+  const guard: ReportGuard = { clicks: new Map(), sent: new Map() };
+  guards.set(context, guard);
+  await context.exposeBinding('__uaReportClicked', (_source, id: unknown) => {
+    if (typeof id === 'string') guard.clicks.set(id, (guard.clicks.get(id) ?? 0) + 1);
+  });
+  await context.addInitScript(() => {
+    if (!location.pathname.endsWith('/report.html')) return;
+    document.addEventListener(
+      'click',
+      (e) => {
+        const button = e.target instanceof Element ? e.target.closest('button') : null;
+        const label = button?.textContent?.trim();
+        if (!e.isTrusted || (label !== 'Send report' && label !== 'Try again')) return;
+        (window as unknown as { __uaReportClicked?: (id: string) => void }).__uaReportClicked?.(location.hash.slice(1));
+      },
+      true,
+    );
+  });
+  context.on('request', (request) => {
+    if (request.method() !== 'POST' || new URL(request.url()).pathname !== REPORTS_PATH) return;
+    let id = '?';
+    try {
+      id = String((JSON.parse(request.postData() ?? '') as { id?: unknown }).id ?? '?');
+    } catch {
+      // Not a report body: counted under '?', which no click ever covers.
+    }
+    guard.sent.set(id, (guard.sent.get(id) ?? 0) + 1);
+  });
 }
 
 /** The loaded extension's id, read from its service worker; always the id of the e2e build's dev key. */
@@ -131,7 +201,12 @@ export const test = base.extend<
   context: async ({ extensionBrowser }, use) => {
     const context = await launchExtensionContext(extensionBrowser);
     await use(context);
-    await context.close();
+    try {
+      // Every test, whatever it does: no problem report without a Send click (ADR 0009 §1).
+      expectReportsAsked(context);
+    } finally {
+      await context.close();
+    }
   },
   extensionId: async ({ context }, use) => {
     await use(await extensionIdOf(context));

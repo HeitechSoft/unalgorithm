@@ -33,6 +33,7 @@ import { createEgress } from './net/egress.ts';
 import { registerAlertJobs } from './ops/alerts.ts';
 import { createErrorWindow, type ErrorWindow } from './ops/error-window.ts';
 import { createAlertNotifier } from './ops/notify.ts';
+import { registerReportJobs } from './reports/purge.ts';
 import { CLASSIFY_DEADLINE_MS } from './routes/classify.ts';
 import { registerSyncJobs } from './sync/gc.ts';
 
@@ -108,6 +109,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     registerAuthJobs(jobs, { db: db.db });
     registerClaimCacheJobs(jobs, { db: db.db });
     registerSyncJobs(jobs, { db: db.db });
+    // Whatever REPORTS is: reports kept from before it was turned off still reach their retention.
+    registerReportJobs(jobs, { db: db.db });
     // A module that cannot be used stops the start (BillingLoadError, or the module's own error) before anything is
     // served: a server meant to charge never serves AI for free.
     const host = createBillingHost({ config, db, log, auth, jobs, mailer, env: config.billingEnv, prices });
