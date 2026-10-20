@@ -387,4 +387,31 @@ describe('content scripts', () => {
       vi.restoreAllMocks();
     }
   });
+
+  it('test_install_skips_open_tabs_whose_content_script_already_runs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new Error('offline'))),
+    );
+    for (const kind of KINDS.filter((k) => k !== 'firefox')) {
+      fakeBrowser.reset();
+      env.kind = kind;
+      vi.spyOn(fakeBrowser.sidePanel, 'setPanelBehavior').mockResolvedValue(undefined as never);
+      vi.spyOn(fakeBrowser.tabs, 'create').mockResolvedValue({} as never);
+      vi.spyOn(fakeBrowser.tabs, 'query').mockResolvedValue([
+        { id: 7, url: 'https://www.linkedin.com/feed/' },
+        { id: 8, url: 'https://www.facebook.com/' },
+      ] as never);
+      // Tab 7 loaded while the extension installed, so the manifest's copy already runs there.
+      const injected = vi
+        .spyOn(fakeBrowser.scripting, 'executeScript')
+        .mockImplementation((async (opts: { target: { tabId: number }; func?: unknown }) =>
+          opts.func ? [{ result: opts.target.tabId === 7 }] : []) as never);
+      background.main();
+      await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install' } as never);
+      const files = injected.mock.calls.map(([opts]) => (opts as { files?: string[] }).files).filter(Boolean);
+      expect(files, kind).toEqual([['/content-scripts/facebook.js']]);
+      vi.restoreAllMocks();
+    }
+  });
 });

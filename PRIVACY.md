@@ -232,7 +232,7 @@ else. The report carries no account, cookie or sign-in.
 - For a correction: the feature, the version of its AI instructions, whether UnEcho Chamber used unAlgorithm Cloud's
   source list or your own, and which kind of AI made the result; your own words about what's wrong (at most 1,000
   characters, with email addresses and phone numbers masked, web addresses reduced to the site's name, with or without
-  https:// or www., a profile or post address on its own removed, and @mentions masked, in the preview as you type and
+  `https://` or `www.`, a profile or post address on its own removed, and @mentions masked, in the preview as you type and
   again on the server); and, only if you'd like a reply, your email address.
 
 **Never sent:** what posts say, the names of people or pages, profile or post links, ids, the page's address (only its
