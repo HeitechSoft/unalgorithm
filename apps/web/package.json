@@ -16,8 +16,8 @@
     "@unalgorithm/outlets": "workspace:*",
     "@unalgorithm/protocol": "workspace:*",
     "@unalgorithm/ui": "workspace:*",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
