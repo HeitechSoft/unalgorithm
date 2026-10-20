@@ -332,7 +332,13 @@ export class FeedController implements ReportSource {
   private aiPause: BgError | undefined;
   private aiWorking = 0;
   private peek = false;
-  private expandedRuns = new Set<string>();
+  /**
+   * Posts whose run was opened with Show all, by key: each keeps its own fold line from then on. Kept per post, not per
+   * run, because runs re-form as the platform empties and refills slots (see `recomputeRuns`).
+   */
+  private unfolded = new Set<string>();
+  /** Each run's posts, by its lead, as `recomputeRuns` last drew them. */
+  private runs = new Map<Entry, Entry[]>();
   private moduleSeq = 0;
   private coachShown = false;
   private listeners = new Set<Listener>();
@@ -416,6 +422,7 @@ export class FeedController implements ReportSource {
     this.entries.clear();
     this.byId.clear();
     this.dirty.clear();
+    this.runs.clear();
     this.queue = [];
     this.toasts = [];
     this.doc.getElementById(GLOBAL_STYLE_ID)?.remove();
@@ -839,7 +846,12 @@ export class FeedController implements ReportSource {
     this.notify();
   }
 
-  /** Merge hidden posts that sit next to each other into one "3 hidden" line. */
+  /**
+   * Merge hidden posts that sit next to each other into one "3 hidden" line. Invisible items, Facebook's emptied slots
+   * among them, do not break a run, so runs re-form as the platform empties and refills slots far from the viewport. A
+   * post opened with Show all stays out of every run from then on: folding it again would change the page's height by
+   * hundreds of pixels, the platform would empty or refill slots in answer, and the runs would open and fold without end.
+   */
   private recomputeRuns(): void {
     const rt = this.rt;
     if (!rt) return;
@@ -847,10 +859,15 @@ export class FeedController implements ReportSource {
       a.el === b.el ? 0 : a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
     const group = rt.settings.display.groupRuns && rt.settings.display.mode === 'collapse' && !this.peek;
+    this.runs.clear();
     let run: Entry[] = [];
+    const single = (e: Entry) => {
+      e.run = undefined;
+      setAttr(e.el, 'data-unalgo-run', null);
+    };
     const close = () => {
       const lead = run[0];
-      if (lead && run.length > 1 && group && !this.expandedRuns.has(lead.id)) {
+      if (lead && run.length > 1 && group) {
         const labels = [...new Set(run.map((r) => (r.applied ? reasonLabel(r.applied, this.adapter.id) : '')).filter(Boolean))];
         lead.run = { count: run.length, labels };
         setAttr(lead.el, 'data-unalgo-run', 'lead');
@@ -858,20 +875,22 @@ export class FeedController implements ReportSource {
           m.run = 'member';
           setAttr(m.el, 'data-unalgo-run', 'member');
         }
+        this.runs.set(lead, run);
       } else {
-        for (const m of run) {
-          m.run = undefined;
-          setAttr(m.el, 'data-unalgo-run', null);
-        }
+        for (const m of run) single(m);
       }
       run = [];
     };
     for (const e of ordered) {
       const state = e.el.getAttribute('data-unalgo');
-      if (state === 'collapsed') run.push(e);
-      else if (state === 'hidden' || e.kind === 'ignore' || e.kind === 'pending' || e.offscreen) {
-        // Invisible items do not break a run.
-      } else close();
+      if (state === 'collapsed' && !this.unfolded.has(e.id)) {
+        run.push(e);
+        continue;
+      }
+      // Out of every run: never left marked as a member, which hides the whole item.
+      single(e);
+      // Invisible items do not break a run; anything else does, a post opened with Show all included.
+      if (!(state === 'hidden' || e.kind === 'ignore' || e.kind === 'pending' || e.offscreen)) close();
     }
     close();
     this.assignCoachMark(ordered);
@@ -1044,7 +1063,7 @@ export class FeedController implements ReportSource {
       onShow: () => this.setRevealed(e, true),
       onHide: () => this.setRevealed(e, false),
       onShowAll: () => {
-        this.expandedRuns.add(e.id);
+        for (const m of this.runs.get(e) ?? [e]) this.unfolded.add(m.id);
         this.recomputeRuns();
         e.ui?.host.shadowRoot?.querySelector<HTMLElement>('button')?.focus();
       },
