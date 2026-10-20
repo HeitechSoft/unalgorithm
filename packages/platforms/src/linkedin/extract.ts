@@ -57,7 +57,8 @@ interface HeaderRead {
 
 /** What a header line says about why the post is shown, and how sure that is. Only ever given header lines. */
 function readHeaderLine(line: string, m: LinkedInMarkers): HeaderRead | null {
-  const t = line.replace(/\s+/g, ' ').trim();
+  // A header line is short; a long one is post text, and capping it keeps the patterns below linear.
+  const t = line.slice(0, 300).replace(/\s+/g, ' ').trim();
   const suggested = matchLabel(t, m.labels.suggested);
   if (suggested)
     return { kind: 'suggested', strength: labelStrength(suggested), ...(suggested.match === 'near' ? { near: true } : {}) };
@@ -171,7 +172,7 @@ export function parseAge(line: string, m: LinkedInMarkers, now = new Date()): { 
     let when = new Date(date[3] ? Number(date[3]) : now.getFullYear(), month, Number(date[2]));
     if (!date[3] && when.getTime() > now.getTime()) when = new Date(now.getFullYear() - 1, month, Number(date[2]));
     return {
-      text: line.replace(/\s*•.*$/, '').trim(),
+      text: (line.includes('•') ? line.slice(0, line.indexOf('•')) : line).trim(),
       hours: Math.max(0, Math.round((now.getTime() - when.getTime()) / 3_600_000)),
     };
   }

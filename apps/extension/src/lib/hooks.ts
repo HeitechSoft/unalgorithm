@@ -179,8 +179,9 @@ export function useSyncedServer(active: boolean): string | null {
 export function platformOfUrl(url: string): 'linkedin' | 'facebook' | null {
   try {
     const host = new URL(url).hostname;
-    if (host.endsWith('linkedin.com')) return 'linkedin';
-    if (host.endsWith('facebook.com')) return 'facebook';
+    const on = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+    if (on('linkedin.com')) return 'linkedin';
+    if (on('facebook.com')) return 'facebook';
   } catch {
     // not a URL
   }

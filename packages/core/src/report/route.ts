@@ -26,7 +26,7 @@ export function routeWord(url: URL | string, rules: RouteWordRules = {}): string
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0 || segments.length > 2) return undefined;
   const [parent, child] = segments as [string, string | undefined];
-  const parents = (rules.prefixes ?? FEED_WORD_PREFIXES).map((p) => p.replace(/^\/+|\/+$/g, ''));
+  const parents = (rules.prefixes ?? FEED_WORD_PREFIXES).map((p) => p.split('/').filter(Boolean).join('/'));
   if (!parents.includes(parent)) return undefined;
   const word = child ?? parent;
   if (!FEED_WORD_PATTERN.test(word) || FEED_WORD_DENY.includes(word) || rules.deny?.includes(word)) return undefined;

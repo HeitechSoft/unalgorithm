@@ -326,7 +326,7 @@ function facebookUrl(href: string | null | undefined): string | undefined {
   if (!href || href === '#') return undefined;
   try {
     const u = new URL(href, FB_ORIGIN);
-    if (!u.hostname.endsWith('facebook.com')) return undefined;
+    if (u.hostname !== 'facebook.com' && !u.hostname.endsWith('.facebook.com')) return undefined;
     const id = u.searchParams.get('id');
     return `${FB_ORIGIN}${u.pathname.replace(/\/+$/, '')}${u.pathname.includes('profile.php') && id ? `?id=${id}` : ''}`;
   } catch {

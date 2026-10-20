@@ -339,7 +339,8 @@ export async function openReport(
 function platformOfHost(sender: Sender): PlatformId | undefined {
   try {
     const host = new URL(sender.url ?? sender.tab?.url ?? '').hostname;
-    return host.endsWith('linkedin.com') ? 'linkedin' : host.endsWith('facebook.com') ? 'facebook' : undefined;
+    const on = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+    return on('linkedin.com') ? 'linkedin' : on('facebook.com') ? 'facebook' : undefined;
   } catch {
     return undefined;
   }
