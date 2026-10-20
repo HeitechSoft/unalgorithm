@@ -39,10 +39,10 @@ await build({ root: process.cwd(), browser: ${JSON.stringify(browser)}, mode: ${
 /** Every text file of a build, by its path inside the build. */
 function textFiles(dir: string): Map<string, string> {
   const files = new Map<string, string>();
-  for (const file of readdirSync(dir, { recursive: true }) as string[]) {
-    const path = join(dir, file);
-    if (statSync(path).isFile() && /\.(js|html|json|css|md|txt)$/.test(file))
-      files.set(relative(dir, path).replaceAll('\\', '/'), readFileSync(path, 'utf8'));
+  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !/\.(js|html|json|css|md|txt)$/.test(entry.name)) continue;
+    const path = join(entry.parentPath, entry.name);
+    files.set(relative(dir, path).replaceAll('\\', '/'), readFileSync(path, 'utf8'));
   }
   return files;
 }

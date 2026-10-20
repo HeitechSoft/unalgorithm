@@ -483,7 +483,7 @@ describe('entry points', () => {
     expect(toTab()).toEqual([{ type: 'reportSnapshot', from: 'popup' }]);
     expect(opened()).toEqual([]);
     // Nothing about the popup links to GitHub.
-    expect(document.body.innerHTML).not.toMatch(/github\.com/);
+    expect(document.body.innerHTML.includes('github.com')).toBe(false);
   });
 
   it('test_popup_report_without_an_answering_tab', async () => {
