@@ -1,5 +1,26 @@
 # @unalgorithm/server
 
+## 0.5.0
+
+### Minor Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Firefox sign-in. `EXTENSION_IDS` takes Firefox add-on ids (`name@domain` or `{uuid}`) as well as Chrome and Edge ids,
+  and when unset lists the development id and both Firefox ids, `feed@unalgorithmfeed.com` and
+  `feed-dev@unalgorithmfeed.com`. Once a Firefox id is listed, `/v1` answers CORS for any `moz-extension://` origin,
+  whose id Firefox picks at random per install, still never with credentials. Discovery lists `auth.clients`, so a
+  browser the server doesn't take says so before it opens the sign-in window. Upgrade the server before you list a
+  Firefox id: older releases refuse to start with one, so take the Firefox ids out before rolling back to one.
+
+### Patch Changes
+
+- Updated dependencies [[`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096)]:
+  - @unalgorithm/core@0.3.0
+  - @unalgorithm/sync@0.0.4
+  - @unalgorithm/ai@0.0.4
+  - @unalgorithm/protocol@0.3.0
+  - @unalgorithm/research@0.0.4
+  - @unalgorithm/outlets@0.0.3
+
 ## 0.4.0
 
 ### Minor Changes

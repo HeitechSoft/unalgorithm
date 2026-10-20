@@ -1,5 +1,26 @@
 # @unalgorithm/protocol
 
+## 0.3.0
+
+### Minor Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Firefox can sign in. `ClientIdSchema` takes a Chrome or Edge id (32 letters a to p) or a Firefox add-on id
+  (`name@domain` or `{uuid}`) and replaces `ExtensionIdSchema`. `redirectUriFor` gives each its redirect address:
+  `https://<id>.chromiumapp.org/`, or `https://<SHA-1 of the id>.extensions.allizom.org/` for Firefox (`sha1Hex`,
+  `geckoRedirectUri`). The authorize request and answer accept both, never Firefox's loopback form. Discovery may list
+  `auth.clients`, the kinds of extension a server takes sign-ins from; a server that doesn't say takes Chrome and Edge.
+  `DEV_CHROMIUM_ID`, `FIREFOX_ADDON_ID` and `FIREFOX_DEV_ADDON_ID` name the ids this release knows.
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Report a problem from inside unAlgorithm, without GitHub or an account. Report a problem in the popup, Let us know on a
+  note that something stopped working, Why? → Wrong call? and Settings → About open a page that asks what's wrong, shows
+  what will be sent in plain words and exactly, and sends it to HeitechSoft through unAlgorithm Cloud only when you click
+  Send report. A report holds versions, counts and your answers, never what posts say, names, links or anything that
+  identifies you, and it is deleted after 90 days. To ask us to correct a Fact-check or UnEcho Chamber result, choose
+  Report a wrong verdict or Report a mistake under it and say what's wrong in your own words, with your email if you'd
+  like a reply. In Firefox, reports are sent while its technical and interaction data choice, offered at install, is on;
+  otherwise the page offers to email the report from your own email program. PRIVACY.md describes what a report holds,
+  who reads it and how long it is kept.
+
 ## 0.2.0
 
 ### Minor Changes

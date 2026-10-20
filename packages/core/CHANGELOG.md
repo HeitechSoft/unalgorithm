@@ -1,5 +1,59 @@
 # @unalgorithm/core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Facebook's Balanced now hides posts from people and pages you don't follow, as LinkedIn's does. Until now it was only
+  in Calm while it was checked on live feeds. If your Facebook strength is Balanced, it gets the new rule when you
+  update. If you chose Custom, or changed a filter, your filters stay as they are, and Settings → Facebook → People and
+  pages you don't follow turns it off. It goes by the Follow button Facebook shows next to an author you don't follow,
+  so your friends' posts, the pages and people you follow and groups you're in stay. A friend sharing a page's post or
+  reel should stay too: a Follow button inside what they shared doesn't count, nor, in a group you're in, one after the
+  member's name. If a post you wanted is folded, Why? on it shows what was detected, with a one-click fix. With sync on,
+  each computer sends the setting once when it updates, so computers that update or start syncing later show the same,
+  and Balanced picked on a computer that hasn't updated yet still means the new Balanced on one that has.
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Each hidden post now has its own thin line, with Why? and Show, even when several are hidden one after another, so
+  you can see what was hidden without an extra click. To show them as one line with Show all, as before, turn on
+  Settings → Display → Group hidden posts in a row. It's off for everyone when you update, unless you had changed that
+  switch yourself, and then your choice stays. With sync on, turning it on or off carries to your other computers like
+  the rest of Display.
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - Report a problem from inside unAlgorithm, without GitHub or an account. Report a problem in the popup, Let us know on a
+  note that something stopped working, Why? → Wrong call? and Settings → About open a page that asks what's wrong, shows
+  what will be sent in plain words and exactly, and sends it to HeitechSoft through unAlgorithm Cloud only when you click
+  Send report. A report holds versions, counts and your answers, never what posts say, names, links or anything that
+  identifies you, and it is deleted after 90 days. To ask us to correct a Fact-check or UnEcho Chamber result, choose
+  Report a wrong verdict or Report a mistake under it and say what's wrong in your own words, with your email if you'd
+  like a reply. In Firefox, reports are sent while its technical and interaction data choice, offered at install, is on;
+  otherwise the page offers to email the report from your own email program. PRIVACY.md describes what a report holds,
+  who reads it and how long it is kept.
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - unAlgorithm notices when LinkedIn or Facebook change in a way that stops it working, and says so. When it isn't
+  running on a page that looks like your feed, when it paused filtering, or when ads may be getting through, a short note
+  appears at the bottom left of your feed (once per page; Not now keeps it away for a day), and the popup, the side panel
+  and the toolbar button say the same. Settings → Display → Tell me when something breaks turns the note off. Detection
+  also survives more of the sites' changes: a feed moved to a new address keeps working when the page is clearly your
+  home feed; an ad label with a new word, such as "Promoted • Brand content" or "Ad · Paid", is still folded when the post
+  shows other signs of an ad, and the note says some ads may be getting through; a line in a post's own text that reads
+  like an ad label no longer hides it; and an error reading the page shows your posts instead of stopping silently. On
+  Facebook, posts the site empties while you scroll no longer raise a false warning. These checks run on your computer,
+  and nothing is sent unless you choose to.
+
+### Patch Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - On Facebook, the feed no longer keeps folding and opening every few seconds as you scroll. When unAlgorithm would hide
+  too many posts, it now shows every post until you reload the page, and a card in the feed says so right away. Posts
+  and panels that Facebook clears far from the screen still count as what they were, so scrolling no longer turns
+  filtering off and on.
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - A feed that is mostly noise keeps its noise hidden. The safety check that stops hiding when detection looks wrong now
+  allows up to 90% of a page's items at Balanced (was 80%), and hidden ads no longer count toward it, since they have a
+  check of their own. LinkedIn feeds of mostly suggested, promoted and unfollowed posts no longer trip it.
+- Updated dependencies [[`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096)]:
+  - @unalgorithm/protocol@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
