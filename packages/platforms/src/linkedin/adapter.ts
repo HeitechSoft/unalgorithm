@@ -6,7 +6,7 @@ import { contentLines, findPostRoots, moduleInfo, readPost } from './extract.ts'
 import { LINKEDIN_IDS } from './ids.ts';
 import { LINKEDIN_EN, type LinkedInMarkers } from './markers/en.ts';
 import { LINKEDIN_MARKERS } from './markers/index.ts';
-import { classifyLinkedInRoute, linkedinHomeSignature, linkedinSignedIn } from './routes.ts';
+import { classifyLinkedInRoute, linkedinHomeSignature, linkedinIsSignedIn } from './routes.ts';
 import { POST_ROOT_SELECTOR, SEL } from './selectors.ts';
 import { isInCommentsArea } from './slots.ts';
 
@@ -37,7 +37,7 @@ export const linkedinAdapter: PlatformAdapter<LinkedInMarkers> = {
 
   classifyRoute: classifyLinkedInRoute,
   homeSignature: linkedinHomeSignature,
-  signedIn: linkedinSignedIn,
+  signedIn: linkedinIsSignedIn,
 
   discovery: discoveryState,
 
@@ -104,7 +104,7 @@ export const linkedinAdapter: PlatformAdapter<LinkedInMarkers> = {
       postRoots: scope ? findPostRoots(scope).length : 0,
       authorMenus: scope ? scope.querySelectorAll(LINKEDIN_EN.authorMenuSelector).length : 0,
       textBoxes: scope ? scope.querySelectorAll(SEL.text).length : 0,
-      signedIn: linkedinSignedIn(doc) ? 1 : 0,
+      signedIn: linkedinIsSignedIn(doc) ? 1 : 0,
     };
   },
 

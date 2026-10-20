@@ -127,8 +127,8 @@ describe('setup', { timeout: PGLITE_TIMEOUT }, () => {
       dependencies: Record<string, string>;
     };
     // Exactly, and released in lockstep with the Better Auth it plugs into.
-    expect(manifest.dependencies['@better-auth/passkey']).toBe('1.7.7');
-    expect(manifest.dependencies['better-auth']).toBe('1.7.7');
+    expect(manifest.dependencies['@better-auth/passkey']).toBe('1.7.10');
+    expect(manifest.dependencies['better-auth']).toBe('1.7.10');
   });
 
   it('test_passkey_table_cascades', async () => {

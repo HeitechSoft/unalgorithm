@@ -61,7 +61,7 @@ const MEMBER_LINKS = MEMBER_SECTIONS.map((p) => `a[href*="${p.slice(0, -1)}"]`).
  * words (any language) or class names (hashed). At least two of My Network, Messaging and Notifications, outside the
  * feed, so a missing feed on a sign-in page, a checkpoint or a consent wall never reads as breakage. Read-only.
  */
-export function linkedinSignedIn(doc: Document): boolean {
+export function linkedinIsSignedIn(doc: Document): boolean {
   const seen = new Set<string>();
   for (const a of Array.from(doc.querySelectorAll<HTMLAnchorElement>(MEMBER_LINKS))) {
     if (a.closest('main')) continue;

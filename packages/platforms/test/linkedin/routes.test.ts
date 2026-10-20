@@ -17,7 +17,7 @@ import {
 import { linkedinAdapter } from '../../src/linkedin/adapter.ts';
 import { LINKEDIN_STRATEGIES } from '../../src/linkedin/discover.ts';
 import { LINKEDIN_IDS } from '../../src/linkedin/ids.ts';
-import { classifyLinkedInRoute, linkedinHomeSignature, linkedinSignedIn } from '../../src/linkedin/routes.ts';
+import { classifyLinkedInRoute, linkedinHomeSignature, linkedinIsSignedIn } from '../../src/linkedin/routes.ts';
 import { reportRouteOf } from '../../src/shared/route.ts';
 
 const at = (address: string) => new URL(address, 'https://www.linkedin.com');
@@ -108,22 +108,22 @@ describe('home signature', () => {
 
 describe('signed-in shell', () => {
   it("finds LinkedIn's global navigation by where its links go", () => {
-    expect(linkedinSignedIn(page(signedInShell(feed2026(FIRST_DEGREE_POST))))).toBe(true);
-    expect(linkedinSignedIn(page(signedInShell(PROFILE_PAGE)))).toBe(true);
+    expect(linkedinIsSignedIn(page(signedInShell(feed2026(FIRST_DEGREE_POST))))).toBe(true);
+    expect(linkedinIsSignedIn(page(signedInShell(PROFILE_PAGE)))).toBe(true);
     // Relative links and any language work the same.
     const relative = '<nav><a href="/mynetwork/">Mon réseau</a><a href="/messaging/">Messagerie</a></nav><main></main>';
-    expect(linkedinSignedIn(page(relative))).toBe(true);
+    expect(linkedinIsSignedIn(page(relative))).toBe(true);
   });
 
   it('is false on the guest pages, a sign-in page and a bare feed', () => {
-    expect(linkedinSignedIn(page(guestShell('<main><form><input type="email"></form></main>')))).toBe(false);
-    expect(linkedinSignedIn(page(feed2026(FIRST_DEGREE_POST)))).toBe(false);
+    expect(linkedinIsSignedIn(page(guestShell('<main><form><input type="email"></form></main>')))).toBe(false);
+    expect(linkedinIsSignedIn(page(feed2026(FIRST_DEGREE_POST)))).toBe(false);
     // Links inside the page's main content (a profile's Message button) are not the navigation.
-    expect(linkedinSignedIn(page(PROFILE_PAGE))).toBe(false);
+    expect(linkedinIsSignedIn(page(PROFILE_PAGE))).toBe(false);
     // One section alone, or links to another site, are not enough.
-    expect(linkedinSignedIn(page('<nav><a href="/messaging/">Messaging</a></nav>'))).toBe(false);
+    expect(linkedinIsSignedIn(page('<nav><a href="/messaging/">Messaging</a></nav>'))).toBe(false);
     expect(
-      linkedinSignedIn(
+      linkedinIsSignedIn(
         page('<nav><a href="https://example.com/mynetwork/">a</a><a href="https://example.com/messaging/">b</a></nav>'),
       ),
     ).toBe(false);
