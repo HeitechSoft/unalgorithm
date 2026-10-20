@@ -17,6 +17,8 @@ import {
   NOTICE_FOOTNOTE,
   NoticeCard,
   NoticeRegion,
+  noticeCopy,
+  OVER_FILTERING_COPY,
 } from '../src/index.ts';
 
 afterEach(cleanup);
@@ -35,6 +37,12 @@ describe('notice copy', () => {
     );
     expect(NOTICE_COPY['ads-through'].title).toBe('Some ads may be getting through');
     expect(NOTICE_COPY['ads-through'].body('LinkedIn')).toBe('LinkedIn may have changed how it labels ads.');
+    // Paused because nearly everything would have been hidden: that holds until the page reloads, so it says how to
+    // try again.
+    expect(OVER_FILTERING_COPY.title).toBe('Filtering is paused on this page');
+    expect(OVER_FILTERING_COPY.body('Facebook')).toBe(
+      "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again.",
+    );
     expect(NOTICE_FOOTNOTE).toBe('Nothing is sent unless you choose to.');
     expect(NOTICE_ACTIONS).toStrictEqual({ report: 'Let us know', notNow: 'Not now', dismiss: 'Dismiss' });
   });
@@ -58,6 +66,25 @@ describe('notice copy', () => {
         unmount();
       }
     }
+  });
+});
+
+describe('notice copy by cause', () => {
+  it('test_notice_copy_follows_the_issues', () => {
+    expect(noticeCopy('paused')).toBe(NOTICE_COPY.paused);
+    expect(noticeCopy('paused', ['adapter-error'])).toBe(NOTICE_COPY.paused);
+    expect(noticeCopy('paused', ['over-filtering'])).toBe(OVER_FILTERING_COPY);
+    expect(noticeCopy('paused', ['adapter-error', 'over-filtering'])).toBe(OVER_FILTERING_COPY);
+    expect(noticeCopy('ads-through', ['over-filtering'])).toBe(NOTICE_COPY['ads-through']);
+  });
+
+  it('test_over_filtering_card_says_reload', () => {
+    render(<NoticeCard kind="paused" platform="facebook" issues={['over-filtering']} {...handlers()} />);
+    expect(screen.getByText('Filtering is paused on this page')).toBeTruthy();
+    expect(screen.getByText(OVER_FILTERING_COPY.body('Facebook'))).toBeTruthy();
+    expect(screen.queryByText(NOTICE_COPY.paused.body('Facebook'))).toBeNull();
+    // Report a problem, as on every card.
+    expect(screen.getByRole('button', { name: 'Let us know' })).toBeTruthy();
   });
 });
 

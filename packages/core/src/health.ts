@@ -3,6 +3,7 @@ import { noticeFor } from './health/notices.ts';
 import type { PostSignals } from './post.ts';
 import type { PresetOrCustom } from './settings/schema.ts';
 
+export * from './health/hold.ts';
 export * from './health/notices.ts';
 export * from './health/visible-clock.ts';
 export * from './health/watch.ts';
@@ -17,11 +18,15 @@ export type HealthIssue = ReportIssue;
 export type DegradedSignal = keyof PostSignals | 'relationship';
 
 export interface HealthSample {
+  /** What the item was last read as; `pending` until it is read as a post or a panel (a skeleton, say). */
+  kind: 'post' | 'module' | 'pending';
   /**
-   * `offscreen`: a slot the platform emptied or virtualised after it scrolled away. It keeps its last decision and is
-   * left out of every ratio, so a long Facebook session doesn't look like a page of skeletons.
+   * The platform emptied or virtualised the slot after it scrolled away. A post or panel keeps counting with what it
+   * was last read as and its last decision, so the platform's recycling can't swing a share either way (Facebook
+   * empties far-off slots as the page grows); a slot emptied before it was ever read stays out of every ratio, and
+   * none counts as a stuck skeleton.
    */
-  kind: 'post' | 'module' | 'pending' | 'offscreen';
+  offscreen?: boolean;
   authorFound: boolean;
   textFound: boolean;
   sponsored: boolean;
@@ -93,6 +98,11 @@ export interface HealthInput {
   /** Whether the adapter has a load-more marker, and how long (visible time) it has been missing. */
   loadMore?: { expected: boolean; missingForMs: number };
   watch?: HealthWatch;
+  /**
+   * Issues this page load holds whatever the samples say (`heldIssues`): over-filtering, once it paused filtering,
+   * until the page reloads or the person changes their settings.
+   */
+  held?: readonly HealthIssue[];
 }
 
 export interface HealthReport {
@@ -145,14 +155,23 @@ const share = (n: number, of: number) => (of > 0 ? n / of : 0);
 
 /**
  * Decide whether detection on this page can be trusted, from a rolling window of recent items and counts over the page
- * load. When in doubt we show posts: hiding a friend's post by mistake costs far more trust than showing an ad. Pure;
- * the thresholds are ADR 0009 §3's, chosen from the live numbers.
+ * load. When in doubt we show posts: hiding a friend's post by mistake costs far more trust than showing an ad. Issues
+ * the page load holds (`held`) stay whatever the samples say. Pure; the thresholds are ADR 0009 §3's, chosen from the
+ * live numbers.
  */
 export function evaluateHealth(input: HealthInput): HealthReport {
-  if (!input.localeSupported) return { status: 'unsupported-locale', issues: ['unsupported-locale'], degraded: [] };
+  const held = input.held ?? [];
+  if (!input.localeSupported) {
+    // A held pause outlasts everything, even markers that stopped reading (`markersFor` failing looks like this).
+    if (held.length > 0) return report(['unsupported-locale', ...held], new Set(), false);
+    return { status: 'unsupported-locale', issues: ['unsupported-locale'], degraded: [] };
+  }
   const issues: HealthIssue[] = [];
   const degraded = new Set<DegradedSignal>();
-  const done = () => report(issues, degraded, input.fallback === true);
+  const done = () => {
+    for (const i of held) if (!issues.includes(i)) issues.push(i);
+    return report(issues, degraded, input.fallback === true);
+  };
 
   if ((input.errors ?? 0) >= ADAPTER_ERROR_LIMIT) issues.push('adapter-error');
   if (input.routeNew) issues.push('route-new');
@@ -166,7 +185,8 @@ export function evaluateHealth(input: HealthInput): HealthReport {
     return done();
   }
 
-  const counted = input.samples.filter((s) => s.kind !== 'offscreen');
+  // An emptied slot counts as what it was last read as; one never read stays out.
+  const counted = input.samples.filter((s) => !(s.offscreen && s.kind === 'pending'));
   const posts = counted.filter((s) => s.kind === 'post');
   const stuck = counted.filter((s) => s.kind === 'pending' && s.near && (s.nearMs ?? s.ageMs) >= STUCK_MS).length;
   if (share(stuck, counted.length) > 0.3) issues.push('stuck-skeletons');
@@ -187,7 +207,9 @@ export function evaluateHealth(input: HealthInput): HealthReport {
     issues.push('module-overmatch');
   }
   const overFiltered = share(judged.filter((s) => s.hidden && !s.sponsored).length, judged.length);
-  if (judged.length >= 20 && overFiltered > OVER_FILTER_LIMIT[input.preset]) issues.push('over-filtering');
+  if ((judged.length >= 20 && overFiltered > OVER_FILTER_LIMIT[input.preset]) || held.includes('over-filtering')) {
+    issues.push('over-filtering');
+  }
 
   const w = input.watch ?? EMPTY_WATCH;
   // Ad labels are templates and repeat; a one-off line that looks like one doesn't.

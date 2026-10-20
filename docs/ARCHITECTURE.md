@@ -65,8 +65,9 @@ are consumed as TypeScript source (`exports` points at `src/index.ts`); there is
    always-hide → sponsored → always-show → suggested → network activity → reshare → unjoined group → reel →
    not-followed, which only fires on an explicit `not-followed`), muted words and "less of" topics, then AI verdicts
    when available. Unknown or weak evidence never hides a post.
-5. **Show.** Only items that need UI get it: hidden items become a one-line stub (or a merged run: "3 hidden · Show
-   all"), dimmed and revealed items get a bar, highlighted items get a "For you" row. One React root renders every
+5. **Show.** Only items that need UI get it: each hidden item becomes a one-line stub (with Settings → Display →
+   *Group hidden posts in a row* on, off by default, a run of them shares one: "3 hidden · Show all"), dimmed and
+   revealed items get a bar, highlighted items get a "For you" row. One React root renders every
    item through portals into small shadow roots that adopt one constructed stylesheet (in Firefox each gets a
    `<style>` element instead, ADR 0008). Ordinary posts are untouched.
 6. **Classify (optional).** Rule-passing posts near the viewport are batched (2–6 per request, by source) and sent to the
@@ -109,6 +110,12 @@ after the upgrade stamps it, with a clock right after the choice it belongs to, 
 wins (`upgradeClocks`, stored by the background when it starts); an edit that changes Facebook's strength sends it too
 (`editPaths`); and a merge of items from other devices reads a strength set no earlier than the filter as this version
 does (`upgradeMerged`, in `applyRemoteItems`), without a clock, so nothing echoes and devices never trade the value.
+Version 3 turns *Group hidden posts in a row* (`display.groupRuns`) off by default. It moves only settings still on
+version 2's default: a clock on the switch, from this device or synced from another, means the person chose, and the
+choice stays. So the upgrade reads the stored clocks (`migrateSettings(raw, clocks)` in the store's writes) and stamps
+nothing: each device moves its own default when it updates, as with any default, and a computer that updates later
+never undoes a choice made on one already updated. A reader without clocks sees the new default until the background
+stores the upgrade.
 
 ## Messaging
 

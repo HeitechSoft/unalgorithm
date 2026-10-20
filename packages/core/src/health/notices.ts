@@ -1,6 +1,7 @@
 import { NOTICE_KINDS, type NoticeKind, type PlatformId } from '@unalgorithm/protocol';
 import type { HealthIssue, HealthReport } from '../health.ts';
 import { type NoticePrefs, type NoticeSnoozeKey, noticeSnoozeKey } from '../settings/schema.ts';
+import { HELD_ISSUES } from './hold.ts';
 
 /** *Not now* (and ✕, and Escape) puts a card away for this long, on this platform. */
 export const NOT_NOW_SNOOZE_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +34,23 @@ export function noticeKinds(issues: readonly string[], status: HealthReport['sta
 /** The one card these issues raise, if any: the first in priority order. */
 export function noticeFor(issues: readonly string[], status: HealthReport['status']): NoticeKind | undefined {
   return noticeKinds(issues, status)[0];
+}
+
+/**
+ * The cards `report` may show, given the ones the check before it raised: an issue must hold in two checks in a row
+ * (10 s apart) before its card shows, so a blip that clears raises nothing. A held issue (`HELD_ISSUES`) shows its card
+ * at once: the page stays paused until it reloads, and the person should know why straight away.
+ */
+export function steadyNotices(
+  report: { issues: readonly HealthIssue[]; status: HealthReport['status'] },
+  before: Iterable<NoticeKind>,
+): NoticeKind[] {
+  const previous = new Set(before);
+  const now = noticeKinds(
+    report.issues.filter((i) => HELD_ISSUES.includes(i)),
+    report.status,
+  );
+  return noticeKinds(report.issues, report.status).filter((k) => previous.has(k) || now.includes(k));
 }
 
 /** The issues that raised `kind`, for the popup's banner and the report (`TabState.notice.issues`). */

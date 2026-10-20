@@ -275,6 +275,22 @@ export async function turnOnLabs(options: Page, name: 'Fact-check' | 'UnEcho Cha
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 }
 
+/**
+ * Turns Settings → Display → *Group hidden posts in a row* on (or, with `on` false, off again), as a person would. Off by
+ * default: each hidden post has its own fold line. On, posts hidden one after another share one "N hidden · Show all"
+ * line. Open feed tabs follow at once.
+ */
+export async function groupHiddenPosts(context: BrowserContext, extensionId: string, on = true): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html#/display`);
+  const toggle = page.getByRole('switch', { name: 'Group hidden posts in a row' });
+  await expect(toggle).toHaveAttribute('aria-checked', String(!on));
+  await toggle.click();
+  // Checked once the settings are stored.
+  await expect(toggle).toHaveAttribute('aria-checked', String(on));
+  await page.close();
+}
+
 /** A starter topic that no fixture post mentions, in name or in its words. */
 export const UNMENTIONED_TOPIC = 'Small business';
 

@@ -696,3 +696,20 @@ Where the implementation departs from, or adds to, the text above:
   separator after the head. The mutation suite's `fp-headline` checks it.
 - **The e2e guard** also runs in Firefox: the driver counts Send clicks and the profile's proxy counts report
   requests, and a profile that sent one without a click fails when it closes.
+- **Emptied slots in health:** a Facebook slot emptied or virtualised after it was read counts in the health sample as
+  what it was last read as (post or panel), with its last decision, instead of being left out as §9 said. Live on
+  2026-10-20, after *Show all* made the page tall, Facebook emptied the far-off slots; without them the hidden share
+  went past Balanced's 90%, every folded post opened at once, at the next check too few items were left to judge and
+  everything folded again, every 10 s. The adapter remembers every slot it read as a post or a panel, so an emptied
+  panel reads as offscreen too, not as a skeleton (§9 named posts only); otherwise, with posts misread as panels,
+  `module-overmatch` would come and go as Facebook empties and refills far-off panels, and the feed would fold and open
+  the same way. A slot emptied before it was ever read still stays out, and none is a stuck skeleton.
+- **Over-filtering holds for the page load:** once `over-filtering` pauses filtering, the page stays paused, across
+  visits to the feed within that load, until it reloads or the person changes a setting (`HELD_ISSUES`, `HealthHold`
+  in `packages/core/src/health/hold.ts`). Its `paused` card shows at the first check, not after two, with the body
+  "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again." and
+  *Let us know*; the popup and side panel banners say the same. Every other issue is judged afresh at each check and
+  its card still waits for two in a row.
+- **The coach mark** holds a card back only while it is on the page: it sits on a fold line, so a page that stopped
+  hiding has none. Folded into a run (Settings → Display → *Group hidden posts in a row*, off by default), its post's
+  line is out of sight, so the mark moves to a line that shows.

@@ -22,8 +22,12 @@ export function deepMerge<T>(base: T, over: unknown): T {
 interface Migration {
   /** The version it brings settings to. */
   to: number;
-  /** Receives raw JSON (any section may be missing or broken) and returns raw JSON at version `to`. */
-  up: (raw: Record<string, unknown>) => Record<string, unknown>;
+  /**
+   * Receives raw JSON (any section may be missing or broken) and returns raw JSON at version `to`. `stamped` says
+   * whether a setting was ever changed by the person, here or on a synced device: its stored clocks hold a stamp for
+   * it. Without clocks (a content script reading storage, an imported file) nothing counts as stamped.
+   */
+  up: (raw: Record<string, unknown>, stamped: (path: string) => boolean) => Record<string, unknown>;
   /**
    * A filter whose value under a strength this version changed (`up` moves settings still on the old strength). Synced
    * items carry no version, and a device still on the older version reads the strength the old way, so sync keeps that
@@ -73,15 +77,33 @@ function facebookBalancedHidesNotFollowed(raw: Record<string, unknown>): Record<
   return { ...raw, platforms: { ...platforms, facebook: { ...fb, filters: { ...filters, notFollowed: true } } } };
 }
 
+/** Where version 3 changed the default: hidden posts in a row are grouped into one line only when the person asks. */
+const GROUP_RUNS = 'display.groupRuns';
+
+/**
+ * Version 3: each hidden post keeps its own fold line, with Why? and Show, unless the person groups hidden posts in a
+ * row (Settings → Display). Settings still on version 2's default, grouping on and never changed, get the new default.
+ * A choice the person made stays, on this device or synced from another: their clocks have a stamp for it. So a
+ * computer that updates later never undoes a choice made on one already updated, and nothing is stamped or sent: each
+ * device moves its own default when it updates, as with any default.
+ */
+function groupRunsOffByDefault(raw: Record<string, unknown>, stamped: (path: string) => boolean): Record<string, unknown> {
+  const display = raw.display;
+  if (!isPlainObject(display) || display.groupRuns !== true || stamped(GROUP_RUNS)) return raw;
+  return { ...raw, display: { ...display, groupRuns: false } };
+}
+
 /** Ordered upgrades from older stored settings. */
 const MIGRATIONS: readonly Migration[] = [
   { to: 2, up: facebookBalancedHidesNotFollowed, filter: { platform: 'facebook', key: 'notFollowed' } },
+  { to: 3, up: groupRunsOffByDefault },
 ];
 
-function upgrade(raw: Record<string, unknown>): Record<string, unknown> {
+function upgrade(raw: Record<string, unknown>, clocks: SettingsClocks): Record<string, unknown> {
   let cur = raw;
   const from = typeof cur.version === 'number' ? cur.version : SETTINGS_VERSION;
-  for (const m of MIGRATIONS) if (m.to > from) cur = m.up(cur);
+  const stamped = (path: string) => clockOn(clocks, path) !== undefined;
+  for (const m of MIGRATIONS) if (m.to > from) cur = m.up(cur, stamped);
   return { ...cur, version: SETTINGS_VERSION };
 }
 
@@ -136,7 +158,7 @@ export function upgradeClocks(
 ): { clocks: SettingsClocks; last: string | undefined } {
   if (!isPlainObject(raw) || typeof raw.version !== 'number' || raw.version >= SETTINGS_VERSION) return { clocks, last };
   const from = raw.version;
-  const upgraded = migrateSettings(raw);
+  const upgraded = migrateSettings(raw, clocks);
   let out = clocks;
   let newest = last;
   for (const { to, filter } of MIGRATIONS) {
@@ -183,12 +205,16 @@ export function upgradeMerged(settings: Settings, clocks: Readonly<Record<string
  * Bring stored settings to the current shape: upgrade, fill in defaults for anything missing, then validate.
  * If a section is broken (hand-edited, bad import), only that section is reset; everything else is kept,
  * including fields this version does not know about.
+ *
+ * `clocks` are the stored settings' clocks, for an upgrade that keeps what the person chose (`Migration.up`). Writes
+ * pass them (settings-store's `readForWrite`), so what is stored at this version is right; a reader without them sees
+ * the upgrade as for settings never changed until the background stores it, which it does when it starts.
  */
-export function migrateSettings(raw: unknown): Settings {
+export function migrateSettings(raw: unknown, clocks: SettingsClocks = {}): Settings {
   const defaults = defaultSettings();
   if (!isPlainObject(raw)) return defaults;
   // Settings written by a newer version keep every field this version still validates (loose objects).
-  const merged = deepMerge(defaults, upgrade(raw)) as Record<string, unknown>;
+  const merged = deepMerge(defaults, upgrade(raw, clocks)) as Record<string, unknown>;
   return repair(SettingsSchema, merged, defaults as unknown as Record<string, unknown>) as Settings;
 }
 

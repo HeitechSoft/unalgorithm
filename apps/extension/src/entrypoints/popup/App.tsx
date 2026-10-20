@@ -15,7 +15,7 @@ import {
   Lockup,
   MessageSquareWarning,
   NOTICE_ACTIONS,
-  NOTICE_COPY,
+  noticeCopy,
   PanelRight,
   SegmentedControl,
   Settings,
@@ -308,6 +308,7 @@ export function App() {
   const on = ps.enabled && !paused;
   // The in-feed card's notice, whatever its snoozes (ADR 0009 §3); else the paused banner when health broke without one.
   const notice: NoticeKind | undefined = tabState.notice?.kind ?? (tabState.health.status === 'broken' ? 'paused' : undefined);
+  const noticeText = notice ? noticeCopy(notice, tabState.notice?.issues ?? tabState.health.issues) : undefined;
   const noAds = tabState.onFeed && tabState.health.issues.includes('no-ads-seen');
   const preset = presetOf(platform, ps);
   const hidden = tabState.counts.hiddenTotal;
@@ -342,13 +343,13 @@ export function App() {
               {POPUP_COPY.noScript.report}
             </Button>
           </Banner>
-        ) : notice && on ? (
+        ) : notice && noticeText && on ? (
           <Banner
             tone={notice === 'ads-through' ? 'info' : 'warning'}
-            title={NOTICE_COPY[notice].title}
+            title={noticeText.title}
             action={{ label: NOTICE_ACTIONS.report, onAction: () => void reportProblem('popup-banner') }}
           >
-            {NOTICE_COPY[notice].body(SITE[platform])}
+            {noticeText.body(SITE[platform])}
           </Banner>
         ) : null}
         {tabState.health.status === 'unsupported-locale' && on ? (

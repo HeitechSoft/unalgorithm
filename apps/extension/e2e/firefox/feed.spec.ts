@@ -20,6 +20,8 @@ import { allowLocal, expect, markTopicMore, test } from './fixtures.ts';
 
 const FRIEND = '[componentkey="update-card-focusEEEkeyFirstDegree5"]';
 const PROMOTED = '[componentkey="update-card-focusBBBkeyPromoted0002"]';
+/** The fixture feed's last hidden post. */
+const COMPANY = '[componentkey="update-card-focusFFFkeyCompanyNF006"]';
 
 test('test_firefox_install_opens_onboarding', async ({ firefox }) => {
   expect(firefox.id).toBe('feed-dev@unalgorithmfeed.com');
@@ -36,8 +38,10 @@ test('test_firefox_linkedin_rules_fold_noise_and_show_reveals', async ({ feed })
   const page = await feed();
   await page.waitForSelector(`${PROMOTED}[data-unalgo="collapsed"]`);
   expect(await attribute(page, FRIEND, 'data-unalgo')).toBeNull();
-  // Adjacent hidden posts merge into one line.
-  await page.waitForSelector('[data-unalgo-run="member"]');
+  // Each hidden post has its own line by default, even those hidden one after another: none is folded into a run.
+  await page.waitForSelector(`${COMPANY}[data-unalgo="collapsed"]`);
+  expect(await count(page, '[data-unalgo="collapsed"] unalgo-post')).toBe(await count(page, '[data-unalgo="collapsed"]'));
+  expect(await count(page, '[data-unalgo-run]')).toBe(0);
   const stub = `${PROMOTED} unalgo-post >>> `;
   await visible(page, `${stub}${text('Promoted')}`);
   await click(page, `${stub}${aria('button', 'Show Promoted post from Northwind Analytics')}`);

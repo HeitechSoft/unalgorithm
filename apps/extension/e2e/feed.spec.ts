@@ -10,7 +10,7 @@ import {
   SUGGESTED_PAGE_POST,
   UNJOINED_GROUP_POST,
 } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { expect, markTopicMore, settled, test } from './fixtures.ts';
+import { expect, groupHiddenPosts, markTopicMore, settled, test } from './fixtures.ts';
 
 test('opens onboarding on install', async ({ context, extensionId }) => {
   await expect
@@ -24,13 +24,39 @@ test('LinkedIn: folds away noise, keeps people you follow, and Show reveals', as
   const promoted = page.locator('[componentkey="update-card-focusBBBkeyPromoted0002"]');
   await expect(promoted).toHaveAttribute('data-unalgo', 'collapsed');
   await expect(friend).not.toHaveAttribute('data-unalgo', /.+/);
-  // Adjacent hidden posts merge into one line.
-  await expect(page.locator('[data-unalgo-run="member"]').first()).toBeAttached();
   const stub = promoted.locator('unalgo-post');
   await expect(stub.getByText('Promoted', { exact: true })).toBeVisible();
   await stub.getByRole('button', { name: /^Show / }).click();
   await expect(promoted).toHaveAttribute('data-unalgo', 'revealed');
   await expect(promoted.locator('unalgo-post').getByRole('button', { name: 'Hide again' })).toBeVisible();
+});
+
+test('LinkedIn: each hidden post has its own line; grouping them is a switch that applies at once', async ({
+  context,
+  extensionId,
+  feed,
+}) => {
+  const page = await feed();
+  // The fixture feed's last hidden post folds last: from then on, every post that will be hidden is.
+  await expect(page.locator('[componentkey="update-card-focusFFFkeyCompanyNF006"]')).toHaveAttribute('data-unalgo', 'collapsed');
+  const folded = await page.locator('[data-unalgo="collapsed"]').count();
+  expect(folded).toBeGreaterThan(2);
+  const why = page.locator('[data-unalgo="collapsed"] unalgo-post').getByRole('button', { name: /Why was this hidden/ });
+  const showAll = page.getByRole('button', { name: /^Show all \d+ hidden posts$/ });
+  // By default, each hidden post its own line with Why? and Show, even those hidden one after another.
+  await expect(why).toHaveCount(folded);
+  await expect(page.locator('[data-unalgo-run]')).toHaveCount(0);
+  await expect(showAll).toHaveCount(0);
+  // Settings → Display → Group hidden posts in a row: the open feed merges them into one line each run.
+  await groupHiddenPosts(context, extensionId);
+  await expect(page.locator('[data-unalgo-run="member"]').first()).toBeAttached();
+  await expect(showAll.first()).toBeVisible();
+  await expect(page.locator('[data-unalgo="collapsed"]')).toHaveCount(folded);
+  // Off again: every hidden post has its own line again.
+  await groupHiddenPosts(context, extensionId, false);
+  await expect(page.locator('[data-unalgo-run]')).toHaveCount(0);
+  await expect(showAll).toHaveCount(0);
+  await expect(why).toHaveCount(folded);
 });
 
 test('LinkedIn: Why? explains, and "Stop hiding" changes the rule live with Undo', async ({ feed }) => {

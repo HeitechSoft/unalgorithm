@@ -243,7 +243,9 @@ function sample(item: ItemRead, hidden: boolean, visibleMs: number): HealthSampl
   if (r.kind === 'ignore') return null;
   const post = r.kind === 'post' ? r.post : undefined;
   return {
-    kind: r.kind === 'pending' && r.offscreen ? 'offscreen' : r.kind,
+    kind: r.kind,
+    // A capture holds no earlier read: an emptied slot was never decided, so it stays out of every ratio.
+    ...(r.kind === 'pending' && r.offscreen ? { offscreen: true } : {}),
     authorFound: !!post?.quality.authorFound,
     textFound: !!post?.quality.textFound,
     sponsored: !!post?.signals.sponsored,

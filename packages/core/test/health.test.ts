@@ -7,11 +7,15 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   EMPTY_WATCH,
   evaluateHealth,
+  HELD_ISSUES,
+  type HealthHold,
   type HealthInput,
   type HealthIssue,
   type HealthReport,
   type HealthSample,
   type HealthWatch,
+  heldIssues,
+  holdAfter,
   type ItemFacts,
   multiPostCount,
   NO_SIGNALS,
@@ -20,6 +24,7 @@ import {
   type PostData,
   postFacts,
   START_GRACE_MS,
+  steadyNotices,
   tallyIds,
   VisibleClock,
   watchFrom,
@@ -193,15 +198,36 @@ describe('health: ADR 0009 checks', () => {
     expect(issues({ samples: stuck(4, { nearMs: undefined, ageMs: 15_000 }) })).toEqual(['stuck-skeletons']);
   });
 
-  it('test_offscreen_slots_are_left_out_of_every_ratio', () => {
-    const offscreen = (n: number) => many(n, () => ({ kind: 'offscreen', hidden: true, near: false }));
-    // 3 stuck of 9 counted items is a third: with the 5 offscreen slots counted it would be 3 of 14.
-    const stuck = [...many(3, () => ({ kind: 'pending', nearMs: 20_000 })), ...many(6), ...offscreen(5)];
+  it('test_emptied_slots_count_by_their_last_decision', () => {
+    const emptied = (n: number, over: Partial<HealthSample> = {}) => many(n, () => ({ offscreen: true, near: false, ...over }));
+    // Facebook after Show all made the page tall (2026-10-20, live): the shown posts far above were emptied, the 19
+    // hidden ones around the viewport were not. Counted by their last decision that is 19 of 29, not 19 of 19.
+    expect(issues({ samples: [...many(19, () => ({ hidden: true })), ...emptied(10)] })).toEqual([]);
+    // ...and the other way: everything shown makes the page taller still, and Facebook empties most of the hidden
+    // posts too. Five left on the page are too few to judge alone; with the 20 emptied ones it stays over the limit.
+    expect(issues({ samples: [...many(5, () => ({ hidden: true })), ...emptied(20, { hidden: true })] })).toEqual([
+      'over-filtering',
+    ]);
+    // An emptied panel is still a panel, and an emptied post keeps what was read of it.
+    expect(issues({ samples: [...many(4), ...emptied(6, { kind: 'module' })] })).toEqual(['module-overmatch']);
+    expect(issues({ samples: [...many(3), ...emptied(7, { textFound: false })] })).toEqual(['text-detection']);
+    expect(issues({ samples: [...many(4), ...emptied(6, { authorFound: false })] })).toEqual(['author-detection']);
+  });
+
+  it('test_emptied_slots_never_read_stay_out', () => {
+    // Emptied before it was read as a post or a panel: no decision to count, and never a stuck skeleton however long
+    // it sits near the viewport.
+    const neverRead = (n: number) => many(n, () => ({ kind: 'pending', offscreen: true, near: true, nearMs: 60_000 }));
+    expect(issues({ samples: [...many(1, () => ({ kind: 'pending', nearMs: 20_000 })), ...many(9), ...neverRead(5)] })).toEqual(
+      [],
+    );
+    // 3 stuck of the 9 items counted is a third: with the 5 never-read slots counted it would be 3 of 14.
+    const stuck = [...many(3, () => ({ kind: 'pending', nearMs: 20_000 })), ...many(6), ...neverRead(5)];
     expect(issues({ samples: stuck })).toEqual(['stuck-skeletons']);
-    // 19 hidden posts and 10 offscreen ones: 19 judged items, too few for over-filtering.
-    expect(issues({ samples: [...many(19, () => ({ hidden: true })), ...offscreen(10)] })).toEqual([]);
-    // Offscreen slots alone still mean the feed has items.
-    expect(issues({ samples: offscreen(5) })).toEqual([]);
+    // 19 hidden posts and 10 never-read slots: 19 judged items, too few for over-filtering.
+    expect(issues({ samples: [...many(19, () => ({ hidden: true })), ...neverRead(10)] })).toEqual([]);
+    // Emptied slots alone still mean the feed has items.
+    expect(issues({ samples: neverRead(5) })).toEqual([]);
   });
 
   it('test_sponsored_overmatch_needs_twenty_posts', () => {
@@ -277,6 +303,76 @@ describe('health: ADR 0009 checks', () => {
   it('test_route_new_is_report_only', () => {
     const r = run({ routeNew: true });
     expect(r).toStrictEqual({ status: 'ok', issues: ['route-new'], degraded: [] });
+  });
+});
+
+describe('health: a held pause', () => {
+  const held: HealthIssue[] = ['over-filtering'];
+
+  it('test_held_over_filtering_stays_whatever_the_samples_say', () => {
+    expect(HELD_ISSUES).toEqual(['over-filtering']);
+    // Every post shows, and the page that grew empties or refills its slots: fine shares, too few to judge, nothing
+    // on the page at all. The page stays paused, with its card.
+    for (const samples of [many(30), many(20, (i) => ({ hidden: i < 5 })), many(5, () => ({ hidden: true }))]) {
+      const r = run({ samples, held });
+      expect(r).toStrictEqual({ status: 'broken', issues: ['over-filtering'], degraded: [], notice: 'paused' });
+    }
+    expect(run({ samples: [], visibleMs: 1000, held }).issues).toEqual(['over-filtering']);
+    expect(run({ samples: [], held }).issues).toEqual(['no-items', 'over-filtering']);
+    expect(run({ feedFound: false, samples: [], held })).toMatchObject({ status: 'broken', notice: 'paused' });
+    // Markers that stop reading (`markersFor` throwing looks like an unsupported language) don't end it either.
+    expect(run({ localeSupported: false, held })).toMatchObject({ status: 'broken', notice: 'paused' });
+  });
+
+  it('test_held_over_filtering_keeps_its_place_among_the_issues', () => {
+    // Held or found afresh, the report reads the same, so the controller sees no change and redraws nothing.
+    const found = run({ samples: many(20, () => ({ hidden: true })), watch: watch({ nearMissRepeat: 2 }), held });
+    const heldOnly = run({ samples: many(5), watch: watch({ nearMissRepeat: 2 }), held });
+    expect(found.issues).toEqual(['over-filtering', 'ad-label-near-miss']);
+    expect(heldOnly).toStrictEqual(found);
+  });
+
+  it('test_a_hold_ends_only_with_a_reload_or_a_settings_change', () => {
+    // Check after check, as the controller runs them; a page load starts with no hold.
+    let hold: HealthHold | null = null;
+    const check = (samples: HealthSample[], settings = 'balanced') => {
+      const r = run({ samples, held: heldIssues(hold, settings) });
+      hold = holdAfter(hold, r, settings);
+      return r;
+    };
+    expect(check(many(20, (i) => ({ hidden: i < 10 }))).status).toBe('ok');
+    expect(hold).toBeNull();
+    expect(check(many(20, () => ({ hidden: true }))).issues).toEqual(['over-filtering']);
+    expect(hold).toStrictEqual({ issues: ['over-filtering'], settings: 'balanced' });
+    // Forty checks later, whatever the page did meanwhile, it is still paused: it never folds and opens again.
+    const pages = [many(20, (i) => ({ hidden: i < 10 })), many(5), many(30), many(19, () => ({ hidden: true }))];
+    for (let i = 0; i < 40; i++) expect(check(pages[i % pages.length] ?? []).status).toBe('broken');
+    // The person changes a setting: the page is judged afresh, and folds again if it looks right.
+    expect(
+      check(
+        many(20, (i) => ({ hidden: i < 10 })),
+        'balanced, reels off',
+      ),
+    ).toStrictEqual({
+      status: 'ok',
+      issues: [],
+      degraded: [],
+    });
+    expect(hold).toBeNull();
+    // A reload starts with no hold.
+    expect(heldIssues(null, 'balanced')).toEqual([]);
+  });
+
+  it('test_only_over_filtering_is_held', () => {
+    const textBroken = run({ samples: many(10, (i) => ({ textFound: i >= 7 })) });
+    expect(textBroken.status).toBe('broken');
+    expect(holdAfter(null, textBroken, 's')).toBeNull();
+    expect(holdAfter(null, run({ errors: 3 }), 's')).toBeNull();
+    expect(holdAfter(null, run({ samples: many(10, (i) => (i < 6 ? { kind: 'module' } : {})) }), 's')).toBeNull();
+    // Held with something else: only the held issue is kept.
+    const both = run({ samples: many(20, (i) => ({ hidden: true, textFound: i >= 15 })) });
+    expect(both.issues).toEqual(['text-detection', 'over-filtering']);
+    expect(holdAfter(null, both, 's')).toStrictEqual({ issues: ['over-filtering'], settings: 's' });
   });
 });
 
@@ -395,6 +491,20 @@ describe('notices from issues', () => {
       expect(noticeFor([absent], 'broken'), absent).toBeUndefined();
     }
     expect(noticeFor([], 'ok')).toBeUndefined();
+  });
+
+  it('test_a_held_issue_shows_its_card_at_once', () => {
+    // Over-filtering holds until the page reloads: its card is due at the first check that finds it.
+    expect(steadyNotices({ issues: ['over-filtering'], status: 'broken' }, [])).toEqual(['paused']);
+    // Every other cause waits for a second check in a row.
+    expect(steadyNotices({ issues: ['text-detection'], status: 'broken' }, [])).toEqual([]);
+    expect(steadyNotices({ issues: ['text-detection'], status: 'broken' }, ['paused'])).toEqual(['paused']);
+    expect(steadyNotices({ issues: ['adapter-error'], status: 'broken' }, [])).toEqual([]);
+    expect(steadyNotices({ issues: ['ad-label-near-miss'], status: 'ok' }, [])).toEqual([]);
+    expect(steadyNotices({ issues: ['ad-label-near-miss'], status: 'ok' }, ['ads-through'])).toEqual(['ads-through']);
+    expect(steadyNotices({ issues: ['over-filtering', 'ad-label-near-miss'], status: 'broken' }, [])).toEqual(['paused']);
+    // A card that was raised but whose issue cleared isn't due.
+    expect(steadyNotices({ issues: [], status: 'ok' }, ['paused'])).toEqual([]);
   });
 
   it('test_health_report_carries_the_top_notice', () => {

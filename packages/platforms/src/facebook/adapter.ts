@@ -12,10 +12,11 @@ import { actionBars } from './slots.ts';
 const MARKERS: Record<string, FacebookMarkers> = { en: FACEBOOK_EN };
 
 /**
- * Items that inspected as posts. When Facebook empties one of these slots after it scrolls away, it is offscreen, not
- * a skeleton still loading. A WeakSet, so a removed item is forgotten with it.
+ * Items that inspected as posts or panels. When Facebook empties one of these slots after it scrolls away, it is
+ * offscreen, not a skeleton still loading, and keeps counting as what it was. A WeakSet, so a removed item is forgotten
+ * with it.
  */
-const seenPosts = new WeakSet<Element>();
+const seenItems = new WeakSet<Element>();
 
 /**
  * Facebook's home feed: one list inside `[role="main"]` with a direct child per feed item (posts and panels alike).
@@ -27,7 +28,7 @@ const seenPosts = new WeakSet<Element>();
  */
 export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
   id: 'facebook',
-  version: 'facebook@2026.10.5',
+  version: 'facebook@2026.10.6',
   ids: FACEBOOK_IDS,
 
   isFeedPage(url) {
@@ -77,20 +78,24 @@ export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
   inspect(el, ctx): InspectResult {
     const m = ctx.markers;
     if (!m) return { kind: 'ignore' };
-    // Emptied or virtualised after it scrolled away: keep its decision, leave it out of health.
+    // Emptied or virtualised after it scrolled away: the controller keeps its decision, and health counts it as the
+    // post or panel it was. A slot never read (a skeleton still loading) is plain pending.
     if (el.matches(FB_SEL.virtualized) || el.querySelector(FB_SEL.virtualized)) return { kind: 'pending', offscreen: true };
     const text = normalizeText(el.textContent ?? '');
-    if (text.length < 3) return seenPosts.has(el) ? { kind: 'pending', offscreen: true } : { kind: 'pending' };
+    if (text.length < 3) return seenItems.has(el) ? { kind: 'pending', offscreen: true } : { kind: 'pending' };
     // One post per item: an item with several posts' action bars is a wrapper we misread, and never hides.
     const bars = actionBars(el, m.like);
     const barObservations: FacebookObservation[] = bars.locator === 'aria' ? ['fb.slot.action-bar.aria'] : [];
     if (bars.count >= 2) return { kind: 'ignore', observations: ['fb.item.multi-post', ...barObservations] };
     const module = moduleOf(el, m);
-    if (module) return { kind: 'module', module };
+    if (module) {
+      seenItems.add(el);
+      return { kind: 'module', module };
+    }
     const hasPost = !!el.querySelector(`${FB_SEL.message}, ${FB_SEL.profileName}, h2 a, h3 a, h4 a, [aria-posinset]`);
     if (!hasPost) return { kind: 'pending' };
     const { post, observations } = readFacebookPost(el, m);
-    seenPosts.add(el);
+    seenItems.add(el);
     const all = [...observations, ...barObservations];
     return all.length ? { kind: 'post', post, observations: all } : { kind: 'post', post };
   },

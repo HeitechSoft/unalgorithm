@@ -3,7 +3,14 @@
  * and that keys and tokens never reach a payload. The server is the in-memory fake behind an injected fetch, the device
  * token a stubbed `getAccessToken`; extension storage is the WXT fake browser and the clock a fake `Date`.
  */
-import { defaultDevice, defaultSettings, presetOf, type Settings, type SettingsClocks } from '@unalgorithm/core';
+import {
+  defaultDevice,
+  defaultSettings,
+  presetOf,
+  SETTINGS_VERSION,
+  type Settings,
+  type SettingsClocks,
+} from '@unalgorithm/core';
 import {
   AUTHORIZE_PAGE_PATH,
   formatHlc,
@@ -435,7 +442,7 @@ describe("settings version 2: Facebook's Balanced hides people you don't follow"
     expect(await upgradeStoredSettings()).toBe(true);
     expect(await upgradeStoredSettings()).toBe(false);
     expect(await settingsItem.getValue()).toMatchObject({
-      version: 2,
+      version: SETTINGS_VERSION,
       platforms: { facebook: { filters: { notFollowed: true } } },
     });
     const stamp = hlc(NOW - 5 * DAY, LOCAL, 1);
@@ -472,12 +479,61 @@ describe("settings version 2: Facebook's Balanced hides people you don't follow"
       s.display.mode = 'dim';
     });
     expect(await settingsItem.getValue()).toMatchObject({
-      version: 2,
+      version: SETTINGS_VERSION,
       platforms: { facebook: { filters: { notFollowed: true } } },
     });
     expect(await upgradeStoredSettings()).toBe(false);
     expect(await run()).toMatchObject({ ok: true, pushed: 2 });
     expect(pushedKeys().sort()).toStrictEqual(['display.mode', `${FB}.filters.notFollowed`]);
+  });
+});
+
+describe('settings version 3: hidden posts in a row each keep their own line', () => {
+  const GROUP = 'display.groupRuns';
+  /** This computer on version 2, with grouping as version 2 left it, then updated to version 3. */
+  async function storedByVersion2(clocks: SettingsClocks): Promise<void> {
+    const v2 = defaultSettings();
+    v2.display.groupRuns = true;
+    await settingsItem.setValue({ ...v2, version: 2 });
+    await settingsClocksItem.setValue(clocks);
+  }
+
+  it('test_an_untouched_default_moves_and_nothing_is_sent', async () => {
+    await storedByVersion2({});
+    // Read before the background stores the upgrade (a page, a content script): already the new default.
+    expect((await readSettings()).display.groupRuns).toBe(false);
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await settingsItem.getValue()).toMatchObject({ version: SETTINGS_VERSION, display: { groupRuns: false } });
+    expect(await settingsClocksItem.getValue()).toStrictEqual({});
+    // A default is never sent: each computer moves its own when it updates.
+    expect(await run()).toStrictEqual({ ok: true, pulled: 0, pushed: 0 });
+    expect(server.item(GROUP)).toBeUndefined();
+
+    // Turned on here: a choice like any other, sent, and a computer still on version 2 gets it as it is.
+    await updateSettings((s) => {
+      s.display.groupRuns = true;
+    });
+    expect(await run()).toMatchObject({ ok: true, pushed: 1 });
+    expect(server.item(GROUP)).toMatchObject({ value: true });
+  });
+
+  it('test_a_choice_from_any_computer_survives_the_update', async () => {
+    // The person turned grouping off and on again on another computer, and this one pulled it while on version 2.
+    const chose = hlc(NOW - 3 * DAY);
+    server.put(live(GROUP, true, chose));
+    await storedByVersion2({ [GROUP]: chose });
+    await enable({ known: { [GROUP]: chose } });
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await settingsItem.getValue()).toMatchObject({ version: SETTINGS_VERSION, display: { groupRuns: true } });
+    expect((await settingsClocksItem.getValue())[GROUP]).toBe(chose);
+    // Nothing to send, and the computers agree.
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect((await readSettings()).display.groupRuns).toBe(true);
+
+    // Turned off on a computer still on version 2: it applies here.
+    server.put(live(GROUP, false, hlc(NOW - DAY)));
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect((await readSettings()).display.groupRuns).toBe(false);
   });
 });
 

@@ -37,6 +37,7 @@ import {
   presetSummary,
   recordUsage,
   ruleFilter,
+  SETTINGS_VERSION,
   type Settings,
   type SettingsClocks,
   safeExternalUrl,
@@ -324,7 +325,7 @@ describe('settings migration', () => {
       s.platforms.facebook.alwaysShow.a = { label: 'Riley Chen', match: '/riley.chen', addedAt: 1 };
     });
     const s = migrateSettings(v1);
-    expect(s.version).toBe(2);
+    expect(s.version).toBe(SETTINGS_VERSION);
     expect(s.platforms.facebook.filters.notFollowed).toBe(true);
     expect(s.platforms.facebook.preset).toBe('balanced');
     expect(presetOf('facebook', s.platforms.facebook)).toBe('balanced');
@@ -385,6 +386,64 @@ describe('settings migration', () => {
     // Version 2 settings are read as stored: the migration ran when version 1's were.
     const v2 = { ...storedByVersion1(), version: 2 };
     expect(migrateSettings(v2).platforms.facebook.filters.notFollowed).toBe(false);
+  });
+
+  /** Settings as version 2 stored them: hidden posts in a row were grouped into one line by default. */
+  function storedByVersion2(mutate: (s: Settings) => void = () => {}): Record<string, unknown> {
+    const s = defaultSettings();
+    s.display.groupRuns = true;
+    mutate(s);
+    return { ...structuredClone(s), version: 2 };
+  }
+
+  it('test_settings_v3_gives_each_hidden_post_its_own_line_by_default', () => {
+    // A fresh install: every hidden post keeps its own fold line.
+    expect(defaultSettings().display.groupRuns).toBe(false);
+    // Version 2's default, never changed (no clock for it): the new default. Nothing else moves.
+    const v2 = storedByVersion2((s) => {
+      s.display.mode = 'dim';
+      s.display.showAuthor = false;
+      s.interests.about = 'Local news';
+    });
+    const s = migrateSettings(v2, { 'display.mode': formatHlc({ ms: 5000, counter: 0, device: 'dev-a' }) });
+    expect(s.version).toBe(SETTINGS_VERSION);
+    expect(s.display.groupRuns).toBe(false);
+    const asStored = migrateSettings({ ...v2, version: SETTINGS_VERSION });
+    expect(asStored.display.groupRuns).toBe(true);
+    asStored.display.groupRuns = false;
+    expect(s).toStrictEqual(asStored);
+    // Read without clocks, by a page or a content script before the background stores the upgrade: the same.
+    expect(migrateSettings(v2).display.groupRuns).toBe(false);
+    // Grouping off already, or never written: off.
+    expect(migrateSettings(storedByVersion2((x) => void (x.display.groupRuns = false))).display.groupRuns).toBe(false);
+    const sparse = migrateSettings({ version: 2, display: { mode: 'collapse' } });
+    expect(sparse.display).toMatchObject({ mode: 'collapse', groupRuns: false });
+    // Version 1's settings get both upgrades.
+    const v1 = migrateSettings(storedByVersion1((x) => void (x.display.groupRuns = true)));
+    expect(v1.display.groupRuns).toBe(false);
+    expect(v1.platforms.facebook.filters.notFollowed).toBe(true);
+  });
+
+  it('test_settings_v3_keeps_grouping_the_person_chose', () => {
+    const at = formatHlc({ ms: 5000, counter: 0, device: 'dev-b' });
+    // Turned off and on again, here or on a synced computer: its clock says so, and the choice stays.
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRuns': at }).display.groupRuns).toBe(true);
+    // A stamp on the whole section covers it too; a stamp on a neighbour does not.
+    expect(migrateSettings(storedByVersion2(), { display: at }).display.groupRuns).toBe(true);
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRunsLater': at }).display.groupRuns).toBe(false);
+    // A clock that isn't one (storage a content script could write) is no choice.
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRuns': 'garbage' }).display.groupRuns).toBe(false);
+    // Settings at this version read as stored: the upgrade ran once, and turning grouping on later is a choice.
+    const v3 = { ...storedByVersion2(), version: SETTINGS_VERSION };
+    expect(migrateSettings(v3).display.groupRuns).toBe(true);
+  });
+
+  it('test_settings_v3_upgrade_stamps_nothing', () => {
+    // Each computer moves its own default when it updates, as with any default: nothing is sent for it.
+    const clocks: SettingsClocks = { 'display.mode': formatHlc({ ms: 5000, counter: 0, device: 'dev-a' }) };
+    const last = clocks['display.mode'];
+    expect(upgradeClocks(storedByVersion2(), clocks, 'dev-a', last)).toStrictEqual({ clocks, last });
+    expect(upgradeClocks(storedByVersion2(), {}, 'dev-a', undefined)).toStrictEqual({ clocks: {}, last: undefined });
   });
 
   describe("sync of Facebook's not-followed filter, whose Balanced value changed in version 2", () => {

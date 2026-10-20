@@ -9,7 +9,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import { cleanReportMessage, defaultDevice, describeReport, emptyTabState, REPORT_LINE_COPY } from '@unalgorithm/core';
 import { linkedinAdapter } from '@unalgorithm/platforms';
 import { REPORT_CHOICES, type ReportEnv, SUPPORT_EMAIL } from '@unalgorithm/protocol';
-import { NOTICE_COPY } from '@unalgorithm/ui';
+import { NOTICE_COPY, OVER_FILTERING_COPY } from '@unalgorithm/ui';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -562,6 +562,22 @@ describe('entry points', () => {
     await popup();
     expect(await screen.findByText(NOTICE_COPY['not-running'].title)).toBeTruthy();
     expect(screen.queryByText('Go to feed')).toBeNull();
+    cleanup();
+
+    // Paused because nearly everything would have been hidden: that holds until a reload, and the banner says so.
+    await tabStateItem(7).setValue({
+      ...emptyTabState(),
+      platform: 'linkedin',
+      onFeed: true,
+      updatedAt: Date.now(),
+      health: { status: 'broken', issues: ['over-filtering'], degraded: [] },
+      notice: { kind: 'paused', issues: ['over-filtering'] },
+    });
+    tab = FEED_TAB;
+    await popup();
+    expect(await screen.findByText(NOTICE_COPY.paused.title)).toBeTruthy();
+    expect(screen.getByText(OVER_FILTERING_COPY.body('LinkedIn'))).toBeTruthy();
+    expect(screen.queryByText(NOTICE_COPY.paused.body('LinkedIn'))).toBeNull();
   });
 
   it('test_settings_report_and_notice_switch', async () => {
@@ -597,6 +613,9 @@ describe('entry points', () => {
     });
     render(<SidePanel />);
     expect(await screen.findByText(NOTICE_COPY.paused.title)).toBeTruthy();
+    expect(
+      screen.getByText("unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again."),
+    ).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Let us know' }));
     await waitFor(() => expect(toTab()).toEqual([{ type: 'reportSnapshot', from: 'sidepanel' }]));
   });

@@ -11,7 +11,7 @@ import {
   ListFilter,
   Newspaper,
   NOTICE_ACTIONS,
-  NOTICE_COPY,
+  noticeCopy,
   PerspectivesSheet,
   SearchCheck,
   SegmentedControl,
@@ -86,17 +86,18 @@ export function App() {
 
   // The page's breakage notice, whatever the in-feed card's snoozes (ADR 0009 §3): unAlgorithm isn't running, or paused.
   const notice = platform && (state.notice?.kind === 'not-running' || state.notice?.kind === 'paused') ? state.notice.kind : null;
+  const noticeText = notice ? noticeCopy(notice, state.notice?.issues) : null;
   const noticeBanner =
-    notice && platform ? (
+    notice && noticeText && platform ? (
       <Banner
         tone="warning"
-        title={NOTICE_COPY[notice].title}
+        title={noticeText.title}
         action={{
           label: NOTICE_ACTIONS.report,
           onAction: () => tab && void sendToTab(tab.id, { type: 'reportSnapshot', from: 'sidepanel' }),
         }}
       >
-        {NOTICE_COPY[notice].body(SITE[platform])}
+        {noticeText.body(SITE[platform])}
       </Banner>
     ) : null;
 

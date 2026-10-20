@@ -108,9 +108,23 @@ describe('FeedController on LinkedIn', () => {
     expect(state('EEEkeyFirstDegree5') ?? null).toBeNull();
     const states = [...document.querySelectorAll('[componentkey]')].map((el) => el.getAttribute('data-unalgo'));
     expect(states.filter((s) => s === 'collapsed')).toHaveLength(4);
-    // Four hidden in a row merge into one "4 hidden" line.
-    expect(document.querySelectorAll('[data-unalgo-run="member"]')).toHaveLength(3);
+    // Four hidden in a row: each keeps its own fold line by default.
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
     expect(document.querySelectorAll('unalgo-post')).toHaveLength(4);
+    c.stop();
+  });
+
+  it('test_grouping_on_merges_hidden_posts_in_a_row_into_one_line', async () => {
+    // Settings → Display → Group hidden posts in a row: the four make one "4 hidden · Show all" line.
+    const rt = runtime();
+    rt.settings.display.groupRuns = true;
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(rt);
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('[data-unalgo-run="lead"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-unalgo-run="member"]')).toHaveLength(3);
+    const lead = c.mounted().find((e) => e.el.getAttribute('data-unalgo-run') === 'lead') as Entry;
+    expect(c.modelFor(lead).run).toMatchObject({ count: 4 });
     c.stop();
   });
 

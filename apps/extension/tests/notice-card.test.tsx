@@ -17,6 +17,11 @@ import { eventGuard, mountNoticeLayer, mountUiHost, UiLayer } from '../src/conte
 /** A feed whose adapter throws on three items: `adapter-error`, so filtering pauses and the `paused` card comes up. */
 const BROKEN_FEED = `<main id="feed">${['p1', 't1', 't2', 't3'].map((k) => `<div data-item="${k}"><p>Card</p></div>`).join('')}</main>`;
 
+/** One post you follow and 21 by strangers (`s…`): Balanced would hide 21 of 22, past its 90% (`over-filtering`). */
+const OVER_FILTERED_FEED = `<main id="feed">${['p1', ...Array.from({ length: 21 }, (_, i) => `s${i}`)]
+  .map((k) => `<div data-item="${k}"><p>Card</p></div>`)
+  .join('')}</main>`;
+
 const adapter: PlatformAdapter = {
   id: 'linkedin',
   version: 'linkedin@2026.10.2',
@@ -36,7 +41,7 @@ const adapter: PlatformAdapter = {
       post: {
         id: `li:ck:${key}`,
         platform: 'linkedin',
-        author: { kind: 'person', relationship: 'followed' },
+        author: { kind: 'person', relationship: key.startsWith('s') ? 'not-followed' : 'followed' },
         signals: { ...NO_SIGNALS },
         evidence: [],
         text: 'Text.',
@@ -130,6 +135,29 @@ describe('the card in the feed layer', () => {
     const dock = layer().querySelector('.ua-dock');
     expect([...(dock?.children ?? [])].map((el) => el.className)).toEqual(['ua-notice-region', 'ua-toasts']);
     expect(document.querySelector('#feed')?.querySelector('.ua-notice, unalgo-layer')).toBeNull();
+    act(() => ui.unmount());
+    c.stop();
+  });
+
+  it('test_over_filtering_card_shows_at_the_first_check_and_says_reload', async () => {
+    document.body.innerHTML = OVER_FILTERED_FEED;
+    const c = new FeedController(adapter, bridge(), mountUiHost);
+    const ui = new UiLayer();
+    ui.mount(c);
+    c.start(runtime());
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(document.querySelectorAll('[data-unalgo="collapsed"]')).toHaveLength(21);
+    // One check: the page stops hiding, and the card says why and how to try again, without waiting for a second.
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(document.querySelectorAll('[data-unalgo]')).toHaveLength(0);
+    const region = inLayer().getByRole('region', { name: 'unAlgorithm' });
+    expect(within(region).getByText('Filtering is paused on this page')).toBeTruthy();
+    expect(
+      within(region).getByText(
+        "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again.",
+      ),
+    ).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Let us know' })).toBeTruthy();
     act(() => ui.unmount());
     c.stop();
   });

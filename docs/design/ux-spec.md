@@ -24,7 +24,7 @@ never in the way).
 | **Report page** (a tab of its own) | Opened next to the feed by every *Report a problem*, *Let us know* and *Wrong call?*: the questions, *What we'll send*, the exact report, **Send report** ([below](#the-report-page)) |
 | **Settings** (full tab) | macOS System Settings layout: sidebar with colored icon tiles and search, inset grouped lists. Panes: LinkedIn, Facebook, Display, Interests, AI, Privacy & Data, About. Changes apply instantly; no Save button; destructive actions use alert dialogs |
 | **Onboarding** (opens on install) | Welcome → Strength → Interests → AI (optional) → Done. Under a minute, every step skippable, saves as it goes, starts working in LinkedIn/Facebook tabs that are already open |
-| **In the feed** | Collapsed stub, merged runs ("3 hidden · Show all"), Why? popover, revealed bar, "For you" ring and row with More like this / Not for me, one-time coach mark, toasts at the bottom left (chat windows dock at the bottom right), and above them the breakage notice card ([below](#the-notice-card)) |
+| **In the feed** | Collapsed stub for each hidden post, or one line for posts hidden in a row when the person groups them ("3 hidden · Show all", [below](#hidden-posts-in-a-row)), Why? popover, revealed bar, "For you" ring and row with More like this / Not for me, one-time coach mark, toasts at the bottom left (chat windows dock at the bottom right), and above them the breakage notice card ([below](#the-notice-card)) |
 | **Toolbar icon** | Per-tab count badge in teal (never red); greyscale when paused; its title says what is happening on the tab ([below](#popup-side-panel-and-toolbar)) |
 
 ## Presets
@@ -40,20 +40,36 @@ Balanced is the default.
 | With AI: engagement bait, rage bait, clickbait | — | ✓ | ✓ |
 | With AI: off-topic, promotional, low-effort | — | — | ✓ |
 
+## Hidden posts in a row
+
+Each hidden post has its own thin line with Why? and Show, so the person sees what was hidden without an extra click,
+even when posts are hidden one after another.
+
+- **Settings → Display → Group hidden posts in a row** (off by default), subtitle: "Shows posts hidden one after another
+  as one line with Show all". On, such posts share one line, "3 hidden · Show all", with their reasons. Only in
+  Collapse; Peek shows every post on its own.
+- **Show all** gives each post of the run its own line, and they keep it for the rest of the page load, so the feed
+  never folds and opens again while the site empties and refills posts far from the screen.
+- Turning the switch on or off redraws open feeds at once. It syncs like the rest of Display. Settings from before it
+  was off by default move to off, unless the person had changed the switch.
+
 ## In-feed safety rules
 
 1. AI never collapses a post that is on screen. Its verdict applies once the post scrolls away.
 2. Any error shows posts.
 3. If more than 50 / 90 / 95 % (Light / Balanced / Calm) of the posts would be hidden, not counting ads, or no posts
    appear, unAlgorithm stops hiding on that page. The toolbar icon's tooltip says the layout looks different, and the
-   popup shows "Filtering is paused on this page" with **Let us know**.
+   popup shows "Filtering is paused on this page" with **Let us know**. Too much hidden stops it until the page reloads
+   or a setting changes, so the feed never folds and opens over and over, and the in-feed card says so at once. Posts
+   and panels the site emptied far from the screen still count as what they were.
 4. Noticing breakage never changes what is hidden, and nothing is sent until the person clicks **Send report**.
 
 ## Breakage notices and problem reports
 
 When LinkedIn or Facebook change in a way that stops unAlgorithm, it says so, and the person can tell us from inside
-the extension (ADR 0009). Every string is pinned by a test: `NOTICE_COPY` (`packages/ui/src/feed/Notice.tsx`),
-`POPUP_COPY`, `NOTICES_COPY`, `ABOUT_REPORT_COPY` and `REPORT_COPY` (`entrypoints/report/copy.ts`).
+the extension (ADR 0009). Every string is pinned by a test: `NOTICE_COPY` and `OVER_FILTERING_COPY`
+(`packages/ui/src/feed/Notice.tsx`), `POPUP_COPY`, `NOTICES_COPY`, `ABOUT_REPORT_COPY` and `REPORT_COPY`
+(`entrypoints/report/copy.ts`).
 
 ### The notice card
 
@@ -66,13 +82,18 @@ ads seen) never raise it; the popup says those.
 | `paused` | Filtering paused on positive evidence: errors reading the page, too much hidden, too many items read as panels, or post text unreadable | Filtering is paused on this page | {site} looks different today, so we're showing every post rather than hide the wrong ones. |
 | `ads-through` | Two or more ad labels that almost match | Some ads may be getting through | {site} may have changed how it labels ads. |
 
+When `paused` comes from too much hidden, its body says how to try again: "unAlgorithm would have hidden too many
+posts, so it's showing every post. Reload the page to try again." The popup and side panel banners say the same, at
+every strength (Light pauses at just over half).
+
 - **Actions:** **Let us know** (primary) opens the report page with the page as it is at that moment. **Not now**, ✕
   (labelled Dismiss) and Escape hide it. Footnote: "Nothing is sent unless you choose to." Actions run only on the
   person's own clicks and keys.
 - **Placement:** bottom left, above the toasts, in our own shadow-root layer, at most 360 px wide; never inside the
   site's feed. One card at a time, in the order of the table. A page the controller doesn't run on gets a layer with
   the card only.
-- **When:** the issue holds in two checks in a row, 10 seconds apart. Each card shows at most once per page load, never
+- **When:** the issue holds in two checks in a row, 10 seconds apart; too much hidden shows `paused` at the first check,
+  since that pause holds until the page reloads. Each card shows at most once per page load, never
   while the site is paused or off or the coach mark is up, and goes away quietly when the issue clears.
 - **Snoozes:** *Not now* keeps that card away on that site for 24 hours; a report sent from anywhere, for 7 days. A new
   detection version ends a snooze. Snoozes are per device, shared by every tab, and never synced.

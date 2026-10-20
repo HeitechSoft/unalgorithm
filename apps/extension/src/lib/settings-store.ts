@@ -29,8 +29,9 @@ async function settingsLock<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Stored settings at this version, with their clocks and the last HLC, for a write under the lock. When an older
- * version stored them (`pending`), the clocks include the upgrade's (`upgradeClocks`): the first write stores both, so
- * sync sends the values the upgrade changed, once.
+ * version stored them (`pending`), the upgrade reads the stored clocks, so a setting the person changed keeps its value
+ * (`migrateSettings`), and the clocks include the upgrade's (`upgradeClocks`): the first write stores both, so sync
+ * sends the values the upgrade changed, once.
  */
 async function readForWrite(): Promise<{
   settings: Settings;
@@ -46,7 +47,7 @@ async function readForWrite(): Promise<{
   const { clocks, last } = pending
     ? upgradeClocks(raw, stored, (await readDevice()).deviceId, storedLast)
     : { clocks: stored, last: storedLast };
-  return { settings: migrateSettings(raw), clocks, last, pending };
+  return { settings: migrateSettings(raw, stored), clocks, last, pending };
 }
 
 /**

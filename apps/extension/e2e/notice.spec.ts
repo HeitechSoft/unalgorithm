@@ -23,7 +23,7 @@ import { E2E_REPORTS_PORT } from './server-harness.ts';
  * - *Let us know* opens the report page with the finding, and sending it changes nothing about what is hidden: it only
  *   keeps the card away for 7 days;
  * - a feed where nearly everything would hide stops hiding at the first check, and *Filtering is paused on this page*
- *   comes only at the second;
+ *   comes with it, saying how to try again: the pause holds until the page reloads;
  * - axe checks the card inside our open shadow root, contrast included, in light and dark.
  */
 
@@ -31,7 +31,10 @@ const FEED = 'https://www.linkedin.com/feed/';
 const REF = '7KQ3-M2PA';
 /** Where the e2e builds send reports (`wxt.config.ts`'s `E2E_REPORTS_URL`). */
 const REPORTS_AT = `http://127.0.0.1:${E2E_REPORTS_PORT}${REPORTS_PATH}`;
-/** Health checks run every 10 s of visible time; a card needs its issue in two checks in a row. */
+/**
+ * Health checks run every 10 s of visible time; a card needs its issue in two checks in a row, except over-filtering,
+ * which holds until a reload and shows its card at once.
+ */
 const CHECK_MS = 10_000;
 
 /** PARTNERSHIP_AD (an ad run as a person's post, no age) with a new label wording in its age slot, under its own key. */
@@ -209,22 +212,24 @@ test('test_let_us_know_from_the_card_sends_the_finding_and_hides_nothing_more_or
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`test_over_filtering_pauses_then_shows_the_paused_card_after_two_checks (${scheme})`, async ({ context }) => {
+  test(`test_over_filtering_pauses_and_shows_the_paused_card_at_once (${scheme})`, async ({ context }) => {
     test.setTimeout(90_000);
     const page = await openFeed(context, OVER_FILTERED, scheme);
     const folded = page.locator('[data-unalgo="collapsed"]');
     await expect(folded.first()).toBeAttached({ timeout: 15_000 });
-    // The first check finds nearly everything hidden: the page stops hiding at once (fail open), but shows no card yet.
+    // The first check finds nearly everything hidden: the page stops hiding (fail open), and the card says so at once.
     await expect(folded).toHaveCount(0, { timeout: 20_000 });
-    await expect(card(page)).toHaveCount(0);
-    // The second check, 10 s on, still finds it: now the card.
-    await expect(card(page)).toBeVisible({ timeout: 15_000 });
+    await expect(card(page)).toBeVisible({ timeout: 2_000 });
     await expect(card(page).getByText('Filtering is paused on this page')).toBeVisible();
     await expect(
-      card(page).getByText("LinkedIn looks different today, so we're showing every post rather than hide the wrong ones."),
+      card(page).getByText(
+        "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again.",
+      ),
     ).toBeVisible();
     await expect(card(page).getByRole('button', { name: 'Let us know' })).toBeVisible();
     await expect(card(page).getByRole('button', { name: 'Dismiss' })).toBeVisible();
+    // The pause holds: later checks fold nothing again.
+    await page.waitForTimeout(CHECK_MS + 1_000);
     await expect(folded).toHaveCount(0);
     // The card's colours follow the page's theme.
     expect(await page.locator('unalgo-layer').evaluate((el) => getComputedStyle(el).getPropertyValue('--ua-scheme').trim())).toBe(

@@ -9,10 +9,13 @@ import {
   type FilterKey,
   factcheckOffered,
   HEALTHY,
+  type HealthHold,
   type HealthReport,
   type HealthSample,
   type HiddenItem,
   type HighlightItem,
+  heldIssues,
+  holdAfter,
   type ItemFacts,
   isPaused,
   jobPriceLabel,
@@ -37,6 +40,7 @@ import {
   type ServerOffer,
   type Settings,
   snippet,
+  steadyNotices,
   summarizePostForReport,
   type TabState,
   tallyIds,
@@ -254,7 +258,7 @@ export interface Entry {
   nearSince?: number;
   /**
    * The platform emptied or virtualised the slot after it scrolled away: the decision is kept, our UI and attributes
-   * are off the empty slot, and health leaves it out until the platform fills it in again.
+   * are off the empty slot until the platform fills it in again, and health counts it with that decision.
    */
   offscreen?: boolean;
   onScreen: boolean;
@@ -306,6 +310,11 @@ export class FeedController implements ReportSource {
   /** Visible time since start: every health time limit counts it (ADR 0009 §3). */
   private clock = new VisibleClock(true);
   private health: HealthReport = HEALTHY;
+  /**
+   * What this page load holds after failing open (`HELD_ISSUES`: over-filtering), and under which settings. Kept across
+   * visits to the feed, like the cards shown: it ends when the page reloads or the person changes their settings.
+   */
+  private hold: HealthHold | null = null;
   private degraded = new Set<keyof PostSignals | 'relationship'>();
   /** A fallback discovery strategy is winning: only strong signals hide (ADR 0009 §9). */
   private cautious = false;
@@ -455,6 +464,8 @@ export class FeedController implements ReportSource {
     this.recomputeRuns();
     // The notice switch or a snooze may have changed, here or in another tab.
     this.refreshNotice();
+    // The person changed their settings while the page was held paused: judge it again now, so the feed follows.
+    if (this.hold && this.hold.settings !== settingsKey(rt.settings)) this.checkHealth(false);
     this.schedulePush();
   }
 
@@ -847,10 +858,14 @@ export class FeedController implements ReportSource {
   }
 
   /**
-   * Merge hidden posts that sit next to each other into one "3 hidden" line. Invisible items, Facebook's emptied slots
-   * among them, do not break a run, so runs re-form as the platform empties and refills slots far from the viewport. A
-   * post opened with Show all stays out of every run from then on: folding it again would change the page's height by
-   * hundreds of pixels, the platform would empty or refill slots in answer, and the runs would open and fold without end.
+   * With Settings → Display → *Group hidden posts in a row* on (off by default), merge hidden posts that sit next to
+   * each other into one "3 hidden · Show all" line. Invisible items, Facebook's emptied slots among them, do not break a
+   * run, so runs re-form as the platform empties and refills slots far from the viewport. A post opened with Show all
+   * stays out of every run from then on: folding it again would change the page's height by hundreds of pixels, the
+   * platform would empty or refill slots in answer, and the runs would open and fold without end.
+   *
+   * Grouping off, in Hide or Dim, or while peeking, nothing is grouped: every item loses its run mark, so each hidden
+   * post keeps its own fold line, with Why? and Show, and a post that was in a run shows its own line again at once.
    */
   private recomputeRuns(): void {
     const rt = this.rt;
@@ -858,47 +873,53 @@ export class FeedController implements ReportSource {
     const ordered = [...this.entries.values()].sort((a, b) =>
       a.el === b.el ? 0 : a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
     );
-    const group = rt.settings.display.groupRuns && rt.settings.display.mode === 'collapse' && !this.peek;
     this.runs.clear();
-    let run: Entry[] = [];
     const single = (e: Entry) => {
       e.run = undefined;
       setAttr(e.el, 'data-unalgo-run', null);
     };
-    const close = () => {
-      const lead = run[0];
-      if (lead && run.length > 1 && group) {
-        const labels = [...new Set(run.map((r) => (r.applied ? reasonLabel(r.applied, this.adapter.id) : '')).filter(Boolean))];
-        lead.run = { count: run.length, labels };
-        setAttr(lead.el, 'data-unalgo-run', 'lead');
-        for (const m of run.slice(1)) {
-          m.run = 'member';
-          setAttr(m.el, 'data-unalgo-run', 'member');
+    if (rt.settings.display.groupRuns && rt.settings.display.mode === 'collapse' && !this.peek) {
+      let run: Entry[] = [];
+      const close = () => {
+        const lead = run[0];
+        if (lead && run.length > 1) {
+          const labels = [...new Set(run.map((r) => (r.applied ? reasonLabel(r.applied, this.adapter.id) : '')).filter(Boolean))];
+          lead.run = { count: run.length, labels };
+          setAttr(lead.el, 'data-unalgo-run', 'lead');
+          for (const m of run.slice(1)) {
+            m.run = 'member';
+            setAttr(m.el, 'data-unalgo-run', 'member');
+          }
+          this.runs.set(lead, run);
+        } else {
+          for (const m of run) single(m);
         }
-        this.runs.set(lead, run);
-      } else {
-        for (const m of run) single(m);
+        run = [];
+      };
+      for (const e of ordered) {
+        const state = e.el.getAttribute('data-unalgo');
+        if (state === 'collapsed' && !this.unfolded.has(e.id)) {
+          run.push(e);
+          continue;
+        }
+        // Out of every run: never left marked as a member, which hides the whole item.
+        single(e);
+        // Invisible items do not break a run; anything else does, a post opened with Show all included.
+        if (!(state === 'hidden' || e.kind === 'ignore' || e.kind === 'pending' || e.offscreen)) close();
       }
-      run = [];
-    };
-    for (const e of ordered) {
-      const state = e.el.getAttribute('data-unalgo');
-      if (state === 'collapsed' && !this.unfolded.has(e.id)) {
-        run.push(e);
-        continue;
-      }
-      // Out of every run: never left marked as a member, which hides the whole item.
-      single(e);
-      // Invisible items do not break a run; anything else does, a post opened with Show all included.
-      if (!(state === 'hidden' || e.kind === 'ignore' || e.kind === 'pending' || e.offscreen)) close();
+      close();
+    } else {
+      for (const e of ordered) single(e);
     }
-    close();
     this.assignCoachMark(ordered);
     this.notify();
   }
 
   private assignCoachMark(ordered: Entry[]): void {
     const rt = this.rt;
+    // A post folded into a run (grouping turned on, or a run that grew) is hidden with its coach mark: the mark moves
+    // to a line that shows, such as the run's own.
+    for (const e of ordered) if (e.coach && e.run === 'member') e.coach = false;
     // One thing at a time: no coach mark while a breakage notice is up.
     if (!rt || this.coachShown || !rt.settings.display.tips || this.noticeCard) return;
     if (ordered.some((e) => e.coach)) return;
@@ -1301,7 +1322,11 @@ export class FeedController implements ReportSource {
     this.attachScope();
   }
 
-  private checkHealth(): void {
+  /**
+   * The health check, every 10 s (`tick`), or between them when a settings change ends a held pause: a card then still
+   * needs its two checks in a row, unless its issue is held.
+   */
+  private checkHealth(tick = true): void {
     if (!this.active || !this.guard() || !this.rt) return;
     this.rescopeIfStale();
     // Phase B: full item discovery again on each tick (read-only, a few ms at most), so a better strategy can win.
@@ -1310,7 +1335,10 @@ export class FeedController implements ReportSource {
     const cautious = this.discovery()?.fallback === true;
     const visibleMs = this.clock.ms();
     const recent = [...this.entries.values()].filter((e) => !e.sibling).slice(-HEALTH_WINDOW);
+    // Emptied slots stay in the sample (`sampleOf`): Facebook empties far-off ones as the page grows, and leaving them
+    // out swung the hidden share past the limit and back, folding and opening the whole feed every 10 s.
     const samples: HealthSample[] = recent.filter((e) => e.kind !== 'ignore' || e.offscreen).map((e) => sampleOf(e, visibleMs));
+    const settings = settingsKey(this.rt.settings);
     const report = evaluateHealth({
       platform: this.adapter.id,
       feedFound: !!this.scope,
@@ -1325,7 +1353,9 @@ export class FeedController implements ReportSource {
       multiPost: multiPostCount(this.facts.values()),
       loadMore: { expected: !!this.adapter.loadMoreMarker, missingForMs: visibleMs - this.markerSeenAt },
       watch: watchFrom(this.facts.values(), this.scrollWatch()),
+      held: heldIssues(this.hold, settings),
     });
+    this.hold = holdAfter(this.hold, report, settings);
     // A new item since the last check: the scrolling window for `items-not-growing` starts again.
     if (this.registered !== this.scrollWindow.items) {
       this.scrollWindow = { screens: 0, height: this.scope?.scrollHeight ?? 0, items: this.registered };
@@ -1339,7 +1369,12 @@ export class FeedController implements ReportSource {
       this.recomputeRuns();
       this.schedulePush();
     }
-    this.trackNotice(report);
+    if (tick) this.trackNotice(report);
+    else {
+      // Between checks: a card already due stays while its issue does, a held issue's shows at once, any other waits.
+      this.noticeSteady = steadyNotices(report, this.noticeSteady);
+      this.refreshNotice();
+    }
   }
 
   /**
@@ -1376,11 +1411,13 @@ export class FeedController implements ReportSource {
 
   // ---------- the breakage notice ----------
 
-  /** An issue must hold in two health checks in a row (10 s apart) before its card shows (ADR 0009 §3). */
+  /**
+   * An issue must hold in two health checks in a row (10 s apart) before its card shows (ADR 0009 §3); a held issue's
+   * card shows at once (`steadyNotices`).
+   */
   private trackNotice(report: HealthReport): void {
-    const raised = noticeKinds(report.issues, report.status);
-    this.noticeSteady = raised.filter((k) => this.noticeRaised.has(k));
-    this.noticeRaised = new Set(raised);
+    this.noticeSteady = steadyNotices(report, this.noticeRaised);
+    this.noticeRaised = new Set(noticeKinds(report.issues, report.status));
     this.refreshNotice();
   }
 
@@ -1416,14 +1453,24 @@ export class FeedController implements ReportSource {
       now: Date.now(),
       prefs: rt.device.notices ?? NO_NOTICES,
       shownThisLoad: this.noticeDone,
-      coachMark: !showing && !this.coachShown && [...this.entries.values()].some((e) => e.coach),
+      coachMark: !showing && this.coachUp(),
       paused: isPaused(rt.device, platform) || !rt.settings.platforms[platform].enabled,
     });
   }
 
+  /**
+   * The coach mark is on the page. It sits on a folded post's line, so a page that stopped hiding has none, and the card
+   * saying why may show at once.
+   */
+  private coachUp(): boolean {
+    if (this.coachShown) return false;
+    return [...this.entries.values()].some((e) => e.coach && e.el.getAttribute('data-unalgo') === 'collapsed');
+  }
+
   /** The in-feed card to render, if any. */
   notice(): NoticeModel | null {
-    return this.noticeCard ? { kind: this.noticeCard, platform: this.adapter.id } : null;
+    const kind = this.noticeCard;
+    return kind ? { kind, platform: this.adapter.id, issues: noticeIssues(kind, this.health.issues) } : null;
   }
 
   /** *Let us know*: the report page, with the page as it is now. The card stays until a report is sent or it's put away. */
@@ -1700,10 +1747,15 @@ export class FeedController implements ReportSource {
   }
 }
 
-/** A health sample: what the window's ratios need, with ages in visible time. */
+/**
+ * A health sample: what the window's ratios need, with ages in visible time. A slot the platform emptied keeps what it
+ * was last read as and its decision; one emptied before it was read as a post or a panel is a pending, offscreen sample,
+ * which no ratio counts (`HealthSample.offscreen`).
+ */
 function sampleOf(e: Entry, visibleMs: number): HealthSample {
   return {
-    kind: e.offscreen ? 'offscreen' : e.kind === 'module' ? 'module' : e.kind === 'post' ? 'post' : 'pending',
+    kind: e.kind === 'module' ? 'module' : e.kind === 'post' ? 'post' : 'pending',
+    ...(e.offscreen ? { offscreen: true } : {}),
     authorFound: !!e.post?.quality.authorFound,
     textFound: !!e.post?.quality.textFound,
     sponsored: !!e.post?.signals.sponsored,
@@ -1712,6 +1764,11 @@ function sampleOf(e: Entry, visibleMs: number): HealthSample {
     near: e.near,
     nearMs: e.near && e.nearSince !== undefined ? visibleMs - e.nearSince : 0,
   };
+}
+
+/** The settings a held pause was raised under (`HealthHold.settings`): any change the person makes ends it. */
+function settingsKey(settings: Settings): string {
+  return JSON.stringify(settings);
 }
 
 /** The `max` most frequent ids, so a report stays within the wire's limits. */

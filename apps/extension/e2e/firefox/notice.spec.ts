@@ -29,12 +29,15 @@ import { expect, test } from './fixtures.ts';
  * The in-feed notice card in Firefox (ADR 0009 §3), as `../notice.spec.ts` checks Chromium and Edge, with the real
  * LinkedIn adapter and controller: two "Promoted • Brand content" ads (a near miss of the ad label) stay folded and
  * raise *Some ads may be getting through* after two health checks; *Not now* keeps it away after a reload; a feed where
- * nearly everything would hide stops hiding and shows *Filtering is paused on this page* at the second check. axe
- * checks the card inside our open shadow root, contrast included, in light and dark.
+ * nearly everything would hide stops hiding and shows *Filtering is paused on this page*, with how to try again, at the
+ * same first check. axe checks the card inside our open shadow root, contrast included, in light and dark.
  */
 
 const FEED = 'https://www.linkedin.com/feed/';
-/** Health checks run every 10 s of visible time; a card needs its issue in two checks in a row. */
+/**
+ * Health checks run every 10 s of visible time; a card needs its issue in two checks in a row, except over-filtering,
+ * which holds until a reload and shows its card at once.
+ */
 const CHECK_MS = 10_000;
 const LAYER = 'unalgo-layer >>> ';
 /** Firefox's colour scheme for web content (`prefers-color-scheme`); BiDi has no media emulation. */
@@ -160,14 +163,14 @@ test('test_firefox_over_filtering_paused_card_in_dark', async () => {
     const page = await openFeed(firefox, OVER_FILTERED, 'dark');
     expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(true);
     await page.waitForSelector('[data-unalgo="collapsed"]', { timeout: 15_000 });
-    // The first check stops hiding at once (fail open), with no card yet.
+    // The first check stops hiding (fail open), and the card says so at once: the pause holds until a reload.
     await expect.poll(() => count(page, '[data-unalgo="collapsed"]'), { timeout: 20_000 }).toBe(0);
-    expect(await count(page, `${LAYER}${aria('region', 'unAlgorithm')}`)).toBe(0);
-    // The second check: the card.
-    await expect.poll(() => cardShows(page, 'Filtering is paused on this page'), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => cardShows(page, 'Filtering is paused on this page'), { timeout: 2_000 }).toBe(true);
     expect(await pageText(page)).toContain(
-      "LinkedIn looks different today, so we're showing every post rather than hide the wrong ones.",
+      "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again.",
     );
+    // Later checks change nothing: still paused, nothing folds again.
+    await sleep(CHECK_MS + 1_000);
     expect(await count(page, '[data-unalgo="collapsed"]')).toBe(0);
     expect(await page.$eval('unalgo-layer', (el) => getComputedStyle(el).getPropertyValue('--ua-scheme').trim())).toBe('dark');
     const { problems, contrastInShadow } = await layerProblems(page);

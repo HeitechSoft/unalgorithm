@@ -17,8 +17,9 @@ import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
  * devices can add entries at the same time without overwriting each other.
  *
  * Version 2: Facebook's Balanced hides people and pages you don't follow, as LinkedIn's always has (settings/migrate.ts).
+ * Version 3: hidden posts in a row each keep their own fold line unless the person groups them (`display.groupRuns`).
  */
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export const PRESETS = ['light', 'balanced', 'calm'] as const;
 export type Preset = (typeof PRESETS)[number];
@@ -114,7 +115,10 @@ export const SettingsSchema = z.looseObject({
     mode: z.enum(DISPLAY_MODES),
     showReason: z.boolean(),
     showAuthor: z.boolean(),
-    /** Merge hidden posts that sit next to each other into one line ("3 hidden"). */
+    /**
+     * Merge hidden posts that sit next to each other into one line ("3 hidden · Show all"). Off by default since
+     * version 3: each hidden post keeps its own fold line, with Why? and Show.
+     */
     groupRuns: z.boolean(),
     forYou: z.enum(['ring', 'label', 'off']),
     badgeCount: z.boolean(),

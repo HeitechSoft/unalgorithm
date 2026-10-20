@@ -19,7 +19,8 @@ export type InspectResult =
   | { kind: 'module'; module: ModuleInfo; observations?: Observations }
   /**
    * Still loading (a skeleton card): inspect again when it changes. `offscreen`: a slot the platform emptied or
-   * virtualised after it scrolled away; the controller keeps its last decision and leaves it out of health.
+   * virtualised after it scrolled away; the controller keeps its last decision, and health counts it as what it was
+   * last read as (a post or a panel), or leaves it out when it was never read.
    */
   | { kind: 'pending'; offscreen?: boolean }
   /** Not a feed item we handle (the composer, a spacer). */

@@ -7,7 +7,12 @@ import { CircleAlert, type LucideIcon, Megaphone, Pause, X } from '../icons.ts';
  * says what we're doing about it, and offers to tell us. Nothing is sent from here: *Let us know* opens the report
  * page, where the person sees the report before choosing to send it.
  */
-export const NOTICE_COPY: Record<NoticeKind, { title: string; body: (site: string) => string }> = {
+export interface NoticeCopy {
+  title: string;
+  body: (site: string) => string;
+}
+
+export const NOTICE_COPY: Record<NoticeKind, NoticeCopy> = {
   'not-running': {
     title: "unAlgorithm isn't running on this feed",
     body: (site) => `${site} seems to have changed this page, so your feed shows as usual.`,
@@ -22,6 +27,21 @@ export const NOTICE_COPY: Record<NoticeKind, { title: string; body: (site: strin
   },
 };
 
+/**
+ * The `paused` card when too much would have been hidden for the strength (`over-filtering`: just over half on Light,
+ * 90% on Balanced). That pause holds until the page reloads or the settings change, so the card says how to try again.
+ * The words hold at every strength.
+ */
+export const OVER_FILTERING_COPY: NoticeCopy = {
+  title: NOTICE_COPY.paused.title,
+  body: () => "unAlgorithm would have hidden too many posts, so it's showing every post. Reload the page to try again.",
+};
+
+/** The copy for a card raised by `issues` (`NoticeModel.issues`, `TabState.notice.issues`). */
+export function noticeCopy(kind: NoticeKind, issues: readonly string[] = []): NoticeCopy {
+  return kind === 'paused' && issues.includes('over-filtering') ? OVER_FILTERING_COPY : NOTICE_COPY[kind];
+}
+
 export const NOTICE_FOOTNOTE = 'Nothing is sent unless you choose to.';
 
 export const NOTICE_ACTIONS = { report: 'Let us know', notNow: 'Not now', dismiss: 'Dismiss' } as const;
@@ -34,6 +54,8 @@ const GLYPH: Record<NoticeKind, LucideIcon> = { 'not-running': CircleAlert, paus
 export interface NoticeModel {
   kind: NoticeKind;
   platform: PlatformId;
+  /** The issues that raised it: they pick its copy (`noticeCopy`). */
+  issues?: readonly string[];
 }
 
 /**
@@ -48,8 +70,8 @@ export interface NoticeHandlers {
 }
 
 /** One card. It never takes focus; Escape while focus is inside it means *Not now*. */
-export function NoticeCard({ kind, platform, onReport, onNotNow }: NoticeModel & NoticeHandlers) {
-  const copy = NOTICE_COPY[kind];
+export function NoticeCard({ kind, platform, issues, onReport, onNotNow }: NoticeModel & NoticeHandlers) {
+  const copy = noticeCopy(kind, issues);
   const Glyph = GLYPH[kind];
   const site = PLATFORM_NAMES[platform];
   const click = (fn: (event: Event) => void) => (e: MouseEvent) => fn(e.nativeEvent);

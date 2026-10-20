@@ -1,10 +1,14 @@
 /**
- * Runs of hidden posts ("5 hidden · Show all") on a feed that empties and refills its slots, as Facebook's does: a run
- * opened with Show all stays open, and nothing the platform does to the slots around it folds it again.
+ * Runs of hidden posts ("5 hidden · Show all"), with Settings → Display → *Group hidden posts in a row* on, on a feed
+ * that empties and refills its slots, as Facebook's does: a run opened with Show all stays open, and nothing the
+ * platform does to the slots around it folds it again.
  *
  * Folding or opening a long run changes the page's height by hundreds of pixels; Facebook then empties or refills the
  * slots that crossed its distance limit, which used to merge or split the runs again, and the page redrew back and
  * forth without end (2026-10-20, live in Chrome).
+ *
+ * Grouping is off by default: each hidden post keeps its own fold line, and turning it on or off redraws the feed at
+ * once, both ways.
  */
 import { defaultDevice, defaultSettings, EMPTY_LEARNED, NO_SIGNALS, type PostData } from '@unalgorithm/core';
 import type { InspectResult, PlatformAdapter } from '@unalgorithm/platforms';
@@ -56,9 +60,12 @@ const adapter: PlatformAdapter = {
   markersFor: () => ({}),
 };
 
-function runtime(): Runtime {
+/** Grouping on unless `group` is false (the default settings have it off). */
+function runtime(group = true): Runtime {
+  const settings = defaultSettings();
+  settings.display.groupRuns = group;
   return {
-    settings: defaultSettings(),
+    settings,
     device: defaultDevice('dev1'),
     learned: EMPTY_LEARNED,
     votes: {},
@@ -287,6 +294,147 @@ describe('run marks', () => {
     expect(el('t2').getAttribute('data-unalgo')).toBeNull();
     // Neither stays marked as a run member, which would keep it out of sight.
     expect(marks(T)).toStrictEqual(['lead', 'member', null, null, 'member']);
+    c.stop();
+  });
+});
+
+describe('grouping off, the default', () => {
+  const S = keys('s', 4);
+  const T = keys('t', 6);
+  const lines = (ks: string[]) => ks.map((k) => !!el(k).querySelector('unalgo-post'));
+  const runOf = (c: FeedController, key: string) => c.mounted().find((e) => e.id === `li:ck:${key}`)?.run;
+  /** `rt` with grouping set to `group`. */
+  const grouped = (rt: Runtime, group: boolean): Runtime => ({
+    ...rt,
+    settings: { ...rt.settings, display: { ...rt.settings.display, groupRuns: group } },
+  });
+
+  it('test_hidden_posts_in_a_row_each_keep_their_own_line', async () => {
+    expect(defaultSettings().display.groupRuns).toBe(false);
+    document.body.innerHTML = feed([...S, 'p0', ...T]);
+    const c = new FeedController(adapter, bridge(), mountUi);
+    c.start(runtime(false));
+    await vi.advanceTimersByTimeAsync(0);
+    // Every hidden post folds on its own line, with its own Why? and Show: no run, no Show all.
+    expect([...S, ...T].map((k) => el(k).getAttribute('data-unalgo'))).toStrictEqual([...S, ...T].map(() => 'collapsed'));
+    expect(lines([...S, ...T])).toStrictEqual([...S, ...T].map(() => true));
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
+    expect(c.mounted().map((e) => e.run)).toStrictEqual(c.mounted().map(() => undefined));
+    for (const e of c.mounted()) expect(c.modelFor(e)).not.toHaveProperty('run');
+    // The platform emptying and refilling slots changes nothing: there are no runs to merge or split.
+    const flips = await flipsDuring(async () => {
+      empty('p0');
+      await vi.advanceTimersByTimeAsync(500);
+      fill('p0');
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(flips).toBe(0);
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
+    c.stop();
+  });
+
+  it('test_turning_grouping_on_and_off_redraws_the_feed_at_once', async () => {
+    document.body.innerHTML = feed([...S, 'p0', ...T]);
+    const c = new FeedController(adapter, bridge(), mountUi);
+    const rt = runtime(false);
+    c.start(rt);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
+    // On, from Settings in another tab: two runs, each one line saying how many.
+    c.update(grouped(rt, true));
+    expect(marks(S)).toStrictEqual(['lead', 'member', 'member', 'member']);
+    expect(marks(T)).toStrictEqual(['lead', 'member', 'member', 'member', 'member', 'member']);
+    expect(runOf(c, 's0')).toMatchObject({ count: 4 });
+    expect(runOf(c, 't0')).toMatchObject({ count: 6 });
+    // Off again: every post its own line at once, the run's line included, and nothing else on the page changes.
+    let flips = await flipsDuring(async () => c.update(grouped(rt, false)));
+    expect(flips).toBe(S.length + T.length);
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
+    expect([...S, ...T].map((k) => runOf(c, k))).toStrictEqual([...S, ...T].map(() => undefined));
+    expect(lines([...S, ...T])).toStrictEqual([...S, ...T].map(() => true));
+    expect(document.querySelectorAll('[data-unalgo="collapsed"]')).toHaveLength(S.length + T.length);
+    // Show all still works once it is back on, and an opened run stays open through another off and on.
+    c.update(grouped(rt, true));
+    showAll(c, 't0');
+    expect(marks(T)).toStrictEqual(T.map(() => null));
+    c.update(grouped(rt, false));
+    c.update(grouped(rt, true));
+    expect(marks(T)).toStrictEqual(T.map(() => null));
+    expect(marks(S)).toStrictEqual(['lead', 'member', 'member', 'member']);
+    // The same settings again change nothing.
+    flips = await flipsDuring(async () => c.update(grouped(rt, true)));
+    expect(flips).toBe(0);
+    c.stop();
+  });
+
+  it('test_grouping_needs_collapse', async () => {
+    // Hide and Dim have no fold lines to group: on or off, nothing is marked as a run.
+    document.body.innerHTML = feed(['p0', ...T]);
+    const c = new FeedController(adapter, bridge(), mountUi);
+    const rt = runtime(true);
+    for (const mode of ['hide', 'dim'] as const) {
+      c.start({ ...rt, settings: { ...rt.settings, display: { ...rt.settings.display, mode } } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect([mode, document.querySelectorAll('[data-unalgo-run]').length]).toStrictEqual([mode, 0]);
+      c.stop();
+    }
+  });
+
+  it('test_the_coach_mark_moves_to_the_runs_line_when_grouping_turns_on', async () => {
+    // jsdom has no IntersectionObserver: every item is near; `inView` are on screen, and `scroll` changes which.
+    let inView = new Set<string>();
+    const screens: { cb: IntersectionObserverCallback; targets: Element[] }[] = [];
+    const key = (target: Element) => (target as HTMLElement).dataset.item ?? '';
+    class ScreenIO {
+      root = null;
+      private targets: Element[] = [];
+      constructor(
+        private cb: IntersectionObserverCallback,
+        private opts: IntersectionObserverInit = {},
+      ) {
+        if (!opts.rootMargin) screens.push({ cb, targets: this.targets });
+      }
+      observe(target: Element) {
+        this.targets.push(target);
+        const isIntersecting = !!this.opts.rootMargin || inView.has(key(target));
+        queueMicrotask(() => this.cb([{ target, isIntersecting } as unknown as IntersectionObserverEntry], this as never));
+      }
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    const scroll = (ks: string[]) => {
+      inView = new Set(ks);
+      for (const { cb, targets } of screens) {
+        cb(
+          targets.map((target) => ({ target, isIntersecting: inView.has(key(target)) }) as unknown as IntersectionObserverEntry),
+          {} as never,
+        );
+      }
+    };
+    vi.stubGlobal('IntersectionObserver', ScreenIO);
+    inView = new Set(['t1', 't2']);
+    document.body.innerHTML = feed(['p0', ...T]);
+    const c = new FeedController(adapter, bridge(), mountUi);
+    const rt = runtime(false);
+    c.start(rt);
+    await vi.advanceTimersByTimeAsync(0);
+    const coached = () =>
+      c
+        .mounted()
+        .filter((e) => e.coach)
+        .map((e) => e.id);
+    // A first visit: the tip points at the first fold line on screen.
+    expect(coached()).toStrictEqual(['li:ck:t1']);
+    // Grouping on folds that post into the run: the tip goes with it, never left on a line nobody sees.
+    c.update(grouped(rt, true));
+    expect(runOf(c, 't1')).toBe('member');
+    expect(coached()).toStrictEqual([]);
+    // The run's own line comes on screen: the tip points at it.
+    scroll(['t0', 't1']);
+    expect(coached()).toStrictEqual(['li:ck:t0']);
     c.stop();
   });
 });

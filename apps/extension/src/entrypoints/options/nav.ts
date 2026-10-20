@@ -35,7 +35,7 @@ export const NAV: { id: PaneId; label: string; group: string; icon: LucideIcon; 
     group: '',
     icon: Palette,
     tint: 'pink',
-    keywords: ['collapse', 'hide', 'dim', 'badge', 'tips', 'for you', 'notice', 'breaks'],
+    keywords: ['collapse', 'hide', 'dim', 'group', 'show all', 'badge', 'tips', 'for you', 'notice', 'breaks'],
   },
   {
     id: 'interests',

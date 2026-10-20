@@ -358,6 +358,15 @@ function ExceptionsGroup({
 
 // ---------- Display ----------
 
+/**
+ * Settings → Display's switch for runs of hidden posts, off by default: off, each hidden post keeps its own fold line,
+ * with Why? and Show; on, posts hidden one after another share one line ("3 hidden · Show all").
+ */
+export const GROUP_RUNS_COPY = {
+  title: 'Group hidden posts in a row',
+  subtitle: 'Shows posts hidden one after another as one line with Show all',
+} as const;
+
 /** Settings → Display's breakage notices switch (ADR 0009 §3). */
 export const NOTICES_COPY = {
   title: 'Tell me when something breaks',
@@ -415,9 +424,11 @@ export function DisplayPane({
           }
         />
         <ListRow
-          title="Group hidden posts that are next to each other"
-          subtitle='One line like "3 hidden" instead of a ladder of lines'
-          control={<Switch checked={d.groupRuns} label="Group hidden posts" onCheckedChange={(v) => void set('groupRuns', v)} />}
+          title={GROUP_RUNS_COPY.title}
+          subtitle={GROUP_RUNS_COPY.subtitle}
+          control={
+            <Switch checked={d.groupRuns} label={GROUP_RUNS_COPY.title} onCheckedChange={(v) => void set('groupRuns', v)} />
+          }
         />
       </ListGroup>
       <ListGroup header="Posts for you">

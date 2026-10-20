@@ -244,4 +244,15 @@ describe('Facebook offscreen slots', () => {
     slot.replaceChildren();
     expect(facebookAdapter.inspect(slot, ctx)).toEqual({ kind: 'pending', offscreen: true });
   });
+
+  // A panel emptied as a plain skeleton would leave the health sample, and with posts misread as panels the page
+  // would open and fold every 10 s (module-overmatch raised, then not, then raised again).
+  it('reads a slot emptied after it was a panel as offscreen', () => {
+    document.body.innerHTML = feed(PYMK);
+    const scope = facebookAdapter.feedScope(document) as HTMLElement;
+    const [slot] = facebookAdapter.findItems(scope) as [HTMLElement];
+    expect(facebookAdapter.inspect(slot, ctx).kind).toBe('module');
+    slot.replaceChildren();
+    expect(facebookAdapter.inspect(slot, ctx)).toEqual({ kind: 'pending', offscreen: true });
+  });
 });

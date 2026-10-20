@@ -23,6 +23,8 @@ interface Item {
   rel?: 'followed' | 'not-followed' | 'unknown';
   nearMiss?: string;
   obs?: string;
+  /** The post's text couldn't be read. */
+  noText?: boolean;
 }
 
 function itemHtml(i: Item): string {
@@ -34,6 +36,8 @@ function itemHtml(i: Item): string {
 }
 
 const feed = (items: Item[]) => `<nav id="global-nav"></nav><main id="feed">${items.map(itemHtml).join('')}</main>`;
+/** More items load at the end of the feed. */
+const append = (items: Item[]) => document.getElementById('feed')?.insertAdjacentHTML('beforeend', items.map(itemHtml).join(''));
 
 function inspectFake(el: HTMLElement): InspectResult {
   const d = el.dataset;
@@ -65,7 +69,7 @@ function inspectFake(el: HTMLElement): InspectResult {
     text: `What Jane Doe wrote in post ${d.item}.`,
     textComplete: true,
     media: 'none',
-    quality: { authorFound: true, textFound: true, ...(d.nearMiss ? { adNearMiss: d.nearMiss } : {}) },
+    quality: { authorFound: true, textFound: d.noText !== 'true', ...(d.nearMiss ? { adNearMiss: d.nearMiss } : {}) },
   };
   return { kind: 'post', post, ...(d.obs ? { observations: d.obs.split(',') } : {}) };
 }
@@ -264,7 +268,7 @@ describe('offscreen slots', () => {
     c.stop();
   });
 
-  it('test_offscreen_slots_are_left_out_of_health', async () => {
+  it('test_slots_emptied_before_they_were_read_are_left_out_of_health', async () => {
     vi.stubGlobal('IntersectionObserver', NearIO);
     const run = async (kind: 'pending' | 'offscreen') => {
       document.body.innerHTML = feed([
@@ -278,7 +282,8 @@ describe('offscreen slots', () => {
       c.stop();
       return issues;
     };
-    // Three skeletons near the viewport for 30 s are stuck; three virtualised slots are not.
+    // Three skeletons near the viewport for 30 s are stuck; three slots virtualised before they were ever read are not.
+    // (A slot emptied after it was read counts with its decision: feed-controller-recycling.test.ts.)
     expect(await run('pending')).toContain('stuck-skeletons');
     expect(await run('offscreen')).not.toContain('stuck-skeletons');
   });
@@ -323,36 +328,40 @@ describe('the notice card', () => {
     expect(c.notice()).toBeNull();
     expect(c.buildState().notice).toStrictEqual({ kind: 'paused', issues: ['adapter-error'] });
     await checks(1);
-    expect(c.notice()).toStrictEqual({ kind: 'paused', platform: 'linkedin' });
+    expect(c.notice()).toStrictEqual({ kind: 'paused', platform: 'linkedin', issues: ['adapter-error'] });
     c.stop();
   });
 
   it('test_an_issue_that_clears_after_one_check_raises_no_card', async () => {
-    // Every post by a stranger: Balanced would fold all of them, past its 90%.
-    document.body.innerHTML = feed(strangers(20));
-    const rt = runtime();
+    // Post text unreadable on 10 of 10 posts: filtering pauses (`text-detection`). Over-filtering would hold for the
+    // page load and show its card at once (feed-controller-recycling.test.ts); every other cause is judged afresh.
+    const unreadable = (n: number, from = 0): Item[] =>
+      Array.from({ length: n }, (_, i) => ({ key: `u${from + i}`, noText: true }));
+    const readable = (n: number, from = 0): Item[] => Array.from({ length: n }, (_, i) => ({ key: `r${from + i}` }));
+    // One ad among them, so `no-ads-seen` stays quiet as more posts load.
+    document.body.innerHTML = feed([{ key: 'ad1', ad: true }, ...unreadable(10)]);
     const c = new FeedController(fakeAdapter(), bridge(), mountUi);
-    c.start(rt);
+    c.start(runtime());
     await checks(1);
-    expect(c.getHealth().issues).toEqual(['over-filtering']);
-    // The person turns "not followed" off before the next check: the issue clears.
-    const relaxed = structuredClone(rt.settings);
-    relaxed.platforms.linkedin.filters.notFollowed = false;
-    c.update({ ...rt, settings: relaxed });
+    expect(c.getHealth().issues).toEqual(['text-detection']);
+    // Ten readable posts load before the next check: 10 of 20 is under the limit, and the issue clears.
+    append(readable(10));
     await checks(1);
     expect(c.getHealth().issues).toEqual([]);
     expect(c.notice()).toBeNull();
-    // On again: raised at one check, shown at the next.
-    c.update(rt);
+    // Raised again (20 of the last 30): at one check, shown at the next.
+    append(unreadable(20, 10));
     await checks(1);
+    expect(c.getHealth().issues).toEqual(['text-detection']);
     expect(c.notice()).toBeNull();
     await checks(1);
     expect(c.notice()?.kind).toBe('paused');
     // And it goes away silently when the issue clears, never to come back on this page load.
-    c.update({ ...rt, settings: relaxed });
+    append(readable(20, 10));
     await checks(1);
+    expect(c.getHealth().issues).toEqual([]);
     expect(c.notice()).toBeNull();
-    c.update(rt);
+    append(unreadable(30, 30));
     await checks(3);
     expect(c.getHealth().notice).toBe('paused');
     expect(c.notice()).toBeNull();
@@ -379,6 +388,26 @@ describe('the notice card', () => {
     expect(other.getHealth().issues).toEqual([]);
     expect(other.notice()).toBeNull();
     other.stop();
+  });
+
+  it('test_a_coach_mark_on_the_page_holds_the_card_back', async () => {
+    vi.stubGlobal('IntersectionObserver', NearIO);
+    document.body.innerHTML = feed([
+      { key: 'a1', nearMiss: 'h:x', ad: true },
+      { key: 'a2', nearMiss: 'h:x', ad: true },
+      { key: 'p1' },
+    ]);
+    const c = new FeedController(fakeAdapter(), bridge(), mountUi);
+    c.start(runtime());
+    await checks(2);
+    // The ads stay folded, and the coach mark points at their line: one thing at a time.
+    const coach = c.mounted().find((e) => e.coach);
+    expect(coach?.el.getAttribute('data-unalgo')).toBe('collapsed');
+    expect(c.getHealth().notice).toBe('ads-through');
+    expect(c.notice()).toBeNull();
+    coach?.handlers?.onCoachDone();
+    expect(c.notice()?.kind).toBe('ads-through');
+    c.stop();
   });
 
   it('test_not_now_writes_the_snooze', async () => {
