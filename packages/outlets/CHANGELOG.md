@@ -1,5 +1,12 @@
 # @unalgorithm/outlets
 
+## 0.0.3
+
+### Patch Changes
+
+- Updated dependencies [[`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096)]:
+  - @unalgorithm/protocol@0.3.0
+
 ## 0.0.2
 
 ### Patch Changes

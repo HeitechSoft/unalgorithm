@@ -1,5 +1,18 @@
 # @unalgorithm/web
 
+## 0.1.1
+
+### Patch Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - The sign-in page takes Firefox's sign-in requests, and sends the browser back only to an address under the one the
+  request named. The admin page no longer adds a note about store builds under the sentence to pass on: every store
+  version of unAlgorithm Feed now signs in to servers.
+- Updated dependencies [[`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096)]:
+  - @unalgorithm/core@0.3.0
+  - @unalgorithm/protocol@0.3.0
+  - @unalgorithm/ui@0.1.0
+  - @unalgorithm/outlets@0.0.3
+
 ## 0.1.0
 
 ### Minor Changes

@@ -1,5 +1,16 @@
 # @unalgorithm/ai
 
+## 0.0.4
+
+### Patch Changes
+
+- [#33](https://github.com/HeitechSoft/unalgorithm/pull/33) [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - The Ollama tip covers Firefox (`OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*`), and the on-device model is
+  called Built-in AI, since Edge has one too. An empty balance suggests your own key, or on-device AI where your browser
+  offers it, since Firefox has none.
+- Updated dependencies [[`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096), [`35609f0`](https://github.com/HeitechSoft/unalgorithm/commit/35609f0b532ed6e1c77023c3bf01644be7545096)]:
+  - @unalgorithm/core@0.3.0
+  - @unalgorithm/protocol@0.3.0
+
 ## 0.0.3
 
 ### Patch Changes
