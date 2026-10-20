@@ -13,3 +13,8 @@ afc4140d8307ab30716177937a8f8eeaa078f020:apps/web/test/admin-users.test.tsx:gene
 f0857ed670965e58becaf9fe3fd1503ef2a437da:apps/web/test/sign-in-methods.test.tsx:generic-api-key:62
 # Google Password Manager's AAGUID: a public authenticator model id, not a secret.
 0a660295d6b45357938193ff97272d9627793d26:apps/server/test/auth-passkey.test.ts:generic-api-key:43
+
+# The function name `linkedinSignedIn` in an import line (reviewed 2026-10-20): the linkedin-client-secret rule reads
+# the identifier as a client secret. It is code, not a secret.
+789af1d0b2a5676519a58413714e28ac1f9771ea:packages/platforms/src/linkedin/adapter.ts:linkedin-client-secret:9
+789af1d0b2a5676519a58413714e28ac1f9771ea:packages/platforms/test/linkedin/routes.test.ts:linkedin-client-secret:20
