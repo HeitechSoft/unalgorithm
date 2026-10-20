@@ -35,7 +35,7 @@ import { applySettingsAction } from '../background/settings-actions.ts';
 import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
 import { browserKind } from '../lib/browser-kind.ts';
-import { FEED_HOSTS, FEED_TAB_URLS } from '../lib/feed-hosts.ts';
+import { CONTENT_STARTED, FEED_HOSTS, FEED_TAB_URLS } from '../lib/feed-hosts.ts';
 import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice, upgradeStoredSettings } from '../lib/settings-store.ts';
@@ -355,7 +355,10 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   },
 };
 
-/** Put unAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. */
+/**
+ * Put unAlgorithm on LinkedIn and Facebook tabs that were already open when it was installed. A tab that loaded while
+ * the extension installed already has the manifest's copy, so it gets none: a second copy would stop the first.
+ */
 async function injectIntoOpenTabs(): Promise<void> {
   const scripts: Record<string, string> = {
     'www.linkedin.com': '/content-scripts/linkedin.js',
@@ -367,8 +370,13 @@ async function injectIntoOpenTabs(): Promise<void> {
       const host = new URL(tab.url ?? '').hostname;
       const file = scripts[host];
       // Paths come from the build output; facebook.js exists once the Facebook script is built.
-      if (tab.id !== undefined && file)
-        await browser.scripting.executeScript({ target: { tabId: tab.id }, files: [file as never] });
+      if (tab.id === undefined || !file) continue;
+      const [running] = await browser.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (key: string) => key in globalThis,
+        args: [CONTENT_STARTED],
+      });
+      if (running?.result !== true) await browser.scripting.executeScript({ target: { tabId: tab.id }, files: [file as never] });
     } catch {
       // The script for that site may not exist yet, or the tab is discarded: it loads on the next visit.
     }

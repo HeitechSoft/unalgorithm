@@ -12,6 +12,7 @@ import { type NoticeKind, uuid } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { browserKind, browserVersion } from '../lib/browser-kind.ts';
+import { CONTENT_STARTED } from '../lib/feed-hosts.ts';
 import { type ContentRequest, type ContentResponses, sendQuietly, sendToBackground } from '../lib/messages.ts';
 import {
   deviceItem,
@@ -42,6 +43,8 @@ const SIGNATURE_CHECK_MS = 1000;
 
 /** Shared startup for every platform's content script: same controller, different adapter. */
 export async function bootContentScript(adapter: PlatformAdapter, ctx: ContentScriptContext): Promise<void> {
+  // Before the first await: the background checks this when it puts the script on tabs open at install.
+  (globalThis as Record<string, unknown>)[CONTENT_STARTED] = true;
   const rt: Runtime = {
     settings: await readSettings(),
     device: await readDevice(),

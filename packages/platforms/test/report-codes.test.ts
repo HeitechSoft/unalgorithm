@@ -95,7 +95,8 @@ describe('the protocol registry and the adapters', { timeout: 60_000 }, () => {
         if (run.after) note(golden.adapter.id, run.after);
       }
     }
-  }, 60_000);
+    // As in mutation.test.ts: jsdom is slow on the Windows runner, so the timeout is about the machine, not the code.
+  }, 180_000);
 
   it.each(ADAPTERS)("%s: the adapter's ids are all in the registry", (platform, adapter) => {
     const ids = adapter.ids as AdapterIds;
