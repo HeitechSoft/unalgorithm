@@ -3,11 +3,14 @@ import { join } from 'node:path';
 import {
   feed,
   GROUP_SUGGESTIONS,
+  groupPost,
   labelledBy,
   PYMK,
   perCharacter,
   post,
   REELS,
+  reel,
+  sharedCard,
   svgText,
   VIRTUALIZED,
 } from '../../fixtures/facebook/live2026.ts';
@@ -172,6 +175,35 @@ export const GOLDENS: readonly GoldenCase[] = [
       VIRTUALIZED,
     ),
   ),
+  // Balanced's "people and pages you don't follow" (settings version 2): what it hides, and what must stay.
+  golden('facebook/not-followed-2026', facebookAdapter, () => {
+    const friend = { author: 'Riley Chen', slot: perCharacter('3d') };
+    const age = svgText('SvgT1');
+    const photo = '<div><a href="https://www.facebook.com/photo/?fbid=2026101902" role="link"><img alt="" width="500"></a></div>';
+    const funny = { author: 'Funny Page', text: 'A cat that thinks it is a dog.', follow: true };
+    return feed(
+      post({ ...friend, text: 'Tomatoes, finally. Twelve of them, to be exact.' }),
+      post({ author: 'Gadget Daily', slot: age, text: 'Six phones compared.', follow: true, menu: true }),
+      post({ author: 'City Library', slot: age, text: 'Open late on Thursdays from next week.' }),
+      post({ author: 'Sam Ortiz', slot: age, text: 'New photos from the coast.', follow: true }).replace(
+        '<span>Follow</span>',
+        '<span>Following</span>',
+      ),
+      groupPost({ group: 'Hiking Ontario', member: 'Alex Kim', slot: age, text: 'Meetup Saturday at 9.', follow: true }),
+      groupPost({ group: 'Trail Runners', member: 'Casey Brooks', slot: age, text: 'Race report from Sunday.', join: true }),
+      post({ ...friend, text: 'This made me laugh.', media: sharedCard({ ...funny, hook: true }) }),
+      post({ ...friend, media: sharedCard({ ...funny, message: true }) }),
+      post({ ...friend, media: reel({ creator: 'Riley Chen', caption: 'Beach day.' }) }),
+      post({
+        ...friend,
+        text: 'Watch this.',
+        media: reel({ creator: 'Trick Shots', caption: 'Ten in a row.', follow: true, id: 100002 }),
+      }),
+      post({ author: 'Gadget Daily', slot: age, follow: true, media: photo }),
+      post({ author: 'Shop Example', slot: svgText('SvgT2'), text: 'Autumn sale.' }),
+      post({ ...friend, media: sharedCard({ ...funny, plainName: true, message: true }) }),
+    );
+  }),
   golden('facebook/legacy', facebookAdapter, () =>
     fb.fbFeed(
       fb.FRIEND_POST,

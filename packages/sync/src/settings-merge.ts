@@ -8,6 +8,7 @@ import {
   setAtKey,
   settingsItemKey,
   settingsItemKeysUnder,
+  upgradeMerged,
 } from '@unalgorithm/core';
 import { compareHlc, HLC_ZERO, HlcSchema, maxHlc, type SyncItem, type SyncValue } from '@unalgorithm/protocol';
 import { SETTINGS_COLLECTION, validateSettingsItem } from './collections.ts';
@@ -104,6 +105,10 @@ export type ApplyResult =
  * `preferRemote` is for the first pull after sync is turned on: every valid item wins, even when older than the local
  * clock, so the onboarding stamps of a second computer do not overwrite what the person tuned on the first one. Items
  * in one batch still apply in order, so a key's later item compares with the earlier one's result.
+ *
+ * Items carry no settings version, and another device may still run an older one: the merged settings go through
+ * `upgradeMerged`, so a strength it sends means what it means in this version, whichever page of items carried what.
+ * That takes no clock: it is never sent, and every device on this version reads the same items the same way.
  */
 export function applyRemoteItems(
   settings: Settings,
@@ -145,7 +150,7 @@ export function applyRemoteItems(
   // Each item passed its own schema, so this guards rules across fields only.
   const parsed = SettingsSchema.safeParse(next);
   if (!parsed.success) return { ok: false, reason: 'schema' };
-  return { ok: true, settings: parsed.data, clocks: norm, applied, skipped, maxHlc: newest };
+  return { ok: true, settings: upgradeMerged(parsed.data, norm), clocks: norm, applied, skipped, maxHlc: newest };
 }
 
 /**

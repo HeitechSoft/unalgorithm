@@ -19,7 +19,7 @@
   "notes": ["a photo post whose caption has no message box", "\"Ad\" post"],
   "decisions": {
     "light": ["show/not-followed", "sponsored/unknown"],
-    "balanced": ["show/not-followed", "sponsored/unknown"],
+    "balanced": ["not-followed/not-followed", "sponsored/unknown"],
     "calm": ["not-followed/not-followed", "sponsored/unknown"]
   },
   "ids": ["fb:h:17gvb6warz6", "fb:h:21l3zjoacko"],

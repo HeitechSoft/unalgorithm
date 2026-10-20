@@ -58,9 +58,10 @@ controller, rules, UI and AI are shared.
    that site's classification and tab-state messages) and to the host → script map and URL list in
    `injectIntoOpenTabs()`. Add the feed URL to `FEED_URLS` and the site to `platformOfUrl()` in
    `apps/extension/src/lib/hooks.ts`.
-7. Add the platform to settings defaults (`packages/core/src/settings/defaults.ts`) and presets. New platforms start
-   with the not-followed rule **off** until verified on live feeds, like Facebook
-   (`FACEBOOK_NOT_FOLLOWED_VERIFIED`).
+7. Add the platform to settings defaults (`packages/core/src/settings/defaults.ts`) and presets. A new platform's
+   Balanced leaves the not-followed rule **off** (a condition in `presetValues`) until it passes the live accuracy
+   gate in [fixtures.md](fixtures.md), as Facebook's did until settings version 2; turning it on then needs a
+   settings migration like version 2's, so people on the old Balanced move to the new one.
 8. Add a Settings pane entry in `apps/extension/src/entrypoints/options/nav.ts`.
 9. Run `pnpm typecheck`: records keyed by `PlatformId` will point at anything else that needs the new platform.
 

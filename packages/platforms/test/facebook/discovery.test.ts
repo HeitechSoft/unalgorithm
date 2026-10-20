@@ -42,7 +42,7 @@ function decisions(): string[] {
   });
 }
 
-const EXPECTED = ['show', 'sponsored', 'show', 'panel', 'show', 'sponsored', 'offscreen'];
+const EXPECTED = ['show', 'sponsored', 'not-followed', 'panel', 'show', 'sponsored', 'offscreen'];
 
 const feedList = () =>
   (Array.from(document.querySelectorAll('h3')).find((h) => h.textContent === 'Feed posts') as Element).nextElementSibling

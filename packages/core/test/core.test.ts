@@ -2,6 +2,8 @@ import {
   type Classification,
   CREDIT_PRICE_SCHEDULE,
   type CreditPriceSchedule,
+  compareHlc,
+  formatHlc,
   MAX_MODEL_CHARS,
   ZERO_USAGE as ZERO,
 } from '@unalgorithm/protocol';
@@ -19,6 +21,7 @@ import {
   decide,
   defaultSettings,
   EMPTY_LEARNED,
+  editPaths,
   findKeyword,
   formatBalance,
   formatBytes,
@@ -31,11 +34,16 @@ import {
   normalizeItem,
   type PostData,
   presetOf,
+  presetSummary,
   recordUsage,
   ruleFilter,
+  type Settings,
+  type SettingsClocks,
   safeExternalUrl,
   stampClocks,
   toPostForAI,
+  upgradeClocks,
+  upgradeMerged,
 } from '../src/index.ts';
 
 function post(over: Partial<PostData> = {}): PostData {
@@ -134,11 +142,28 @@ describe('rules', () => {
 });
 
 describe('presets', () => {
-  it('Balanced hides not-followed on LinkedIn but not yet on Facebook', () => {
+  it('test_balanced_hides_people_you_dont_follow_on_both_platforms', () => {
     const s = defaultSettings();
-    expect(s.platforms.linkedin.filters.notFollowed).toBe(true);
-    expect(s.platforms.facebook.filters.notFollowed).toBe(false);
-    expect(presetOf('linkedin', s.platforms.linkedin)).toBe('balanced');
+    for (const platform of ['linkedin', 'facebook'] as const) {
+      const ps = s.platforms[platform];
+      expect([platform, ps.preset, ps.filters.notFollowed]).toEqual([platform, 'balanced', true]);
+      expect(presetOf(platform, ps)).toBe('balanced');
+      expect(applyPreset(platform, ps, 'calm').filters.notFollowed).toBe(true);
+      // Balanced without the rule is the person's own mix.
+      expect(presetOf(platform, { ...ps, filters: { ...ps.filters, notFollowed: false } })).toBe('custom');
+    }
+    expect(presetSummary('facebook', 'balanced')).toBe(presetSummary('linkedin', 'balanced'));
+    expect(presetSummary('facebook', 'balanced')).toContain("people you don't follow");
+  });
+
+  it('test_light_hides_only_ads_and_feed_panels', () => {
+    for (const platform of ['linkedin', 'facebook'] as const) {
+      const light = applyPreset(platform, defaultSettings().platforms[platform], 'light');
+      const on = Object.entries(light.filters).flatMap(([key, value]) => (value ? [key] : []));
+      expect(on.sort()).toEqual(['modules', 'sponsored']);
+      expect(Object.values(light.ai.noise).some(Boolean)).toBe(false);
+      expect(light.ai.lowRelevance).toBe(false);
+    }
   });
 
   it('detects custom after a manual change and matches presets after applying one', () => {
@@ -283,6 +308,178 @@ describe('settings migration', () => {
     expect(broken.perspectives.outlets).toStrictEqual({});
     expect(broken.display.mode).toBe('dim');
     expect(broken.interests.about).toBe('Local news');
+  });
+
+  /** Settings as version 1 stored them: Facebook's Balanced left people and pages you don't follow to Calm. */
+  function storedByVersion1(mutate: (s: Settings) => void = () => {}): Record<string, unknown> {
+    const s = defaultSettings();
+    s.platforms.facebook.filters.notFollowed = false;
+    mutate(s);
+    return { ...structuredClone(s), version: 1 };
+  }
+
+  it('test_settings_v2_gives_facebook_balanced_the_not_followed_rule', () => {
+    const v1 = storedByVersion1((s) => {
+      s.display.mode = 'dim';
+      s.platforms.facebook.alwaysShow.a = { label: 'Riley Chen', match: '/riley.chen', addedAt: 1 };
+    });
+    const s = migrateSettings(v1);
+    expect(s.version).toBe(2);
+    expect(s.platforms.facebook.filters.notFollowed).toBe(true);
+    expect(s.platforms.facebook.preset).toBe('balanced');
+    expect(presetOf('facebook', s.platforms.facebook)).toBe('balanced');
+    // Nothing else moves: the other filters, the lists, LinkedIn and the rest of the settings.
+    const unmigrated = migrateSettings({ ...v1, version: 2 });
+    unmigrated.platforms.facebook.filters.notFollowed = true;
+    expect(s).toStrictEqual(unmigrated);
+    // A Facebook that is switched off keeps its strength for when it is back on.
+    const off = migrateSettings(storedByVersion1((x) => void (x.platforms.facebook.enabled = false)));
+    expect(off.platforms.facebook).toMatchObject({ enabled: false, preset: 'balanced', filters: { notFollowed: true } });
+    // Sections version 1 never wrote are filled in from the defaults, which hide people you don't follow already.
+    const sparse = migrateSettings({ version: 1, platforms: { facebook: { preset: 'balanced', filters: { reels: false } } } });
+    expect(sparse.platforms.facebook.filters.notFollowed).toBe(true);
+    expect(presetOf('facebook', sparse.platforms.facebook)).toBe('balanced');
+  });
+
+  it('test_settings_v2_keeps_custom_and_every_other_strength', () => {
+    const cases: [string, (s: Settings) => void][] = [
+      [
+        'custom',
+        (s) =>
+          void (s.platforms.facebook = {
+            ...s.platforms.facebook,
+            preset: 'custom',
+            filters: { ...s.platforms.facebook.filters, reels: true },
+          }),
+      ],
+      // Marked Custom with Balanced's filters: the person's own choice, as stored.
+      ['custom, same filters', (s) => void (s.platforms.facebook.preset = 'custom')],
+      // Marked Balanced, but a filter (or an AI filter) changed since: Custom in all but name.
+      ['changed filter', (s) => void (s.platforms.facebook.filters.suggested = false)],
+      ['changed AI filter', (s) => void (s.platforms.facebook.ai.noise.promotional = true)],
+      ['light', (s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'light'))],
+      [
+        'calm, rule off',
+        (s) => {
+          s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm');
+          s.platforms.facebook.filters.notFollowed = false;
+          s.platforms.facebook.preset = 'custom';
+        },
+      ],
+    ];
+    for (const [name, mutate] of cases) {
+      const v1 = storedByVersion1(mutate);
+      const s = migrateSettings(v1);
+      expect([name, s.platforms.facebook]).toEqual([name, (v1.platforms as Settings['platforms']).facebook]);
+    }
+    // Calm already hid them; LinkedIn's Balanced always did.
+    const calm = migrateSettings(
+      storedByVersion1((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm'))),
+    );
+    expect(presetOf('facebook', calm.platforms.facebook)).toBe('calm');
+    const li = migrateSettings(storedByVersion1((s) => void (s.platforms.linkedin.filters.notFollowed = false)));
+    expect(li.platforms.linkedin.filters.notFollowed).toBe(false);
+  });
+
+  it('test_settings_v2_migrates_once', () => {
+    // Version 2 settings are read as stored: the migration ran when version 1's were.
+    const v2 = { ...storedByVersion1(), version: 2 };
+    expect(migrateSettings(v2).platforms.facebook.filters.notFollowed).toBe(false);
+  });
+
+  describe("sync of Facebook's not-followed filter, whose Balanced value changed in version 2", () => {
+    const NF = 'platforms.facebook.filters.notFollowed';
+    const PRESET = 'platforms.facebook.preset';
+    const at = (ms: number, counter = 0, device = 'dev-b') => formatHlc({ ms, counter, device });
+
+    it('test_merge_reads_a_strength_as_this_version_does', () => {
+      // Version 1's Balanced, picked in one edit (strength and filter stamped in the same millisecond): today's Balanced.
+      const old = migrateSettings({ ...storedByVersion1(), version: 2 });
+      const picked = upgradeMerged(old, { [PRESET]: at(5000, 0), [NF]: at(5000, 3) });
+      expect(picked.platforms.facebook.filters.notFollowed).toBe(true);
+      expect(presetOf('facebook', picked.platforms.facebook)).toBe('balanced');
+      expect(upgradeMerged(picked, { [PRESET]: at(5000, 0), [NF]: at(5000, 3) })).toBe(picked);
+      // The filter changed after the strength was set: someone's own change (maybe before its Custom arrives), kept.
+      expect(upgradeMerged(old, { [PRESET]: at(5000), [NF]: at(6000) })).toBe(old);
+      // Light and Calm set it as they always did, over a value no device sent (a later version's default).
+      for (const [preset, value] of [
+        ['light', false],
+        ['calm', true],
+      ] as const) {
+        const s = defaultSettings();
+        s.platforms.facebook = { ...applyPreset('facebook', s.platforms.facebook, preset) };
+        s.platforms.facebook.filters.notFollowed = !value;
+        const merged = upgradeMerged(s, { [PRESET]: at(7000) });
+        expect([preset, merged.platforms.facebook.filters.notFollowed]).toEqual([preset, value]);
+        expect(presetOf('facebook', merged.platforms.facebook)).toBe(preset);
+      }
+      // Custom is the person's own mix, and what this version wrote reads as written.
+      const custom = defaultSettings();
+      custom.platforms.facebook.filters.notFollowed = false;
+      custom.platforms.facebook.preset = 'custom';
+      expect(upgradeMerged(custom, { [PRESET]: at(9000) })).toBe(custom);
+      const current = defaultSettings();
+      expect(upgradeMerged(current, {})).toBe(current);
+      // LinkedIn's Balanced never changed.
+      const li = defaultSettings();
+      li.platforms.linkedin.filters.notFollowed = false;
+      expect(upgradeMerged(li, {})).toBe(li);
+    });
+
+    it('test_an_edit_that_changes_the_strength_sends_the_filter', () => {
+      const before = defaultSettings();
+      const edit = (mutate: (s: Settings) => void) => {
+        const after = structuredClone(before);
+        mutate(after);
+        after.platforms.facebook.preset = presetOf('facebook', after.platforms.facebook);
+        return editPaths(before, after);
+      };
+      // Off Balanced by one filter, or to another strength that keeps the filter as it was: sent anyway.
+      expect(edit((s) => void (s.platforms.facebook.ai.noise.promotional = true))).toEqual([
+        'platforms.facebook.preset',
+        'platforms.facebook.ai.noise.promotional',
+        NF,
+      ]);
+      expect(edit((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm')))).toContain(NF);
+      // Nothing more when the strength stays, or for LinkedIn.
+      expect(edit((s) => void (s.display.mode = 'dim'))).toEqual(['display.mode']);
+      const li = structuredClone(before);
+      li.platforms.linkedin = applyPreset('linkedin', li.platforms.linkedin, 'calm');
+      expect(editPaths(before, li).filter((p) => p.startsWith('platforms.facebook'))).toEqual([]);
+    });
+
+    it('test_upgrade_stamps_the_filter_once_right_after_the_choice', () => {
+      const v1 = storedByVersion1();
+      // Nothing to stamp for settings at this version, or none stored.
+      const none = {};
+      for (const raw of [undefined, { ...v1, version: 2 }, { ...v1, version: undefined }]) {
+        expect(upgradeClocks(raw, none, 'dev-a', undefined)).toEqual({ clocks: none, last: undefined });
+      }
+      // Balanced picked after Calm on version 1: the strength and the filter in one edit. The stamp follows both, and
+      // anything stamped a millisecond later wins over it.
+      const picked = { [PRESET]: at(5000, 0), [NF]: at(5000, 3), 'display.mode': at(9000) };
+      const up = upgradeClocks(v1, picked, 'dev-a', at(9000));
+      expect(up.clocks).toEqual({ ...picked, [NF]: at(5000, 4, 'dev-a') });
+      expect(up.last).toBe(at(9000));
+      expect(compareHlc(up.clocks[NF] as string, at(5001))).toBeLessThan(0);
+      // Never stamped (version 1's default Balanced): the very first stamp, behind any edit.
+      expect(upgradeClocks(v1, {}, 'dev-a', undefined)).toEqual({
+        clocks: { [NF]: at(0, 1, 'dev-a') },
+        last: at(0, 1, 'dev-a'),
+      });
+      // Custom left as it was, its filter never sent: sent now, so a device that pulls later reads it as it is.
+      const custom = storedByVersion1((s) => {
+        s.platforms.facebook.ai.noise.promotional = true;
+        s.platforms.facebook.preset = 'custom';
+      });
+      const customClocks = { [PRESET]: at(4000), 'platforms.facebook.ai.noise.promotional': at(4000, 1) };
+      expect(upgradeClocks(custom, customClocks, 'dev-a', at(4000, 1)).clocks[NF]).toBe(at(4000, 1, 'dev-a'));
+      // A value already sent, and kept by the upgrade, is not sent again; an ancestor's stamp counts as the filter's.
+      const light = storedByVersion1((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'light')));
+      for (const clocks of [{ [PRESET]: at(3000), [NF]: at(2000) }, { 'platforms.facebook': at(3000) }] as SettingsClocks[]) {
+        expect(upgradeClocks(light, clocks, 'dev-a', at(3000)).clocks).toBe(clocks);
+      }
+    });
   });
 
   it('stamps per-field clocks for changed leaves', () => {

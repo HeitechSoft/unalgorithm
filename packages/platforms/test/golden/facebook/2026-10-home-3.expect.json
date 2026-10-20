@@ -19,7 +19,7 @@
   "notes": ["\"Ad\" in the age slot (SVG text)", "Page post with a Follow button"],
   "decisions": {
     "light": ["sponsored/unknown", "show/not-followed"],
-    "balanced": ["sponsored/unknown", "show/not-followed"],
+    "balanced": ["sponsored/unknown", "not-followed/not-followed"],
     "calm": ["sponsored/unknown", "not-followed/not-followed"]
   },
   "ids": ["fb:h:25mdts52fx2", "fb:h:xsiuma12d4"],

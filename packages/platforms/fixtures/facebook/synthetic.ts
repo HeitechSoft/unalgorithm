@@ -1,8 +1,7 @@
 /**
  * SYNTHETIC Facebook feed items, modelled on the publicly known structure of Facebook's web feed (role="feed",
  * data-ad-* hooks, obfuscated "Sponsored" labels). They exercise every detector but are NOT captures of the live
- * site. Extend them with anonymized captures from scripts/capture/facebook.js before "people you don't follow" is
- * turned on by default for Facebook.
+ * site: those are 2026-10-home-*.html, and live2026.ts builds items as they showed the feed.
  */
 
 let seq = 0;
@@ -180,6 +179,25 @@ export const JOINED_GROUP_POST = item(
     permalink: 'https://www.facebook.com/groups/hikingontario/permalink/9999/',
   }) +
     message('Meetup this Saturday at 9.') +
+    actions(),
+);
+
+/** A member you aren't friends with, in a group you're in: "Follow" next to the member, never the group's. */
+export const JOINED_GROUP_MEMBER_FOLLOW = item(
+  header({
+    author: 'Casey Brooks',
+    group: 'Hiking Ontario',
+    follow: true,
+    permalink: 'https://www.facebook.com/groups/hikingontario/permalink/9998/',
+  }) +
+    message('Lost a glove at the trailhead, blue, size M.') +
+    actions(),
+);
+
+/** A page you don't follow, with no "Suggested for you" line: only its Follow button says so. */
+export const NOT_FOLLOWED_PAGE_POST = item(
+  header({ author: 'Gadget Daily', follow: true, permalink: 'https://www.facebook.com/gadgetdaily/posts/2222' }) +
+    message('Six phones compared, and the one we would buy.') +
     actions(),
 );
 

@@ -138,9 +138,25 @@ side by side. `MUTATION_WORKERS=0` runs everything in the test process (slower, 
 The ids each page and mutation emits also feed `packages/platforms/test/report-codes.test.ts`: every id in the
 protocol registry is emitted somewhere, or listed there as reserved with the reason.
 
-## Facebook accuracy gate
+## Live accuracy gate for "people you don't follow"
 
-Before "people and pages you don't follow" is turned on by default for Facebook, a maintainer captures 20–40 live
-items across several sessions and verifies: no friend or joined-group post is hidden by mistake (0 of 100), every
-visible "Sponsored" post is caught, and at least 95 % of suggested posts and feed panels are caught. Then
-`FACEBOOK_NOT_FOLLOWED_VERIFIED` in `packages/core/src/presets.ts` can flip.
+Before "people and pages you don't follow" joins Balanced on a platform, a maintainer captures 20–40 live items across
+several sessions and verifies: no friend or joined-group post is hidden by mistake (0 of 100), every visible
+"Sponsored" post is caught, and at least 95 % of suggested posts and feed panels are caught. Until then the
+platform's Balanced leaves the rule to Calm (`presetValues` in `packages/core/src/presets.ts`); turning it on moves
+people still on the old Balanced with a settings migration (`packages/core/src/settings/migrate.ts`).
+
+Facebook's rule joined Balanced on 2026-10-19 (settings version 2) after a smaller live check than this gate asks for,
+which the owner judged enough to turn it on:
+
+- **What was checked.** 45 live items: in each, a Follow button in the post's own header meant the account doesn't
+  follow the author, and posts from friends and followed accounts showed none. On the live feed at Balanced before the
+  change, 4 shown posts had a Follow button (the rule now folds them) and 7 from friends and followed accounts had
+  none (they stay). The one wrong fold found (post text that read like an activity line) was fixed first.
+- **What the captures hold.** `packages/platforms/fixtures/facebook/2026-10-home-*.html` keep 17 of those items: 10
+  page posts with a Follow button, 3 ads, 3 posts from groups the account isn't in and 1 page sharing a reel. None is
+  from a friend or a group the account is in, so the 0-of-100 count above was not reached.
+- **What only synthetic fixtures cover.** The posts that must stay shown (friends, followed pages and people, groups
+  the account is in, a friend's share of a page's post or reel, friends' reels) are modelled on the captures' layout
+  in the golden page `facebook/not-followed-2026` and in `packages/platforms/test/facebook/not-followed.test.ts`. No
+  live friend's share of a page's post has been captured yet: capture one when it shows up, and add it to the goldens.

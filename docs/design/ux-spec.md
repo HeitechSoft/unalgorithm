@@ -35,7 +35,7 @@ Balanced is the default.
 |---|---|---|---|
 | Ads, feed panels (People You May Know, jobs, games, Reels tray, suggested groups) | ✓ | ✓ | ✓ |
 | Suggested posts, network activity ("Jane liked this"), groups you haven't joined | — | ✓ | ✓ |
-| People and pages you don't follow | — | ✓ LinkedIn; Facebook after verification | ✓ |
+| People and pages you don't follow | — | ✓ | ✓ |
 | Reels in the feed, reshares | — | — | ✓ |
 | With AI: engagement bait, rage bait, clickbait | — | ✓ | ✓ |
 | With AI: off-topic, promotional, low-effort | — | — | ✓ |

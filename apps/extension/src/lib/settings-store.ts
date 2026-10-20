@@ -1,15 +1,18 @@
 import {
-  changedPaths,
   createLock,
   type Device,
+  editPaths,
   migrateDevice,
+  migrateSettings,
+  SETTINGS_VERSION,
   type Settings,
   type SettingsClocks,
   SettingsSchema,
   stampClocks,
+  upgradeClocks,
 } from '@unalgorithm/core';
 import { HlcSchema, hlcMs, maxHlc, SYNC_MAX_HLC_AHEAD_MS, tickHlc, uuid } from '@unalgorithm/protocol';
-import { deviceItem, lastHlcItem, readDevice, readSettings, settingsClocksItem, settingsItem } from './storage.ts';
+import { deviceItem, lastHlcItem, readDevice, settingsClocksItem, settingsItem } from './storage.ts';
 
 const moduleLock = createLock();
 
@@ -25,29 +28,63 @@ async function settingsLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Stored settings at this version, with their clocks and the last HLC, for a write under the lock. When an older
+ * version stored them (`pending`), the clocks include the upgrade's (`upgradeClocks`): the first write stores both, so
+ * sync sends the values the upgrade changed, once.
+ */
+async function readForWrite(): Promise<{
+  settings: Settings;
+  clocks: SettingsClocks;
+  last: string | undefined;
+  pending: boolean;
+}> {
+  const raw = await settingsItem.getValue();
+  const version = (raw as { version?: unknown } | null | undefined)?.version;
+  const pending = typeof version === 'number' && version < SETTINGS_VERSION;
+  const stored = await settingsClocksItem.getValue();
+  const storedLast = (await lastHlcItem.getValue()) ?? undefined;
+  const { clocks, last } = pending
+    ? upgradeClocks(raw, stored, (await readDevice()).deviceId, storedLast)
+    : { clocks: stored, last: storedLast };
+  return { settings: migrateSettings(raw), clocks, last, pending };
+}
+
+/**
  * The only way to change settings. Applies the mutator, validates, saves, and stamps a hybrid logical clock on
- * every changed field so Phase 2 sync can merge devices field by field. Invalid results are rejected, not saved.
+ * every changed field so Phase 2 sync can merge devices field by field (`editPaths`). Invalid results are rejected,
+ * not saved.
  */
 export async function updateSettings(mutate: (s: Settings) => Settings | void): Promise<Settings> {
   return settingsLock(async () => {
-    const before = await readSettings();
+    const { settings: before, clocks: base, last: baseLast } = await readForWrite();
     const draft = structuredClone(before);
     const after = (mutate(draft) ?? draft) as Settings;
     const parsed = SettingsSchema.safeParse(after);
     if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Invalid settings');
-    const paths = changedPaths(before, parsed.data);
+    const paths = editPaths(before, parsed.data);
     if (!paths.length) return before;
     const device = await readDevice();
-    const { clocks, last } = stampClocks(
-      await settingsClocksItem.getValue(),
-      paths,
-      device.deviceId,
-      (await lastHlcItem.getValue()) ?? undefined,
-    );
+    const { clocks, last } = stampClocks(base, paths, device.deviceId, baseLast);
     await settingsItem.setValue(parsed.data);
     await settingsClocksItem.setValue(clocks);
     await lastHlcItem.setValue(last ?? null);
     return parsed.data as Settings;
+  });
+}
+
+/**
+ * Stores settings an older version left at this version, with the upgrade's clocks, so sync sends what the upgrade
+ * changed without waiting for an edit. Resolves false when there was nothing to upgrade. The background runs it when
+ * it starts; any earlier write does the same.
+ */
+export async function upgradeStoredSettings(): Promise<boolean> {
+  return settingsLock(async () => {
+    const { settings, clocks, last, pending } = await readForWrite();
+    if (!pending) return false;
+    await settingsItem.setValue(settings);
+    await settingsClocksItem.setValue(clocks);
+    await lastHlcItem.setValue(last ?? null);
+    return true;
   });
 }
 
@@ -68,12 +105,12 @@ export async function applyRemoteSettings(
   ) => { settings: Settings; clocks: SettingsClocks; maxHlc: string | null } | null,
 ): Promise<boolean> {
   return settingsLock(async () => {
-    const result = merge(await readSettings(), await settingsClocksItem.getValue());
+    const { settings, clocks, last } = await readForWrite();
+    const result = merge(settings, clocks);
     if (!result) return false;
-    const last = await lastHlcItem.getValue();
     await settingsItem.setValue(result.settings);
     await settingsClocksItem.setValue(result.clocks);
-    await lastHlcItem.setValue(result.maxHlc ? maxHlc(last ?? undefined, result.maxHlc) : last);
+    await lastHlcItem.setValue((result.maxHlc ? maxHlc(last, result.maxHlc) : last) ?? null);
     return true;
   });
 }

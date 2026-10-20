@@ -51,7 +51,8 @@ describe('Facebook adapter (2026 layout as captured live)', () => {
       expect(detectors(p)).toEqual(['fb.follow-button']);
       expect(p.signals.sponsored).toBe(false);
       expect(p.author.relationship).toBe('not-followed');
-      expect(ruleFilter(p, balanced)).toBeNull();
+      // Hidden for its Follow button (a page you don't follow), never as an ad.
+      expect(ruleFilter(p, balanced)?.reason).toBe('not-followed');
     }
   });
 
@@ -83,7 +84,10 @@ describe('Facebook adapter (2026 layout as captured live)', () => {
     );
     expect(p.signals.networkActivity).toBe(false);
     expect(p.contextLine).toBeUndefined();
-    expect(ruleFilter(p, balanced)).toBeNull();
+    expect(ruleFilter(p, balanced)?.reason).toBe('not-followed');
+    const friend = onePost(post({ author: 'Riley Chen', slot: svgText('SvgT1'), text: 'Our dog likes a long walk on Sundays.' }));
+    expect(friend.signals.networkActivity).toBe(false);
+    expect(ruleFilter(friend, calm)).toBeNull();
     const shared = onePost(post({ author: 'Riley Chen', slot: svgText('SvgT1'), text: 'Grandpa shared a video of the parade.' }));
     expect(shared.signals).toMatchObject({ networkActivity: false, reshare: false });
     expect(ruleFilter(shared, calm)).toBeNull();

@@ -38,7 +38,7 @@ import { browserKind } from '../lib/browser-kind.ts';
 import { FEED_HOSTS, FEED_TAB_URLS } from '../lib/feed-hosts.ts';
 import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
-import { updateDevice } from '../lib/settings-store.ts';
+import { updateDevice, upgradeStoredSettings } from '../lib/settings-store.ts';
 import {
   learnedItem,
   readDevice,
@@ -376,6 +376,8 @@ async function injectIntoOpenTabs(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  // Settings an older version stored: stored again at this version, with clocks for what the upgrade changed.
+  void upgradeStoredSettings().catch((err: unknown) => console.warn('[unAlgorithm] settings upgrade', err));
   initSync();
   syncServerOffer();
   // unAlgorithm Cloud's source list, while UnEcho Chamber is on: at most daily, anonymous (D98).

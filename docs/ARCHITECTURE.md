@@ -101,8 +101,14 @@ a week after a report; `device.notices`). Absence alone (no feed, no items, no a
 | IndexedDB `secrets` | API keys, and the server's refresh token under `server-refresh:<origin>` | **Never**; not exported, not in diagnostics |
 | IndexedDB `classifications` | Cached verdicts keyed by post + input hash + profile hash + source:model + prompt version; no text, no names | Never |
 
-Settings use loose zod objects so fields written by a newer version survive an older one; migrations only fill
-defaults and repair broken sections.
+Settings use loose zod objects so fields written by a newer version survive an older one. Migrations fill defaults,
+repair broken sections and upgrade values from older versions: version 2 gives Facebook's Balanced the not-followed rule
+(Custom and changed filters stay as they were). Synced items carry no version, and a device still on version 1 reads
+Balanced its own way, so sync keeps that filter explicit (`packages/core/src/settings/migrate.ts`): the first write
+after the upgrade stamps it, with a clock right after the choice it belongs to, so it is sent once and any later edit
+wins (`upgradeClocks`, stored by the background when it starts); an edit that changes Facebook's strength sends it too
+(`editPaths`); and a merge of items from other devices reads a strength set no earlier than the filter as this version
+does (`upgradeMerged`, in `applyRemoteItems`), without a clock, so nothing echoes and devices never trade the value.
 
 ## Messaging
 

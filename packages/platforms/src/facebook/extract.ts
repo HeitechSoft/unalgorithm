@@ -6,6 +6,7 @@ import type { FacebookDetector, FacebookObservation } from './ids.ts';
 import type { FacebookMarkers } from './markers/en.ts';
 import { FB_ORIGIN, FB_SEL, isFacebookProfileHref } from './selectors.ts';
 import {
+  besideAuthor,
   headerButtons,
   type ItemSlots,
   inComment,
@@ -453,23 +454,25 @@ function readPost(root: HTMLElement, m: FacebookMarkers, slots: ItemSlots): Face
   const headerUnknown = context.length > known.length;
   if (headerUnknown) observations.add('fb.header.unknown');
 
-  // Header buttons by role; buttons that lost their role only when those have none, which reports say.
+  // The author's header buttons by role (never a shared post's or a reel's, after a name of their own); buttons that
+  // lost their role only when those have none, which reports say.
   const { buttons, fallback } = headerButtons(root);
   const pressed = (pattern: LabelPattern): boolean => {
-    if (buttons.some((b) => isButton(b, pattern))) return true;
-    if (!fallback.some((b) => isButton(b, pattern))) return false;
+    const own = (b: Element) => isButton(b, pattern) && besideAuthor(root, b);
+    if (buttons.some(own)) return true;
+    if (!fallback.some(own)) return false;
     observations.add('fb.slot.header-buttons.structure');
     return true;
   };
-  const follow = pressed(m.labels.follow);
   const join = pressed(m.labels.join);
-  if (follow) evidence.push(ev('relationship', 'fb.follow-button', 'strong'));
-  if (join) evidence.push(ev('unjoinedGroup', 'fb.join-button', 'strong'));
-
   const groupLink = Array.from(root.querySelectorAll<HTMLAnchorElement>(FB_SEL.groupLink)).find(
     (a) => inHeader(root, a) && !inNestedPost(root, a),
   );
   const groupName = groupLink ? normalizeText(getLines(groupLink)[0] ?? '') : undefined;
+  // In a group the account is in, a Follow button is for the member who posted: the account follows the group.
+  const follow = !(groupLink && !join) && pressed(m.labels.follow);
+  if (follow) evidence.push(ev('relationship', 'fb.follow-button', 'strong'));
+  if (join) evidence.push(ev('unjoinedGroup', 'fb.join-button', 'strong'));
 
   const audienceEl = root.querySelector(FB_SEL.audience);
   const audienceLabel = normalizeText(audienceEl?.getAttribute('aria-label') ?? audienceEl?.getAttribute('title') ?? '');

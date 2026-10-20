@@ -33,7 +33,7 @@ actually follow.
 
 | | |
 |---|---|
-| **Hides the noise, no setup** | Ads (Promoted/Sponsored), suggested posts, network activity, feed panels like People You May Know, groups you haven't joined and, on LinkedIn, people and pages you don't follow (Facebook: in Calm, for now). Works with zero configuration and **makes no network requests at all**. |
+| **Hides the noise, no setup** | Ads (Promoted/Sponsored), suggested posts, network activity, feed panels like People You May Know, groups you haven't joined, and people and pages you don't follow. Works with zero configuration and **makes no network requests at all**. |
 | **Three strengths** | *Light* (just the clutter), *Balanced* (what you didn't ask for), *Calm* (only what matters). Change it from the toolbar; the feed updates live. |
 | **Always explains itself** | Every hidden post has **Why?**: what was detected, and one-click fixes like "Always show this person" or "Stop hiding suggested posts", with Undo. |
 | **For you** | Pick a few interests and matching posts get a quiet highlight. Works with simple keyword matching, or with AI if you turn it on. |
@@ -82,7 +82,7 @@ Chrome build but aren't tested. LinkedIn and Facebook must be in English for now
 | Platform | Status |
 |---|---|
 | LinkedIn | Ported from a tool used daily; tested against fixtures in LinkedIn's October 2026 feed structure. |
-| Facebook | **Preview.** Detection is built and tested against synthetic fixtures; it needs captures from the live site before "people you don't follow" turns on by default. |
+| Facebook | **Preview.** Tested against anonymized captures of the live feed (October 2026) and synthetic fixtures. "People and pages you don't follow" was checked on live feeds ([what was checked](docs/fixtures.md)) and is part of Balanced, as on LinkedIn. |
 | AI | Anthropic, OpenAI and OpenAI-compatible servers work end to end. Chrome's on-device AI depends on your hardware and Chrome version; Edge's is a preview in Edge Canary and Dev; Firefox has none. |
 | Browsers | Chrome and Edge builds share one manifest; Firefox has its own, with Highlights in the sidebar (Alt+Shift+U) instead of the side panel. All three run the end-to-end tests in CI ([ADR 0008](docs/adr/0008-firefox-and-edge.md)). |
 

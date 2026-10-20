@@ -74,6 +74,83 @@ export function post(o: PostOptions): string {
   return item(postBody(o));
 }
 
+const profileHref = (name: string) => `https://www.facebook.com/${name.toLowerCase().replace(/\s+/g, '')}`;
+
+/**
+ * A post from a group, as the captures show it: the group's name in the name slot (with "· Join" when the account isn't
+ * in it), then the member's name, the age and the audience. `follow` puts "· Follow" after the member's name.
+ */
+export function groupPost(o: {
+  group: string;
+  member: string;
+  slot: string;
+  text: string;
+  join?: boolean;
+  follow?: boolean;
+}): string {
+  const group = `https://www.facebook.com/groups/${o.group.toLowerCase().replace(/\s+/g, '')}/`;
+  const member = `${group}user/100009/`;
+  const button = (label: string) =>
+    `<span dir="ltr"><span><span aria-hidden="true">·</span></span><div role="button" tabindex="0"><span>${label}</span></div></span>`;
+  return item(`${filler()}
+  <div><div aria-hidden="true"><a aria-label="${o.group}" href="${group}" role="link" tabindex="0"><svg aria-hidden="true" role="none"></svg></a></div>
+  <div><span dir="ltr"><div data-ad-rendering-role="profile_name"><h4><div dir="ltr"><a href="${group}" role="link" tabindex="0"><span>${o.group}</span></a></div>${o.join ? button('Join') : ''}</h4></div></span>
+  <span dir="ltr"><div><span><a href="${member}" role="link" tabindex="0"><span>${o.member}</span></a></span>${o.follow ? button('Follow') : ''}<span><span aria-hidden="true">·</span></span><span><a href="https://www.facebook.com/" role="link" tabindex="0">\u2060${o.slot}</a></span><span><svg width="12" role="img" title="Shared with Public group"></svg></span></div></span></div></div>
+  <div><div dir="auto"><div data-ad-rendering-role="story_message"><div data-ad-comet-preview="message" data-ad-preview="message"><div dir="auto">${o.text}</div></div></div></div></div>
+  ${ACTION_BAR}`);
+}
+
+export interface SharedOptions {
+  /** Whose post it is. */
+  author: string;
+  text: string;
+  /** "· Follow" after the author's name, as for a page the account doesn't follow. */
+  follow?: boolean;
+  /** Facebook's `profile_name` hook on the shared post's name (the 2026 reel overlay has none). */
+  hook?: boolean;
+  /** The shared post's name as a plain link in spans, rather than a heading. */
+  plainName?: boolean;
+  /** `false`: no picture linking to the shared post's author before the name. */
+  picture?: boolean;
+  /** The shared post's text in Facebook's message box, rather than a plain block. */
+  message?: boolean;
+}
+
+/**
+ * A post shared inside another one (`media` of the sharer's post): its own picture and name heading, "· Follow" when
+ * the account doesn't follow its author, its age and its text, as the reel overlay in capture 1 lays them out.
+ */
+export function sharedCard(o: SharedOptions): string {
+  const link = `<span dir="auto"><span><object><a href="${profileHref(o.author)}" role="link" tabindex="0">${o.author}</a></object></span></span>`;
+  const name = o.plainName ? link : `<h5 dir="auto">${link}</h5>`;
+  const follow = o.follow
+    ? `<span dir="auto"><span><span aria-hidden="true">·</span></span><div aria-label="Follow ${o.author}" role="button" tabindex="0">Follow</div></span>`
+    : '';
+  const text = o.message
+    ? `<div data-ad-preview="message"><div dir="auto">${o.text}</div></div>`
+    : `<div><span dir="auto">${o.text}</span></div>`;
+  const picture =
+    o.picture === false
+      ? ''
+      : `<object><a aria-label="${o.author}" href="${profileHref(o.author)}" role="link" tabindex="0"><svg aria-label="${o.author}" role="img"></svg></a></object>`;
+  return `<div><div>${picture}
+  <div>${o.hook ? `<div data-ad-rendering-role="profile_name">${name}</div>` : name}${follow}<span dir="auto"><span>3d</span></span></div></div>
+  ${text}</div>`;
+}
+
+/**
+ * A reel in the feed: the reel's link holds its caption and its creator's name, with "· Follow" when the account
+ * doesn't follow the creator (capture 1's first item).
+ */
+export function reel(o: { creator: string; caption: string; follow?: boolean; id?: number }): string {
+  return `<a aria-label="Reel by ${o.creator}" href="https://www.facebook.com/reel/${o.id ?? 100001}/" role="link" tabindex="0"><div><span dir="auto">${o.caption}</span>
+  <div><h5 dir="auto"><span dir="auto"><object><a href="${profileHref(o.creator)}" role="link" tabindex="0">${o.creator}</a></object></span></h5>${
+    o.follow
+      ? `<span dir="auto"><span aria-hidden="true">·</span><div aria-label="Follow ${o.creator}" role="button" tabindex="0">Follow</div></span>`
+      : ''
+  }</div></div></a>`;
+}
+
 /** A feed panel: the title is an h3 (People you may know, Reels) or a plain span[dir=auto]. */
 export function panel(title: string, kind: 'h3' | 'span', body: string): string {
   const t =

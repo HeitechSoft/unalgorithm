@@ -105,6 +105,30 @@ export function inComment(root: Element, el: Element): boolean {
   return !!section && section !== root && root.contains(section);
 }
 
+/** Headings that can name a post's author, a shared post's or a reel's (h5 in the 2026 reel overlay). */
+const NAME_HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+
+/** A heading, or a link to someone's profile itself (their name or picture), not to one of their posts. */
+function namesSomeone(el: Element): boolean {
+  if (el.matches(NAME_HEADINGS)) return true;
+  return el.matches('a[href]') && isFacebookProfileHref(el.getAttribute('href') ?? '') && !el.matches(FB_SEL.permalink);
+}
+
+/**
+ * Whether a header element goes with the author's name rather than another one: nothing that names someone else (a
+ * heading, or a link to a profile) comes between the two. Facebook puts the author's Follow or Join button right after
+ * the name (inside its heading since 2026); a post or reel shared inside this one names its own author first, with a
+ * picture and a name that may be a heading or a plain link, which the slots don't always mark as nested, and its
+ * buttons come after that.
+ */
+export function besideAuthor(root: Element, el: Element): boolean {
+  const { actor } = slotsOf(root);
+  if (!actor || actor.contains(el)) return true;
+  return !Array.from(root.querySelectorAll(`${NAME_HEADINGS}, a[href]`)).some(
+    (h) => !actor.contains(h) && !h.contains(actor) && precedes(actor, h) && precedes(h, el) && namesSomeone(h),
+  );
+}
+
 /**
  * Buttons in the post's header, outside a nested post: by role (`aria`), and, kept apart, focusable elements that
  * lost their role (`structure`). A caller uses the fallback only when the first set has nothing it recognises, and

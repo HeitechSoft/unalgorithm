@@ -19,7 +19,7 @@
   "notes": ["group post, \"Join\"", "Page post with a Follow button"],
   "decisions": {
     "light": ["show/unknown", "show/not-followed"],
-    "balanced": ["unjoined-group/unknown", "show/not-followed"],
+    "balanced": ["unjoined-group/unknown", "not-followed/not-followed"],
     "calm": ["unjoined-group/unknown", "not-followed/not-followed"]
   },
   "ids": ["fb:100002", "fb:h:1lpnoeifb71"],

@@ -19,7 +19,7 @@
   "notes": ["Page post with a Follow button"],
   "decisions": {
     "light": ["show/not-followed"],
-    "balanced": ["show/not-followed"],
+    "balanced": ["not-followed/not-followed"],
     "calm": ["not-followed/not-followed"]
   },
   "ids": ["fb:h:7lml2vuxwo"],

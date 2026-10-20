@@ -8,18 +8,18 @@ import {
   type PresetOrCustom,
 } from './settings/schema.ts';
 
-/**
- * Facebook's "people and pages you don't follow" detection must pass a live accuracy check (0 of 100 friend or
- * joined-group posts wrongly hidden) before Balanced turns it on by default. Until then it is Calm-only.
- */
-export const FACEBOOK_NOT_FOLLOWED_VERIFIED = false;
-
 function noise(on: readonly NoiseLabel[]): AiFilters['noise'] {
   return Object.fromEntries(NOISE_LABELS.map((l) => [l, on.includes(l)])) as AiFilters['noise'];
 }
 
-/** What each strength hides. Light: just the clutter. Balanced: what you did not ask for. Calm: only what matters. */
-export function presetValues(platform: PlatformId, preset: Preset): { filters: FilterToggles; ai: AiFilters } {
+/**
+ * What each strength hides. Light: just the clutter. Balanced: what you did not ask for. Calm: only what matters.
+ *
+ * Every platform hides the same today. A new platform keeps "people and pages you don't follow" out of Balanced until
+ * its detection passes the live accuracy check (docs/fixtures.md); Facebook's stayed out until settings version 2.
+ * Turning it on later moves people still on the old Balanced with a settings migration (settings/migrate.ts).
+ */
+export function presetValues(_platform: PlatformId, preset: Preset): { filters: FilterToggles; ai: AiFilters } {
   switch (preset) {
     case 'light':
       return {
@@ -43,7 +43,7 @@ export function presetValues(platform: PlatformId, preset: Preset): { filters: F
           suggested: true,
           networkActivity: true,
           unjoinedGroups: true,
-          notFollowed: platform === 'linkedin' || FACEBOOK_NOT_FOLLOWED_VERIFIED,
+          notFollowed: true,
           reels: false,
           reshares: false,
         },
@@ -90,15 +90,13 @@ export function applyPreset(platform: PlatformId, ps: PlatformSettings, preset: 
   };
 }
 
-/** One sentence describing a preset, for the Strength control. */
-export function presetSummary(platform: PlatformId, preset: PresetOrCustom): string {
+/** One sentence describing a preset, for the Strength control. The same on every platform. */
+export function presetSummary(_platform: PlatformId, preset: PresetOrCustom): string {
   switch (preset) {
     case 'light':
       return 'Hides ads and feed panels like People You May Know. Everything else stays.';
     case 'balanced':
-      return platform === 'linkedin' || FACEBOOK_NOT_FOLLOWED_VERIFIED
-        ? "Also hides suggested posts, activity from your network, groups you're not in and people you don't follow."
-        : "Also hides suggested posts, friend activity and posts from groups you're not in.";
+      return "Also hides suggested posts, activity from your network, groups you're not in and people you don't follow.";
     case 'calm':
       return 'Shows only people, pages and groups you follow, without Reels or reshares.';
     case 'custom':

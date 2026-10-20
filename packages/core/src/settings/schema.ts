@@ -15,8 +15,10 @@ import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
  * Synced settings (Phase 2 syncs them field by field). Objects are "loose" so a field written by a newer
  * version survives an older one reading and saving it. User-edited lists are maps keyed by stable ids so two
  * devices can add entries at the same time without overwriting each other.
+ *
+ * Version 2: Facebook's Balanced hides people and pages you don't follow, as LinkedIn's always has (settings/migrate.ts).
  */
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 export const PRESETS = ['light', 'balanced', 'calm'] as const;
 export type Preset = (typeof PRESETS)[number];

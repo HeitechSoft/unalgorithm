@@ -45,7 +45,7 @@ Social feeds are ranked to keep you scrolling. They mix in ads, posts "suggested
 Works with LinkedIn and Facebook, in English.
 
 WHAT IT DOES
-• Folds away the noise, with no setup: ads (Promoted and Sponsored), suggested posts, network activity, feed panels like People You May Know, groups you haven't joined and, on LinkedIn, people and pages you don't follow.
+• Folds away the noise, with no setup: ads (Promoted and Sponsored), suggested posts, network activity, feed panels like People You May Know, groups you haven't joined, and people and pages you don't follow.
 • Three strengths: Light (just the clutter), Balanced (what you didn't ask for) and Calm (only what matters). Change it from the toolbar and the feed updates live.
 • Always explains itself: every folded post has Why?, with what was detected and one-click fixes such as "Always show this person" or "Stop hiding suggested posts", with Undo.
 • For you: pick a few interests and matching posts get a quiet highlight. Highlights, in the side panel, lists the posts picked for you and the ones folded away on the page.

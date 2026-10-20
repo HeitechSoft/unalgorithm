@@ -45,3 +45,18 @@ monitor; the decision stands (adapters only read, evidence strength, unknown nev
   toolbar title still show them.
 - A near-miss ad label is *medium* evidence: with the weak "no post age" or `no-timestamp` evidence it still hides as an
   ad, as the combination rule above allows, and the change is reported.
+
+## Amendment (2026-10-19)
+
+Facebook's not-followed rule was checked on live feeds, and Balanced hides people and pages you don't follow on
+Facebook as it does on LinkedIn; the consequence above that kept it off by default no longer holds, and
+`FACEBOOK_NOT_FOLLOWED_VERIFIED` is gone. In 45 live items a Follow button in the post's own header meant the account
+doesn't follow the author (friends and followed accounts showed none). That check is smaller than the gate in
+`docs/fixtures.md` (0 wrong folds in 100 friend or joined-group posts), and the owner turned the rule on with it; the
+captures hold no friend or joined-group post, so the cases that must stay shown are covered by synthetic fixtures
+(`docs/fixtures.md` records what was checked). Two reads keep it to the author's own header: a Follow or Join button
+with another name between it and the author's (a heading or a link to a profile, as a post or reel shared inside this
+one has) is not the author's, and a Follow button in a group the account is in is for the member who posted, so it
+never makes a post "not followed". Unknown still never hides, and cautious mode still turns the rule off. Settings
+version 2 moves people still on the old Balanced to the new one; Custom and changed filters stay as they were
+(`packages/core/src/settings/migrate.ts`).

@@ -1,7 +1,10 @@
 import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   FRIEND_POST,
+  FRIEND_RESHARE,
   fbFeed,
+  JOINED_GROUP_MEMBER_FOLLOW,
+  NOT_FOLLOWED_PAGE_POST,
   REELS_TRAY,
   SPONSORED_SPLIT,
   SUGGESTED_PAGE_POST,
@@ -46,11 +49,12 @@ test('test_firefox_facebook_rules_keep_friends', async ({ firefox }) => {
   const page = await fixturePage(
     firefox,
     'https://www.facebook.com/',
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST)}</body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST, FRIEND_RESHARE, NOT_FOLLOWED_PAGE_POST, JOINED_GROUP_MEMBER_FOLLOW)}</body></html>`,
   );
   const item = (i: number) => `[role="feed"] > div:nth-child(${i + 1})`;
-  for (const i of [1, 2, 3, 4]) await page.waitForSelector(`${item(i)}[data-unalgo="collapsed"]`);
-  expect(await attribute(page, item(0), 'data-unalgo')).toBeNull();
+  for (const i of [1, 2, 3, 4, 6]) await page.waitForSelector(`${item(i)}[data-unalgo="collapsed"]`);
+  // A friend's post, a friend sharing a page's post (the Follow button is the page's), and a group the account is in.
+  for (const i of [0, 5, 7]) expect(await attribute(page, item(i), 'data-unalgo')).toBeNull();
   expect(await count(page, '[role="complementary"] [data-unalgo]')).toBe(1);
 });
 

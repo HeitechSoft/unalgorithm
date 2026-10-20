@@ -1,7 +1,10 @@
 import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   FRIEND_POST,
+  FRIEND_RESHARE,
   fbFeed,
+  JOINED_GROUP_MEMBER_FOLLOW,
+  NOT_FOLLOWED_PAGE_POST,
   REELS_TRAY,
   SPONSORED_SPLIT,
   SUGGESTED_PAGE_POST,
@@ -49,19 +52,21 @@ test('LinkedIn: Why? explains, and "Stop hiding" changes the rule live with Undo
   await expect(promoted).toHaveAttribute('data-unalgo', 'collapsed');
 });
 
-test('Facebook: hides Sponsored, Suggested, Reels tray and unjoined groups; keeps friends', async ({ context }) => {
+test('Facebook: hides noise and pages you don’t follow; keeps friends, their shares and your groups', async ({ context }) => {
   await context.route('https://www.facebook.com/**', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/html',
-      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px sans-serif;background:#f0f2f5}[role=feed]>div{background:#fff;margin:8px auto;max-width:560px;padding:12px;border-radius:8px}</style></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST)}</body></html>`,
+      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px sans-serif;background:#f0f2f5}[role=feed]>div{background:#fff;margin:8px auto;max-width:560px;padding:12px;border-radius:8px}</style></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST, FRIEND_RESHARE, NOT_FOLLOWED_PAGE_POST, JOINED_GROUP_MEMBER_FOLLOW)}</body></html>`,
     }),
   );
   const page = await context.newPage();
   await page.goto('https://www.facebook.com/');
   const items = page.locator('[role="feed"] > div');
-  await expect(items.nth(0)).not.toHaveAttribute('data-unalgo', /.+/);
-  for (const i of [1, 2, 3, 4]) await expect(items.nth(i)).toHaveAttribute('data-unalgo', 'collapsed');
+  for (const i of [1, 2, 3, 4, 6]) await expect(items.nth(i)).toHaveAttribute('data-unalgo', 'collapsed');
+  // A friend's post, a friend sharing a page's post (the Follow button is the page's), and a group the account is in.
+  for (const i of [0, 5, 7]) await expect(items.nth(i)).not.toHaveAttribute('data-unalgo', /.+/);
+  await expect(items.nth(6).locator('unalgo-post').getByText('Not followed', { exact: true })).toBeVisible();
   await expect(page.locator('[role="complementary"] [data-unalgo]')).toHaveCount(1);
 });
 

@@ -33,7 +33,7 @@
       "offscreen"
     ],
     "balanced": [
-      "show/not-followed",
+      "not-followed/not-followed",
       "sponsored/unknown",
       "show/unknown",
       "panel",

@@ -10,9 +10,9 @@ import { checkAdapterContract } from '../../src/testing/contract.ts';
 /**
  * Nine anonymized captures of the home feed (/, 2026-10-19), taken one after another while scrolling, each holding the
  * feed list's items that had content at that moment (17 posts in all, aria-posinset 10 to 27). In the live session the
- * adapter decided all 17 as each post's visible label said: 10 Page posts with a Follow button shown, 3 "Ad" posts
- * hidden, 3 posts from groups the account isn't in hidden, and a shared reel shown. Offline, the captures must give
- * the same per-item results.
+ * adapter read all 17 as each post's visible label said: 10 Page posts with a Follow button (not followed), 3 "Ad"
+ * posts, 3 posts from groups the account isn't in, and a shared reel. Offline, the captures must give the same
+ * per-item results. Balanced hid the ads and the groups then; since settings version 2 it hides the 10 Pages too.
  */
 const balanced: PlatformSettings = defaultSettings().platforms.facebook;
 const calm = applyPreset('facebook', balanced, 'calm');
@@ -96,17 +96,17 @@ const EXPECTED: string[][] = [
     'show/unknown', // a Page sharing a reel; the reel's own Follow button is not the Page's
     'unjoined-group/unknown', // group post, "Join" next to the group's name
   ],
-  ['show/not-followed', 'show/not-followed'], // Page posts with a Follow button
-  ['sponsored/unknown', 'show/not-followed'], // "Ad" in the age slot (SVG text)
-  ['show/not-followed', 'show/not-followed'],
+  ['not-followed/not-followed', 'not-followed/not-followed'], // Page posts with a Follow button
+  ['sponsored/unknown', 'not-followed/not-followed'], // "Ad" in the age slot (SVG text)
+  ['not-followed/not-followed', 'not-followed/not-followed'],
   [
-    'show/not-followed fb.slot.text.structure fb.slot.header.structure', // a photo post whose caption has no message box
+    'not-followed/not-followed fb.slot.text.structure fb.slot.header.structure', // a photo post whose caption has no message box
     'sponsored/unknown',
   ],
-  ['show/not-followed', 'show/not-followed'],
-  ['unjoined-group/unknown', 'show/not-followed'],
+  ['not-followed/not-followed', 'not-followed/not-followed'],
+  ['unjoined-group/unknown', 'not-followed/not-followed'],
   ['unjoined-group/unknown', 'sponsored/unknown'],
-  ['show/not-followed'],
+  ['not-followed/not-followed'],
 ];
 
 /** Read once: each capture alone, and the nine as one page. */
@@ -122,7 +122,7 @@ describe('Facebook home feed captures (2026-10)', { timeout: 30_000 }, () => {
     expect(capturesRead().map(withObservations)).toEqual(EXPECTED);
   });
 
-  it('17 of 17: 3 ads and 3 unjoined groups hidden, 11 posts shown', () => {
+  it('17 of 17: 3 ads, 3 unjoined groups and 10 Pages not followed hidden, the shared reel shown', () => {
     const rows = capturesRead().flat();
     expect(rows).toHaveLength(17);
     const tally = rows.reduce<Record<string, number>>((n, r) => {
@@ -130,14 +130,16 @@ describe('Facebook home feed captures (2026-10)', { timeout: 30_000 }, () => {
       return n;
     }, {});
     expect(tally).toEqual({
-      'show/not-followed': 10,
+      'not-followed/not-followed': 10,
       'show/unknown': 1,
       'sponsored/unknown': 3,
       'unjoined-group/unknown': 3,
     });
+    // Each Page hidden as not followed has its own Follow button, next to its name, and nothing else hides it.
+    for (const r of rows.filter((x) => x.balanced.startsWith('not-followed'))) expect(r.detectors).toEqual(['fb.follow-button']);
   });
 
-  it('on Calm also hides the Page posts and the reel', () => {
+  it('on Calm also hides the reel', () => {
     const rows = capturesRead()
       .flat()
       .map((r) => r.calm);

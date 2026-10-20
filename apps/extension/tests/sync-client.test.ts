@@ -3,7 +3,7 @@
  * and that keys and tokens never reach a payload. The server is the in-memory fake behind an injected fetch, the device
  * token a stubbed `getAccessToken`; extension storage is the WXT fake browser and the clock a fake `Date`.
  */
-import { defaultDevice, defaultSettings, type Settings, type SettingsClocks } from '@unalgorithm/core';
+import { defaultDevice, defaultSettings, presetOf, type Settings, type SettingsClocks } from '@unalgorithm/core';
 import {
   AUTHORIZE_PAGE_PATH,
   formatHlc,
@@ -23,7 +23,7 @@ import { setSecret } from '../src/background/idb.ts';
 import { markNeedsSignIn, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { type SyncDeps, syncOnce } from '../src/background/sync-client.ts';
 import type { BrowserKind } from '../src/lib/browser-kind.ts';
-import { applyRemoteSettings, updateSettings } from '../src/lib/settings-store.ts';
+import { applyRemoteSettings, updateSettings, upgradeStoredSettings } from '../src/lib/settings-store.ts';
 import {
   DEFAULT_SYNC_STATE,
   deviceItem,
@@ -399,6 +399,85 @@ describe('pull and apply', () => {
     expect(await run()).toMatchObject({ ok: true });
     expect((await readSettings()).display.mode).toBe('dim');
     expect(paged.item('display.mode')).toMatchObject({ value: 'dim' });
+  });
+});
+
+describe("settings version 2: Facebook's Balanced hides people you don't follow", () => {
+  const FB = 'platforms.facebook';
+  /** What a computer on version 1 sends when its person picks Balanced on Facebook after Calm. */
+  const balancedFromVersion1 = (at: string): SyncItem[] => [
+    live(`${FB}.preset`, 'balanced', at),
+    live(`${FB}.filters.notFollowed`, false, at),
+    live(`${FB}.filters.reels`, false, at),
+    live(`${FB}.filters.reshares`, false, at),
+    live(`${FB}.ai.noise.promotional`, false, at),
+    live(`${FB}.ai.noise.low-effort`, false, at),
+    live(`${FB}.ai.lowRelevance`, false, at),
+  ];
+  const facebook = async () => (await readSettings()).platforms.facebook;
+
+  /** This computer picked Calm, then Balanced, on version 1 and synced it; then it updated to version 2. */
+  async function updatedFromVersion1(): Promise<SyncItem[]> {
+    const mine = balancedFromVersion1(hlc(NOW - 5 * DAY, LOCAL));
+    for (const item of mine) server.put(item);
+    const v1 = defaultSettings();
+    v1.platforms.facebook.filters.notFollowed = false;
+    await settingsItem.setValue({ ...v1, version: 1 });
+    await settingsClocksItem.setValue(Object.fromEntries(mine.map((item) => [item.key, item.hlc])));
+    await enable({ known: Object.fromEntries(mine.map((item) => [item.key, item.hlc])) });
+    expect(await facebook()).toMatchObject({ preset: 'balanced', filters: { notFollowed: true } });
+    return mine;
+  }
+
+  it('test_sync_sends_the_upgrade_once_and_never_undoes_it', async () => {
+    const mine = await updatedFromVersion1();
+    // The background stores the upgrade when it starts: the new value gets a clock right after the old one, once.
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await upgradeStoredSettings()).toBe(false);
+    expect(await settingsItem.getValue()).toMatchObject({
+      version: 2,
+      platforms: { facebook: { filters: { notFollowed: true } } },
+    });
+    const stamp = hlc(NOW - 5 * DAY, LOCAL, 1);
+    expect((await settingsClocksItem.getValue())[`${FB}.filters.notFollowed`]).toBe(stamp);
+    expect(await run()).toStrictEqual({ ok: true, pulled: mine.length, pushed: 1 });
+    expect(pushedKeys()).toStrictEqual([`${FB}.filters.notFollowed`]);
+    expect(server.item(`${FB}.filters.notFollowed`)).toMatchObject({ value: true, hlc: stamp });
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+
+    // Another computer, still on version 1, picks Balanced again: read as today's Balanced, and nothing goes back.
+    for (const item of balancedFromVersion1(hlc(NOW - DAY))) server.put(item);
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    const fb = await facebook();
+    expect(fb.filters.notFollowed).toBe(true);
+    expect(presetOf('facebook', fb)).toBe('balanced');
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect(pushedKeys()).toStrictEqual([`${FB}.filters.notFollowed`]);
+
+    // The person turns the rule off here: that is a choice, sent and kept.
+    await updateSettings((s) => {
+      s.platforms.facebook.filters.notFollowed = false;
+      s.platforms.facebook.preset = presetOf('facebook', s.platforms.facebook);
+    });
+    expect(await run()).toMatchObject({ ok: true, pushed: 2 });
+    expect(server.item(`${FB}.filters.notFollowed`)).toMatchObject({ value: false });
+    expect(server.item(`${FB}.preset`)).toMatchObject({ value: 'custom' });
+    expect(presetOf('facebook', await facebook())).toBe('custom');
+  });
+
+  it('test_the_first_write_after_the_update_carries_the_upgrade', async () => {
+    await updatedFromVersion1();
+    // An edit, or a remote apply, before the background stored the upgrade stores it with its clock all the same.
+    await updateSettings((s) => {
+      s.display.mode = 'dim';
+    });
+    expect(await settingsItem.getValue()).toMatchObject({
+      version: 2,
+      platforms: { facebook: { filters: { notFollowed: true } } },
+    });
+    expect(await upgradeStoredSettings()).toBe(false);
+    expect(await run()).toMatchObject({ ok: true, pushed: 2 });
+    expect(pushedKeys().sort()).toStrictEqual(['display.mode', `${FB}.filters.notFollowed`]);
   });
 });
 

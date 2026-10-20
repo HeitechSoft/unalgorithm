@@ -138,7 +138,7 @@ export function App() {
                 media={<PresetMiniFeed fold={2} />}
                 title="What you didn't ask for"
                 badge={<Badge tone="accent">Recommended</Badge>}
-                description="Also hides suggested posts, likes and comments from your network, and people you don't follow on LinkedIn."
+                description="Also hides suggested posts, likes and comments from your network, and people you don't follow."
               />
               <ChoiceCard
                 value="calm"

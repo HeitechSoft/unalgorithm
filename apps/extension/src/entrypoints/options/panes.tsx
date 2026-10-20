@@ -101,7 +101,10 @@ const FILTER_COPY: Record<PlatformId, Record<FilterKey, { title: string; subtitl
     networkActivity: { title: 'Friend activity', subtitle: '"Jane commented on this", unless you follow the author' },
     unjoinedGroups: { title: "Groups you're not in" },
     modules: { title: 'Feed panels', subtitle: 'Reels tray, People you may know, suggested groups' },
-    notFollowed: { title: "Pages you don't follow", subtitle: 'Posts shown with a Follow or Join button' },
+    notFollowed: {
+      title: "People and pages you don't follow",
+      subtitle: 'Posts shown with a Follow button, never friends or groups you’re in',
+    },
     reshares: { title: 'Shares of other posts' },
     reels: { title: 'Reels in your feed' },
   },

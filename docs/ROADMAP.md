@@ -8,7 +8,9 @@ unAlgorithm Feed is built in phases. Dates are not promised; each phase ships wh
   For you highlights, toolbar popup, side panel, settings, onboarding, health monitor and Report a problem. Optional
   AI: Chrome's on-device AI, your own key (Anthropic, OpenAI, Gemini, OpenRouter, Groq), local and self-hosted
   models; noise labels, relevance, More/Less like this.
-- **Next.** Facebook verified on live feeds, a right-click menu on posts, and French for Canada.
+- **Facebook checked on live feeds (done).** Detection checked against anonymized captures of the live feed, and
+  Balanced hides people and pages you don't follow on Facebook too, as on LinkedIn.
+- **Next.** A right-click menu on posts, and French for Canada.
 - **Website and stores.** The product website at unalgorithmfeed.com: what unAlgorithm Feed does, how to install it,
   the privacy policy, help and release notes. Then the store releases as unAlgorithm Feed by HeitechSoft, on the
   Chrome Web Store, Firefox Add-ons and Microsoft Edge Add-ons, with the listings and the extension's links pointing

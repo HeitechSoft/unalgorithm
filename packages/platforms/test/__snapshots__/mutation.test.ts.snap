@@ -10,6 +10,7 @@ rehash-classes (markup, same-or-flagged): every class name hashed anew
   linkedin/feed-full-update: survived
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 drop-componentkey (markup, same-or-flagged): componentkey attributes dropped
   linkedin/2026-10-foryou-1: flagged (status degraded, fallback-discovery)
@@ -19,6 +20,7 @@ drop-componentkey (markup, same-or-flagged): componentkey attributes dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 drop-data-testid (markup, same-or-flagged): data-testid attributes dropped
   linkedin/2026-10-foryou-1: flagged (status broken, text-detection, li.slot.age.unrecognised, li.header.unknown, …)
@@ -28,6 +30,7 @@ drop-data-testid (markup, same-or-flagged): data-testid attributes dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 drop-data-view-name (markup, same-or-flagged): data-view-name attributes dropped
   linkedin/2026-10-foryou-1: -
@@ -37,6 +40,7 @@ drop-data-view-name (markup, same-or-flagged): data-view-name attributes dropped
   linkedin/feed-full-update: survived
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 drop-data-sdui-screen (markup, same-or-flagged): data-sdui-screen attributes dropped
   linkedin/2026-10-foryou-1: -
@@ -46,6 +50,7 @@ drop-data-sdui-screen (markup, same-or-flagged): data-sdui-screen attributes dro
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 drop-data-ad (markup, same-or-flagged): Facebook's data-ad-* hooks dropped
   linkedin/2026-10-foryou-1: -
@@ -55,6 +60,7 @@ drop-data-ad (markup, same-or-flagged): Facebook's data-ad-* hooks dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: flagged (fb.slot.actor.structure, fb.slot.text.structure, fb.slot.header.structure, fb.slot.action-bar.aria)
   facebook/legacy: flagged (fb.slot.actor.structure, fb.slot.text.structure, fb.slot.header.structure, fb.slot.nested-post.structure)
 drop-aria-posinset (markup, same-or-flagged): aria-posinset dropped
   linkedin/2026-10-foryou-1: -
@@ -64,6 +70,7 @@ drop-aria-posinset (markup, same-or-flagged): aria-posinset dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: flagged (status degraded, fallback-discovery)
   facebook/classic-2026: flagged (status degraded, fallback-discovery)
+  facebook/not-followed-2026: flagged (status degraded, fallback-discovery)
   facebook/legacy: survived
 drop-role-feed (markup, same-or-flagged): role="feed" dropped
   linkedin/2026-10-foryou-1: -
@@ -73,6 +80,7 @@ drop-role-feed (markup, same-or-flagged): role="feed" dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: flagged (status degraded, fallback-discovery)
 drop-role-listitem (markup, same-or-flagged): role="listitem" dropped
   linkedin/2026-10-foryou-1: flagged (status degraded, fallback-discovery)
@@ -82,6 +90,7 @@ drop-role-listitem (markup, same-or-flagged): role="listitem" dropped
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 rename-card-key (markup, same-or-flagged): the update-card-focus key prefix renamed
   linkedin/2026-10-foryou-1: flagged (status degraded, fallback-discovery)
@@ -91,6 +100,7 @@ rename-card-key (markup, same-or-flagged): the update-card-focus key prefix rena
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 wrap-each-item (markup, same-or-flagged): each item in one more wrapper
   linkedin/2026-10-foryou-1: survived
@@ -100,6 +110,7 @@ wrap-each-item (markup, same-or-flagged): each item in one more wrapper
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 wrap-list (markup, same-or-flagged): the feed list in one more wrapper
   linkedin/2026-10-foryou-1: survived
@@ -109,6 +120,7 @@ wrap-list (markup, same-or-flagged): the feed list in one more wrapper
   linkedin/feed-full-update: survived
   facebook/2026-10-home: flagged (status degraded, fallback-discovery)
   facebook/classic-2026: flagged (status degraded, fallback-discovery)
+  facebook/not-followed-2026: flagged (status degraded, fallback-discovery)
   facebook/legacy: survived
 wrap-list-items (markup, same-or-flagged): one wrapper between the list and all its items
   linkedin/2026-10-foryou-1: survived
@@ -118,6 +130,7 @@ wrap-list-items (markup, same-or-flagged): one wrapper between the list and all 
   linkedin/feed-full-update: survived
   facebook/2026-10-home: flagged (status degraded, fallback-discovery)
   facebook/classic-2026: flagged (status degraded, fallback-discovery)
+  facebook/not-followed-2026: flagged (status degraded, fallback-discovery)
   facebook/legacy: flagged (status degraded, fallback-discovery)
 unwrap-one-level (markup, same-or-flagged): each item's outer wrapper removed
   linkedin/2026-10-foryou-1: survived
@@ -127,6 +140,7 @@ unwrap-one-level (markup, same-or-flagged): each item's outer wrapper removed
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 drop-sr-headings (markup, same-or-flagged): screen-reader "Feed post(s)" headings dropped
   linkedin/2026-10-foryou-1: survived
@@ -136,6 +150,7 @@ drop-sr-headings (markup, same-or-flagged): screen-reader "Feed post(s)" heading
   linkedin/feed-full-update: -
   facebook/2026-10-home: flagged (status degraded, fallback-discovery)
   facebook/classic-2026: flagged (status degraded, fallback-discovery)
+  facebook/not-followed-2026: flagged (status degraded, fallback-discovery)
   facebook/legacy: -
 reorder-actor (markup, same-or-flagged): the age or ad label moved up a line (above the headline or the name)
   linkedin/2026-10-foryou-1: survived
@@ -145,6 +160,7 @@ reorder-actor (markup, same-or-flagged): the age or ad label moved up a line (ab
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 rename-action-buttons (markup, same-or-flagged): the action bar's buttons renamed
   linkedin/2026-10-foryou-1: survived
@@ -154,6 +170,7 @@ rename-action-buttons (markup, same-or-flagged): the action bar's buttons rename
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 drop-all-hooks (markup, same-or-flagged): every hook the fast path keys on dropped at once
   linkedin/2026-10-foryou-1: flagged (status broken, fallback-discovery, text-detection, li.slot.age.unrecognised, …)
@@ -163,6 +180,7 @@ drop-all-hooks (markup, same-or-flagged): every hook the fast path keys on dropp
   linkedin/feed-full-update: survived
   facebook/2026-10-home: flagged (status degraded, fallback-discovery, fb.slot.actor.structure, fb.slot.action-bar.aria, …)
   facebook/classic-2026: flagged (status degraded, fallback-discovery, fb.slot.actor.structure, fb.slot.text.structure, …)
+  facebook/not-followed-2026: flagged (status degraded, fallback-discovery, fb.slot.actor.structure, fb.slot.text.structure, …)
   facebook/legacy: flagged (status degraded, fallback-discovery, fb.slot.actor.structure, fb.slot.text.structure, …)
 menus-renamed (markup, same-or-flagged): card keys, list marks, the post menu, Repost and Send all changed: only the screen-reader headings are left
   linkedin/2026-10-foryou-1: flagged (status degraded, fallback-discovery, li.slot.actor.structure)
@@ -172,6 +190,7 @@ menus-renamed (markup, same-or-flagged): card keys, list marks, the post menu, R
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 decoy-spans (label, same-or-flagged): hidden decoy letters inside labels
   linkedin/2026-10-foryou-1: survived
@@ -181,6 +200,7 @@ decoy-spans (label, same-or-flagged): hidden decoy letters inside labels
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: flagged (fb.header.unknown)
 label-suffix (label, same-or-flagged): a new word after Promoted, Sponsored or Ad
   linkedin/2026-10-foryou-1: survived
@@ -190,6 +210,7 @@ label-suffix (label, same-or-flagged): a new word after Promoted, Sponsored or A
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 separator-swap (label, same-or-flagged): label separators swapped (• · | —)
   linkedin/2026-10-foryou-1: survived
@@ -199,6 +220,7 @@ separator-swap (label, same-or-flagged): label separators swapped (• · | —)
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 age-reworded (label, same-or-flagged): post ages written a new way ("3 hours", "about an hour")
   linkedin/2026-10-foryou-1: -
@@ -208,6 +230,7 @@ age-reworded (label, same-or-flagged): post ages written a new way ("3 hours", "
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 follow-variants (label, same): "+ Follow" buttons named "Follow <name>"
   linkedin/2026-10-foryou-1: survived
@@ -217,6 +240,7 @@ follow-variants (label, same): "+ Follow" buttons named "Follow <name>"
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 unknown-header-verb (label, same-or-flagged): a header line with a verb never seen before
   linkedin/2026-10-foryou-1: flagged (header-unrecognised, li.header.unknown)
@@ -226,6 +250,7 @@ unknown-header-verb (label, same-or-flagged): a header line with a verb never se
   linkedin/feed-full-update: -
   facebook/2026-10-home: -
   facebook/classic-2026: flagged (fb.header.unknown)
+  facebook/not-followed-2026: -
   facebook/legacy: flagged (fb.header.unknown)
 fp-text-lines (false-positive, same): label words as lines of post text
   linkedin/2026-10-foryou-1: survived
@@ -235,6 +260,7 @@ fp-text-lines (false-positive, same): label words as lines of post text
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 fp-text-bold (false-positive, same): label words as bold runs in post text
   linkedin/2026-10-foryou-1: survived
@@ -244,6 +270,7 @@ fp-text-bold (false-positive, same): label words as bold runs in post text
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 fp-link-card (false-positive, same): label words as a link card title
   linkedin/2026-10-foryou-1: survived
@@ -253,6 +280,7 @@ fp-link-card (false-positive, same): label words as a link card title
   linkedin/feed-full-update: -
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 fp-headline (false-positive, same): label words at the start of the author's headline
   linkedin/2026-10-foryou-1: survived
@@ -262,6 +290,7 @@ fp-headline (false-positive, same): label words at the start of the author's hea
   linkedin/feed-full-update: survived
   facebook/2026-10-home: -
   facebook/classic-2026: -
+  facebook/not-followed-2026: -
   facebook/legacy: -
 fp-comments (false-positive, same): label words in a comment
   linkedin/2026-10-foryou-1: survived
@@ -271,6 +300,7 @@ fp-comments (false-positive, same): label words in a comment
   linkedin/feed-full-update: survived
   facebook/2026-10-home: survived
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 route-new-word (route, same-or-flagged): the feed moved to a new address word
   linkedin/2026-10-foryou-1: survived
@@ -280,6 +310,7 @@ route-new-word (route, same-or-flagged): the feed moved to a new address word
   linkedin/feed-full-update: survived
   facebook/2026-10-home: flagged (status not-started, feed-not-started)
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 route-home (route, same-or-flagged): the feed moved to /home
   linkedin/2026-10-foryou-1: survived
@@ -289,6 +320,7 @@ route-home (route, same-or-flagged): the feed moved to /home
   linkedin/feed-full-update: survived
   facebook/2026-10-home: flagged (status not-started, feed-not-started)
   facebook/classic-2026: survived
+  facebook/not-followed-2026: survived
   facebook/legacy: survived
 "
 `;
