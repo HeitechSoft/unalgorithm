@@ -16,7 +16,7 @@
     ]
   },
   "notes": [
-    "capture 1: a Page sharing a reel; the reel's own Follow button is not the Page's",
+    "capture 1: an account with no Follow next to its name sharing a reel; the reel's Follow button is its creator's (another account)",
     "capture 1: group post, \"Join\" next to the group's name",
     "capture 2: Page post with a Follow button",
     "capture 2: Page post with a Follow button",
@@ -32,7 +32,10 @@
     "capture 7: Page post with a Follow button",
     "capture 8: group post, \"Join\"",
     "capture 8: \"Ad\" post",
-    "capture 9: Page post with a Follow button"
+    "capture 9: Page post with a Follow button",
+    "reels capture 1: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
+    "reels capture 2: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
+    "reels capture 3: Reels panel"
   ],
   "decisions": {
     "light": [
@@ -52,7 +55,10 @@
       "show/not-followed",
       "show/unknown",
       "sponsored/unknown",
-      "show/not-followed"
+      "show/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "panel"
     ],
     "balanced": [
       "show/unknown",
@@ -71,7 +77,10 @@
       "not-followed/not-followed",
       "unjoined-group/unknown",
       "sponsored/unknown",
-      "not-followed/not-followed"
+      "not-followed/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "panel"
     ],
     "calm": [
       "reel/unknown",
@@ -90,7 +99,10 @@
       "not-followed/not-followed",
       "unjoined-group/unknown",
       "sponsored/unknown",
-      "not-followed/not-followed"
+      "not-followed/not-followed",
+      "reel/unknown",
+      "reel/unknown",
+      "panel"
     ]
   },
   "ids": [
@@ -110,7 +122,10 @@
     "fb:h:1lpnoeifb71",
     "fb:100002",
     "fb:h:23yd1ouzeza",
-    "fb:h:7lml2vuxwo"
+    "fb:h:7lml2vuxwo",
+    "fb:200002",
+    "fb:300002",
+    null
   ],
   "idsStable": true,
   "health": {

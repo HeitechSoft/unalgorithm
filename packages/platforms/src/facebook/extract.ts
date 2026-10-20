@@ -13,6 +13,7 @@ import {
   inHeader,
   inNestedPost,
   messageBox,
+  namedBefore,
   slotLink,
   slotsOf,
   withSlots,
@@ -269,24 +270,36 @@ function contextLines(root: Element): string[] {
   return lines;
 }
 
-function authorOf(root: Element): { name?: string; url?: string } {
-  const box = slotsOf(root).actor;
-  const link = box?.querySelector<HTMLAnchorElement>('a[href]') ?? (box?.closest('a[href]') as HTMLAnchorElement | null);
-  const name = normalizeText((box ? getLines(box)[0] : undefined) ?? link?.textContent ?? '');
-  const href = link?.getAttribute('href');
-  let url: string | undefined;
-  if (href && href !== '#') {
-    try {
-      const u = new URL(href, FB_ORIGIN);
-      if (u.hostname.endsWith('facebook.com')) {
-        const id = u.searchParams.get('id');
-        url = `${FB_ORIGIN}${u.pathname.replace(/\/+$/, '')}${u.pathname.includes('profile.php') && id ? `?id=${id}` : ''}`;
-      }
-    } catch {
-      // ignore
-    }
+/** Someone a post names: their name as shown, and the address of their profile (or group). */
+interface Named {
+  name?: string;
+  url?: string;
+}
+
+/** A Facebook address in one form: the path without a trailing slash, with `?id=` for profile.php. */
+function facebookUrl(href: string | null | undefined): string | undefined {
+  if (!href || href === '#') return undefined;
+  try {
+    const u = new URL(href, FB_ORIGIN);
+    if (!u.hostname.endsWith('facebook.com')) return undefined;
+    const id = u.searchParams.get('id');
+    return `${FB_ORIGIN}${u.pathname.replace(/\/+$/, '')}${u.pathname.includes('profile.php') && id ? `?id=${id}` : ''}`;
+  } catch {
+    return undefined;
   }
+}
+
+/** Who a name block (a heading, or a link to a profile) names: its first line, and its link's address. */
+function namedBy(box: Element): Named {
+  const link = box.matches('a[href]') ? box : (box.querySelector('a[href]') ?? box.closest('a[href]'));
+  const name = normalizeText(getLines(box)[0] ?? link?.textContent ?? '');
+  const url = facebookUrl(link?.getAttribute('href'));
   return { ...(name ? { name } : {}), ...(url ? { url } : {}) };
+}
+
+function authorOf(root: Element): Named {
+  const box = slotsOf(root).actor;
+  return box ? namedBy(box) : {};
 }
 
 /**
@@ -415,6 +428,40 @@ export function moduleOf(root: Element, m: FacebookMarkers): ModuleInfo | undefi
   return undefined;
 }
 
+/**
+ * Whether two names are the same person or page: the same profile address when both have one, the same name only when
+ * one has no address. Two accounts can share a name (a person and their own Page, say), so a name never outweighs two
+ * different addresses: a friend sharing a same-named account's reel stays.
+ */
+function sameOne(a: Named, b: Named): boolean {
+  if (a.url && b.url) return a.url === b.url;
+  return !!a.name && a.name === b.name;
+}
+
+const REEL_LINK = 'a[href*="/reel/"]';
+
+/**
+ * A Follow button in a reel the author made. A person or page the account doesn't follow, posting their own reel, is
+ * expected to get "Follow" after the creator's name in the reel rather than next to their name in the header (inferred
+ * from the captured reel shares; no such reel has been captured yet, see docs/fixtures.md). In a reel shared by
+ * someone else, the same button is for the reel's creator, who is not the poster, and the post stays (Calm's Reels
+ * filter is what hides those). Comments and shared posts are never read here.
+ */
+function followInOwnReel(root: Element, author: Named, pattern: LabelPattern): boolean {
+  const { actor } = slotsOf(root);
+  if (!actor || (!author.name && !author.url)) return false;
+  return Array.from(root.querySelectorAll(REEL_LINK)).some(
+    (reel) =>
+      !reel.contains(actor) &&
+      Array.from(reel.querySelectorAll(FB_SEL.button)).some((b) => {
+        if (!isButton(b, pattern) || inComment(root, b) || inNestedPost(root, b)) return false;
+        // The name the button comes after is the reel's creator, in the reel.
+        const creator = namedBefore(root, b);
+        return !!creator && reel.contains(creator) && sameOne(namedBy(creator), author);
+      }),
+  );
+}
+
 /** One post as read, and what the adapter noticed while reading it (ids only, for health and reports). */
 export interface FacebookRead {
   post: PostData;
@@ -470,7 +517,8 @@ function readPost(root: HTMLElement, m: FacebookMarkers, slots: ItemSlots): Face
   );
   const groupName = groupLink ? normalizeText(getLines(groupLink)[0] ?? '') : undefined;
   // In a group the account is in, a Follow button is for the member who posted: the account follows the group.
-  const follow = !(groupLink && !join) && pressed(m.labels.follow);
+  // Elsewhere a reel's Follow button counts too when the reel is the author's own.
+  const follow = !(groupLink && !join) && (pressed(m.labels.follow) || followInOwnReel(root, author, m.labels.follow));
   if (follow) evidence.push(ev('relationship', 'fb.follow-button', 'strong'));
   if (join) evidence.push(ev('unjoinedGroup', 'fb.join-button', 'strong'));
 

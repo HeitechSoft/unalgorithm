@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { applyPreset, defaultSettings, type PostData, ruleFilter } from '@unalgorithm/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -5,6 +7,7 @@ import {
   groupPost,
   perCharacter,
   post,
+  type ReelOptions,
   reel,
   type SharedOptions,
   sharedCard,
@@ -18,7 +21,9 @@ import { FACEBOOK_EN } from '../../src/facebook/markers/en.ts';
  * "People and pages you don't follow" in Balanced (settings version 2). On the live feed a Follow button in the post's
  * own header meant the account doesn't follow its author, in 45 of 45 items; friends and followed pages show none. These
  * are the posts that must stay whatever else they hold: a friend's post, a followed page or person, a group the account
- * is in, a friend sharing a page's post or reel, a friend's reel.
+ * is in, a friend sharing a page's post or reel, a friend's reel. A stranger's own reel is expected to have its Follow
+ * button in the reel, after the creator's name, and none in the header (inferred from the captured reel shares; none
+ * has been captured): it counts there only when the creator is the post's author, by profile address when both have one.
  */
 const ctx = { markers: FACEBOOK_EN, now: new Date(2026, 9, 19) };
 const balanced = defaultSettings().platforms.facebook;
@@ -208,6 +213,140 @@ describe('Facebook: people and pages you don’t follow, on Balanced', () => {
       expect(p.media).toBe('reel');
       expect(decisions(p)).toEqual(['show/unknown', 'show/unknown', 'reel/unknown']);
     }
+  });
+
+  describe('reels: folds a stranger’s own reel, never someone else’s reel shared by an account the person follows', () => {
+    /** "Follow" in the reel, after the creator's name: Facebook shows none next to the author's name on a reel post. */
+    const stranger = (o: Partial<ReelOptions> = {}) =>
+      reel({ creator: 'Trick Shots', caption: 'Ten in a row.', follow: true, id: 100003, ...o });
+    const NOT_FOLLOWED = ['show/not-followed', 'not-followed/not-followed', 'reel/not-followed'];
+    const SHOWN = ['show/unknown', 'show/unknown', 'reel/unknown'];
+
+    it.each<[string, string]>([
+      ['without words', post({ author: 'Trick Shots', slot: AGE, media: stranger() })],
+      ['with words of their own', post({ author: 'Trick Shots', slot: AGE, text: 'New trick.', media: stranger() })],
+      // The same profile address under a longer name in the reel.
+      [
+        'its profile named differently in the reel',
+        post({
+          author: 'Trick Shots',
+          slot: AGE,
+          media: stranger({ creator: 'Trick Shots Official', creatorHref: 'https://www.facebook.com/trickshots/' }),
+        }),
+      ],
+      [
+        '"+ Follow" in the reel, named for the creator',
+        post({ author: 'Trick Shots', slot: AGE, media: stranger() }).replace('>Follow</div>', '>+ Follow</div>'),
+      ],
+    ])('a stranger’s reel, %s: not followed, folded on Balanced', (_name, html) => {
+      const p = read(html);
+      expect(p.author.name).toBe('Trick Shots');
+      expect(p.media).toBe('reel');
+      expect(p.evidence).toContainEqual({ signal: 'relationship', detector: 'fb.follow-button', strength: 'strong' });
+      expect(decisions(p)).toEqual(NOT_FOLLOWED);
+    });
+
+    it.each<[string, string]>([
+      ['a friend’s own reel', post(friend({ text: undefined, media: reel({ creator: 'Riley Chen', caption: 'Beach day.' }) }))],
+      ['a friend sharing a stranger’s reel, with words of their own', post(friend({ text: 'Watch this.', media: stranger() }))],
+      ['a friend sharing a stranger’s reel, without words', post(friend({ text: undefined, media: stranger() }))],
+      // As the live captures show it: the creator linked to profile.php?id.
+      [
+        'a friend sharing a stranger’s reel linked to profile.php',
+        post(friend({ text: undefined, media: stranger({ creatorHref: 'https://www.facebook.com/profile.php?id=100077' }) })),
+      ],
+      [
+        'a followed page’s own reel',
+        post({ author: 'City Library', slot: AGE, media: reel({ creator: 'City Library', caption: 'Story time.' }) }),
+      ],
+      [
+        'a followed page’s own reel, "Following" in it',
+        post({
+          author: 'City Library',
+          slot: AGE,
+          media: reel({ creator: 'City Library', caption: 'Story time.', follow: true }).replace('>Follow<', '>Following<'),
+        }),
+      ],
+      ['a followed page sharing a stranger’s reel', post({ author: 'City Library', slot: AGE, media: stranger() })],
+      // The same name at another address may be another account: a name never outweighs two different addresses.
+      [
+        'a reel by the author’s name linked elsewhere (profile.php)',
+        post({
+          author: 'Trick Shots',
+          slot: AGE,
+          media: stranger({ creatorHref: 'https://www.facebook.com/profile.php?id=100077' }),
+        }),
+      ],
+      ...(['without words', 'with words of their own'] as const).map((how): [string, string] => [
+        `a friend sharing a reel by a same-named account they don’t follow, ${how}`,
+        post(
+          friend({
+            text: how === 'without words' ? undefined : 'My campaign page.',
+            media: reel({
+              creator: 'Riley Chen',
+              caption: 'Vote.',
+              follow: true,
+              creatorHref: 'https://www.facebook.com/profile.php?id=61550000000001',
+            }),
+          }),
+        ),
+      ]),
+      // No picture or name in the reel: nothing in it says whose the button is, whoever the post names before it.
+      [
+        'a reel that names no one',
+        post({
+          author: 'Trick Shots',
+          slot: AGE,
+          text: 'Tagging <a href="https://www.facebook.com/trickshots">Trick Shots</a> again.',
+          media: stranger(),
+        })
+          .replace(/<object><a aria-label="See owner profile".*?<\/object>/s, '')
+          .replace(/<h5 dir="auto">.*?<\/h5>/s, ''),
+      ],
+    ])('%s: shown on Balanced', (_name, html) => {
+      const p = read(html);
+      expect(p.media).toBe('reel');
+      expect(p.evidence.map((e) => e.detector)).not.toContain('fb.follow-button');
+      expect(decisions(p)).toEqual(SHOWN);
+    });
+
+    it('keeps a member’s own reel in a group the account is in; a group it isn’t in folds as such', () => {
+      const own = reel({
+        creator: 'Alex Kim',
+        caption: 'Summit.',
+        follow: true,
+        creatorHref: 'https://www.facebook.com/groups/hikingontario/user/100009/',
+      });
+      const joined = read(
+        groupPost({ group: 'Hiking Ontario', member: 'Alex Kim', slot: AGE, text: 'Made it.', follow: true, media: own }),
+      );
+      expect(joined.group?.joined).toBe(true);
+      expect(decisions(joined)).toEqual(SHOWN);
+      const unjoined = read(
+        groupPost({ group: 'Hiking Ontario', member: 'Alex Kim', slot: AGE, text: 'Made it.', join: true, media: own }),
+      );
+      expect(decisions(unjoined)).toEqual(['show/unknown', 'unjoined-group/unknown', 'unjoined-group/unknown']);
+    });
+
+    it('never reads a Follow button in a comment as the author’s, even under a reel', () => {
+      const comment =
+        '<div aria-label="Comment by Trick Shots" role="article"><a href="https://www.facebook.com/reel/100009/"><h5><object><a href="https://www.facebook.com/trickshots">Trick Shots</a></object></h5><div role="button" tabindex="0">Follow</div></a></div>';
+      const p = read(post({ author: 'Trick Shots', slot: AGE, text: 'New trick.', media: comment }));
+      expect(p.author.relationship).toBe('unknown');
+    });
+
+    // Whether the account follows this poster was not recorded: the captures show only that its name has no Follow
+    // button next to it, and the reel's creator (another account) has one.
+    it.each([1, 2])(
+      'keeps the live capture 2026-10-reels-%i: an account with no Follow next to its name sharing another creator’s reel',
+      (n) => {
+        const html = readFileSync(join(import.meta.dirname, `../../fixtures/facebook/2026-10-reels-${n}.html`), 'utf8');
+        const p = read(html, (item) => item);
+        expect(p.media).toBe('reel');
+        expect(p.evidence.map((e) => e.detector)).not.toContain('fb.follow-button');
+        expect(decisions(p)).toEqual(SHOWN);
+      },
+    );
   });
 
   it('still folds activity on a page’s post as activity, and ads as ads', () => {

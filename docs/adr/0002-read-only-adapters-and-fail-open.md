@@ -57,6 +57,11 @@ captures hold no friend or joined-group post, so the cases that must stay shown 
 (`docs/fixtures.md` records what was checked). Two reads keep it to the author's own header: a Follow or Join button
 with another name between it and the author's (a heading or a link to a profile, as a post or reel shared inside this
 one has) is not the author's, and a Follow button in a group the account is in is for the member who posted, so it
-never makes a post "not followed". Unknown still never hides, and cautious mode still turns the rule off. Settings
-version 2 moves people still on the old Balanced to the new one; Custom and changed filters stay as they were
-(`packages/core/src/settings/migrate.ts`).
+never makes a post "not followed". A reel is the one place the author's button is expected to sit after another name: a
+person or page the account doesn't follow, posting their own reel, is expected to get "Follow" after their name in the
+reel and none in the header (inferred from captured reel shares; no such reel has been captured yet, see
+`docs/fixtures.md`). So a Follow button in a reel counts when the reel's creator is the post's author: the same profile
+address, or the same name only when one of them has no address. A reel whose creator is someone else stays, whoever
+shared it, and so does one by an account with the author's name at another address. Unknown still never hides, and
+cautious mode still turns the rule off. Settings version 2 moves people still on the old Balanced to the new one; Custom
+and changed filters stay as they were (`packages/core/src/settings/migrate.ts`).

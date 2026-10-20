@@ -92,11 +92,13 @@ describe('golden expectations carried over from the capture tests', () => {
     expect(tally(readExpect('linkedin/2026-10-foryou-2').decisions.light)).toEqual({ '-': 5, sponsored: 7, panel: 3, show: 17 });
   });
 
-  it("the nine Facebook captures give the live session's 17 of 17", () => {
-    const rows = GOLDENS.filter((g) => /^facebook\/2026-10-home-\d$/.test(g.name)).flatMap(
-      (g) => readExpect(g.name).decisions.balanced,
-    );
-    expect(rows.filter((r) => r !== '-')).toHaveLength(17);
-    expect(readExpect('facebook/2026-10-home').decisions.balanced).toEqual(rows);
+  it("the nine Facebook captures give the live session's 17 of 17; the whole page, every capture's rows", () => {
+    const rows = (name: RegExp) => GOLDENS.filter((g) => name.test(g.name)).flatMap((g) => readExpect(g.name).decisions.balanced);
+    const nine = rows(/^facebook\/2026-10-home-\d$/);
+    expect(nine.filter((r) => r !== '-')).toHaveLength(17);
+    // The reel items from later loads: two reels shared with no words of the poster's own stay, the Reels panel folds.
+    const reels = rows(/^facebook\/2026-10-reels-\d$/);
+    expect(reels).toEqual(['show/unknown', 'show/unknown', 'panel']);
+    expect(readExpect('facebook/2026-10-home').decisions.balanced).toEqual([...nine, ...reels]);
   });
 });

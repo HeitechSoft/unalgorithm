@@ -153,10 +153,20 @@ which the owner judged enough to turn it on:
   follow the author, and posts from friends and followed accounts showed none. On the live feed at Balanced before the
   change, 4 shown posts had a Follow button (the rule now folds them) and 7 from friends and followed accounts had
   none (they stay). The one wrong fold found (post text that read like an activity line) was fixed first.
-- **What the captures hold.** `packages/platforms/fixtures/facebook/2026-10-home-*.html` keep 17 of those items: 10
-  page posts with a Follow button, 3 ads, 3 posts from groups the account isn't in and 1 page sharing a reel. None is
-  from a friend or a group the account is in, so the 0-of-100 count above was not reached.
+- **What the captures hold.** `packages/platforms/fixtures/facebook/2026-10-home-*.html` keep 17 of those items: 10 page
+  posts with a Follow button, 3 ads, 3 posts from groups the account isn't in and 1 reel shared by an account with no
+  Follow button next to its name. None is from a friend or a group the account is in, so the 0-of-100 count above was
+  not reached. `2026-10-reels-*.html`, captured on later loads that evening while looking for reels, keep 2 reels shared
+  with no words of the poster's own (no Follow button next to the poster; one in the reel, after its creator's name,
+  another account) and a Reels panel. The poster is the same in both and in capture 1's reel, sharing reels from the
+  same creator. The rule leaves these shown, since the Follow button is the creator's; whether the account follows the
+  poster was not recorded, and folding them would need a signal that tells a followed sharer from an unfollowed one,
+  which no capture has. The golden page `facebook/2026-10-home` holds all twelve captures.
 - **What only synthetic fixtures cover.** The posts that must stay shown (friends, followed pages and people, groups
   the account is in, a friend's share of a page's post or reel, friends' reels) are modelled on the captures' layout
-  in the golden page `facebook/not-followed-2026` and in `packages/platforms/test/facebook/not-followed.test.ts`. No
-  live friend's share of a page's post has been captured yet: capture one when it shows up, and add it to the goldens.
+  in the golden pages `facebook/not-followed-2026` and `facebook/reels-2026` and in
+  `packages/platforms/test/facebook/not-followed.test.ts`. So is the reel the rule folds, a stranger's own reel: its
+  Follow button is expected in the reel, after the creator's name (inferred from the shares above), and counts when the
+  creator has the post author's profile address (a name alone only when one of them has no address). No live
+  friend's share of a page's post, and no stranger's own reel, has been captured yet: capture one when it shows up,
+  and add it to the goldens.

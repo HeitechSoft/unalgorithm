@@ -27,7 +27,7 @@ const seenPosts = new WeakSet<Element>();
  */
 export const facebookAdapter: PlatformAdapter<FacebookMarkers> = {
   id: 'facebook',
-  version: 'facebook@2026.10.3',
+  version: 'facebook@2026.10.4',
   ids: FACEBOOK_IDS,
 
   isFeedPage(url) {

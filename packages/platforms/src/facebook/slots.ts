@@ -130,6 +130,22 @@ export function besideAuthor(root: Element, el: Element): boolean {
 }
 
 /**
+ * The name an element comes after, when it isn't the author's: the last heading or link to a profile before it, after
+ * the author's name. A reel's Follow button comes after its creator's name (the h5 in the 2026 overlay). Null when
+ * nothing but the author's name comes first.
+ */
+export function namedBefore(root: Element, el: Element): Element | null {
+  const { actor } = slotsOf(root);
+  let last: Element | null = null;
+  for (const h of Array.from(root.querySelectorAll(`${NAME_HEADINGS}, a[href]`))) {
+    if (!precedes(h, el)) break;
+    if (h.contains(el) || (actor && (actor.contains(h) || h.contains(actor) || !precedes(actor, h)))) continue;
+    if (namesSomeone(h)) last = h;
+  }
+  return last;
+}
+
+/**
  * Buttons in the post's header, outside a nested post: by role (`aria`), and, kept apart, focusable elements that
  * lost their role (`structure`). A caller uses the fallback only when the first set has nothing it recognises, and
  * then records `fb.slot.header-buttons.structure`.

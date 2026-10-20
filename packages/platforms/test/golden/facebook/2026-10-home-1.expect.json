@@ -17,7 +17,7 @@
     "slice": true
   },
   "notes": [
-    "a Page sharing a reel; the reel's own Follow button is not the Page's",
+    "an account with no Follow next to its name sharing a reel; the reel's Follow button is its creator's (another account)",
     "group post, \"Join\" next to the group's name"
   ],
   "decisions": {

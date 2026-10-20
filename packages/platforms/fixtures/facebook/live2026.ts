@@ -87,6 +87,8 @@ export function groupPost(o: {
   text: string;
   join?: boolean;
   follow?: boolean;
+  /** Media after the message, e.g. the member's reel. */
+  media?: string;
 }): string {
   const group = `https://www.facebook.com/groups/${o.group.toLowerCase().replace(/\s+/g, '')}/`;
   const member = `${group}user/100009/`;
@@ -97,6 +99,7 @@ export function groupPost(o: {
   <div><span dir="ltr"><div data-ad-rendering-role="profile_name"><h4><div dir="ltr"><a href="${group}" role="link" tabindex="0"><span>${o.group}</span></a></div>${o.join ? button('Join') : ''}</h4></div></span>
   <span dir="ltr"><div><span><a href="${member}" role="link" tabindex="0"><span>${o.member}</span></a></span>${o.follow ? button('Follow') : ''}<span><span aria-hidden="true">·</span></span><span><a href="https://www.facebook.com/" role="link" tabindex="0">\u2060${o.slot}</a></span><span><svg width="12" role="img" title="Shared with Public group"></svg></span></div></span></div></div>
   <div><div dir="auto"><div data-ad-rendering-role="story_message"><div data-ad-comet-preview="message" data-ad-preview="message"><div dir="auto">${o.text}</div></div></div></div></div>
+  ${o.media ?? ''}
   ${ACTION_BAR}`);
 }
 
@@ -138,13 +141,26 @@ export function sharedCard(o: SharedOptions): string {
   ${text}</div>`;
 }
 
+export interface ReelOptions {
+  /** Whose reel it is: the name after the reel's caption. */
+  creator: string;
+  caption: string;
+  /** "· Follow" after the creator's name, as for someone the account doesn't follow. */
+  follow?: boolean;
+  id?: number;
+  /** Where the creator's name links to, when not their username (the captures link it to profile.php?id). */
+  creatorHref?: string;
+}
+
 /**
- * A reel in the feed: the reel's link holds its caption and its creator's name, with "· Follow" when the account
- * doesn't follow the creator (capture 1's first item).
+ * A reel in the feed: the reel's link holds its caption and its creator's picture and name, with "· Follow" when the
+ * account doesn't follow the creator (capture 1's first item, 2026-10-reels-1 and -2).
  */
-export function reel(o: { creator: string; caption: string; follow?: boolean; id?: number }): string {
+export function reel(o: ReelOptions): string {
+  const href = o.creatorHref ?? profileHref(o.creator);
   return `<a aria-label="Reel by ${o.creator}" href="https://www.facebook.com/reel/${o.id ?? 100001}/" role="link" tabindex="0"><div><span dir="auto">${o.caption}</span>
-  <div><h5 dir="auto"><span dir="auto"><object><a href="${profileHref(o.creator)}" role="link" tabindex="0">${o.creator}</a></object></span></h5>${
+  <div><object><a aria-label="See owner profile" href="${href}" role="link" tabindex="0"><svg aria-label="${o.creator}" role="img"></svg></a></object>
+  <h5 dir="auto"><span dir="auto"><object><a href="${href}" role="link" tabindex="0">${o.creator}</a></object></span></h5>${
     o.follow
       ? `<span dir="auto"><span aria-hidden="true">·</span><div aria-label="Follow ${o.creator}" role="button" tabindex="0">Follow</div></span>`
       : ''
