@@ -2,7 +2,7 @@ import { classifyMessage, requestKind } from '@unalgorithm/ai/testing/anthropic'
 import type { EgressRequest, EgressResponse } from '../egress-proxy.ts';
 import { LINKEDIN_FLAGGED, linkedinShell } from '../fixtures.ts';
 import { aria, click, fill, fixturePage, launchFirefox, pageText, send, text } from './driver.ts';
-import { expect, GRANT_REQUESTS, LINKEDIN_FEED, test } from './fixtures.ts';
+import { expect, GRANT_REQUESTS, LINKEDIN_FEED, markTopicMore, test } from './fixtures.ts';
 
 /**
  * The person's own Anthropic key in Firefox (ADR 0008): "Test and save" asks Firefox for the data-collection consent
@@ -54,6 +54,8 @@ test('test_firefox_own_key_asks_consent_and_labels', async () => {
     await click(options, aria('button', 'Test and save'));
     await expect.poll(() => pageText(options), { timeout: 20_000 }).toContain('Connected');
     expect((await consent())?.sort()).toEqual(['personalCommunications', 'websiteContent']);
+    // The AI highlights by relevance once the person has said what they want.
+    await markTopicMore(firefox);
 
     const feed = await fixturePage(firefox, LINKEDIN_FEED, linkedinShell());
     await feed.waitForSelector(`${FRIEND}[data-unalgo-pick=""]`, { timeout: 20_000 });

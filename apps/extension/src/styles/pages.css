@@ -154,6 +154,63 @@
   gap: 8px;
   padding: 14px 16px;
 }
+/* ---------- Topics: More and Less (components/TopicList.tsx) ---------- */
+.topics-key {
+  font-weight: 600;
+  color: var(--ua-text);
+}
+/* Its text lines up with the topic names above it. */
+.topics-show {
+  margin-inline-start: -8px;
+}
+.topic-marks {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+.topic-mark.ua-button {
+  padding-inline: 10px 12px;
+  border: 1px solid var(--ua-border);
+  background: transparent;
+  color: var(--ua-text-secondary);
+}
+.topic-mark.ua-button:hover:not(:disabled) {
+  background: var(--ua-fill-4);
+  color: var(--ua-text);
+}
+.topic-mark.ua-button svg {
+  width: 14px;
+  height: 14px;
+}
+.topic-mark[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+.topic-mark--more.ua-button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--ua-accent);
+  color: var(--ua-on-accent);
+}
+.topic-mark--more.ua-button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--ua-accent-hover);
+  color: var(--ua-on-accent);
+}
+.topic-mark--less.ua-button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--ua-text-secondary);
+  color: var(--ua-bg-grouped-raised);
+}
+.topic-mark--less.ua-button[aria-pressed="true"]:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ua-text-secondary) 80%, var(--ua-text));
+  color: var(--ua-bg-grouped-raised);
+}
+@media (forced-colors: active) {
+  .topic-mark.ua-button[aria-pressed="true"] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
 .flow-diagram {
   display: flex;
   align-items: center;
@@ -184,6 +241,10 @@
 }
 
 /* ---------- Onboarding ---------- */
+/* The bottom bar (.ob-bar) covers the page under it, so focus and scrolling stop above it (WCAG 2.4.11). */
+html:has(.ob-bar) {
+  scroll-padding-block-end: 96px;
+}
 .onboarding {
   min-height: 100vh;
   display: grid;
@@ -228,6 +289,8 @@
   width: min(760px, 100%);
   margin: 0 auto;
   padding: 16px 24px 24px;
+  /* A long step (the topic list) scrolls under the bar. */
+  background: linear-gradient(to bottom, transparent, var(--ua-bg-grouped) 16px);
 }
 .ob-welcome {
   display: grid;

@@ -154,7 +154,7 @@ unAlgorithm." with *Email it instead*.
 |---|---|---|
 | Welcome | "See the posts you came for." | Feed-cleaning illustration plays once; static with reduced motion |
 | Strength | "How calm should your feed be?" | Three cards with mini feeds |
-| Interests | "What do you want more of?" | 16 starter topics, each with English keywords so matching works without AI, plus "Anything you'd like less of?" |
+| Interests | "What do you want more or less of?" | One list of starter topics, each with English keywords so matching works without AI. Each topic is marked More, Less or neither; the first 10 show until "Show all topics". Settings → Interests has the same list |
 | AI | "Want smarter filtering?" | On this device (live availability and download progress), Your own API key, Local or self-hosted, Set up later, and a disabled "unAlgorithm Cloud · Coming soon" card that becomes selectable in Phase 2 |
 | Done | "You're all set." | Open LinkedIn / Facebook; pin-to-toolbar card that notices when it is pinned |
 

@@ -30,7 +30,16 @@ import {
   text,
   visible,
 } from './driver.ts';
-import { allowLocal, expect, expectAccessible, grantedTypes, SERVER_CONSENT, signInFromSettings, test } from './fixtures.ts';
+import {
+  allowLocal,
+  expect,
+  expectAccessible,
+  grantedTypes,
+  markTopicMore,
+  SERVER_CONSENT,
+  signInFromSettings,
+  test,
+} from './fixtures.ts';
 
 /**
  * unAlgorithm Cloud in Firefox (ADR 0008), as `../cloud.spec.ts` checks Chromium and Edge: the add-on signs in to a
@@ -98,7 +107,9 @@ test.describe('a self-hosted server', () => {
       `goes from your browser to ${host}. That server is run by its owner, not HeitechSoft`,
     );
 
-    // The feed, labelled by the mock provider through the server.
+    // The feed, labelled by the mock provider through the server; the AI highlights by relevance once the person has
+    // said what they want.
+    await markTopicMore(firefox);
     const page = await feed();
     await page.waitForSelector(`${FRIEND}[data-unalgo-pick=""]`, { timeout: 20_000 });
     await expect.poll(() => pageText(page)).toContain('For you');

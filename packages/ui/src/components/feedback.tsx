@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Info, type LucideIcon, TriangleAlert, X } from '../icons.ts';
+import { Check, CircleAlert, CircleCheck, Info, type LucideIcon, Plus, TriangleAlert, X } from '../icons.ts';
 import { Button, IconButton } from './controls.tsx';
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'ai';
@@ -37,8 +37,12 @@ export function Chip({ label, icon: Icon, count, selected, onSelectedChange, onC
     </>
   );
   if (onSelectedChange) {
+    // A toggle shows its state, not only its colour: + to add it, a check once it's chosen. Without them an unchosen
+    // topic reads as chosen.
+    const State = selected ? Check : Plus;
     return (
       <button type="button" className={classes} aria-pressed={!!selected} onClick={() => onSelectedChange(!selected)}>
+        {Icon ? null : <State aria-hidden="true" />}
         {content}
       </button>
     );

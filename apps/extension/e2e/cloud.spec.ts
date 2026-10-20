@@ -13,7 +13,7 @@ import {
   TOKEN_PATH,
 } from '@unalgorithm/protocol';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
-import { expect, test } from './fixtures.ts';
+import { expect, markTopicMore, test } from './fixtures.ts';
 import { useLocalServer } from './server-lifecycle.ts';
 import { allowServer, expectAccessible, expectDialogTrapsFocus, signInFromSettings } from './server-sign-in.ts';
 
@@ -79,7 +79,9 @@ test.describe('a self-hosted server', () => {
     await expect(options.locator('.flow-box').last()).toHaveText(host);
     await expect(options.getByText(/not HeitechSoft/)).toContainText(host);
 
-    // The feed, labelled by the mock provider through the server.
+    // The feed, labelled by the mock provider through the server; the AI highlights by relevance once the person has
+    // said what they want.
+    await markTopicMore(context, extensionId);
     const page = await feed();
     const friend = page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
     await expect(friend).toHaveAttribute('data-unalgo-pick', '', { timeout: 20_000 });

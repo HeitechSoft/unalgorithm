@@ -21,6 +21,7 @@ import {
   facebookFeed,
   LINKEDIN_FLAGGED,
   linkedinPost,
+  markTopicMore,
   saveSource,
   seeResult,
   test,
@@ -182,6 +183,8 @@ const compare = (share: Locator) => compareAt(share, PRICE);
 test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, extensionId, feed }) => {
   const mock = await mockAnthropic(context);
   const options = await setUp(context, extensionId, { labs: false });
+  // The AI highlights by relevance once the person has said what they want, so the picks show what was classified.
+  await markTopicMore(context, extensionId);
   const linkedin = await feed();
   const facebook = await facebookFeed(context);
   const { friends, share } = facebookPosts(facebook);

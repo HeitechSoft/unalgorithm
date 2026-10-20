@@ -63,6 +63,8 @@ export {
   SlidersHorizontal,
   Sparkle,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   ToggleLeft,
   Trash2,
   TriangleAlert,

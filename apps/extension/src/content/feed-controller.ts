@@ -1263,8 +1263,28 @@ export class FeedController implements ReportSource {
 
   // ---------- health, theme, keep-loading ----------
 
+  /**
+   * A single-page navigation can replace the area the feed lives in: after sign-in, LinkedIn swaps the login page's
+   * <main> for the feed's. The controller may already have started on the old one (it starts as the address changes,
+   * before the page does), and its observer then watches a detached node, so no post ever arrives and health reports
+   * no items. Attach again when the scope has left the page, or holds no items while the adapter now names another.
+   */
+  private rescopeIfStale(): void {
+    const scope = this.scope;
+    if (!scope || (scope.isConnected && this.items.length > 0)) return;
+    if (scope.isConnected) {
+      const current = this.safe('feedScope', () => this.adapter.feedScope(this.doc), null);
+      if (!current || current === scope) return;
+    }
+    this.observer?.disconnect();
+    this.observer = undefined;
+    this.scope = null;
+    this.attachScope();
+  }
+
   private checkHealth(): void {
     if (!this.active || !this.guard() || !this.rt) return;
+    this.rescopeIfStale();
     // Phase B: full item discovery again on each tick (read-only, a few ms at most), so a better strategy can win.
     const rediscover = this.adapter.rediscover;
     if (rediscover) this.safe('findItems', () => rediscover.call(this.adapter, this.doc), undefined);
@@ -1477,7 +1497,9 @@ export class FeedController implements ReportSource {
   };
 
   private keepLoading(): void {
-    if (!this.active || this.doc.visibilityState !== 'visible' || !this.scope || !this.guard()) return;
+    if (!this.active || this.doc.visibilityState !== 'visible' || !this.guard()) return;
+    this.rescopeIfStale();
+    if (!this.scope) return;
     const scope = this.scope;
     const marker = this.safe('probe', () => this.adapter.loadMoreMarker?.(scope, this.doc) ?? null, null);
     if (!marker) return;

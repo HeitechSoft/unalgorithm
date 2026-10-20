@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test';
 import { AUTHORIZE_PAGE_PATH } from '@unalgorithm/protocol';
 import type { Page } from 'puppeteer-core';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { linkedinShell } from '../fixtures.ts';
+import { linkedinShell, UNMENTIONED_TOPIC } from '../fixtures.ts';
 import { clearMailbox, latestSignInCode } from '../server-harness.ts';
 import {
   aria,
@@ -178,6 +178,24 @@ export function facebookFeed(profile: FirefoxProfile): Promise<Page> {
     FACEBOOK_FEED,
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Facebook</title></head><body>${fbFeed(FRIEND_POST, ORGANIC_LINK_SHARE)}</body></html>`,
   );
+}
+
+/**
+ * Marks the topic `label` More in Settings → Interests, as `markTopicMore` in `../fixtures.ts` does in Chromium. The AI
+ * highlights and hides posts by relevance only once the person has said what they want, so a spec that waits for an AI
+ * pick marks a topic first: by default one no fixture post mentions, so the pick is the AI's.
+ */
+export async function markTopicMore(profile: FirefoxProfile, label = UNMENTIONED_TOPIC): Promise<void> {
+  const page = await profile.open('options.html#/interests');
+  const name = `More: ${label}`;
+  await click(page, aria('button', name));
+  // Pressed once the settings are stored.
+  await page.waitForFunction(
+    (n) => document.querySelector(`[aria-label="${n}"]`)?.getAttribute('aria-pressed') === 'true',
+    {},
+    name,
+  );
+  await page.close();
 }
 
 /** A switch on the AI pane, which must be enabled and off, turned on from the options page. */

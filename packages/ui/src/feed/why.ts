@@ -148,7 +148,7 @@ export function whyCopy(
       return {
         title: 'Matches a topic you muted',
         body: d.topic
-          ? `It mentions "${d.keyword}", which is in Less of: ${d.topic}.`
+          ? `It mentions "${d.keyword}", and you marked ${d.topic} as Less.`
           : `It mentions "${d.keyword}", which you muted.`,
         saw: `Matched "${d.keyword}"`,
         footnote: 'Your interests',

@@ -47,6 +47,33 @@ function topicMatch(text: string, topics: Settings['interests']['more']): { labe
 }
 
 /**
+ * Whether an AI relevance score means anything: the AI scores a post against the person's topics, their About you note
+ * and what they taught it with More like this and Not for me. With none of these, every score is the model's guess, so
+ * it neither highlights nor hides by relevance.
+ */
+function hasProfile(settings: Settings, learned: Record<string, number> | undefined): boolean {
+  return (
+    Object.keys(settings.interests.more).length > 0 ||
+    settings.interests.about.trim() !== '' ||
+    Object.values(learned ?? {}).some((w) => w !== 0)
+  );
+}
+
+/**
+ * The person's own topics a highlighted post is about, for "Matches …": a topic whose name or words are in the post,
+ * or match one of the topics the AI gave it. Never the AI's own topics, which are words the person never chose.
+ */
+function ownTopics(text: string, topics: Settings['interests']['more'], aiTopics: readonly string[]): string[] {
+  const seen = aiTopics.map((t) => t.toLowerCase());
+  return Object.values(topics)
+    .filter((t) => {
+      const words = [t.label, ...t.keywords].map((w) => w.toLowerCase()).filter(Boolean);
+      return !!findKeyword(text, words) || seen.some((a) => words.some((w) => a.includes(w) || w.includes(a)));
+    })
+    .map((t) => t.label);
+}
+
+/**
  * The single place that decides what happens to a feed item. Order: feed panels, the user's own vote and lists,
  * page rules, muted words, then AI. Highlights ("For you") only go to items that are shown.
  */
@@ -89,12 +116,23 @@ export function decide(input: DecideInput): Decision {
       const ordered = NOISE_LABELS.filter((l) => noise.includes(l));
       return { filter: { reason: 'noise', source: 'ai', noise: ordered }, highlight: null, adjustedRelevance: adjusted };
     }
-    if (ps.ai.lowRelevance && adjusted !== undefined && adjusted < settings.ai.relevanceCutoff && input.vote !== 'more') {
+    if (
+      ps.ai.lowRelevance &&
+      adjusted !== undefined &&
+      adjusted < settings.ai.relevanceCutoff &&
+      input.vote !== 'more' &&
+      hasProfile(settings, learned)
+    ) {
       return { filter: { reason: 'low-relevance', source: 'ai' }, highlight: null, adjustedRelevance: adjusted };
     }
   }
 
-  return { filter: null, highlight: highlightFor(post, settings, c, adjusted, input.vote), adjustedRelevance: adjusted };
+  const profile = hasProfile(settings, learned);
+  return {
+    filter: null,
+    highlight: highlightFor(post, settings, profile ? c : undefined, adjusted, input.vote),
+    adjustedRelevance: adjusted,
+  };
 }
 
 function highlightFor(
@@ -111,7 +149,7 @@ function highlightFor(
   if (word) return { source: 'keywords', matched: [word] };
   if (c && adjusted !== undefined) {
     return adjusted >= highlightThreshold(settings.highlights.amount)
-      ? { source: 'ai', relevance: adjusted, matched: c.topics }
+      ? { source: 'ai', relevance: adjusted, matched: ownTopics(post.text, settings.interests.more, c.topics) }
       : null;
   }
   const topic = topicMatch(post.text, settings.interests.more);

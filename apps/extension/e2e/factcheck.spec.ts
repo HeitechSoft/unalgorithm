@@ -17,6 +17,7 @@ import {
   FLAGGED,
   facebookFeed,
   linkedinPost,
+  markTopicMore,
   runCheck as runCheckAt,
   saveSource,
   seeResult,
@@ -130,7 +131,10 @@ async function setUp(context: BrowserContext, extensionId: string, opts: { labs:
   return options;
 }
 
-/** The flagged post came back from the mock classified (its high relevance makes it a pick). */
+/**
+ * The flagged post came back from the mock classified: its high relevance makes it a pick, once the person has marked a
+ * topic More (`markTopicMore`).
+ */
 async function classified(page: Page, mock: MockAnthropic): Promise<void> {
   await expect(linkedinPost(page)).toHaveAttribute('data-unalgo-pick', '');
   expect(mock.count('classify')).toBeGreaterThan(0);
@@ -143,6 +147,7 @@ test.describe('offer', () => {
   test('test_e2e_labs_off_shows_no_check_button', async ({ context, extensionId, feed }) => {
     const mock = await mockAnthropic(context);
     await setUp(context, extensionId, { labs: false });
+    await markTopicMore(context, extensionId);
     const page = await feed();
     await classified(page, mock);
     await expect(checkButtons(page)).toHaveCount(0);
@@ -151,6 +156,7 @@ test.describe('offer', () => {
   test('test_e2e_labs_on_button_only_on_flagged_post', async ({ context, extensionId, feed }) => {
     const mock = await mockAnthropic(context);
     const options = await setUp(context, extensionId, { labs: false });
+    await markTopicMore(context, extensionId);
     const page = await feed();
     await classified(page, mock);
     await expect(checkButtons(page)).toHaveCount(0);

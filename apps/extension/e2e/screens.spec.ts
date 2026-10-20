@@ -20,8 +20,8 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${OUT}/onboarding-2-strength-${scheme}.png` });
     await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByRole('button', { name: 'AI & tech' }).click();
-    await page.getByRole('button', { name: 'Small business' }).click();
+    await page.getByRole('button', { name: 'More: AI & tech' }).click();
+    await page.getByRole('button', { name: 'More: Small business' }).click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${OUT}/onboarding-3-interests-${scheme}.png` });
     await page.getByRole('button', { name: 'Continue' }).click();

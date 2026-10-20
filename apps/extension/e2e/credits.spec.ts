@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import { balanceLine, type TabState } from '@unalgorithm/core';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
-import { expect, test } from './fixtures.ts';
+import { expect, markTopicMore, test } from './fixtures.ts';
 import { BILLING_FIXTURE_MODULE } from './server-harness.ts';
 import { useLocalServer } from './server-lifecycle.ts';
 import { allowServer, signInFromSettings } from './server-sign-in.ts';
@@ -43,7 +43,9 @@ test.describe('a server that bills', () => {
     // The estimate is at the price card in effect now (the real clock), as the popup reads it.
     await expect(footerPill(popup)).toHaveText(balanceLine(1_000_000, new Date()));
 
-    // The feed, classified through the server, which charges the fixture's 100 micro-dollars a post.
+    // The feed, classified through the server, which charges the fixture's 100 micro-dollars a post. The AI highlights
+    // by relevance once the person has said what they want, so the pick shows the classify was paid for.
+    await markTopicMore(context, extensionId);
     const page = await feed();
     await expect(page.locator(FRIEND)).toHaveAttribute('data-unalgo-pick', '', { timeout: 20_000 });
 
@@ -84,6 +86,8 @@ test.describe('a server whose balance is empty', () => {
     const before = ai.bodies.length;
     expect(FIRST_DEGREE_POST).toContain(POST_TEXT);
     await signIn(context, extensionId, server.url);
+    // A topic marked More, so no pick below is because the AI is paused, not because it has nothing to go on.
+    await markTopicMore(context, extensionId);
 
     const page = await feed();
     const opened = Date.now();

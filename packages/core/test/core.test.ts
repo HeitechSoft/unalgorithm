@@ -172,6 +172,38 @@ describe('decide', () => {
     expect(boosted.highlight?.source).toBe('ai');
   });
 
+  it('test_no_ai_highlight_or_relevance_hiding_without_interests', () => {
+    // On-device AI on, nothing chosen: a high score is the model's guess about nothing, so no highlight.
+    const c = classification({ relevance: 95, topics: ['futuristic car'] });
+    expect(decide({ item: { kind: 'post', post: post() }, settings, classification: c, aiActive: true }).highlight).toBeNull();
+    // Calm hides low-relevance posts, but only once there is something to be relevant to.
+    const calm = defaultSettings();
+    calm.platforms.linkedin.ai.lowRelevance = true;
+    const low = classification({ relevance: 5 });
+    expect(
+      decide({ item: { kind: 'post', post: post() }, settings: calm, classification: low, aiActive: true }).filter,
+    ).toBeNull();
+    calm.interests.about = 'I run a small software company.';
+    expect(
+      decide({ item: { kind: 'post', post: post() }, settings: calm, classification: low, aiActive: true }).filter?.reason,
+    ).toBe('low-relevance');
+  });
+
+  it('test_ai_highlight_names_only_the_persons_own_topics', () => {
+    const s = defaultSettings();
+    s.interests.more.cars = { label: 'Electric cars', keywords: ['electric car', 'ev'], addedAt: 1 };
+    s.interests.more.hr = { label: 'Hiring', keywords: ['hiring'], addedAt: 1 };
+    // The AI's own topic overlaps one chosen topic: "Matches Electric cars", never "futuristic car".
+    const c = classification({ relevance: 90, topics: ['electric car design', 'futuristic car'] });
+    const d = decide({ item: { kind: 'post', post: post() }, settings: s, classification: c, aiActive: true });
+    expect(d.highlight).toMatchObject({ source: 'ai', matched: ['Electric cars'] });
+    // On topic by the About you note alone: highlighted, with no topic named.
+    const about = defaultSettings();
+    about.interests.about = 'I follow product design.';
+    const d2 = decide({ item: { kind: 'post', post: post() }, settings: about, classification: c, aiActive: true });
+    expect(d2.highlight).toMatchObject({ source: 'ai', matched: [] });
+  });
+
   it('highlights interest keywords without AI, and mutes "less of" topics', () => {
     const s = defaultSettings();
     s.interests.more.hr = { label: 'Onboarding', keywords: ['onboarding'], addedAt: 1 };

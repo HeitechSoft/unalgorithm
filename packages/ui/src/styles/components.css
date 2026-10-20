@@ -335,6 +335,13 @@
     color: var(--ua-text-secondary);
     text-transform: none;
   }
+  .ua-group-description {
+    display: grid;
+    gap: 4px;
+    padding: 0 16px 8px;
+    font: var(--ua-type-callout);
+    color: var(--ua-text-secondary);
+  }
   .ua-group-body {
     overflow: hidden;
     border-radius: var(--ua-radius-md);
@@ -515,6 +522,13 @@
   }
   .ua-pchip:hover {
     background: var(--ua-fill-4);
+  }
+  .ua-pchip[aria-pressed="false"] {
+    border-style: dashed;
+    color: var(--ua-text-secondary);
+  }
+  .ua-pchip[aria-pressed="false"]:hover {
+    color: var(--ua-text);
   }
   .ua-pchip[aria-pressed="true"] {
     border-color: transparent;

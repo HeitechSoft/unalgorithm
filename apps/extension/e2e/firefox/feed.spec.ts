@@ -8,7 +8,7 @@ import {
   UNJOINED_GROUP_POST,
 } from '../../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import { aria, attribute, click, count, fill, fixturePage, hrefOf, pageText, text, visible } from './driver.ts';
-import { allowLocal, expect, test } from './fixtures.ts';
+import { allowLocal, expect, markTopicMore, test } from './fixtures.ts';
 
 /**
  * The extension in Firefox (ADR 0008), without a server: the install, the rules on both fixture feeds and AI through a
@@ -74,6 +74,8 @@ test.describe('AI through a local OpenAI-compatible server', () => {
     await click(options, aria('button', 'Test and save'));
     await expect.poll(() => pageText(options), { timeout: 20_000 }).toContain('Connected');
     expect(await consent()).toEqual(['personalCommunications', 'websiteContent']);
+    // The AI highlights by relevance once the person has said what they want.
+    await markTopicMore(firefox);
 
     const page = await feed();
     await page.waitForSelector(`${FRIEND}[data-unalgo-pick=""]`, { timeout: 20_000 });

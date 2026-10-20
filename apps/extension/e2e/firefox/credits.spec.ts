@@ -4,7 +4,7 @@ import { FIRST_DEGREE_POST } from '../../../../packages/platforms/fixtures/linke
 import { BILLING_FIXTURE_MODULE } from '../server-harness.ts';
 import { useLocalServer } from '../server-lifecycle.ts';
 import { aria, attribute, type FirefoxProfile, pageText, reload, sleep, visible } from './driver.ts';
-import { allowLocal, expect, signInFromSettings, test } from './fixtures.ts';
+import { allowLocal, expect, markTopicMore, signInFromSettings, test } from './fixtures.ts';
 
 /**
  * Credits in Firefox (CL2, ADR 0008), as `../credits.spec.ts` checks Chromium and Edge: the real server with the
@@ -40,7 +40,9 @@ test.describe('a server that bills', () => {
     const popup = await firefox.open('popup.html');
     await expect.poll(() => footerPill(popup)).toBe(balanceLine(1_000_000, new Date()));
 
-    // The feed, classified through the server, which charges the fixture's 100 micro-dollars a post.
+    // The feed, classified through the server, which charges the fixture's 100 micro-dollars a post. The AI highlights
+    // by relevance once the person has said what they want, so the pick shows the classify was paid for.
+    await markTopicMore(firefox);
     const page = await feed();
     await page.waitForSelector(`${FRIEND}[data-unalgo-pick=""]`, { timeout: 20_000 });
 
@@ -66,6 +68,8 @@ test.describe('a server whose balance is empty', () => {
     const before = ai.bodies.length;
     expect(FIRST_DEGREE_POST).toContain(POST_TEXT);
     const options = await signIn(firefox, server.url);
+    // A topic marked More, so no pick below is because the AI is paused, not because it has nothing to go on.
+    await markTopicMore(firefox);
 
     const page = await feed();
     const opened = Date.now();

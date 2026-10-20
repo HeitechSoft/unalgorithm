@@ -1,6 +1,7 @@
 /**
- * Starter topics offered in onboarding. Each ships a hand-picked English keyword list so "For you" highlights and
- * "less of" muting work without any AI; with AI on, the labels go to the model as the user's interests.
+ * Starter topics offered in onboarding and Settings → Interests, in one list where the person marks any topic More or
+ * Less. Each ships a hand-picked English keyword list so "For you" highlights and muting work without any AI; with AI on,
+ * the labels go to the model as the user's interests.
  */
 export interface StarterTopic {
   id: string;
@@ -132,7 +133,10 @@ export const STARTER_TOPICS: StarterTopic[] = [
   },
 ];
 
-/** "Anything you'd like less of?" choices. Selected ones hide posts that mention their keywords. */
+/**
+ * Topics many people want less of, listed after `STARTER_TOPICS`. Any topic can be marked either way; marked Less, posts
+ * that mention its keywords are hidden.
+ */
 export const STARTER_LESS_OF: StarterTopic[] = [
   {
     id: 'politics',

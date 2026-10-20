@@ -17,10 +17,7 @@ import {
   presetOf,
   presetSummary,
   type Settings,
-  STARTER_LESS_OF,
-  STARTER_TOPICS,
   sourceCapabilities,
-  type Topic,
 } from '@unalgorithm/core';
 import { listBalance, officialSourceList, ownSourceList, type SourceList } from '@unalgorithm/outlets';
 import {
@@ -38,7 +35,6 @@ import {
   BalanceNotice,
   Banner,
   Button,
-  Chip,
   ChoiceCard,
   ChoiceCardGroup,
   Dialog,
@@ -62,6 +58,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
+import { TopicList } from '../../components/TopicList.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { browserKind, browserLabel } from '../../lib/browser-kind.ts';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
@@ -542,64 +539,12 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
   const learned = useStorageItem(learnedItem, { weights: {}, events: [], decayedAt: 0 });
   const [about, setAbout] = useState(settings.interests.about);
   const toast = useToast();
-  const toggleTopic = (list: 'more' | 'less', t: { id: string; label: string; keywords: string[] }, on: boolean) =>
-    save((s) => {
-      if (on) s.interests[list][t.id] = { label: t.label, keywords: t.keywords, addedAt: Date.now() } satisfies Topic;
-      else delete s.interests[list][t.id];
-    });
-  const custom = (list: 'more' | 'less') =>
-    Object.entries(settings.interests[list]).filter(([id]) => ![...STARTER_TOPICS, ...STARTER_LESS_OF].some((t) => t.id === id));
   return (
     <>
       <Title intro="Without AI, unAlgorithm looks for related words. With AI, it understands topics, so it also catches posts that don't use the exact words.">
         Interests
       </Title>
-      <ListGroup header="More of" footer="Posts about these get a quiet For you highlight.">
-        <div className="chips">
-          {STARTER_TOPICS.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.label}
-              selected={!!settings.interests.more[t.id]}
-              onSelectedChange={(on) => void toggleTopic('more', t, on)}
-            />
-          ))}
-          {custom('more').map(([id, t]) => (
-            <Chip key={id} label={t.label} selected onSelectedChange={() => void save((s) => void delete s.interests.more[id])} />
-          ))}
-        </div>
-        <TokenList
-          items={[]}
-          placeholder="Add a topic, e.g. Supply chain"
-          onAdd={(label) =>
-            void save((s) => void (s.interests.more[uuidv7()] = { label, keywords: [label], addedAt: Date.now() }))
-          }
-          onRemove={() => undefined}
-        />
-      </ListGroup>
-      <ListGroup header="Less of" footer="Posts that mention these are folded away, even without AI.">
-        <div className="chips">
-          {STARTER_LESS_OF.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.label}
-              selected={!!settings.interests.less[t.id]}
-              onSelectedChange={(on) => void toggleTopic('less', t, on)}
-            />
-          ))}
-          {custom('less').map(([id, t]) => (
-            <Chip key={id} label={t.label} selected onSelectedChange={() => void save((s) => void delete s.interests.less[id])} />
-          ))}
-        </div>
-        <TokenList
-          items={[]}
-          placeholder="Add a topic to mute"
-          onAdd={(label) =>
-            void save((s) => void (s.interests.less[uuidv7()] = { label, keywords: [label], addedAt: Date.now() }))
-          }
-          onRemove={() => undefined}
-        />
-      </ListGroup>
+      <TopicList interests={settings.interests} save={save} header="Topics" intro />
       <ListGroup
         header="About you"
         footer="Optional. Sent to your AI with each request so it can judge relevance. Keep it general."

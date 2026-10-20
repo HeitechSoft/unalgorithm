@@ -7,7 +7,7 @@ import {
   SUGGESTED_PAGE_POST,
   UNJOINED_GROUP_POST,
 } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { expect, settled, test } from './fixtures.ts';
+import { expect, markTopicMore, settled, test } from './fixtures.ts';
 
 test('opens onboarding on install', async ({ context, extensionId }) => {
   await expect
@@ -88,6 +88,8 @@ test.describe('AI through a local OpenAI-compatible server', () => {
       return test;
     }, ai.baseUrl);
     expect(result).toMatchObject({ ok: true, model: 'mock-model' });
+    // The AI highlights by relevance once the person has said what they want.
+    await markTopicMore(context, extensionId);
 
     const page = await feed();
     const friend = page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');

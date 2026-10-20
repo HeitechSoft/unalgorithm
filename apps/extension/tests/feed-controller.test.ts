@@ -114,6 +114,23 @@ describe('FeedController on LinkedIn', () => {
     c.stop();
   });
 
+  it('test_finds_the_feed_when_the_page_swaps_its_main_after_sign_in', async () => {
+    // LinkedIn after sign-in: the address is already the feed, but the page still shows the login form in its <main>.
+    const feed = document.body.innerHTML;
+    document.body.innerHTML = '<main><form><input name="session_key"></form></main>';
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('unalgo-post')).toHaveLength(0);
+    // Then it replaces the whole <main> with the feed's. Nothing watches the new one until the next tick.
+    document.body.innerHTML = feed;
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('[data-unalgo="collapsed"]')).toHaveLength(4);
+    expect(state('EEEkeyFirstDegree5') ?? null).toBeNull();
+    c.stop();
+  });
+
   it('applies settings changes live and cleans up completely on stop', async () => {
     const c = new FeedController(linkedinAdapter, bridge(), mountUi);
     const rt = runtime();

@@ -14,11 +14,14 @@ export function Tile({ icon: Icon, tint = 'lagoon', size = 'md' }: { icon: Lucid
 /** An inset grouped list section (macOS System Settings / iOS Settings). */
 export function ListGroup({
   header,
+  description,
   footer,
   id,
   children,
 }: {
   header?: ReactNode;
+  /** Lines between the header and the list, such as what the list is for or a summary of it. */
+  description?: ReactNode;
   footer?: ReactNode;
   id?: string;
   children: ReactNode;
@@ -26,6 +29,7 @@ export function ListGroup({
   return (
     <section className="ua-group" id={id}>
       {header ? <h3 className="ua-group-header">{header}</h3> : null}
+      {description ? <div className="ua-group-description">{description}</div> : null}
       <div className="ua-group-body">{children}</div>
       {footer ? <p className="ua-group-footer">{footer}</p> : null}
     </section>
@@ -45,6 +49,8 @@ export interface ListRowProps {
   tone?: 'default' | 'destructive';
   id?: string;
   highlight?: boolean;
+  /** Makes the row a group with this name, for a row whose controls all act on one thing (a topic's More and Less). */
+  groupLabel?: string;
 }
 
 /** One row. With `onSelect` or `href` the whole row is the button or link. */
@@ -60,6 +66,7 @@ export function ListRow({
   tone,
   id,
   highlight,
+  groupLabel,
 }: ListRowProps) {
   const classes = [
     'ua-row',
@@ -109,7 +116,7 @@ export function ListRow({
     );
   }
   return (
-    <div className={classes} id={id}>
+    <div className={classes} id={id} role={groupLabel ? 'group' : undefined} aria-label={groupLabel}>
       {body}
     </div>
   );

@@ -275,6 +275,25 @@ export async function turnOnLabs(options: Page, name: 'Fact-check' | 'UnEcho Cha
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 }
 
+/** A starter topic that no fixture post mentions, in name or in its words. */
+export const UNMENTIONED_TOPIC = 'Small business';
+
+/**
+ * Marks the topic `label` More in Settings → Interests, as a person would. The AI highlights and hides posts by
+ * relevance only once the person has said what they want: a topic marked More, an About you note or ratings it learned
+ * (core `decide`). So a spec that waits for an AI pick marks a topic first: by default one no fixture post mentions,
+ * so the pick is the AI's and never a match of the topic's own words.
+ */
+export async function markTopicMore(context: BrowserContext, extensionId: string, label = UNMENTIONED_TOPIC): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html#/interests`);
+  const more = page.getByRole('button', { name: `More: ${label}` });
+  await more.click();
+  // Pressed once the settings are stored.
+  await expect(more).toHaveAttribute('aria-pressed', 'true');
+  await page.close();
+}
+
 /** A Facebook-like feed: the friends-only post first, then the public link share. */
 export async function facebookFeed(context: BrowserContext): Promise<Page> {
   await context.route('https://www.facebook.com/**', (route) =>
