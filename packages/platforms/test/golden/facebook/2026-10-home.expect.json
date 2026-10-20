@@ -35,7 +35,8 @@
     "capture 9: Page post with a Follow button",
     "reels capture 1: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
     "reels capture 2: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
-    "reels capture 3: Reels panel"
+    "reels capture 3: Reels panel",
+    "ads capture 1: a video ad (a reel link and \"Shop now\"); its \"Ad\" is SVG text at the end of a chain of <use> references, 7 deep"
   ],
   "decisions": {
     "light": [
@@ -58,7 +59,8 @@
       "show/not-followed",
       "show/unknown",
       "show/unknown",
-      "panel"
+      "panel",
+      "sponsored/unknown"
     ],
     "balanced": [
       "show/unknown",
@@ -80,7 +82,8 @@
       "not-followed/not-followed",
       "show/unknown",
       "show/unknown",
-      "panel"
+      "panel",
+      "sponsored/unknown"
     ],
     "calm": [
       "reel/unknown",
@@ -102,7 +105,8 @@
       "not-followed/not-followed",
       "reel/unknown",
       "reel/unknown",
-      "panel"
+      "panel",
+      "sponsored/unknown"
     ]
   },
   "ids": [
@@ -125,7 +129,8 @@
     "fb:h:7lml2vuxwo",
     "fb:200002",
     "fb:300002",
-    null
+    null,
+    "fb:500006"
   ],
   "idsStable": true,
   "health": {
@@ -157,8 +162,8 @@
     "detectors": {
       "fb.join-button": 3,
       "fb.follow-button": 10,
-      "fb.sponsored.rendered-label": 3,
-      "fb.sponsored.slot-label": 3,
+      "fb.sponsored.rendered-label": 4,
+      "fb.sponsored.slot-label": 4,
       "fb.sponsored.no-timestamp": 3
     },
     "observations": {

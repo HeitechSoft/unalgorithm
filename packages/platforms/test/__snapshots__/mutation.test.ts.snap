@@ -173,7 +173,7 @@ reorder-actor (markup, same-or-flagged): the age or ad label moved up a line (ab
   linkedin/classic-2026: survived
   linkedin/legacy: survived
   linkedin/feed-full-update: survived
-  facebook/2026-10-home: survived
+  facebook/2026-10-home: flagged (fb.slot.age.unrecognised)
   facebook/classic-2026: survived
   facebook/not-followed-2026: survived
   facebook/reels-2026: survived
@@ -228,7 +228,7 @@ label-suffix (label, same-or-flagged): a new word after Promoted, Sponsored or A
   linkedin/classic-2026: survived
   linkedin/legacy: survived
   linkedin/feed-full-update: -
-  facebook/2026-10-home: survived
+  facebook/2026-10-home: flagged (ad-label-near-miss, fb.label.sponsored.near)
   facebook/classic-2026: survived
   facebook/not-followed-2026: survived
   facebook/reels-2026: survived

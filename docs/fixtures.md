@@ -27,7 +27,9 @@ the live sites are **anonymized before they leave the browser**.
      their prefix and feed sort (`update-card-focus<fake>FeedType_MAIN_FEED_RELEVANCE`); other component keys and test
      ids become fakes, except the few static test ids the adapter reads;
    - element ids, and the `aria-labelledby`, `aria-describedby` and `<use href="#…">` references to them, become the
-     same opaque fakes (`id100012`), and the elements they point at are copied into an appendix;
+     same opaque fakes (`id100012`), and the elements they point at are copied into an appendix, with the elements
+     their own references point at in turn (since 2026-10 Facebook draws ages and "Ad" through a chain of `<use>`
+     about 7 deep);
    - layout facts the tests need are kept as attributes: `data-ua-block` (rendered as a block) and `data-ua-hidden`
      (invisible; Facebook hides decoy letters inside labels).
 4. Read the console. The script lists short header lines and labels that still hold scrambled words ("Promoted •
@@ -161,7 +163,9 @@ which the owner judged enough to turn it on:
   another account) and a Reels panel. The poster is the same in both and in capture 1's reel, sharing reels from the
   same creator. The rule leaves these shown, since the Follow button is the creator's; whether the account follows the
   poster was not recorded, and folding them would need a signal that tells a followed sharer from an unfollowed one,
-  which no capture has. The golden page `facebook/2026-10-home` holds all twelve captures.
+  which no capture has. `2026-10-ads-1.html`, from the same evening, keeps a video ad whose "Ad" is drawn through a
+  chain of SVG `<use>` 7 deep (as the reel shares' ages are); every preset folds it. The golden page
+  `facebook/2026-10-home` holds all thirteen captures.
 - **What only synthetic fixtures cover.** The posts that must stay shown (friends, followed pages and people, groups
   the account is in, a friend's share of a page's post or reel, friends' reels) are modelled on the captures' layout
   in the golden pages `facebook/not-followed-2026` and `facebook/reels-2026` and in

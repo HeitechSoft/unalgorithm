@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { feed, post } from '../fixtures/facebook/live2026.ts';
+import { facebookAdapter } from '../src/facebook/adapter.ts';
 import { FACEBOOK_EN } from '../src/facebook/markers/en.ts';
 import { LINKEDIN_EN } from '../src/linkedin/markers/en.ts';
 import type { LabelPattern } from '../src/shared/labels.ts';
@@ -229,6 +231,43 @@ describe('the capture scripts', () => {
     expect(logged.join('\n')).toContain('Sponsored · Xxxxx xxxx');
     expect(logged.join('\n')).toContain('Left out 1 items unAlgorithm folded away.');
     expect(checkFixtures({ 'capture.html': html })).toEqual({ code: 0, out: 'fixtures:check ok\n' });
+  });
+
+  it('Facebook: copies a label drawn through a chain of <use> whole, scrambled, and the copy reads as the page did', async () => {
+    // Since 2026-10 the age and "Ad" are a <use> of an <svg> holding another <use>, 7 references deep, before the <text>.
+    const steps = (name: string, label: string) =>
+      `${Array.from({ length: 6 }, (_, i) => `<svg id="${name}${i + 1}" aria-label="Riley Chen"><use href="#${name}${i + 2}"></use></svg>`).join('')}<svg><text id="${name}7">${label}</text></svg>`;
+    const slot = (id: string) => `<span><span><svg><use xlink:href="#${id}"></use></svg></span></span>`;
+    document.body.innerHTML = `${feed(
+      post({ author: 'Gadget Daily', text: 'Autumn sale.', slot: slot('AdStep1') }),
+      post({ author: 'Riley Chen', text: 'Tomatoes, finally.', slot: slot('AgeStep1') }),
+    )}<div hidden>${steps('AdStep', 'Ad')}${steps('AgeStep', 'October 5 at 3:45 PM')}</div>`;
+    const { html } = await capture('facebook');
+
+    for (const name of ['Riley', 'Chen', 'Gadget', 'Tomatoes', 'AdStep', 'AgeStep', 'October']) expect(html).not.toContain(name);
+    expect(checkFixtures({ 'capture.html': html })).toEqual({ code: 0, out: 'fixtures:check ok\n' });
+    // Each chain is copied to its end, under the same fakes as the references to it.
+    document.body.innerHTML = html;
+    const ends = Array.from(document.querySelectorAll('[aria-posinset]')).map((item) => {
+      let use = item.querySelector('use');
+      for (let hops = 1; use; hops++) {
+        const target = document.getElementById((use.getAttribute('href') ?? '').replace(/^#/, ''));
+        if (!target?.querySelector('use')) return [hops, target?.textContent];
+        use = target.querySelector('use');
+      }
+      return null;
+    });
+    expect(ends).toEqual([
+      [7, 'Ad'],
+      [7, 'Xxxxxxx 0 xx 0:00 XX'],
+    ]);
+    const scope = facebookAdapter.feedScope(document) as HTMLElement;
+    const [ad, age] = facebookAdapter
+      .findItems(scope)
+      .map((el) => facebookAdapter.inspect(el, { markers: FACEBOOK_EN, now: new Date(2026, 9, 19) }))
+      .map((r) => (r.kind === 'post' ? r.post : null));
+    expect(ad?.evidence).toContainEqual({ signal: 'sponsored', detector: 'fb.sponsored.slot-label', strength: 'strong' });
+    expect(age?.evidence).toEqual([]);
   });
 
   it('every word the adapters read comes through a capture unscrambled', async () => {

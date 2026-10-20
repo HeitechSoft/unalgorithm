@@ -126,6 +126,12 @@ const facebookCapture = (n: number) => capture('facebook', `2026-10-home-${n}.ht
 /** Feed items with a reel link, captured one at a time on later loads of the feed (2026-10-19, evening). */
 const REEL_CAPTURES = 3;
 const reelCapture = (n: number) => capture('facebook', `2026-10-reels-${n}.html`);
+/**
+ * Ads captured one at a time on later loads of the feed (2026-10-19, evening): a video ad whose "Ad" is SVG text at the
+ * end of a chain of `<use>` references, 7 deep.
+ */
+const AD_CAPTURES = 1;
+const adCapture = (n: number) => capture('facebook', `2026-10-ads-${n}.html`);
 
 export const GOLDENS: readonly GoldenCase[] = [
   golden('linkedin/2026-10-foryou-1', linkedinAdapter, () => capture('linkedin', '2026-10-foryou-1.html')),
@@ -170,11 +176,16 @@ export const GOLDENS: readonly GoldenCase[] = [
   ...Array.from({ length: REEL_CAPTURES }, (_, i) =>
     golden(`facebook/2026-10-reels-${i + 1}`, facebookAdapter, () => reelCapture(i + 1)),
   ),
-  // Every 2026-10 capture of the home feed as one page: the nine of one scroll, then the reel items from later loads.
+  ...Array.from({ length: AD_CAPTURES }, (_, i) =>
+    golden(`facebook/2026-10-ads-${i + 1}`, facebookAdapter, () => adCapture(i + 1)),
+  ),
+  // Every 2026-10 capture of the home feed as one page: the nine of one scroll, then the reel items and the ad from
+  // later loads.
   golden('facebook/2026-10-home', facebookAdapter, () =>
     facebookHome([
       ...Array.from({ length: 9 }, (_, i) => facebookCapture(i + 1)),
       ...Array.from({ length: REEL_CAPTURES }, (_, i) => ownFakes(reelCapture(i + 1), i + 1)),
+      ...Array.from({ length: AD_CAPTURES }, (_, i) => ownFakes(adCapture(i + 1), REEL_CAPTURES + i + 1)),
     ]),
   ),
   golden('facebook/classic-2026', facebookAdapter, () =>

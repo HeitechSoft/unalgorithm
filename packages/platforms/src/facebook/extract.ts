@@ -46,6 +46,49 @@ function isHidden(el: Element): boolean {
   return s.visibility === 'hidden' || Number(s.opacity) === 0 || s.fontSize === '0px';
 }
 
+/** How many SVG `<use>` references deep a label is followed: Facebook's went 7 deep in 2026-10. */
+const USE_DEPTH = 8;
+/** How many references one label may follow in all, so a target holding many `<use>` can't multiply the work. */
+const USE_REFS = 64;
+
+/**
+ * The text an SVG `<use>` draws: its target's text, with each `<use>` inside the target read the same way. Since
+ * 2026-10 Facebook chains them: the `<use>` after the author's name points at an `<svg>` holding another `<use>`, and so
+ * on about 7 deep, before the `<text>` with the age or "Ad". Only references within the page (`#id`) are followed.
+ * `null` when the chain loops (a target the chain already went through, or one holding the `<use>` itself), goes deeper
+ * than USE_DEPTH or follows more than USE_REFS references: then nothing of it is read, never a part.
+ * Called only where labels are read (the age slot and the header's label elements), never on post text.
+ */
+function useText(use: Element): string | null {
+  const doc = use.ownerDocument;
+  let refs = 0;
+  const read = (u: Element, chain: readonly Element[]): string | null => {
+    const ref = u.getAttribute('href') ?? u.getAttribute('xlink:href');
+    const target = ref?.startsWith('#') ? doc.getElementById(ref.slice(1)) : null;
+    if (!target) return '';
+    if (chain.length >= USE_DEPTH || ++refs > USE_REFS || chain.includes(target) || target.contains(u)) return null;
+    const through = [...chain, target];
+    let out = '';
+    const visit = (n: Node): boolean => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        out += n.nodeValue ?? '';
+        return true;
+      }
+      if (n.nodeType !== Node.ELEMENT_NODE) return true;
+      const el = n as Element;
+      if (el.tagName.toLowerCase() === 'use') {
+        const text = read(el, through);
+        if (text === null) return false;
+        out += text;
+        return true;
+      }
+      return Array.from(el.childNodes).every(visit);
+    };
+    return visit(target) ? out : null;
+  };
+  return read(use, []);
+}
+
 /** Without spaces and U+034F, an invisible joiner Facebook puts after each character of some labels. */
 function squash(s: string): string {
   return s.replace(/\s|\u034F/g, '');
@@ -67,11 +110,9 @@ function visibleText(root: Element, limit = 40, hiddenRoot = false): string {
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     const el = n as Element;
     if (!(hiddenRoot && el === root) && isHidden(el)) return;
-    // Facebook draws some labels as SVG <use> pointing at a <text> elsewhere in the page.
+    // Facebook draws some labels as SVG <use> pointing (through other <use>) at a <text> elsewhere in the page.
     if (el.tagName.toLowerCase() === 'use') {
-      const ref = el.getAttribute('href') ?? el.getAttribute('xlink:href');
-      const target = ref?.startsWith('#') ? el.ownerDocument.getElementById(ref.slice(1)) : null;
-      if (target) out += target.textContent ?? '';
+      out += useText(el) ?? '';
       return;
     }
     for (const c of Array.from(el.childNodes)) visit(c);
@@ -116,20 +157,24 @@ function isButton(el: Element, pattern: LabelPattern): boolean {
   return (!!own && isFull(matchLabel(normalizeText(own), pattern))) || isFull(matchLabel(getLines(el).join(' '), pattern));
 }
 
-/** What the slot link says, from its SVG text, its aria-labelledby label or its visible characters. */
-function slotLabel(a: Element): string {
-  const doc = a.ownerDocument;
+/**
+ * What the slot link says, from its SVG text, its aria-labelledby label or its visible characters. `cut`: an SVG label
+ * there could not be read (its `<use>` chain loops or goes too deep).
+ */
+function slotLabel(a: Element): { text: string; cut: boolean } {
+  let cut = false;
   for (const use of Array.from(a.querySelectorAll('use'))) {
-    const ref = use.getAttribute('href') ?? use.getAttribute('xlink:href');
-    const target = ref?.startsWith('#') ? doc.getElementById(ref.slice(1)) : null;
-    const text = target && !isHidden(use.closest('svg') ?? use) ? normalizeText(target.textContent ?? '') : '';
-    if (text) return text;
+    if (isHidden(use.closest('svg') ?? use)) continue;
+    const drawn = useText(use);
+    if (drawn === null) cut = true;
+    const text = normalizeText(drawn ?? '');
+    if (text) return { text, cut };
   }
   for (const el of [a, ...Array.from(a.querySelectorAll('[aria-labelledby]'))]) {
     const text = labelledText(el);
-    if (text) return text;
+    if (text) return { text, cut };
   }
-  return visibleText(a);
+  return { text: visibleText(a), cut };
 }
 
 const isNameLink = (a: Element) => {
@@ -153,7 +198,7 @@ interface AdLabels {
   evidence: Evidence[];
   /** A near-miss ad label ("Ad · Paid"): the age slot's first, else the first in another label position. */
   near?: LabelHit;
-  /** The age slot holds something that is neither an age nor an ad label. */
+  /** The age slot holds something that is neither an age nor an ad label, or an SVG label that could not be read. */
   ageUnrecognised: boolean;
 }
 
@@ -219,7 +264,7 @@ function sponsoredEvidence(root: Element, m: FacebookMarkers): AdLabels {
   if (cta && root.querySelector(FB_SEL.outboundLink)) out.push(ev('sponsored', 'fb.sponsored.cta', 'weak'));
   // 7. The label where organic posts show their age: the link after the author's name (strong).
   const slot = slotLink(root);
-  const age = slot ? slotLabel(slot) : '';
+  const { text: age, cut } = slot ? slotLabel(slot) : { text: '', cut: false };
   const slotHit = age ? labelHit(age, pattern) : null;
   if (isFull(slotHit)) out.push(ev('sponsored', 'fb.sponsored.slot-label', 'strong'));
   // 8. No timestamp/permalink where organic posts have one (weak). Since 2026 the timestamp links to "/" until
@@ -230,7 +275,7 @@ function sponsoredEvidence(root: Element, m: FacebookMarkers): AdLabels {
   // 9. A near miss ("Ad · Paid"): medium, so with the missing timestamp it still hides, and the change is reported.
   const near = slotHit?.match === 'near' ? slotHit : nearMisses[0];
   if (near) out.push(ev('sponsored', 'fb.sponsored.near', 'medium'));
-  return { evidence: out, ...(near ? { near } : {}), ageUnrecognised: !!age && !slotHit && !isAge };
+  return { evidence: out, ...(near ? { near } : {}), ageUnrecognised: (!!age || cut) && !slotHit && !isAge };
 }
 
 /** True when the evidence is enough to hide a post as an ad: core's rule, the same on every platform. */

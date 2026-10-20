@@ -160,8 +160,8 @@ export function headerButtons(root: Element): { buttons: Element[]; fallback: El
 
 /**
  * The header link after the author's name that holds the post's age, or "Ad" on ads. Since 2026 Facebook draws that
- * text as SVG (a `<use>` of a `<text>` elsewhere in the page) and adds an aria-labelledby span only later; friends'
- * posts may spell it one character per span, each followed by U+034F.
+ * text as SVG (a `<use>` of a `<text>` elsewhere in the page, since 2026-10 through a chain of `<use>`) and adds an
+ * aria-labelledby span only later; friends' posts may spell it one character per span, each followed by U+034F.
  */
 export function slotLink(root: Element): Element | null {
   const { actor, message } = slotsOf(root);

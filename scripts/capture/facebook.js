@@ -146,8 +146,9 @@
       out.setAttribute('data-ua-hidden', '');
     if (/^(block|flex|grid|list-item|table)/.test(s.display)) out.setAttribute('data-ua-block', '');
     if (tag === 'use') {
-      // Facebook draws "Ad" and post ages as a <use> of a <text> elsewhere in the page: keep the reference, under
-      // the fake id, and copy the <text> into the appendix.
+      // Facebook draws "Ad" and post ages as a <use> of a <text> elsewhere in the page, since 2026-10 through a chain
+      // of <svg><use> about 7 deep: keep the reference, under the fake id, and copy its target into the appendix
+      // (where its own <use> is cloned the same way, so the whole chain is kept).
       const ref = src.getAttribute('href') || src.getAttribute('xlink:href');
       out.removeAttribute('href');
       if (ref?.startsWith('#')) {

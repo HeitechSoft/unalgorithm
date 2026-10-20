@@ -99,6 +99,11 @@ describe('golden expectations carried over from the capture tests', () => {
     // The reel items from later loads: two reels shared with no words of the poster's own stay, the Reels panel folds.
     const reels = rows(/^facebook\/2026-10-reels-\d$/);
     expect(reels).toEqual(['show/unknown', 'show/unknown', 'panel']);
-    expect(readExpect('facebook/2026-10-home').decisions.balanced).toEqual([...nine, ...reels]);
+    // The video ad from a later load, its "Ad" at the end of a chain of SVG <use>: folded on every preset.
+    const ads = rows(/^facebook\/2026-10-ads-\d$/);
+    expect(ads).toEqual(['sponsored/unknown']);
+    for (const preset of ['light', 'calm'] as const)
+      expect(readExpect('facebook/2026-10-ads-1').decisions[preset]).toEqual(['sponsored/unknown']);
+    expect(readExpect('facebook/2026-10-home').decisions.balanced).toEqual([...nine, ...reels, ...ads]);
   });
 });
