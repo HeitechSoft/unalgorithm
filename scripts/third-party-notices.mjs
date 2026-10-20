@@ -6,7 +6,7 @@
 // Usage: node scripts/third-party-notices.mjs [--check]
 // --check exits non-zero when the committed file is out of date (used in CI).
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -123,12 +123,14 @@ for (const p of packages) {
     : `License: ${p.license}. The published package includes no license file; see the project homepage for the full text.\n`;
 }
 
-if (!existsSync(OUT) && process.argv.includes('--check')) {
-  console.error('THIRD_PARTY_NOTICES.md is missing. Run: node scripts/third-party-notices.mjs');
-  process.exit(1);
-}
 if (process.argv.includes('--check')) {
-  const current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
+  let current;
+  try {
+    current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
+  } catch {
+    console.error('THIRD_PARTY_NOTICES.md is missing. Run: node scripts/third-party-notices.mjs');
+    process.exit(1);
+  }
   if (current !== md) {
     console.error('THIRD_PARTY_NOTICES.md is out of date. Run: node scripts/third-party-notices.mjs');
     process.exit(1);

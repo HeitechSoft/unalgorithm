@@ -61,6 +61,7 @@ import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
 import { TopicList } from '../../components/TopicList.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
 import { browserKind, browserLabel } from '../../lib/browser-kind.ts';
+import { FEED_TAB_URLS } from '../../lib/feed-hosts.ts';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { listName, namedListProblems, storedOfficialList } from '../../lib/outlets.ts';
@@ -897,9 +898,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   const [origins, setOrigins] = useState<string[]>([]);
   const [erase, setErase] = useState(false);
   const refreshPermissions = () =>
-    void browser.permissions
-      .getAll()
-      .then((p) => setOrigins((p.origins ?? []).filter((o) => !/linkedin\.com|facebook\.com/.test(o))));
+    void browser.permissions.getAll().then((p) => setOrigins((p.origins ?? []).filter((o) => !FEED_TAB_URLS.includes(o))));
   useEffect(refreshPermissions, []);
 
   // Settings, interests and exceptions go to the server while sync is on, whatever the AI source (CL3-22).
