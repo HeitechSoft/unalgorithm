@@ -17,25 +17,29 @@ import {
   presetOf,
   presetSummary,
   type Settings,
-  STARTER_LESS_OF,
-  STARTER_TOPICS,
   sourceCapabilities,
-  type Topic,
 } from '@unalgorithm/core';
 import { listBalance, officialSourceList, ownSourceList, type SourceList } from '@unalgorithm/outlets';
-import { FEATURE_NAMES, type ListKind, NOISE_LABELS, type NoiseLabel, type PlatformId, uuidv7 } from '@unalgorithm/protocol';
+import {
+  FEATURE_NAMES,
+  type ListKind,
+  NOISE_LABELS,
+  type NoiseLabel,
+  type PlatformId,
+  SOURCE_REPO,
+  uuidv7,
+  WEBSITE_ORIGIN,
+} from '@unalgorithm/protocol';
 import {
   Badge,
   BalanceNotice,
   Banner,
   Button,
-  Chip,
   ChoiceCard,
   ChoiceCardGroup,
   Dialog,
   DisplayModeThumb,
   Download,
-  ExternalLink,
   ListGroup,
   ListProblemsNotice,
   ListRow,
@@ -54,7 +58,10 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup, ModelPicker } from '../../components/AiSetup.tsx';
 import { CLOUD_ENABLED } from '../../components/ServerSetup.tsx';
+import { TopicList } from '../../components/TopicList.tsx';
 import { WebSearchKey } from '../../components/WebSearchKey.tsx';
+import { browserKind, browserLabel } from '../../lib/browser-kind.ts';
+import { FEED_TAB_URLS } from '../../lib/feed-hosts.ts';
 import { useStorageItem, useSyncedServer } from '../../lib/hooks.ts';
 import { sendQuietly, sendToBackground } from '../../lib/messages.ts';
 import { listName, namedListProblems, storedOfficialList } from '../../lib/outlets.ts';
@@ -95,7 +102,10 @@ const FILTER_COPY: Record<PlatformId, Record<FilterKey, { title: string; subtitl
     networkActivity: { title: 'Friend activity', subtitle: '"Jane commented on this", unless you follow the author' },
     unjoinedGroups: { title: "Groups you're not in" },
     modules: { title: 'Feed panels', subtitle: 'Reels tray, People you may know, suggested groups' },
-    notFollowed: { title: "Pages you don't follow", subtitle: 'Posts shown with a Follow or Join button' },
+    notFollowed: {
+      title: "People and pages you don't follow",
+      subtitle: 'Posts shown with a Follow button, never friends or groups you’re in',
+    },
     reshares: { title: 'Shares of other posts' },
     reels: { title: 'Reels in your feed' },
   },
@@ -200,7 +210,7 @@ export function PlatformPane({
         {!aiOn ? (
           <ListRow
             title="Set up AI"
-            subtitle="On-device, your own key, or a local model"
+            subtitle={browserKind() === 'firefox' ? 'Your own key or a local model' : 'On-device, your own key, or a local model'}
             accessory="chevron"
             onSelect={() => (location.hash = '#/ai')}
           />
@@ -349,12 +359,30 @@ function ExceptionsGroup({
 
 // ---------- Display ----------
 
+/**
+ * Settings → Display's switch for runs of hidden posts, off by default: off, each hidden post keeps its own fold line,
+ * with Why? and Show; on, posts hidden one after another share one line ("3 hidden · Show all").
+ */
+export const GROUP_RUNS_COPY = {
+  title: 'Group hidden posts in a row',
+  subtitle: 'Shows posts hidden one after another as one line with Show all',
+} as const;
+
+/** Settings → Display's breakage notices switch (ADR 0009 §3). */
+export const NOTICES_COPY = {
+  title: 'Tell me when something breaks',
+  footer:
+    "If LinkedIn or Facebook changes and unAlgorithm can't keep up, a short note appears in your feed. Nothing is sent unless you choose to.",
+} as const;
+
 export function DisplayPane({
   settings,
+  device,
   save,
   saveDevice,
 }: {
   settings: Settings;
+  device: Device;
   save: Save;
   saveDevice: (m: (d: Device) => void) => Promise<void>;
 }) {
@@ -397,9 +425,11 @@ export function DisplayPane({
           }
         />
         <ListRow
-          title="Group hidden posts that are next to each other"
-          subtitle='One line like "3 hidden" instead of a ladder of lines'
-          control={<Switch checked={d.groupRuns} label="Group hidden posts" onCheckedChange={(v) => void set('groupRuns', v)} />}
+          title={GROUP_RUNS_COPY.title}
+          subtitle={GROUP_RUNS_COPY.subtitle}
+          control={
+            <Switch checked={d.groupRuns} label={GROUP_RUNS_COPY.title} onCheckedChange={(v) => void set('groupRuns', v)} />
+          }
         />
       </ListGroup>
       <ListGroup header="Posts for you">
@@ -454,6 +484,18 @@ export function DisplayPane({
           title="Replay setup"
           accessory="chevron"
           onSelect={() => sendQuietly({ type: 'openPage', page: 'onboarding' })}
+        />
+      </ListGroup>
+      <ListGroup footer={NOTICES_COPY.footer}>
+        <ListRow
+          title={NOTICES_COPY.title}
+          control={
+            <Switch
+              checked={device.notices.enabled}
+              label={NOTICES_COPY.title}
+              onCheckedChange={(v) => void saveDevice((dev) => void (dev.notices.enabled = v))}
+            />
+          }
         />
       </ListGroup>
     </>
@@ -512,64 +554,12 @@ export function InterestsPane({ settings, save }: { settings: Settings; save: Sa
   const learned = useStorageItem(learnedItem, { weights: {}, events: [], decayedAt: 0 });
   const [about, setAbout] = useState(settings.interests.about);
   const toast = useToast();
-  const toggleTopic = (list: 'more' | 'less', t: { id: string; label: string; keywords: string[] }, on: boolean) =>
-    save((s) => {
-      if (on) s.interests[list][t.id] = { label: t.label, keywords: t.keywords, addedAt: Date.now() } satisfies Topic;
-      else delete s.interests[list][t.id];
-    });
-  const custom = (list: 'more' | 'less') =>
-    Object.entries(settings.interests[list]).filter(([id]) => ![...STARTER_TOPICS, ...STARTER_LESS_OF].some((t) => t.id === id));
   return (
     <>
       <Title intro="Without AI, unAlgorithm looks for related words. With AI, it understands topics, so it also catches posts that don't use the exact words.">
         Interests
       </Title>
-      <ListGroup header="More of" footer="Posts about these get a quiet For you highlight.">
-        <div className="chips">
-          {STARTER_TOPICS.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.label}
-              selected={!!settings.interests.more[t.id]}
-              onSelectedChange={(on) => void toggleTopic('more', t, on)}
-            />
-          ))}
-          {custom('more').map(([id, t]) => (
-            <Chip key={id} label={t.label} selected onSelectedChange={() => void save((s) => void delete s.interests.more[id])} />
-          ))}
-        </div>
-        <TokenList
-          items={[]}
-          placeholder="Add a topic, e.g. Supply chain"
-          onAdd={(label) =>
-            void save((s) => void (s.interests.more[uuidv7()] = { label, keywords: [label], addedAt: Date.now() }))
-          }
-          onRemove={() => undefined}
-        />
-      </ListGroup>
-      <ListGroup header="Less of" footer="Posts that mention these are folded away, even without AI.">
-        <div className="chips">
-          {STARTER_LESS_OF.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.label}
-              selected={!!settings.interests.less[t.id]}
-              onSelectedChange={(on) => void toggleTopic('less', t, on)}
-            />
-          ))}
-          {custom('less').map(([id, t]) => (
-            <Chip key={id} label={t.label} selected onSelectedChange={() => void save((s) => void delete s.interests.less[id])} />
-          ))}
-        </div>
-        <TokenList
-          items={[]}
-          placeholder="Add a topic to mute"
-          onAdd={(label) =>
-            void save((s) => void (s.interests.less[uuidv7()] = { label, keywords: [label], addedAt: Date.now() }))
-          }
-          onRemove={() => undefined}
-        />
-      </ListGroup>
+      <TopicList interests={settings.interests} save={save} header="Topics" intro />
       <ListGroup
         header="About you"
         footer="Optional. Sent to your AI with each request so it can judge relevance. Keep it general."
@@ -710,7 +700,10 @@ export function AiPane({
           }
         />
       </ListGroup>
-      <ListGroup header="Daily limit" footer="Applies to sources that cost money. Local and on-device AI are unlimited.">
+      <ListGroup
+        header="Daily limit"
+        footer={`Applies to sources that cost money. ${browserKind() === 'firefox' ? 'Local AI is' : 'Local and on-device AI are'} unlimited.`}
+      >
         <ListRow
           title="Posts per day"
           subtitle={
@@ -905,9 +898,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   const [origins, setOrigins] = useState<string[]>([]);
   const [erase, setErase] = useState(false);
   const refreshPermissions = () =>
-    void browser.permissions
-      .getAll()
-      .then((p) => setOrigins((p.origins ?? []).filter((o) => !/linkedin\.com|facebook\.com/.test(o))));
+    void browser.permissions.getAll().then((p) => setOrigins((p.origins ?? []).filter((o) => !FEED_TAB_URLS.includes(o))));
   useEffect(refreshPermissions, []);
 
   // Settings, interests and exceptions go to the server while sync is on, whatever the AI source (CL3-22).
@@ -916,7 +907,7 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
   const flow: { to: string | null; text: string; stays?: string } = !src
     ? { to: null, text: 'Rules run in your browser.', stays: 'Nothing leaves your computer.' }
     : src.kind === 'on-device'
-      ? { to: null, text: "Chrome's built-in AI runs on this computer.", stays: 'Nothing leaves it.' }
+      ? { to: null, text: `${browserLabel(browserKind())}'s built-in AI runs on this computer.`, stays: 'Nothing leaves it.' }
       : src.kind === 'openai-compatible'
         ? {
             to: new URL(src.baseUrl).host,
@@ -1085,10 +1076,17 @@ export function PrivacyPane({ settings, device }: { settings: Settings; device: 
 
 // ---------- About ----------
 
+/** Settings → About's word on reporting: everything goes through the extension, never a GitHub form (ADR 0009 §2). */
+export const ABOUT_REPORT_COPY = {
+  row: 'Report a problem',
+  bannerTitle: 'Built in the open',
+  banner: 'Found a post that was hidden by mistake? Use Why? → Wrong call? on the post, or Report a problem in the toolbar menu.',
+} as const;
+
 export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: SaveDevice }) {
   const version = browser.runtime.getManifest().version;
-  const site = 'https://unalgorithmfeed.com';
-  const repo = 'https://github.com/HeitechSoft/unalgorithm';
+  const site = WEBSITE_ORIGIN;
+  const repo = SOURCE_REPO;
   const devBuild = import.meta.env.MODE !== 'production';
   return (
     <>
@@ -1102,7 +1100,11 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
         <ListRow title="Website" accessory="external" href={`${site}/`} />
         <ListRow title="Help" accessory="external" href={`${site}/help/`} />
         <ListRow title="Source code" accessory="external" href={repo} />
-        <ListRow title="Report a problem" accessory="external" href={`${repo}/issues/new/choose`} />
+        <ListRow
+          title={ABOUT_REPORT_COPY.row}
+          accessory="chevron"
+          onSelect={() => sendQuietly({ type: 'openReport', about: { from: 'settings' } })}
+        />
         <ListRow title="Privacy policy" accessory="external" href={`${site}/privacy/`} />
         <ListRow title="What's new" accessory="external" href={`${site}/whats-new/`} />
         <ListRow title="Licenses & acknowledgements" accessory="external" href={`${repo}/blob/main/THIRD_PARTY_NOTICES.md`} />
@@ -1129,10 +1131,7 @@ export function AboutPane({ device, saveDevice }: { device: Device; saveDevice: 
           />
         </ListGroup>
       ) : null}
-      <Banner title="Built in the open">
-        Found a post that was hidden by mistake? Use Why? → Wrong call on the post, or open an issue.{' '}
-        <ExternalLink size={12} aria-hidden="true" style={{ display: 'inline' }} />
-      </Banner>
+      <Banner title={ABOUT_REPORT_COPY.bannerTitle}>{ABOUT_REPORT_COPY.banner}</Banner>
     </>
   );
 }

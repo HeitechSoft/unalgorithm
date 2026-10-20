@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Using unAlgorithm? Report a problem inside it
+    url: https://unalgorithmfeed.com/help/
+    about: Issues here are public and for contributors. Report a problem with your feed from unAlgorithm itself (Report a problem in the toolbar popup, or Why? → Wrong call? on a post), which sends it to us privately, or email support@heitechsoft.com.
   - name: Questions and ideas
     url: https://github.com/HeitechSoft/unalgorithm/discussions
     about: Ask a question or start a conversation.
@@ -8,4 +11,4 @@ contact_links:
     about: Please report security issues privately.
   - name: Corrections and appeals
     url: https://unalgorithmfeed.com/corrections/
-    about: A fact-check or UnEcho Chamber result looks wrong, or an outlet's lean on unAlgorithm Cloud's source list. How to ask, and what never to send.
+    about: A fact-check or UnEcho Chamber result looks wrong (ask from the result in unAlgorithm), or an outlet's lean on unAlgorithm Cloud's source list. How to ask, and what never to send.

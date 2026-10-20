@@ -14,12 +14,14 @@ import { LEAN_BUCKETS } from '@unalgorithm/protocol';
 import {
   answerAnthropicModels,
   CORS,
-  EXTENSION_PATH,
+  type ExtensionBrowser,
   expect,
+  extensionPath,
   FB_PUBLIC_FLAGGED,
   facebookFeed,
   LINKEDIN_FLAGGED,
   linkedinPost,
+  markTopicMore,
   saveSource,
   seeResult,
   test,
@@ -53,8 +55,9 @@ import {
 /** An Anthropic-shaped key: only the mock ever sees it. */
 const API_KEY = `sk-ant-api03-E2E${'P'.repeat(40)}`;
 const PRICE = 'About $0.14 on your Anthropic account';
-/** A store build, as `pnpm zip` leaves it (CI builds it before `pnpm e2e`). */
-const STORE_BUILD = resolve(dirname(fileURLToPath(import.meta.url)), '../.output/chrome-mv3');
+/** The project's store build, as `pnpm zip` leaves it (CI builds it before the end-to-end tests). */
+const storeBuild = (browser: ExtensionBrowser) =>
+  resolve(dirname(fileURLToPath(import.meta.url)), `../.output/${browser === 'edge' ? 'edge' : 'chrome'}-mv3`);
 
 interface MockAnthropic {
   kinds: AnthropicRequestKind[];
@@ -180,6 +183,8 @@ const compare = (share: Locator) => compareAt(share, PRICE);
 test('test_e2e_perspectives_offer_follows_labs_and_audience', async ({ context, extensionId, feed }) => {
   const mock = await mockAnthropic(context);
   const options = await setUp(context, extensionId, { labs: false });
+  // The AI highlights by relevance once the person has said what they want, so the picks show what was classified.
+  await markTopicMore(context, extensionId);
   const linkedin = await feed();
   const facebook = await facebookFeed(context);
   const { friends, share } = facebookPosts(facebook);
@@ -250,14 +255,15 @@ test('test_e2e_perspectives_only_link_leaves', async ({ context, extensionId }) 
   expect(story).toContain(LINK_TITLE);
 });
 
-test('test_e2e_store_build_has_no_fixture_registry', () => {
-  test.skip(!existsSync(STORE_BUILD), 'no store build in .output/chrome-mv3 (CI builds it with `pnpm zip`)');
+test('test_e2e_store_build_has_no_fixture_registry', ({ extensionBrowser }) => {
+  const store = storeBuild(extensionBrowser);
+  test.skip(!existsSync(store), `no store build in ${store} (CI builds it with \`pnpm zip\`)`);
   // The fixture's names and domains are built at run time, so the marker in its evidence notes marks it in a bundle;
   // the e2e build, which holds the fixture, shows the marker finds it.
   const markers = [FIXTURE_MARKER];
   const holding = (dir: string) => files(dir).filter((file) => markers.some((m) => readFileSync(file, 'latin1').includes(m)));
-  expect(holding(EXTENSION_PATH).length).toBeGreaterThan(0);
-  expect(holding(STORE_BUILD)).toEqual([]);
+  expect(holding(extensionPath(extensionBrowser)).length).toBeGreaterThan(0);
+  expect(holding(store)).toEqual([]);
 });
 
 /** Every file under `dir`. */

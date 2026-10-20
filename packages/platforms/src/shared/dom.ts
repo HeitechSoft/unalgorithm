@@ -137,13 +137,47 @@ export function hasTextNode(root: Node, pattern: RegExp, limit = 400): boolean {
   return false;
 }
 
-/** Normalize text from the page: NFKC, no zero-width or bidi characters, single spaces. */
+/** Normalize text from the page: NFKC, no zero-width, bidi or grapheme-joiner (U+034F) characters, single spaces. */
 export function normalizeText(s: string): string {
   return s
     .normalize('NFKC')
-    .replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g, '')
+    .replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|\u034F/g, '')
     .replace(/[ \t ]+/g, ' ')
     .trim();
+}
+
+/**
+ * An element's accessible name, roughly as a screen reader computes it: the elements `aria-labelledby` names (read even
+ * when hidden, as the spec says: platforms hide labels there), then `aria-label`, an image's `alt`, the visible text,
+ * an SVG's `<title>`, then `title`. Normalized; empty when it has none. Read-only.
+ */
+export function accessibleName(el: Element): string {
+  const ids = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean);
+  if (ids.length) {
+    const root = el.getRootNode() as Document | ShadowRoot;
+    const byId = (id: string) =>
+      (typeof root.getElementById === 'function' ? root.getElementById(id) : null) ?? el.ownerDocument.getElementById(id);
+    const named = normalizeText(
+      ids
+        .map((id) => byId(id))
+        .filter((target): target is HTMLElement => !!target && target !== el)
+        .map((target) => target.getAttribute('aria-label') || target.textContent || '')
+        .join(' '),
+    );
+    if (named) return named;
+  }
+  const label = normalizeText(el.getAttribute('aria-label') ?? '');
+  if (label) return label;
+  if (el.tagName === 'IMG' || el.tagName === 'AREA' || (el.tagName === 'INPUT' && el.getAttribute('type') === 'image')) {
+    const alt = normalizeText(el.getAttribute('alt') ?? '');
+    if (alt) return alt;
+  }
+  const text = normalizeText(walkText(el).replace(/\s+/g, ' '));
+  if (text) return text;
+  const svgTitle = el.tagName.toLowerCase() === 'svg' ? el.querySelector('title') : el.querySelector('svg title');
+  const titled = normalizeText(svgTitle?.textContent ?? '');
+  if (titled) return titled;
+  return normalizeText(el.getAttribute('title') ?? '');
 }
 
 /** True when `a` comes before `b` in document order. */

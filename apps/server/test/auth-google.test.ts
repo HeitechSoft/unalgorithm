@@ -1,4 +1,4 @@
-import { SERVER_INFO_PATH, ServerInfoSchema } from '@unalgorithm/protocol';
+import { AUTHORIZE_PAGE_PATH, AuthorizeResponseSchema, SERVER_INFO_PATH, ServerInfoSchema } from '@unalgorithm/protocol';
 import { betterAuth } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,7 +21,17 @@ import {
   stubGoogle,
   TEST_GOOGLE_CLIENT_ID,
 } from './support/google-stub.ts';
-import { postJson, sessionCookie, sessionOf, signInWeb } from './support/sign-in.ts';
+import {
+  authorizeRequest,
+  DEV_EXTENSION_ID,
+  FIREFOX_EXTENSION_ID,
+  pkcePair,
+  postAuthorize,
+  postJson,
+  sessionCookie,
+  sessionOf,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -46,9 +56,12 @@ afterEach(async () => {
   for (const step of cleanup.splice(0).reverse()) await step();
 });
 
-/** A test server whose allowlist holds Ann and Bob, with Google sign-in unless `google` is false. */
-async function googleApp({ google = true }: { google?: boolean } = {}) {
-  const env = { SIGNUP_ALLOWLIST: `${ANN},${BOB}`, ...(google ? GOOGLE_ENV : {}) };
+/**
+ * A test server whose allowlist holds Ann and Bob, with Google sign-in unless `google` is false. `ids` replaces the
+ * default EXTENSION_IDS.
+ */
+async function googleApp({ google = true, ids }: { google?: boolean; ids?: string } = {}) {
+  const env = { SIGNUP_ALLOWLIST: `${ANN},${BOB}`, ...(google ? GOOGLE_ENV : {}), ...(ids ? { EXTENSION_IDS: ids } : {}) };
   const t = await createTestApp({ config: testConfig(env) });
   cleanup.push(async () => {
     allLines.push(...t.lines);
@@ -267,6 +280,28 @@ describe('callback', { timeout: PGLITE_TIMEOUT }, () => {
     expect(accounts[0]).toMatchObject({ providerId: 'google', accountId: stub.sub, accessToken: null, idToken: null });
     // Linking writes no name or picture.
     expect((await usersWithEmail(t, BOB))[0]).toMatchObject({ name: '', image: null });
+  });
+
+  it('test_google_returns_to_authorize_with_extension_request', async () => {
+    // The sign-in page starts Google with its own address and the extension's request as the way back. Firefox add-on
+    // ids hold `@`, or `{` and `}`: the request must come back exactly as sent, for the page to ask for the code.
+    const t = await googleApp({ ids: `${DEV_EXTENSION_ID},${FIREFOX_EXTENSION_ID},{daf44bf7-a45e-4450-979c-91cf07434c3d}` });
+    await google({ email: ANN, emailVerified: true });
+    for (const clientId of [DEV_EXTENSION_ID, FIREFOX_EXTENSION_ID, '{daf44bf7-a45e-4450-979c-91cf07434c3d}']) {
+      const req = authorizeRequest(pkcePair().challenge, clientId);
+      const back = `${AUTHORIZE_PAGE_PATH}?${new URLSearchParams({ ...req })}`;
+      const res = await signInWithGoogle(t.app, back);
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(back);
+      const returned = Object.fromEntries(new URL(back, TEST_PUBLIC_URL).searchParams);
+      expect(returned).toEqual(req);
+
+      // Signed in there: the request the page reads back gets the extension its code, at its own redirect address.
+      const authorized = await postAuthorize(t.app, sessionCookie(res), returned);
+      expect(authorized.status).toBe(200);
+      const { redirect } = AuthorizeResponseSchema.parse(await authorized.json());
+      expect(redirect.startsWith(`${req.redirect_uri}?code=`)).toBe(true);
+    }
   });
 
   it('test_google_refuses_unlisted_address', async () => {

@@ -6,7 +6,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/contract.ts"
+    "./testing": "./src/testing/contract.ts",
+    "./testing/golden": "./src/testing/golden.ts",
+    "./testing/mutate": "./src/testing/mutate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

@@ -1,24 +1,18 @@
 // Generates THIRD_PARTY_NOTICES.md from the open-source packages that are actually bundled into the extension.
-// It runs the production build once with source maps (UA_LICENSES=1, see apps/extension/wxt.config.ts) and lists
-// every package those maps reference, so dev-only tools are left out and bundled helpers from devDependencies
-// (WXT's runtime) are included.
+// It runs the production build of every browser target with source maps (UA_LICENSES=1, see
+// apps/extension/wxt.config.ts) and with the Cloud card (UA_CLOUD=1, the most a store build can bundle), and lists
+// every package those maps reference, so dev-only tools are left out and bundled helpers from devDependencies (WXT's
+// runtime) are included. One file goes into every zip, so it fails when the browsers bundle different packages.
 // Usage: node scripts/third-party-notices.mjs [--check]
 // --check exits non-zero when the committed file is out of date (used in CI).
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'THIRD_PARTY_NOTICES.md');
-const BUILD = join(ROOT, 'apps/extension/.output/chrome-mv3-licenses');
-
-execFileSync('pnpm', ['--filter', '@unalgorithm/extension', 'exec', 'wxt', 'build'], {
-  cwd: ROOT,
-  env: { ...process.env, UA_LICENSES: '1' },
-  // Build output stays quiet; errors still reach the console (and CI logs).
-  stdio: ['ignore', 'ignore', 'inherit'],
-  shell: process.platform === 'win32',
-});
+/** Every browser the release zips are built for. */
+const BROWSERS = ['chrome', 'edge', 'firefox'];
 
 function* mapFiles(dir) {
   // Sorted, so the output does not depend on the file system's directory order.
@@ -29,17 +23,39 @@ function* mapFiles(dir) {
   }
 }
 
-/** Absolute package directories referenced by the bundle (one per bundled name@version). */
-const dirs = new Set();
-for (const map of mapFiles(BUILD)) {
-  const { sources = [] } = JSON.parse(readFileSync(map, 'utf8'));
-  for (const source of sources) {
-    const at = source.lastIndexOf('node_modules/');
-    if (at < 0) continue;
-    const parts = source.slice(at + 'node_modules/'.length).split('/');
-    const name = parts[0]?.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
-    if (name) dirs.add(resolve(dirname(map), source.slice(0, at + 'node_modules/'.length + name.length)));
+/** Absolute package directories referenced by one browser's bundle (one per bundled name@version). */
+function bundledDirs(browser) {
+  execFileSync('pnpm', ['--filter', '@unalgorithm/extension', 'exec', 'wxt', 'build', '-b', browser], {
+    cwd: ROOT,
+    env: { ...process.env, UA_LICENSES: '1', UA_CLOUD: '1' },
+    // Build output stays quiet; errors still reach the console (and CI logs).
+    stdio: ['ignore', 'ignore', 'inherit'],
+    shell: process.platform === 'win32',
+  });
+  const dirs = new Set();
+  for (const map of mapFiles(join(ROOT, `apps/extension/.output/${browser}-mv3-licenses`))) {
+    const { sources = [] } = JSON.parse(readFileSync(map, 'utf8'));
+    for (const source of sources) {
+      const at = source.lastIndexOf('node_modules/');
+      if (at < 0) continue;
+      const parts = source.slice(at + 'node_modules/'.length).split('/');
+      const name = parts[0]?.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+      if (name) dirs.add(resolve(dirname(map), source.slice(0, at + 'node_modules/'.length + name.length)));
+    }
   }
+  return dirs;
+}
+
+const perBrowser = BROWSERS.map((browser) => ({ browser, dirs: bundledDirs(browser) }));
+const dirs = new Set(perBrowser.flatMap(({ dirs }) => [...dirs]));
+const divergent = perBrowser.flatMap(({ browser, dirs: own }) =>
+  [...dirs].filter((dir) => !own.has(dir)).map((dir) => `${browser} does not bundle ${dir}`),
+);
+if (divergent.length) {
+  console.error(
+    `The browsers bundle different packages, so one THIRD_PARTY_NOTICES.md can't describe every zip:\n${divergent.join('\n')}`,
+  );
+  process.exit(1);
 }
 
 /**
@@ -107,12 +123,14 @@ for (const p of packages) {
     : `License: ${p.license}. The published package includes no license file; see the project homepage for the full text.\n`;
 }
 
-if (!existsSync(OUT) && process.argv.includes('--check')) {
-  console.error('THIRD_PARTY_NOTICES.md is missing. Run: node scripts/third-party-notices.mjs');
-  process.exit(1);
-}
 if (process.argv.includes('--check')) {
-  const current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
+  let current;
+  try {
+    current = readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n');
+  } catch {
+    console.error('THIRD_PARTY_NOTICES.md is missing. Run: node scripts/third-party-notices.mjs');
+    process.exit(1);
+  }
   if (current !== md) {
     console.error('THIRD_PARTY_NOTICES.md is out of date. Run: node scripts/third-party-notices.mjs');
     process.exit(1);

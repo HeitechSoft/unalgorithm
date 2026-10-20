@@ -3,7 +3,14 @@
  * and that keys and tokens never reach a payload. The server is the in-memory fake behind an injected fetch, the device
  * token a stubbed `getAccessToken`; extension storage is the WXT fake browser and the clock a fake `Date`.
  */
-import { defaultDevice, defaultSettings, type Settings, type SettingsClocks } from '@unalgorithm/core';
+import {
+  defaultDevice,
+  defaultSettings,
+  presetOf,
+  SETTINGS_VERSION,
+  type Settings,
+  type SettingsClocks,
+} from '@unalgorithm/core';
 import {
   AUTHORIZE_PAGE_PATH,
   formatHlc,
@@ -22,7 +29,8 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { setSecret } from '../src/background/idb.ts';
 import { markNeedsSignIn, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { type SyncDeps, syncOnce } from '../src/background/sync-client.ts';
-import { applyRemoteSettings, updateSettings } from '../src/lib/settings-store.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
+import { applyRemoteSettings, updateSettings, upgradeStoredSettings } from '../src/lib/settings-store.ts';
 import {
   DEFAULT_SYNC_STATE,
   deviceItem,
@@ -36,6 +44,13 @@ import {
   votesItem,
 } from '../src/lib/storage.ts';
 import { createFakeSyncServer, type FakeSyncServer } from './support/fake-sync-server.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const ORIGIN = 'https://sync.example.org';
 const EMAIL = 'ada@example.org';
@@ -96,6 +111,7 @@ const pushedKeys = (fake = server) => fake.pushBodies().flatMap((b) => b.items.m
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   await deviceItem.setValue(defaultDevice(LOCAL));
@@ -131,6 +147,78 @@ describe('guards', () => {
     expect(await run()).toStrictEqual({ ok: false, problem: 'auth' });
     expect((await state()).problem).toBe('auth');
     expect(server.calls).toHaveLength(0);
+  });
+});
+
+describe('firefox consent', () => {
+  it('test_firefox_sync_waits_for_consent', async () => {
+    env.kind = 'firefox';
+    let granted: string[] = ['websiteContent'];
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    // The settings name the people you always show or hide, and go with the account: post text alone isn't enough, nor
+    // is all but one of the types the sign-in asked for. Technical and interaction data (the device name) isn't one.
+    const cloudData = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+    for (const missing of cloudData) {
+      granted = cloudData.filter((type) => type !== missing);
+      expect(await run(), missing).toStrictEqual({ ok: false, problem: 'consent' });
+    }
+    expect((await state()).problem).toBe('consent');
+    expect(server.calls).toHaveLength(0);
+    expect(deps.getAccessToken).not.toHaveBeenCalled();
+
+    granted = cloudData;
+    expect(await run()).toMatchObject({ ok: true });
+    expect((await state()).problem).toBeNull();
+    expect(server.calls.length).toBeGreaterThan(0);
+
+    // A server on this computer needs the same: it is outside the browser.
+    granted = [];
+    const local = 'http://127.0.0.1:8787';
+    await serverAccountItem.setValue(account({ origin: local }));
+    await enable({ origin: local });
+    const before = server.calls.length;
+    expect(await run()).toStrictEqual({ ok: false, problem: 'consent' });
+    expect(server.calls).toHaveLength(before);
+    granted = cloudData;
+    expect(await run()).toMatchObject({ ok: true });
+    expect(server.calls.length).toBeGreaterThan(before);
+  });
+
+  it('test_firefox_consent_withdrawn_during_a_run_stops_it', async () => {
+    env.kind = 'firefox';
+    const cloudData = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+    let granted = cloudData;
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    // A local edit, so the run has something to push after its pull.
+    await updateSettings((s) => {
+      s.platforms.linkedin.preset = 'calm';
+    });
+    // Withdrawn in Firefox's add-ons page once the server has answered the run's first request.
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const answer = await server.fetch(input, init);
+      granted = ['websiteContent'];
+      return answer;
+    }) as unknown as typeof globalThis.fetch;
+    expect(await run({}, { fetch })).toStrictEqual({ ok: false, problem: 'consent' });
+    expect(server.calls).toHaveLength(1);
+    expect(server.pushBodies()).toHaveLength(0);
+    expect((await state()).problem).toBe('consent');
+  });
+
+  it('test_chrome_sync_never_asks_for_consent', async () => {
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    expect(await run()).toMatchObject({ ok: true });
+    expect(getAll).not.toHaveBeenCalled();
   });
 });
 
@@ -318,6 +406,134 @@ describe('pull and apply', () => {
     expect(await run()).toMatchObject({ ok: true });
     expect((await readSettings()).display.mode).toBe('dim');
     expect(paged.item('display.mode')).toMatchObject({ value: 'dim' });
+  });
+});
+
+describe("settings version 2: Facebook's Balanced hides people you don't follow", () => {
+  const FB = 'platforms.facebook';
+  /** What a computer on version 1 sends when its person picks Balanced on Facebook after Calm. */
+  const balancedFromVersion1 = (at: string): SyncItem[] => [
+    live(`${FB}.preset`, 'balanced', at),
+    live(`${FB}.filters.notFollowed`, false, at),
+    live(`${FB}.filters.reels`, false, at),
+    live(`${FB}.filters.reshares`, false, at),
+    live(`${FB}.ai.noise.promotional`, false, at),
+    live(`${FB}.ai.noise.low-effort`, false, at),
+    live(`${FB}.ai.lowRelevance`, false, at),
+  ];
+  const facebook = async () => (await readSettings()).platforms.facebook;
+
+  /** This computer picked Calm, then Balanced, on version 1 and synced it; then it updated to version 2. */
+  async function updatedFromVersion1(): Promise<SyncItem[]> {
+    const mine = balancedFromVersion1(hlc(NOW - 5 * DAY, LOCAL));
+    for (const item of mine) server.put(item);
+    const v1 = defaultSettings();
+    v1.platforms.facebook.filters.notFollowed = false;
+    await settingsItem.setValue({ ...v1, version: 1 });
+    await settingsClocksItem.setValue(Object.fromEntries(mine.map((item) => [item.key, item.hlc])));
+    await enable({ known: Object.fromEntries(mine.map((item) => [item.key, item.hlc])) });
+    expect(await facebook()).toMatchObject({ preset: 'balanced', filters: { notFollowed: true } });
+    return mine;
+  }
+
+  it('test_sync_sends_the_upgrade_once_and_never_undoes_it', async () => {
+    const mine = await updatedFromVersion1();
+    // The background stores the upgrade when it starts: the new value gets a clock right after the old one, once.
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await upgradeStoredSettings()).toBe(false);
+    expect(await settingsItem.getValue()).toMatchObject({
+      version: SETTINGS_VERSION,
+      platforms: { facebook: { filters: { notFollowed: true } } },
+    });
+    const stamp = hlc(NOW - 5 * DAY, LOCAL, 1);
+    expect((await settingsClocksItem.getValue())[`${FB}.filters.notFollowed`]).toBe(stamp);
+    expect(await run()).toStrictEqual({ ok: true, pulled: mine.length, pushed: 1 });
+    expect(pushedKeys()).toStrictEqual([`${FB}.filters.notFollowed`]);
+    expect(server.item(`${FB}.filters.notFollowed`)).toMatchObject({ value: true, hlc: stamp });
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+
+    // Another computer, still on version 1, picks Balanced again: read as today's Balanced, and nothing goes back.
+    for (const item of balancedFromVersion1(hlc(NOW - DAY))) server.put(item);
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    const fb = await facebook();
+    expect(fb.filters.notFollowed).toBe(true);
+    expect(presetOf('facebook', fb)).toBe('balanced');
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect(pushedKeys()).toStrictEqual([`${FB}.filters.notFollowed`]);
+
+    // The person turns the rule off here: that is a choice, sent and kept.
+    await updateSettings((s) => {
+      s.platforms.facebook.filters.notFollowed = false;
+      s.platforms.facebook.preset = presetOf('facebook', s.platforms.facebook);
+    });
+    expect(await run()).toMatchObject({ ok: true, pushed: 2 });
+    expect(server.item(`${FB}.filters.notFollowed`)).toMatchObject({ value: false });
+    expect(server.item(`${FB}.preset`)).toMatchObject({ value: 'custom' });
+    expect(presetOf('facebook', await facebook())).toBe('custom');
+  });
+
+  it('test_the_first_write_after_the_update_carries_the_upgrade', async () => {
+    await updatedFromVersion1();
+    // An edit, or a remote apply, before the background stored the upgrade stores it with its clock all the same.
+    await updateSettings((s) => {
+      s.display.mode = 'dim';
+    });
+    expect(await settingsItem.getValue()).toMatchObject({
+      version: SETTINGS_VERSION,
+      platforms: { facebook: { filters: { notFollowed: true } } },
+    });
+    expect(await upgradeStoredSettings()).toBe(false);
+    expect(await run()).toMatchObject({ ok: true, pushed: 2 });
+    expect(pushedKeys().sort()).toStrictEqual(['display.mode', `${FB}.filters.notFollowed`]);
+  });
+});
+
+describe('settings version 3: hidden posts in a row each keep their own line', () => {
+  const GROUP = 'display.groupRuns';
+  /** This computer on version 2, with grouping as version 2 left it, then updated to version 3. */
+  async function storedByVersion2(clocks: SettingsClocks): Promise<void> {
+    const v2 = defaultSettings();
+    v2.display.groupRuns = true;
+    await settingsItem.setValue({ ...v2, version: 2 });
+    await settingsClocksItem.setValue(clocks);
+  }
+
+  it('test_an_untouched_default_moves_and_nothing_is_sent', async () => {
+    await storedByVersion2({});
+    // Read before the background stores the upgrade (a page, a content script): already the new default.
+    expect((await readSettings()).display.groupRuns).toBe(false);
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await settingsItem.getValue()).toMatchObject({ version: SETTINGS_VERSION, display: { groupRuns: false } });
+    expect(await settingsClocksItem.getValue()).toStrictEqual({});
+    // A default is never sent: each computer moves its own when it updates.
+    expect(await run()).toStrictEqual({ ok: true, pulled: 0, pushed: 0 });
+    expect(server.item(GROUP)).toBeUndefined();
+
+    // Turned on here: a choice like any other, sent, and a computer still on version 2 gets it as it is.
+    await updateSettings((s) => {
+      s.display.groupRuns = true;
+    });
+    expect(await run()).toMatchObject({ ok: true, pushed: 1 });
+    expect(server.item(GROUP)).toMatchObject({ value: true });
+  });
+
+  it('test_a_choice_from_any_computer_survives_the_update', async () => {
+    // The person turned grouping off and on again on another computer, and this one pulled it while on version 2.
+    const chose = hlc(NOW - 3 * DAY);
+    server.put(live(GROUP, true, chose));
+    await storedByVersion2({ [GROUP]: chose });
+    await enable({ known: { [GROUP]: chose } });
+    expect(await upgradeStoredSettings()).toBe(true);
+    expect(await settingsItem.getValue()).toMatchObject({ version: SETTINGS_VERSION, display: { groupRuns: true } });
+    expect((await settingsClocksItem.getValue())[GROUP]).toBe(chose);
+    // Nothing to send, and the computers agree.
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect((await readSettings()).display.groupRuns).toBe(true);
+
+    // Turned off on a computer still on version 2: it applies here.
+    server.put(live(GROUP, false, hlc(NOW - DAY)));
+    expect(await run()).toMatchObject({ ok: true, pushed: 0 });
+    expect((await readSettings()).display.groupRuns).toBe(false);
   });
 });
 

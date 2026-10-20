@@ -1,6 +1,6 @@
 # unAlgorithm Cloud beta privacy notice
 
-Last updated: 17 October 2026
+Last updated: 19 October 2026
 
 unAlgorithm Feed by HeitechSoft hides noise in your LinkedIn and Facebook feeds. This notice covers only unAlgorithm
 Cloud, HeitechSoft's hosted AI service at `cloud.unalgorithm.app`, during its beta. The extension itself is covered by
@@ -40,7 +40,8 @@ carries, is kept in memory only, and is gone at most 10 minutes after it ends.
 
 - Your email address. No name and no picture.
 - Your devices: one row for each copy of the extension you signed in, with the short name it gave itself (such as
-  "Chrome on Windows"), when it signed in and when it was last used. Sign-in tokens and codes are stored only as hashes.
+  "Chrome on Windows" or "Firefox on Linux"), when it signed in and when it was last used. Sign-in tokens and codes are
+  stored only as hashes.
 - Passkeys, if you add one: the public key and its label. Never a private key or biometric data.
 - If you sign in with Google: Google's id for your Google account and the verified address Google gave. Never a Google
   access, refresh or ID token.
@@ -58,6 +59,11 @@ carries, is kept in memory only, and is gone at most 10 minutes after it ends.
   UnEcho Chamber source list (outlet names, web addresses and the leans you gave them). Never API keys or post text.
 - For fact-checks of public posts: a 24-hour shared cache of verdicts and their short explanations, keyed by a hash of
   each claim, with the public sources found. Never the claim, the post, or who checked it.
+- Problem reports that anyone sends from the extension with *Send report*, with or without an account: versions,
+  counts, codes and the person's answers and, for a correction, their own words and a reply email if they gave one.
+  Never an IP address or an account; deleting your account clears your address from any report that gave it. Reports
+  are deleted after 90 days, a reply email 30 days after we answer and never more than 60 days after it arrived. The
+  unAlgorithm privacy policy describes them in full, under *Report a problem*.
 - A nightly encrypted backup of the database, kept for 14 nights.
 
 Access logs and the server's own logs hold no post content, query strings or IP addresses. When a request fails, the
@@ -119,6 +125,7 @@ We keep your account data until you delete your account. Export and deletion are
   encrypted backups until they age out.
 
 To see or correct your data, or for any other request, email the privacy contact (section 9). We answer within 30 days.
+A problem report carries nothing that ties it to you: to see or delete one, mention the reference it showed you.
 
 ## 9. Contact
 

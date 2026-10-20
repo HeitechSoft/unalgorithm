@@ -276,6 +276,7 @@ describe('messages', () => {
       clock: "This computer's date or time looks wrong, so sync is paused. Check the clock, then try again.",
       server: '{title} had a problem. Sync tries again soon.',
       unavailable: "{title} doesn't offer sync.",
+      consent: 'unAlgorithm needs your permission to send your settings to {title}.',
     };
     for (const [origin, title] of [
       [ORIGIN, 'sync.example.org'],
@@ -518,6 +519,47 @@ describe('scheduling', () => {
     expect(await fakeBrowser.alarms.getAll()).toMatchObject([{ name: 'ua-sync', periodInMinutes: 0.5 }]);
   });
 
+  it('test_browser_restart_brings_the_alarm_back', async () => {
+    await serverAccountItem.setValue(account());
+    await syncStateItem.setValue(enabledState());
+    initSync();
+    await settle();
+    // Firefox starts the background at browser start only for an `onStartup` listener; registered every time.
+    expect(fakeBrowser.runtime.onStartup.hasListeners()).toBe(true);
+    expect(await fakeBrowser.alarms.getAll()).toMatchObject([{ name: 'ua-sync' }]);
+
+    // A restart: Firefox's alarms were in memory and are gone, and the background starts for `onStartup`.
+    await fakeBrowser.alarms.clearAll();
+    initSync();
+    await fakeBrowser.runtime.onStartup.trigger();
+    await settle();
+    expect(await fakeBrowser.alarms.getAll()).toMatchObject([{ name: 'ua-sync', periodInMinutes: 0.5 }]);
+    // The start syncs once when the last sync is old; the event itself adds nothing.
+    expect(runs.map((r) => r.wait)).toStrictEqual([]);
+    vi.setSystemTime(NOW + 60_000);
+    initSync();
+    await fakeBrowser.runtime.onStartup.trigger();
+    await settle();
+    expect(runs.map((r) => r.wait)).toStrictEqual([0]);
+  });
+
+  it('test_long_poll_stops_while_consent_is_missing', async () => {
+    await serverAccountItem.setValue(account());
+    await syncStateItem.setValue(enabledState());
+    feedTabs = [tab(7, LINKEDIN)];
+    initSync();
+    await settle();
+    expect(runs.map((r) => r.wait)).toStrictEqual([LONG]);
+    lastRun().answer({ ok: false, problem: 'consent' });
+    await settle();
+    // No retries on a timer: nothing changes until the person allows it (Settings syncs then), and the alarm checks.
+    await advance(5 * 60_000);
+    expect(runs).toHaveLength(1);
+    await fakeBrowser.alarms.onAlarm.trigger(alarm());
+    await settle();
+    expect(runs.map((r) => r.wait)).toStrictEqual([LONG, 0, LONG]);
+  });
+
   it('test_alarm_tick_restarts_long_poll', async () => {
     await serverAccountItem.setValue(account());
     await syncStateItem.setValue(enabledState());
@@ -584,11 +626,16 @@ describe('sign-out and erase', () => {
 
 describe('manifest', () => {
   it('test_manifest_alarms_only_with_cloud', () => {
-    vi.stubEnv('UA_CLOUD', undefined);
-    expect(manifestFor('production').permissions).not.toContain('alarms');
-    for (const mode of ['development', 'e2e']) expect(manifestFor(mode).permissions).toContain('alarms');
-    vi.stubEnv('UA_CLOUD', '1');
-    expect(manifestFor('production').permissions).toContain('alarms');
+    // Required in every browser: Firefox can't make `alarms` optional at all.
+    for (const browser of ['chrome', 'edge', 'firefox']) {
+      vi.stubEnv('UA_CLOUD', undefined);
+      expect(manifestFor('production', browser).permissions, browser).not.toContain('alarms');
+      for (const mode of ['development', 'e2e']) expect(manifestFor(mode, browser).permissions, browser).toContain('alarms');
+      vi.stubEnv('UA_CLOUD', '1');
+      expect(manifestFor('production', browser).permissions, browser).toContain('alarms');
+      for (const mode of ['production', 'development', 'e2e'])
+        expect(manifestFor(mode, browser).optional_permissions ?? [], browser).not.toContain('alarms');
+    }
     vi.unstubAllEnvs();
   });
 });

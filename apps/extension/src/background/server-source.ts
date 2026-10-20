@@ -10,6 +10,7 @@ import {
   ServerErrorSchema,
   ZERO_USAGE,
 } from '@unalgorithm/protocol';
+import { CLOUD_DATA, hasConsent, serverConsentMessage } from '../lib/data-consent.ts';
 import { serverLabel } from '../lib/server-label.ts';
 import { readBoundedText } from './bounded-body.ts';
 import { getAccessToken, markNeedsSignIn, refreshServerInfo, type ServerAccount, serverAccountItem } from './server-auth.ts';
@@ -23,7 +24,9 @@ import { noteRefused, noteSettlement } from './server-balance.ts';
  *
  * A failed request is every post's error, never a throw, so `classifyItems` caches, pauses and retries exactly as it
  * does for the other sources. Errors carry the extension's own words for the server's error code, never the server's
- * text, so a server cannot put its own instructions on the extension's screens.
+ * text, so a server cannot put its own instructions on the extension's screens. In Firefox nothing is sent without the
+ * server's data-collection consent (ADR 0008): the callers check it before they start (`missingAccess`), and it is
+ * checked again here, for a batch that waited its turn.
  */
 
 type ServerSource = Extract<AISourceConfig, { kind: 'server' }>;
@@ -69,6 +72,7 @@ export async function classifyViaServer(
   try {
     const base = new URL(cfg.baseUrl);
     const { title } = serverLabel(base.origin);
+    if (!(await hasConsent(CLOUD_DATA))) throw new AIError('host-permission', serverConsentMessage(title));
     const request = ClassifyRequestSchema.safeParse({ v: 1, posts, ...opts });
     if (!request.success) throw new AIError('bad-request', describeError('bad-request', title));
     const body = JSON.stringify(request.data);

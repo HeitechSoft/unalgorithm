@@ -11,6 +11,7 @@ import {
   fbFeed,
   fbFeed2026,
   JOINED_GROUP_POST,
+  NOT_FOLLOWED_PAGE_POST,
   ORGANIC_LINK_SHARE,
   PHOTO_POST_2026,
   PYMK,
@@ -87,14 +88,17 @@ describe('Facebook adapter (synthetic fixtures)', () => {
     expect(p.media).toBe('link');
   });
 
-  it('hides "Suggested for you" in Balanced; "not followed" only in Calm until verified', () => {
+  it('hides "Suggested for you" as suggested, and a page you don\'t follow without it as not followed, in Balanced', () => {
     const p = post(SUGGESTED_PAGE_POST);
     expect(p.signals.suggested).toBe(true);
     expect(p.author.relationship).toBe('not-followed');
     expect(ruleFilter(p, balanced)?.reason).toBe('suggested');
-    const notSuggested = { ...p, signals: { ...p.signals, suggested: false } };
-    expect(ruleFilter(notSuggested, balanced)).toBeNull();
+    const notSuggested = post(NOT_FOLLOWED_PAGE_POST);
+    expect(notSuggested.signals.suggested).toBe(false);
+    expect(notSuggested.author.relationship).toBe('not-followed');
+    expect(ruleFilter(notSuggested, balanced)?.reason).toBe('not-followed');
     expect(ruleFilter(notSuggested, calm)?.reason).toBe('not-followed');
+    expect(ruleFilter(notSuggested, applyPreset('facebook', balanced, 'light'))).toBeNull();
   });
 
   it('treats "X commented on this" as friend activity', () => {
@@ -248,10 +252,11 @@ describe('Facebook adapter (2026 layout, no role="feed")', () => {
     expect(ruleFilter(p, balanced)?.reason).toBe('sponsored');
   });
 
-  it('reads the Follow button next to the author as "not followed"', () => {
+  it('reads the Follow button next to the author as "not followed", and hides the post in Balanced', () => {
     const p = only2026(FOLLOW_PAGE_2026);
     expect(p.author.name).toBe('Gadget Daily');
     expect(p.author.relationship).toBe('not-followed');
+    expect(ruleFilter(p, balanced)?.reason).toBe('not-followed');
   });
 
   it('counts the timestamp link (href "/" until hovered, age in an aria-labelledby span) as a timestamp', () => {

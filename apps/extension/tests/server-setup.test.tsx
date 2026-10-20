@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { type AISourceConfig, type Device, defaultDevice, defaultSettings } from '@unalgorithm/core';
 import { AUTHORIZE_PAGE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
 import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
@@ -15,11 +15,18 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AiSetup } from '../src/components/AiSetup.tsx';
 import { ServerSetup } from '../src/components/ServerSetup.tsx';
 import { PrivacyPane } from '../src/entrypoints/options/panes.tsx';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { type BgRequest, type BgResponses, type PublicServerAccount, sendToBackground } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN, recipientText, serverLabel } from '../src/lib/server-label.ts';
 import { ANTHROPIC_HOST, BRAVE_SEARCH_HOST, manifestFor, OPENAI_HOST } from '../wxt.config.ts';
 
 const flag = vi.hoisted(() => ({ cloud: false }));
+// Vitest builds for Chrome; the Firefox cases switch `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 vi.mock('../src/components/ServerSetup.tsx', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/components/ServerSetup.tsx')>();
   return {
@@ -77,6 +84,7 @@ const sentTypes = () => sent().map((msg) => msg.type);
 
 beforeEach(() => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   flag.cloud = true;
   events = [];
   replies = {
@@ -416,6 +424,187 @@ describe('flow', () => {
     expect(sentTypes()).toEqual(expect.arrayContaining(['serverDiscover', 'serverSignIn', 'saveSource', 'serverSignOut']));
     // A long keyboard walk through the whole card: about 0.6 s alone, over 5 s under full-suite load.
   }, 15_000);
+});
+
+describe('firefox', () => {
+  // Never technical and interaction data: Firefox offers it at install, and only the device name follows it.
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+  const NO_CONSENT = 'unAlgorithm needs your permission to send post text and account details to the server.';
+  const LOOPBACK = 'http://127.0.0.1:8787';
+
+  /** Firefox, with the data-collection consent `getAll()` reports and its change events. */
+  function firefox(granted: string[]) {
+    env.kind = 'firefox';
+    const consent = { granted };
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: consent.granted,
+    })) as never);
+    const listeners = new Set<() => void>();
+    for (const event of [fakeBrowser.permissions.onAdded, fakeBrowser.permissions.onRemoved]) {
+      vi.spyOn(event, 'addListener').mockImplementation(((l: () => void) => void listeners.add(l)) as never);
+      vi.spyOn(event, 'removeListener').mockImplementation(((l: () => void) => void listeners.delete(l)) as never);
+    }
+    return (next: string[]) => {
+      consent.granted = next;
+      for (const l of listeners) l();
+    };
+  }
+
+  it('test_firefox_sign_in_asks_consent_not_identity', async () => {
+    firefox([]);
+    let { user } = renderSetup();
+    fireEvent.click(await continueTo(user));
+    // From the click itself, before anything else is awaited: Firefox needs the user action. `identity` is required
+    // there, and asking for it would throw.
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
+    expect(events.slice(events.indexOf('serverDiscover') + 1, events.indexOf('serverSignIn') + 1)).toEqual([
+      'permission',
+      'serverSignIn',
+    ]);
+    cleanup();
+
+    // Declined: said on the consent step, and nothing is sent.
+    permission.mockImplementation((async () => false) as never);
+    vi.mocked(sendToBackground).mockClear();
+    ({ user } = renderSetup());
+    await user.click(await continueTo(user));
+    expect(await screen.findByText(NO_CONSENT)).toBeTruthy();
+    expect(screen.queryByText(NO_PERMISSION)).toBeNull();
+    expect(sentTypes()).not.toContain('serverSignIn');
+    expect(screen.getByRole('button', { name: 'Sign in and turn on' })).toBeTruthy();
+    cleanup();
+
+    // A server on this computer is asked for the same: it is outside the browser, and passes posts on to its AI.
+    permission.mockClear();
+    vi.mocked(sendToBackground).mockClear();
+    ({ user } = renderSetup());
+    await user.click(await continueTo(user, LOOPBACK));
+    expect(await screen.findByText(NO_CONSENT)).toBeTruthy();
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    expect(sentTypes()).not.toContain('serverSignIn');
+    cleanup();
+
+    permission.mockImplementation((async () => true) as never);
+    permission.mockClear();
+    ({ user } = renderSetup());
+    await user.click(await continueTo(user, LOOPBACK));
+    expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    expect(sent()).toContainEqual({ type: 'serverSignIn', baseUrl: LOOPBACK });
+  });
+
+  it('test_firefox_sign_in_again_and_turn_on_ask_consent', async () => {
+    firefox(CLOUD_DATA);
+    replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN, { needsSignIn: true }) });
+    renderSetup(device({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in again' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
+    cleanup();
+
+    // Signed in while AI uses something else: "Turn on" asks again first (Firefox answers at once if it stands).
+    permission.mockClear();
+    replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN) });
+    renderSetup(device({ kind: 'anthropic', model: null }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    await waitFor(() =>
+      expect(sent()).toContainEqual({ type: 'saveSource', config: { kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN } }),
+    );
+    expect(events.indexOf('permission')).toBeLessThan(events.indexOf('saveSource'));
+    cleanup();
+
+    // Declined: AI stays as it was.
+    permission.mockImplementation((async () => false) as never);
+    vi.mocked(sendToBackground).mockClear();
+    const { onSaved } = renderSetup(device({ kind: 'anthropic', model: null }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }));
+    expect(await screen.findByText(NO_CONSENT)).toBeTruthy();
+    expect(sentTypes()).not.toContain('saveSource');
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('test_firefox_withdrawn_consent_offers_allow', async () => {
+    const change = firefox(['websiteContent']);
+    replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN) });
+    renderSetup(device({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN }));
+    const title = 'unAlgorithm needs your permission to send posts to unAlgorithm Cloud.';
+    const banner = (await screen.findByText(title)).closest('.ua-banner') as HTMLElement;
+    fireEvent.click(within(banner).getByRole('button', { name: 'Allow' }));
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ data_collection: CLOUD_DATA });
+    // Given (here or in Firefox's add-on settings): the banner goes, and nothing else was sent.
+    change(CLOUD_DATA);
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+    expect(sentTypes()).not.toContain('serverSignIn');
+
+    // Withdrawn while the page is open.
+    change([]);
+    expect(await screen.findByText(title)).toBeTruthy();
+    cleanup();
+
+    // Only for the server AI uses (sync says so itself), and never in Chrome or Edge, which have no such consent.
+    renderSetup(device({ kind: 'anthropic', model: null }));
+    expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
+    expect(screen.queryByText(title)).toBeNull();
+    cleanup();
+    env.kind = 'chrome';
+    vi.mocked(fakeBrowser.permissions.getAll).mockClear();
+    renderSetup(device({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN }));
+    expect(await screen.findByText(`Signed in as ${TOM}`)).toBeTruthy();
+    expect(screen.queryByText(title)).toBeNull();
+    expect(fakeBrowser.permissions.getAll).not.toHaveBeenCalled();
+  });
+
+  it('test_firefox_balance_follows_consent', async () => {
+    let granted = CLOUD_DATA;
+    const change = firefox(granted);
+    const consentTo = (next: string[]) => {
+      granted = next;
+      change(next);
+    };
+    // The background reports no balance while the consent is withdrawn (server-balance.ts).
+    replies.aiStatus = () => ({
+      configured: true,
+      kind: 'server',
+      label: serverLabel(PINNED_CLOUD_ORIGIN).title,
+      state: 'ready',
+      postsToday: 0,
+      dailyCap: 300,
+      capApplies: true,
+      ...(granted.length === CLOUD_DATA.length
+        ? {
+            balance: {
+              balanceMicros: 970_000,
+              low: false,
+              empty: false,
+              accountUrl: `${PINNED_CLOUD_ORIGIN}/account`,
+              microsPer1000Posts: null,
+              updatedAt: NOW,
+            },
+          }
+        : {}),
+    });
+    replies.serverAccount = () => ({ account: account(PINNED_CLOUD_ORIGIN, { billing: true }) });
+    renderSetup(device({ kind: 'server', baseUrl: PINNED_CLOUD_ORIGIN }));
+    const pill = () => screen.queryByLabelText(/^Credit balance:/);
+    const asked = () => sentTypes().filter((type) => type === 'aiStatus').length;
+    await waitFor(() => expect(pill()).toBeTruthy());
+    expect(asked()).toBe(1);
+
+    // Withdrawn in Firefox's add-on settings while the page is open: the pill goes with the balance.
+    consentTo([]);
+    await waitFor(() => expect(pill()).toBeNull());
+    expect(asked()).toBe(2);
+
+    // Given back: asked for again, without a reload.
+    consentTo(CLOUD_DATA);
+    await waitFor(() => expect(pill()).toBeTruthy());
+    expect(asked()).toBe(3);
+  });
 });
 
 describe('manifest', () => {

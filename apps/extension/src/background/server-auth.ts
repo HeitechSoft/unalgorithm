@@ -2,10 +2,11 @@ import { AIError, codeForStatus, describeError, isAIError } from '@unalgorithm/a
 import { createLock, safeExternalUrl, serverOfferFrom } from '@unalgorithm/core';
 import {
   b64url,
-  chromiumRedirectUri,
+  clientKind,
   EMAIL_OTP_METHOD,
   REVOKE_PATH,
   RevokeRequestSchema,
+  redirectUriFor,
   SERVER_INFO_PATH,
   ServerErrorSchema,
   type ServerInfo,
@@ -16,6 +17,8 @@ import {
 } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
+import { browserKind, browserLabel } from '../lib/browser-kind.ts';
+import { CLOUD_DATA, DEVICE_NAME_DATA, hasConsent } from '../lib/data-consent.ts';
 import type { BgError } from '../lib/messages.ts';
 import { isTrustedServerOrigin, serverLabel } from '../lib/server-label.ts';
 import { serverOfferItem } from '../lib/storage.ts';
@@ -29,6 +32,8 @@ import { getSecret, setSecret } from './idb.ts';
  * device's tokens. The refresh token is a credential, so it lives in the extension-origin secrets store that content
  * scripts cannot open (ADR 0005); the 15-minute access token lives in session storage, which is memory only and closed
  * to content scripts. Neither is ever written to `storage.local`, sent to a content script, logged, synced or exported.
+ * In Firefox signing in needs the server's data-collection consent (ADR 0008), which the sign-in click asks for first;
+ * signing out never does.
  */
 
 export interface ServerAccount {
@@ -73,6 +78,7 @@ const E2E_FLOW_TIMEOUT_MS = 5 * 60_000;
 
 const NOT_A_SERVER = "That address isn't an unAlgorithm server.";
 const UNFINISHED = "Sign-in didn't finish. Try again.";
+const NO_CONSENT = (title: string) => `unAlgorithm needs your permission to send post text and account details to ${title}.`;
 
 function withDefaults(deps: Partial<AuthDeps>): AuthDeps {
   return { fetch: (input, init) => fetch(input, init), webAuthFlow, now: () => Date.now(), ...deps };
@@ -107,11 +113,30 @@ export async function discoverServer(input: string, deps: Partial<AuthDeps> = {}
   }
 }
 
+/**
+ * The refusal when a server doesn't take sign-ins from this browser: its discovery document lists the client kinds it
+ * accepts (`auth.clients`; a server from before Firefox leaves it out, meaning Chrome and Edge only). Checked before the
+ * sign-in window opens, so nobody signs in on the server's page only to be refused at the end. Null when it does.
+ */
+export function clientRefusal(origin: string, info: ServerInfo): BgError | null {
+  const kind = clientKind(browser.runtime.id);
+  // An id that is no client id at all is `authorize`'s to refuse.
+  if (!kind || (info.auth.clients ?? ['chromium']).includes(kind)) return null;
+  const { title } = serverLabel(origin, info);
+  return { code: 'permission', message: `${title} doesn't accept sign-ins from ${browserLabel(browserKind())} yet.` };
+}
+
 /** Signs in to the server at `input` and makes it the account, signing the previous account out. */
 export async function signIn(input: string, deps: Partial<AuthDeps> = {}): Promise<SignInResult> {
   const d = withDefaults(deps);
   const found = await discoverServer(input, d);
   if (!found.ok) return found;
+  const refused = clientRefusal(found.origin, found.info);
+  if (refused) return { ok: false, error: refused };
+  // Firefox: the click asked for the server's consent before this; without it, no sign-in window and no code exchange.
+  if (!(await hasConsent(CLOUD_DATA))) {
+    return { ok: false, error: { code: 'host-permission', message: NO_CONSENT(serverLabel(found.origin, found.info).title) } };
+  }
   try {
     return { ok: true, account: await authorize(found.origin, found.info, d) };
   } catch (e) {
@@ -122,9 +147,10 @@ export async function signIn(input: string, deps: Partial<AuthDeps> = {}): Promi
 async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise<ServerAccount> {
   if (!browser.identity) throw new AIError('permission', 'unAlgorithm needs permission to open the sign-in window.');
   const clientId = browser.runtime.id;
-  const redirectUri = chromiumRedirectUri(clientId);
+  // `https://<id>.chromiumapp.org/` in Chrome and Edge, `https://<sha1 of the id>.extensions.allizom.org/` in Firefox.
+  const redirectUri = redirectUriFor(clientId);
   // Servers bind every code to this address (CL1-01): a browser that sends the sign-in window elsewhere can't finish.
-  if (browser.identity.getRedirectURL() !== redirectUri) {
+  if (!redirectUri || browser.identity.getRedirectURL() !== redirectUri) {
     throw new AIError('not-available', "This browser can't open the sign-in window.");
   }
 
@@ -148,8 +174,10 @@ async function authorize(origin: string, info: ServerInfo, d: AuthDeps): Promise
     throw new AIError('auth-required', 'Sign-in was cancelled.');
   }
   const back = redirect?.startsWith(redirectUri) ? new URL(redirect).searchParams : undefined;
-  // A short label the account page shows ("Chrome on Windows"); left out when the browser doesn't say.
-  const name = await deviceName();
+  // A short label the account page shows ("Chrome on Windows", "Firefox on Linux"); left out when the browser doesn't say,
+  // and in Firefox when the person turned technical and interaction data off (at install or in its add-ons page). That
+  // is all the type decides: it is never asked for, and nothing else depends on it (ADR 0008).
+  const name = (await hasConsent(DEVICE_NAME_DATA)) ? await deviceName() : undefined;
   const request = TokenRequestSchema.safeParse({
     grant_type: 'authorization_code',
     code: back?.get('code') ?? undefined,
@@ -276,8 +304,14 @@ async function refresh(origin: string, d: AuthDeps): Promise<string> {
   const refreshToken = account?.origin === origin ? await getSecret(refreshKey(origin)) : undefined;
   const tokenUrl = account && tokenEndpoint(account);
   if (!refreshToken || !tokenUrl) return requireSignIn(origin);
-  const body = { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: browser.runtime.id };
-  const res = await call(d, tokenUrl, TIMEOUT_MS, body);
+  const body = TokenRequestSchema.safeParse({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: browser.runtime.id,
+  });
+  // A request the server could only refuse: the device has to sign in again.
+  if (!body.success) return requireSignIn(origin);
+  const res = await call(d, tokenUrl, TIMEOUT_MS, body.data);
   if (res.status === 401) return requireSignIn(origin);
   const tokens = await readTokens(res, origin);
   await storeTokens(origin, tokens, d.now());
@@ -405,21 +439,23 @@ async function readTokens(res: Response, origin: string): Promise<TokenResponse>
 }
 
 /**
- * Opens the server's sign-in page and resolves with the URL it sends the browser back to. `--mode e2e` builds use a tab
- * instead of the `launchWebAuthFlow` window, which Playwright cannot drive; everything after the redirect is the same.
+ * Opens the server's sign-in page and resolves with the URL it sends the browser back to. Chrome and Edge `--mode e2e`
+ * builds use a tab instead of the `launchWebAuthFlow` window, which Playwright cannot drive; everything after the
+ * redirect is the same. Firefox always opens its real window, which its e2e tests drive (ADR 0008).
  */
 export function webAuthFlow(details: { url: string; interactive: boolean }): Promise<string | undefined> {
-  if (import.meta.env.MODE === 'e2e') return tabAuthFlow(details.url);
+  if (import.meta.env.MODE === 'e2e' && browserKind() !== 'firefox') return tabAuthFlow(details.url);
   return browser.identity.launchWebAuthFlow(details);
 }
 
 /**
- * e2e builds only. Resolves with the first URL of the opened tab that starts with the redirect address, and closes
- * the tab. Chrome reports that URL only with a host permission for the chromiumapp.org address, which the e2e manifest
- * has (CL1-19); never the `tabs` permission.
+ * Chrome and Edge e2e builds only. Resolves with the first URL of the opened tab that starts with the redirect address,
+ * and closes the tab. Chrome reports that URL only with a host permission for the chromiumapp.org address, which the
+ * e2e manifest has (CL1-19); never the `tabs` permission.
  */
 function tabAuthFlow(url: string): Promise<string> {
-  const redirectUri = chromiumRedirectUri(browser.runtime.id);
+  const redirectUri = redirectUriFor(browser.runtime.id);
+  if (!redirectUri) return Promise.reject(new Error("This browser can't open the sign-in window."));
   return new Promise((resolve, reject) => {
     let tabId: number | undefined;
     const finish = (settle: () => void) => {

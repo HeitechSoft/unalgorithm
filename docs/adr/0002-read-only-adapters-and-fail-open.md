@@ -25,3 +25,43 @@ than letting an ad through: it silently breaks trust. Platforms also forbid auto
 - Some noise gets through on new layouts until the adapter is fixed; users see a banner instead of a broken feed.
 - "Why?" and the Report a problem diagnostics come for free from evidence ids.
 - Facebook's not-followed rule stays off by default until verified on live captures (`FACEBOOK_NOT_FOLLOWED_VERIFIED`).
+
+## Amendment (2026-10-18)
+
+[ADR 0009](0009-problem-reports-and-resilient-detection.md) changes two consequences above and widens the health
+monitor; the decision stands (adapters only read, evidence strength, unknown never hides, fail open).
+
+- **Diagnostics go to unAlgorithm Cloud through the report page,** no longer to a prefilled GitHub issue. *Report a
+  problem*, *Why? → Wrong call?* and the other entry points open the extension's report page, which shows every field
+  and sends the report only on its **Send report** click. Evidence ids still make the report: the detectors that
+  matched, and for *Wrong call?* the post's evidence with its strengths.
+- **The health monitor also covers under-detection and page recognition,** not only over-detection: ad labels that
+  almost match (`ad-label-near-miss`), a feed on an address the adapter doesn't recognise (`feed-not-started`, from a
+  read-only watchdog, and `route-new`), adapter exceptions (`adapter-error`, counted by `safe()` in the controller, which
+  fails open), and report-only checks such as `no-ads-seen`. Time limits count visible time only.
+- **The banner is the in-feed notice card.** On positive evidence only, a card in our own shadow-root layer, never in
+  the platform's feed list, says filtering is paused, isn't running, or that ads may be getting through, and offers
+  *Let us know*. Absence-based issues (`no-feed`, `no-items`, `no-ads-seen`) never raise it; the popup, side panel and
+  toolbar title still show them.
+- A near-miss ad label is *medium* evidence: with the weak "no post age" or `no-timestamp` evidence it still hides as an
+  ad, as the combination rule above allows, and the change is reported.
+
+## Amendment (2026-10-19)
+
+Facebook's not-followed rule was checked on live feeds, and Balanced hides people and pages you don't follow on
+Facebook as it does on LinkedIn; the consequence above that kept it off by default no longer holds, and
+`FACEBOOK_NOT_FOLLOWED_VERIFIED` is gone. In 45 live items a Follow button in the post's own header meant the account
+doesn't follow the author (friends and followed accounts showed none). That check is smaller than the gate in
+`docs/fixtures.md` (0 wrong folds in 100 friend or joined-group posts), and the owner turned the rule on with it; the
+captures hold no friend or joined-group post, so the cases that must stay shown are covered by synthetic fixtures
+(`docs/fixtures.md` records what was checked). Two reads keep it to the author's own header: a Follow or Join button
+with another name between it and the author's (a heading or a link to a profile, as a post or reel shared inside this
+one has) is not the author's, and a Follow button in a group the account is in is for the member who posted, so it
+never makes a post "not followed". A reel is the one place the author's button is expected to sit after another name: a
+person or page the account doesn't follow, posting their own reel, is expected to get "Follow" after their name in the
+reel and none in the header (inferred from captured reel shares; no such reel has been captured yet, see
+`docs/fixtures.md`). So a Follow button in a reel counts when the reel's creator is the post's author: the same profile
+address, or the same name only when one of them has no address. A reel whose creator is someone else stays, whoever
+shared it, and so does one by an account with the author's name at another address. Unknown still never hides, and
+cautious mode still turns the rule off. Settings version 2 moves people still on the old Balanced to the new one; Custom
+and changed filters stay as they were (`packages/core/src/settings/migrate.ts`).

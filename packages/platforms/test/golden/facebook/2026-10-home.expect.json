@@ -1,0 +1,175 @@
+{
+  "setup": {
+    "url": "https://www.facebook.com/",
+    "list": "[role=\"main\"] h3 + div + div",
+    "restore": [
+      {
+        "from": ">xxxxx xx xxxx xxx</text>",
+        "to": ">about an hour ago</text>",
+        "count": 2
+      },
+      {
+        "from": ">a xxx xxx</text>",
+        "to": ">a day ago</text>",
+        "count": 2
+      }
+    ]
+  },
+  "notes": [
+    "capture 1: an account with no Follow next to its name sharing a reel; the reel's Follow button is its creator's (another account)",
+    "capture 1: group post, \"Join\" next to the group's name",
+    "capture 2: Page post with a Follow button",
+    "capture 2: Page post with a Follow button",
+    "capture 3: \"Ad\" in the age slot (SVG text)",
+    "capture 3: Page post with a Follow button",
+    "capture 4: Page post with a Follow button",
+    "capture 4: Page post with a Follow button",
+    "capture 5: a photo post whose caption has no message box",
+    "capture 5: \"Ad\" post",
+    "capture 6: Page post with a Follow button",
+    "capture 6: Page post with a Follow button",
+    "capture 7: group post, \"Join\"",
+    "capture 7: Page post with a Follow button",
+    "capture 8: group post, \"Join\"",
+    "capture 8: \"Ad\" post",
+    "capture 9: Page post with a Follow button",
+    "reels capture 1: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
+    "reels capture 2: an account with no Follow next to its name sharing a reel, no words of its own; the reel's Follow button is its creator's (another account)",
+    "reels capture 3: Reels panel",
+    "ads capture 1: a video ad (a reel link and \"Shop now\"); its \"Ad\" is SVG text at the end of a chain of <use> references, 7 deep"
+  ],
+  "decisions": {
+    "light": [
+      "show/unknown",
+      "show/unknown",
+      "show/not-followed",
+      "show/not-followed",
+      "sponsored/unknown",
+      "show/not-followed",
+      "show/not-followed",
+      "show/not-followed",
+      "show/not-followed",
+      "sponsored/unknown",
+      "show/not-followed",
+      "show/not-followed",
+      "show/unknown",
+      "show/not-followed",
+      "show/unknown",
+      "sponsored/unknown",
+      "show/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "panel",
+      "sponsored/unknown"
+    ],
+    "balanced": [
+      "show/unknown",
+      "unjoined-group/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "unjoined-group/unknown",
+      "not-followed/not-followed",
+      "unjoined-group/unknown",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "panel",
+      "sponsored/unknown"
+    ],
+    "calm": [
+      "reel/unknown",
+      "unjoined-group/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "not-followed/not-followed",
+      "unjoined-group/unknown",
+      "not-followed/not-followed",
+      "unjoined-group/unknown",
+      "sponsored/unknown",
+      "not-followed/not-followed",
+      "reel/unknown",
+      "reel/unknown",
+      "panel",
+      "sponsored/unknown"
+    ]
+  },
+  "ids": [
+    "fb:100000",
+    "fb:100004",
+    "fb:h:15wjhcvr2yf",
+    "fb:h:1i89rg9luza",
+    "fb:h:25mdts52fx2",
+    "fb:h:xsiuma12d4",
+    "fb:h:1in2e4wkg9w",
+    "fb:h:22kfcj0bgr3",
+    "fb:h:17gvb6warz6",
+    "fb:h:21l3zjoacko",
+    "fb:h:6q4941wugc",
+    "fb:h:rwqvecb0x1",
+    "fb:100002",
+    "fb:h:1lpnoeifb71",
+    "fb:100002",
+    "fb:h:23yd1ouzeza",
+    "fb:h:7lml2vuxwo",
+    "fb:200002",
+    "fb:300002",
+    null,
+    "fb:500006"
+  ],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "fb.items.heading-list",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "weak",
+    "signedIn": false,
+    "loadMore": false
+  },
+  "emitted": {
+    "detectors": {
+      "fb.join-button": 3,
+      "fb.follow-button": 10,
+      "fb.sponsored.rendered-label": 4,
+      "fb.sponsored.slot-label": 4,
+      "fb.sponsored.no-timestamp": 3
+    },
+    "observations": {
+      "fb.slot.text.structure": 1,
+      "fb.slot.header.structure": 1
+    }
+  },
+  "errors": {}
+}

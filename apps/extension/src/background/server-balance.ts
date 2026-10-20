@@ -7,6 +7,7 @@ import {
   ServerInfoSchema,
 } from '@unalgorithm/protocol';
 import { storage } from 'wxt/utils/storage';
+import { CLOUD_DATA, hasConsent } from '../lib/data-consent.ts';
 import { accountPageUrl, isServerAt } from '../lib/server-label.ts';
 import { getAccessToken, type ServerAccount } from './server-auth.ts';
 import { serverRequest } from './server-http.ts';
@@ -16,6 +17,8 @@ import { serverRequest } from './server-http.ts';
  * `GET /v1/billing/balance` reported, so `aiStatus` can show it without waiting on the network. Only a server whose
  * discovery document advertises billing shows one; a self-hosted server with the no-op provider never does. The value
  * stays out of the feed: session storage is closed to content scripts, and only extension pages may ask for `aiStatus`.
+ * In Firefox, without the server's data-collection consent (ADR 0008), there is no balance to show and none is asked
+ * for: the server card's Allow brings both back.
  */
 
 /** Session storage: memory only, cleared when the browser closes and by "Erase everything" (storage.session.clear()). */
@@ -151,7 +154,8 @@ const refreshing = new Map<string, Promise<StoredBalance | undefined>>();
  * classify answer, a 402, or "Erase everything"): that is newer than the server's answer and stays, so a refused 0 is
  * never replaced by a balance the server read before it. Resolves with the stored value for this account: the new one,
  * the newer one, or on any failure the one it had (or undefined). Never rejects, and never marks the account for
- * signing in again: the classify path makes that call (CL1-17).
+ * signing in again: the classify path makes that call (CL1-17). In Firefox without the server consent nothing is sent
+ * (`serverRequest` refuses) and the stored value stands.
  */
 export function refreshBalance(account: ServerAccount, deps: Partial<BalanceDeps> = {}): Promise<StoredBalance | undefined> {
   const key = `${account.origin} ${account.deviceId}`;
@@ -201,9 +205,9 @@ async function fetchBalance(account: ServerAccount, d: BalanceDeps): Promise<Sto
 
 /**
  * The balance `aiStatus` reports, or undefined when there is none to show: the AI source isn't the account's server,
- * the account must sign in again, or its server doesn't advertise billing (R5). Never throws, and never waits on the
- * network for a value it has: a stale value is returned at once while one refresh runs; with no value, it waits for
- * the refresh at most `BALANCE_WAIT_MS`.
+ * the account must sign in again, its server doesn't advertise billing (R5), or in Firefox the consent to reach it is
+ * missing. Never throws, and never waits on the network for a value it has: a stale value is returned at once while one
+ * refresh runs; with no value, it waits for the refresh at most `BALANCE_WAIT_MS`.
  */
 export async function balanceStatus(
   cfg: AISourceConfig | null,
@@ -211,7 +215,7 @@ export async function balanceStatus(
   deps: Partial<BalanceDeps> = {},
 ): Promise<PublicBalance | undefined> {
   try {
-    if (!showsBalance(cfg, account)) return undefined;
+    if (!showsBalance(cfg, account) || !(await hasConsent(CLOUD_DATA))) return undefined;
     const d = withDefaults(deps);
     let value = await storedFor(account);
     if (!value) value = await within(refreshBalance(account, d), BALANCE_WAIT_MS);
@@ -244,7 +248,7 @@ export async function checkBalanceSoon(
   deps: Partial<BalanceDeps> = {},
 ): Promise<void> {
   try {
-    if (!showsBalance(cfg, account)) return;
+    if (!showsBalance(cfg, account) || !(await hasConsent(CLOUD_DATA))) return;
     const d = withDefaults(deps);
     const value = await storedFor(account);
     if (value && value.balanceMicros <= 0 && d.now() - value.updatedAt >= BALANCE_EMPTY_MAX_AGE_MS) {

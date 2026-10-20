@@ -25,9 +25,17 @@ import { FACTCHECK_SERVER_DEADLINE_MS, runFactcheckViaServer } from '../src/back
 import { type ServerAccount, serverAccountItem, syncServerOffer } from '../src/background/server-auth.ts';
 import { forgetTab } from '../src/background/tabs.ts';
 import { handlers } from '../src/entrypoints/background.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import type { BgRequest } from '../src/lib/messages.ts';
 import { serverLabel } from '../src/lib/server-label.ts';
 import { deviceItem, factcheckItem, serverOfferItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
 vi.mock('../src/background/server-auth.ts', async (importOriginal) => ({
@@ -135,6 +143,7 @@ const title = serverLabel(ORIGIN).title;
 
 beforeEach(() => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockResolvedValue(TOKEN);
   vi.spyOn(fakeBrowser.permissions, 'contains').mockImplementation((async () => true) as never);
@@ -381,6 +390,56 @@ describe('job flow', () => {
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(FACTCHECK_SERVER_DEADLINE_MS);
     // No poll starts after the deadline.
     expect(Math.max(...pollTimeouts)).toBeLessThanOrEqual(FACTCHECK_SERVER_DEADLINE_MS);
+  });
+});
+
+describe('firefox consent', () => {
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+  const withdrawn = {
+    ok: false,
+    error: {
+      code: 'host-permission',
+      message: `unAlgorithm needs your permission to send posts to ${title}. Open Settings → AI and allow it.`,
+    },
+  };
+
+  it('test_firefox_server_job_needs_the_server_consent', async () => {
+    env.kind = 'firefox';
+    let granted = ['websiteContent', 'personalCommunications'];
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    let polls = 0;
+    useServer((url, init) => {
+      if (isStart(url, init)) return json(202, job('running'));
+      if (!isPoll(url)) return json(200, job('cancelled'));
+      // Withdrawn in Firefox's add-ons page while the job runs; the job would be done at the next poll.
+      if (++polls > 1) return json(200, job('done', { result: RESULT }));
+      granted = ['websiteContent'];
+      return json(200, job('running'));
+    });
+    await setup();
+
+    // Before the start: nothing is sent and nothing is tracked.
+    expect(await factcheck()).toEqual(withdrawn);
+    expect(calls).toHaveLength(0);
+    expect(await entries()).toEqual([]);
+
+    // During the job: the polling stops, and not even the cancel goes out (the server's deadline ends the job).
+    granted = CLOUD_DATA;
+    expect(await run()).toEqual(withdrawn);
+    expect(calls.map((c) => c.url.pathname)).toEqual([FACTCHECK_JOBS_PATH, factcheckJobPath(JOB_ID)]);
+    expect(cancels()).toHaveLength(0);
+  });
+
+  it('test_chrome_server_job_never_reads_consent', async () => {
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    useServer(happyServer());
+    expect(await run()).toEqual({ ok: true, result: RESULT });
+    expect(getAll).not.toHaveBeenCalled();
   });
 });
 

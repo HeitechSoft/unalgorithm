@@ -1,7 +1,13 @@
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANTHROPIC_DEFAULT_MODEL } from '@unalgorithm/ai';
-import { ExtensionIdSchema } from '@unalgorithm/protocol';
+import {
+  CHROME_WEB_STORE_ID,
+  ClientIdSchema,
+  DEV_CHROMIUM_ID,
+  FIREFOX_ADDON_ID,
+  FIREFOX_DEV_ADDON_ID,
+} from '@unalgorithm/protocol';
 import { FACTCHECK_MODELS, SEARCH_PROVIDERS, type SearchProviderId } from '@unalgorithm/research';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
@@ -63,6 +69,10 @@ export const CONFIG_VARIABLES: readonly string[] = [
   'DAILY_SPEND_LIMIT_USD',
   'USER_DAILY_CHECK_CAP',
   'EGRESS_DENY',
+  'REPORTS',
+  'REPORTS_DAILY_MAX',
+  'REPORTS_PER_HOUR',
+  'REPORTS_ALERT_NETWORKS',
   'ALERT_DISK_FREE_MIN_GB',
   'ALERT_DATABASE_MAX_GB',
   'ALERT_ERRORS_PER_15M',
@@ -98,6 +108,7 @@ export interface Config {
    * `billing` is `off`. The server neither reads nor checks them; the module does (`host.env`).
    */
   billingEnv: Readonly<Record<string, string>>;
+  /** The extensions that may sign in: Chrome and Edge ids and Firefox add-on ids (`ClientIdSchema`), as configured. */
   extensionIds: string[];
   /**
    * `allowlist`: only `SIGNUP_ALLOWLIST` addresses and invites may create an account (the default). `open`: every
@@ -146,6 +157,19 @@ export interface Config {
   perspectives: { enabled: boolean };
   /** More IPs or `ip/prefix` ranges the egress fetcher refuses, on top of its own deny list (R51). */
   egressDeny: string[];
+  /**
+   * Problem reports (ADR 0009): `POST /v1/reports`, the server's one anonymous write route, is mounted only when
+   * `REPORTS=on`; the admin page's reports and the report alerts follow it.
+   */
+  reports: {
+    enabled: boolean;
+    /** Reports accepted per UTC day across all clients; past it, 503 until 00:00 UTC and `reports-cap`. */
+    dailyMax: number;
+    /** Reports per network address (IPv6 by /64) an hour. */
+    perHour: number;
+    /** Distinct networks that open a `reports-<platform>-broken` alert; 0 turns the report alerts off. */
+    alertNetworks: number;
+  };
   routeEvalMinAgreement: number;
   userDailyPostCap: number;
   userRequestsPerMinute: number;
@@ -207,8 +231,12 @@ export class ConfigError extends Error {
   }
 }
 
-/** The development key's extension id (ADR 0004). The store id joins it once the store assigns one. */
-const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/**
+ * `EXTENSION_IDS` when unset: every id this release knows (ADR 0008), the development key's Chrome and Edge id, the
+ * Chrome Web Store id and both Firefox add-on ids. The Edge Add-ons id is added in a deployment's configuration once
+ * Partner Center assigns it.
+ */
+const DEFAULT_EXTENSION_IDS: readonly string[] = [DEV_CHROMIUM_ID, CHROME_WEB_STORE_ID, FIREFOX_DEV_ADDON_ID, FIREFOX_ADDON_ID];
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 /** INSTANCE_NAME and MAIL_FROM_NAME; the discovery document's `name` has the same limit. */
 const MAX_DISPLAY_NAME = 80;
@@ -333,9 +361,13 @@ export function loadConfig(env: Env = process.env): Config {
 
   // Who may use it
   const extensionIdsValue = read('EXTENSION_IDS');
-  const extensionIds = extensionIdsValue ? list(extensionIdsValue) : [DEV_EXTENSION_ID];
-  if (!extensionIds.length || !extensionIds.every((id) => ExtensionIdSchema.safeParse(id).success)) {
-    bad('EXTENSION_IDS', 'must be a comma-separated list of extension ids (32 letters a to p)');
+  // Not lower-cased, unlike the allowlist: a Firefox id's redirect address is the hash of the id exactly as written.
+  const extensionIds = extensionIdsValue ? list(extensionIdsValue) : [...DEFAULT_EXTENSION_IDS];
+  if (!extensionIds.length || !extensionIds.every((id) => ClientIdSchema.safeParse(id).success)) {
+    bad(
+      'EXTENSION_IDS',
+      'must be a comma-separated list of extension ids (Chrome and Edge: 32 letters a to p; Firefox: name@domain or {uuid}, up to 80 characters)',
+    );
   }
   const signup = oneOf('SIGNUP', ['allowlist', 'open'] as const, 'allowlist');
   const allowlistValue = read('SIGNUP_ALLOWLIST');
@@ -468,6 +500,12 @@ export function loadConfig(env: Env = process.env): Config {
     bad('EGRESS_DENY', 'must be IP addresses or ip/prefix ranges (prefix up to 32 for IPv4, 128 for IPv6), comma-separated');
   }
 
+  // Problem reports (ADR 0009): off unless REPORTS=on. The limits are read either way, and unused while it is off.
+  const reports = oneOf('REPORTS', ['off', 'on'] as const, 'off');
+  const reportsDailyMax = integer('REPORTS_DAILY_MAX', 1000, 1, 1_000_000);
+  const reportsPerHour = integer('REPORTS_PER_HOUR', 6, 1, 1000);
+  const reportsAlertNetworks = integer('REPORTS_ALERT_NETWORKS', 2, 0, 1000);
+
   // Alerts (CL4-15): 0 turns a rule off.
   const gigabytes = (name: string, fallback: number, alert: string) =>
     decimal(name, fallback, (n) => n >= 0, `must be a number of GB, 0 or more (0 turns ${alert} off)`);
@@ -545,6 +583,12 @@ export function loadConfig(env: Env = process.env): Config {
     },
     perspectives: { enabled: perspectives === 'on' && factcheckOn },
     egressDeny,
+    reports: {
+      enabled: reports === 'on',
+      dailyMax: reportsDailyMax,
+      perHour: reportsPerHour,
+      alertNetworks: reportsAlertNetworks,
+    },
     routeEvalMinAgreement,
     userDailyPostCap,
     userRequestsPerMinute,

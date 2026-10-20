@@ -20,6 +20,7 @@ import {
   devices,
   jwks,
   passkey,
+  problemReports,
   refreshTokens,
   session,
   syncItems,
@@ -30,8 +31,18 @@ import {
   verification,
 } from '../src/db/schema.ts';
 import { ensureUserSpace } from '../src/sync/spaces.ts';
+import { correctionDetails, insertReport } from './support/reports.ts';
 import { scanAllTables } from './support/scan-tables.ts';
-import { DEV_EXTENSION_ID, postJson, postToken, SEND_CODE, sessionOf, signInDevice, signInWeb } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  postToken,
+  SEND_CODE,
+  sessionOf,
+  signInDevice,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -575,6 +586,38 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await sessionOf(t.app, tom.cookie)).toBeNull();
   });
 
+  it('test_delete_clears_report_reply_address', async () => {
+    const t = await dataApp();
+    const tom = await seedAccount(t, TOM);
+    const db = t.deps.db.db;
+    // A correction's reply address is tied to no account: only the address finds it (ADR 0009 §6).
+    const correction = (contact: string) =>
+      insertReport(db, new Date(), {
+        kind: 'correction',
+        platform: null,
+        adapter: null,
+        adapterOrder: null,
+        topic: 'factcheck',
+        details: correctionDetails(),
+        message: 'The claim was about 2024.',
+        contact,
+      });
+    const toms = await correction(TOM);
+    const anas = await correction(ANA);
+
+    await deleted(t, TOM, tom.cookie);
+
+    const reports = await db
+      .select({ id: problemReports.id, contact: problemReports.contact, message: problemReports.message })
+      .from(problemReports);
+    expect(reports.sort((a, b) => (a.id === toms ? -1 : b.id === toms ? 1 : 0))).toEqual([
+      // The report stays, without a way to reply.
+      { id: toms, contact: null, message: 'The claim was about 2024.' },
+      { id: anas, contact: ANA, message: 'The claim was about 2024.' },
+    ]);
+    expect(rowsHolding(await allRows(t), [TOM])).toEqual({});
+  });
+
   it('test_delete_respects_billing_module', async () => {
     // A module that must keep this account's records refuses: nothing is deleted.
     const refuse = vi.fn(async () => {
@@ -615,6 +658,7 @@ describe('delete', { timeout: PGLITE_TIMEOUT }, () => {
       { Cookie: tom.cookie },
       { Cookie: tom.cookie, Origin: 'https://evil.example' },
       { Cookie: tom.cookie, Origin: `chrome-extension://${DEV_EXTENSION_ID}` },
+      { Cookie: tom.cookie, Origin: FIREFOX_EXTENSION_ORIGIN },
     ];
     for (const headers of elsewhere) {
       const res = await deleteWith(t, TOM, headers);

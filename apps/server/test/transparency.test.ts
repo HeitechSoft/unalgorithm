@@ -7,17 +7,18 @@ process.env.TZ = 'America/Toronto';
  * `.example` outlets with `evidence.example` links only; every model is a stored row, never called.
  */
 import { randomUUID } from 'node:crypto';
-import { FEATURE_NAMES, type LeanBucket, type OfficialOutlet } from '@unalgorithm/protocol';
+import { FEATURE_NAMES, type LeanBucket, type OfficialOutlet, type ReportResolution } from '@unalgorithm/protocol';
 import { FACTCHECK_PROMPT_VERSION, PERSPECTIVES_PROMPT_VERSION } from '@unalgorithm/research';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ROLE } from '../src/admin/access.ts';
 import { listAtQuarterEnd } from '../src/admin/outlets.ts';
-import { checkCounts } from '../src/admin/queries.ts';
+import { checkCounts, countCorrections } from '../src/admin/queries.ts';
 import { main, quarterRange, shownCount } from '../src/cli/transparency.ts';
 import { SERVER_VERSION } from '../src/config.ts';
 import type { Db, DbHandle } from '../src/db/client.ts';
-import { aiRoutes, devices, outletChanges, usageEvents, user } from '../src/db/schema.ts';
+import { aiRoutes, correctionCounts, devices, outletChanges, usageEvents, user } from '../src/db/schema.ts';
 import { createTestDb } from './support/db.ts';
+import { correctionDetails, insertReport } from './support/reports.ts';
 import { scanAllTables } from './support/scan-tables.ts';
 import { TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
@@ -203,6 +204,42 @@ async function seedAll(db: Db): Promise<Seeded> {
   return seeded;
 }
 
+/** Words and a reply address no report may print. */
+const CORRECTION_WORDS = 'The claim QXZ7 was about 2024.';
+const CORRECTION_CONTACT = 'qxz7@example.org';
+
+/**
+ * Corrections for Q4: kept as counts (deleted rows) and as rows still kept, with a Q3 one, a Q3 count and a detection
+ * report that never count. Fact-check: 2 corrected and 1 unanswered as counts; 1 unanswered, 1 no change and 1
+ * duplicate as rows. UnEcho Chamber: 1 out of scope.
+ */
+async function seedCorrections(db: Db) {
+  await db.insert(correctionCounts).values([
+    { quarter: '2026-Q4', feature: 'factcheck', resolution: 'corrected', n: 2 },
+    { quarter: '2026-Q4', feature: 'factcheck', resolution: 'none', n: 1 },
+    { quarter: '2026-Q3', feature: 'factcheck', resolution: 'corrected', n: 40 },
+  ]);
+  const correction = (at: string, resolution: ReportResolution | null, feature: 'factcheck' | 'perspectives' = 'factcheck') =>
+    insertReport(db, new Date(at), {
+      kind: 'correction',
+      platform: null,
+      adapter: null,
+      adapterOrder: null,
+      topic: feature,
+      details: correctionDetails(feature),
+      message: CORRECTION_WORDS,
+      contact: CORRECTION_CONTACT,
+      ...(resolution === null ? {} : { resolution, handledAt: new Date(at) }),
+    });
+  await correction('2026-10-01T00:00:00.000Z', null);
+  await correction('2026-11-15T10:00:00.000Z', 'no-change');
+  await correction('2026-12-31T23:00:00.000Z', 'duplicate');
+  await correction('2026-12-02T08:00:00.000Z', 'out-of-scope', 'perspectives');
+  await correction('2026-09-30T23:00:00.000Z', 'corrected');
+  await correction('2027-01-01T00:00:00.000Z', 'corrected');
+  await insertReport(db, new Date('2026-11-02T10:00:00.000Z'));
+}
+
 /** `main` with a PGlite database and the test config; answers its exit code and what it printed. */
 async function run(argv: readonly string[], now: string, handle?: DbHandle): Promise<{ code: number; text: string }> {
   const lines: string[] = [];
@@ -297,7 +334,7 @@ describe('report', { timeout: PGLITE_TIMEOUT }, () => {
       `From 2026-10-01 to 2026-12-31 (UTC), on ${new URL(TEST_PUBLIC_URL).origin} (server ${SERVER_VERSION}).`,
     );
     const table = lines.filter((line) => line.startsWith('|'));
-    expect(table).toStrictEqual([
+    expect(table.slice(0, 7)).toStrictEqual([
       `|  | ${FEATURE_NAMES.factcheck} | ${FEATURE_NAMES.perspectives} |`,
       '| --- | ---: | ---: |',
       '| Finished | 10 | 0 |',
@@ -305,6 +342,17 @@ describe('report', { timeout: PGLITE_TIMEOUT }, () => {
       '| Refused before any AI call | fewer than 10 | 0 |',
       '| Web searches | 22 | 0 |',
       '| People who used it | fewer than 10 | 0 |',
+    ]);
+    // No correction this quarter: the table says so with zeros.
+    expect(table.slice(7)).toStrictEqual([
+      `| Corrections | ${FEATURE_NAMES.factcheck} | ${FEATURE_NAMES.perspectives} |`,
+      '| --- | ---: | ---: |',
+      '| Received | 0 | 0 |',
+      '| Corrected | 0 | 0 |',
+      '| No change | 0 | 0 |',
+      '| Out of scope | 0 | 0 |',
+      '| Closed another way (a duplicate, spam and the like) | 0 | 0 |',
+      '| Not answered yet | 0 | 0 |',
     ]);
     expect(lines).toContain(
       'AI models: research claude-sonnet-5-5 (anthropic), synthesis mock-synthesis-model (openai-compatible).',
@@ -318,6 +366,37 @@ describe('report', { timeout: PGLITE_TIMEOUT }, () => {
         'Leans right 1 · Right 0; changes this quarter: 1 added, 1 edited, 1 removed, 0 imported.',
     );
     expect(lines.at(-1)).toBe("This server keeps no post, no claim and no one's results, so this report has no verdict counts.");
+  });
+
+  it('test_transparency_counts_corrections', async () => {
+    const handle = await pgliteHandle();
+    await seedCorrections(handle.db);
+    const range = quarterRange('2026-Q4');
+    if (!range) throw new Error('No quarter.');
+    expect(await countCorrections(handle.db, '2026-Q4', range.from, range.to)).toStrictEqual([
+      { feature: 'factcheck', resolution: 'corrected', n: 2 },
+      { feature: 'factcheck', resolution: 'duplicate', n: 1 },
+      { feature: 'factcheck', resolution: 'no-change', n: 1 },
+      { feature: 'factcheck', resolution: 'none', n: 2 },
+      { feature: 'perspectives', resolution: 'out-of-scope', n: 1 },
+    ]);
+    const { code, text } = await run(['--quarter', '2026-Q4'], '2027-01-02T00:00:00.000Z', handle);
+    expect(code).toBe(0);
+    const lines = text.split('\n');
+    const start = lines.indexOf('Corrections people sent from unAlgorithm, and how they ended:');
+    expect(start).toBeGreaterThan(0);
+    expect(lines.slice(start + 2, start + 10)).toStrictEqual([
+      `| Corrections | ${FEATURE_NAMES.factcheck} | ${FEATURE_NAMES.perspectives} |`,
+      '| --- | ---: | ---: |',
+      '| Received | 6 | 1 |',
+      '| Corrected | 2 | 0 |',
+      '| No change | 1 | 0 |',
+      '| Out of scope | 0 | 1 |',
+      '| Closed another way (a duplicate, spam and the like) | 1 | 0 |',
+      '| Not answered yet | 2 | 0 |',
+    ]);
+    expect(text).not.toContain('QXZ7');
+    expect(text).not.toContain(CORRECTION_CONTACT);
   });
 
   it('test_transparency_refuses_open_or_bad_quarter', async () => {
@@ -337,12 +416,14 @@ describe('report', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_transparency_report_is_content_free_and_read_only', async () => {
     const handle = await pgliteHandle();
     const seeded = await seedAll(handle.db);
+    await seedCorrections(handle.db);
     expect(seeded.identifiers.length).toBeGreaterThan(20);
     const before = await scanAllTables(handle);
     const { code, text } = await run(['--quarter', '2026-Q4'], '2027-01-02T00:00:00.000Z', handle);
     expect(code).toBe(0);
     for (const id of seeded.identifiers) expect(text, id).not.toContain(id);
     expect(text).not.toMatch(/@/);
+    expect(text).not.toContain('QXZ7');
     expect(await scanAllTables(handle)).toStrictEqual(before);
   });
 });

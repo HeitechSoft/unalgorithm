@@ -4,15 +4,15 @@
  * with Back, a "Fact-checks · N" row and live updates. Storage is the WXT fake browser with a stubbed active tab.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import { emptyTabState } from '@unalgorithm/core';
+import { defaultDevice, emptyTabState } from '@unalgorithm/core';
 import type { FactcheckResult } from '@unalgorithm/protocol';
 import { FactcheckSheet, type FactcheckSheetProps } from '@unalgorithm/ui';
 import { setupUser } from '@unalgorithm/ui/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { App as SidePanel } from '../src/entrypoints/sidepanel/App.tsx';
-import { correctionUrl } from '../src/lib/report-links.ts';
-import { type FactcheckEntry, factcheckItem, tabStateItem } from '../src/lib/storage.ts';
+import { sendQuietly } from '../src/lib/messages.ts';
+import { deviceItem, type FactcheckEntry, factcheckItem, tabStateItem } from '../src/lib/storage.ts';
 
 vi.mock('../src/lib/messages.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/messages.ts')>()),
@@ -143,12 +143,11 @@ describe('FactcheckSheet', () => {
     expect(plainFoot.lastElementChild?.textContent).toBe('AI can be wrong, so open the sources.');
   });
 
-  it('test_sheet_footer_links_open_in_new_tab', () => {
-    const report = correctionUrl({ task: 'factcheck', extensionVersion: '0.3.0', promptVersion: 1 });
-    const links = [
-      { text: 'How Fact-check works', href: 'https://unalgorithmfeed.com/methodology' },
-      { text: 'Report a wrong verdict', href: report },
-    ];
+  it('test_sheet_footer_links_open_in_new_tab', async () => {
+    const user = setupUser();
+    const onReport = vi.fn();
+    const how = { text: 'How Fact-check works', href: 'https://unalgorithmfeed.com/methodology' };
+    const links = [how, { text: 'Report a wrong verdict', onSelect: onReport }];
     const { container } = render(
       <FactcheckSheet label="A post about a bridge" status="done" result={result()} links={links} onBack={() => {}} />,
     );
@@ -158,13 +157,20 @@ describe('FactcheckSheet', () => {
     const last = lines.at(-1) as HTMLElement;
     expect(last.tagName).toBe('DIV');
     expect(last.textContent).toBe('How Fact-check works · Report a wrong verdict');
-    for (const { text, href } of links) {
-      const a = within(foot).getByRole('link', { name: text });
-      expect(a.parentElement).toBe(last);
-      expect(a.getAttribute('href')).toBe(href);
-      expect(a.getAttribute('target')).toBe('_blank');
-      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
-    }
+    // A link opens a web page in a new tab...
+    const a = within(foot).getByRole('link', { name: how.text });
+    expect(a.parentElement).toBe(last);
+    expect(a.getAttribute('href')).toBe(how.href);
+    expect(a.getAttribute('target')).toBe('_blank');
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    // ...and the report is a button that reads as a link, opening the report page in the extension.
+    const report = within(foot).getByRole('button', { name: 'Report a wrong verdict' });
+    expect(report.parentElement).toBe(last);
+    expect(report.className).toBe('ua-link');
+    expect(report.getAttribute('type')).toBe('button');
+    expect(within(foot).queryByRole('link', { name: 'Report a wrong verdict' })).toBeNull();
+    await user.click(report);
+    expect(onReport).toHaveBeenCalledTimes(1);
     cleanup();
 
     // Without links (and with an empty list) the footer is as before.
@@ -181,7 +187,7 @@ describe('FactcheckSheet', () => {
 
     // A running or failed check has no footer, so no links either.
     sheet({ status: 'running', result: undefined, links });
-    expect(screen.queryByRole('link', { name: 'Report a wrong verdict' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Report a wrong verdict' })).toBeNull();
   });
 
   it('test_sheet_marks_earlier_check_without_empty_explanation', () => {
@@ -262,7 +268,6 @@ describe('FactcheckSheet', () => {
 
 describe('side panel', () => {
   const TAB = { id: 7, url: 'https://www.linkedin.com/feed/', windowId: 1 };
-  const MANIFEST_VERSION = '9.8.7';
 
   const entry = (overrides: Partial<FactcheckEntry> = {}): FactcheckEntry => ({
     key: 'li:1' as FactcheckEntry['key'],
@@ -277,9 +282,10 @@ describe('side panel', () => {
     fakeBrowser.reset();
     // `as never`: spyOn picks the callback overloads. The fake browser has no focused window to answer `query` from.
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation((async () => [{ ...TAB, active: true }]) as never);
-    // Nor a manifest: the sheet's correction link carries its version (P3-69).
-    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({ version: MANIFEST_VERSION } as never);
     await tabStateItem(TAB.id).setValue({ ...emptyTabState(), onFeed: true });
+    // The correction names which AI made the result: the device's source.
+    await deviceItem.setValue({ ...defaultDevice('dev1'), aiSource: { kind: 'anthropic', model: null } });
+    vi.mocked(sendQuietly).mockClear();
   });
 
   it('test_sidepanel_shows_sheet_back_and_reopen_row', async () => {
@@ -314,16 +320,20 @@ describe('side panel', () => {
   });
 
   it('test_sidepanel_passes_correction_link', async () => {
+    const user = setupUser();
     await factcheckItem(TAB.id).setValue({ entries: [entry({ result: result({ promptVersion: 4 }) })] });
     render(<SidePanel />);
-    const report = await screen.findByRole('link', { name: 'Report a wrong verdict' });
-    const query = new URL(report.getAttribute('href') as string).searchParams;
-    expect(query.get('prompt')).toBe('4');
-    expect(query.get('version')).toBe(MANIFEST_VERSION);
-    expect(query.get('feature')).toBe('Fact-check');
+    const report = await screen.findByRole('button', { name: 'Report a wrong verdict' });
     expect(screen.getByRole('link', { name: 'How Fact-check works' }).getAttribute('href')).toBe(
       'https://unalgorithmfeed.com/methodology',
     );
     expect(screen.queryByRole('link', { name: "unAlgorithm Cloud's source list" })).toBeNull();
+    // The report page opens beside this window's tab with the result's versions only; nothing goes to GitHub.
+    await user.click(report);
+    expect(vi.mocked(sendQuietly)).toHaveBeenCalledWith({
+      type: 'openReport',
+      draft: { kind: 'correction', from: 'sidepanel', correction: { feature: 'factcheck', promptVersion: 4, via: 'own-key' } },
+      nextTo: TAB.id,
+    });
   });
 });

@@ -1,22 +1,30 @@
 /**
- * The sign-in page as the extension's `launchWebAuthFlow` opens it: the link is checked before anything is fetched,
- * then the email and code steps (or "Continue as") end with the browser sent back to the extension. `fetch` is the
- * shared fake server, and `location` a stand-in whose `assign` records the redirect: jsdom's own cannot be spied on.
+ * The sign-in page as the extension's `launchWebAuthFlow` opens it, in Chrome and Edge or in Firefox: the link is
+ * checked before anything is fetched, then the email and code steps (or "Continue as") end with the browser sent back
+ * to the extension, and only to the redirect address the link named. `fetch` is the shared fake server, and `location`
+ * a stand-in whose `assign` records the redirect: jsdom's own cannot be spied on.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { AUTHORIZE_API_PATH, chromiumRedirectUri } from '@unalgorithm/protocol';
+import {
+  AUTHORIZE_API_PATH,
+  chromiumRedirectUri,
+  FIREFOX_ADDON_ID,
+  FIREFOX_DEV_ADDON_ID,
+  geckoRedirectUri,
+} from '@unalgorithm/protocol';
 import { setupUser, type UserEvent } from '@unalgorithm/ui/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Authorize } from '../src/Authorize.tsx';
 import { SEND_CODE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from '../src/api.ts';
-import { fakeServer, INFO, PARAMS, REDIRECT, TOM } from './support/fake-server.ts';
+import { fakeServer, GECKO_PARAMS, GECKO_REDIRECT, INFO, PARAMS, REDIRECT, TOM } from './support/fake-server.ts';
 
 const INVALID_LINK = "This sign-in link isn't valid. Start again from the unAlgorithm extension.";
 const WRONG_CODE = "That code didn't work. Check it, or send a new one.";
 const TOO_MANY = 'Too many tries. Wait a minute and try again.';
 const REFUSED = "This server doesn't accept sign-ins from this extension.";
+const FAILED = 'Something went wrong. Try again.';
 
 /** Opens `/authorize` with this query and renders the page. */
 function openPage(params: Record<string, string> = PARAMS) {
@@ -50,6 +58,24 @@ describe('link validation', () => {
       { ...PARAMS, redirect_uri: 'https://evil.example/' },
       { ...PARAMS, redirect_uri: chromiumRedirectUri('b'.repeat(32)) },
       {},
+      // Firefox: each id has one redirect address, the SHA-1 of the id exactly as written, with its trailing slash.
+      { ...GECKO_PARAMS, redirect_uri: PARAMS.redirect_uri },
+      { ...PARAMS, redirect_uri: GECKO_PARAMS.redirect_uri },
+      { ...GECKO_PARAMS, redirect_uri: geckoRedirectUri(FIREFOX_DEV_ADDON_ID) },
+      { ...GECKO_PARAMS, client_id: FIREFOX_ADDON_ID.toUpperCase() },
+      { ...GECKO_PARAMS, redirect_uri: GECKO_PARAMS.redirect_uri.slice(0, -1) },
+      { ...GECKO_PARAMS, redirect_uri: GECKO_PARAMS.redirect_uri.replace('https:', 'http:') },
+      // Firefox's loopback form, which `launchWebAuthFlow` would take, is not one the extension makes.
+      {
+        ...GECKO_PARAMS,
+        redirect_uri: `http://127.0.0.1/mozoauth2/${new URL(GECKO_PARAMS.redirect_uri).hostname.split('.')[0]}`,
+      },
+      { ...GECKO_PARAMS, client_id: 'feed@', redirect_uri: geckoRedirectUri('feed@') },
+      {
+        ...GECKO_PARAMS,
+        client_id: `${'a'.repeat(70)}@example.org`,
+        redirect_uri: geckoRedirectUri(`${'a'.repeat(70)}@example.org`),
+      },
     ];
     for (const params of invalid) {
       openPage(params);
@@ -84,6 +110,25 @@ describe('email-code flow', () => {
       { method: 'POST', path: SEND_CODE_PATH, body: { email: TOM, type: 'sign-in' } },
       { method: 'POST', path: SIGN_IN_PATH, body: { email: TOM, otp: '123456' } },
       { method: 'POST', path: AUTHORIZE_API_PATH, body: PARAMS },
+    ]);
+  });
+
+  it('test_firefox_verify_then_authorize_then_redirect', async () => {
+    const server = fakeServer();
+    const { user, assign } = openPage(GECKO_PARAMS);
+    await user.type(await sendCodeTo(user), '123456');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Firefox's sign-in window closes on the first request to its redirect address: the SHA-1 of the add-on id.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(GECKO_REDIRECT));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(GECKO_REDIRECT.startsWith('https://fa1fc373df59566227d5f6860e1bb584c0410048.extensions.allizom.org/?code=')).toBe(
+      true,
+    );
+    expect(server.posts()).toEqual([
+      { method: 'POST', path: SEND_CODE_PATH, body: { email: TOM, type: 'sign-in' } },
+      { method: 'POST', path: SIGN_IN_PATH, body: { email: TOM, otp: '123456' } },
+      { method: 'POST', path: AUTHORIZE_API_PATH, body: GECKO_PARAMS },
     ]);
   });
 
@@ -152,6 +197,15 @@ describe('existing session', () => {
     expect(server.posts()).toEqual([{ method: 'POST', path: AUTHORIZE_API_PATH, body: PARAMS }]);
     cleanup();
 
+    // The same from Firefox.
+    server = fakeServer({ session: TOM });
+    page = openPage(GECKO_PARAMS);
+    await page.user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
+    await waitFor(() => expect(page.assign).toHaveBeenCalledWith(GECKO_REDIRECT));
+    expect(page.assign).toHaveBeenCalledTimes(1);
+    expect(server.posts()).toEqual([{ method: 'POST', path: AUTHORIZE_API_PATH, body: GECKO_PARAMS }]);
+    cleanup();
+
     server = fakeServer({ session: TOM });
     page = openPage();
     await page.user.click(await screen.findByRole('button', { name: 'Use another email' }));
@@ -175,6 +229,30 @@ describe('existing session', () => {
     await user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
     expect(await screen.findByText(REFUSED)).toBeTruthy();
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('redirect', () => {
+  it('test_redirect_only_under_request_redirect_uri', async () => {
+    // A server (or a fork) that answers with another extension's address, in either browser: nobody is sent there.
+    const answer = (uri: string) => `${uri}?code=${'c'.repeat(43)}&state=${PARAMS.state}`;
+    const elsewhere: [Record<string, string>, string][] = [
+      [PARAMS, GECKO_REDIRECT],
+      [GECKO_PARAMS, REDIRECT],
+      [PARAMS, answer(chromiumRedirectUri('b'.repeat(32)))],
+      [GECKO_PARAMS, answer(geckoRedirectUri(FIREFOX_DEV_ADDON_ID))],
+    ];
+    for (const [params, redirect] of elsewhere) {
+      fakeServer({ session: TOM, routes: { [`POST ${AUTHORIZE_API_PATH}`]: { status: 200, body: { redirect } } } });
+      const { user, assign } = openPage(params);
+      await user.click(await screen.findByRole('button', { name: `Continue as ${TOM}` }));
+      expect(await screen.findByText(FAILED)).toBeTruthy();
+      expect(assign).not.toHaveBeenCalled();
+      expect(screen.queryByRole('status')).toBeNull();
+      // Still on "Continue as", so the person can try again.
+      expect(screen.getByRole('button', { name: `Continue as ${TOM}` })).toBeTruthy();
+      cleanup();
+    }
   });
 });
 

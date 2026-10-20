@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   type LucideIcon,
   Megaphone,
+  MessageSquareWarning,
   Newspaper,
   Repeat2,
   SearchCheck,
@@ -123,7 +124,7 @@ const ACTION_ICON: Record<WhyActionId, LucideIcon> = {
   'not-bait': UserCheck,
   'want-like-this': UserCheck,
   settings: Settings,
-  report: Settings,
+  report: MessageSquareWarning,
 };
 
 function WhyButton({ model, onAction }: { model: FeedItemModel; onAction: (id: WhyActionId) => void }) {

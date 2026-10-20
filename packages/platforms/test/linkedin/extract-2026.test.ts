@@ -1,13 +1,15 @@
-import { defaultSettings, type PlatformSettings, ruleFilter, toPostForAI } from '@unalgorithm/core';
+import { applyPreset, defaultSettings, type PlatformSettings, ruleFilter, toPostForAI } from '@unalgorithm/core';
 import { describe, expect, it } from 'vitest';
 import {
   COMPANY_NOT_FOLLOWED,
   FIRST_DEGREE_POST,
   FOLLOWED_BY_POST,
+  FOLLOWING_POST,
   feed2026,
   HIRING_PROMO,
   JOINED_GROUP_POST,
   LIKES_GROUP_POST,
+  PARTNERSHIP_AD,
   POST_WITH_COMMENTS,
   PROMOTED_FOLLOWS_PAGE,
   UNJOINED_GROUP_POST,
@@ -15,6 +17,7 @@ import {
 import { linkedinAdapter } from '../../src/linkedin/adapter.ts';
 import { classifyHeader, extractPost, findPostRoots, moduleInfo, parseAge } from '../../src/linkedin/extract.ts';
 import { LINKEDIN_EN } from '../../src/linkedin/markers/en.ts';
+import { matchLabel } from '../../src/shared/labels.ts';
 import { checkAdapterContract } from '../../src/testing/contract.ts';
 
 const m = LINKEDIN_EN;
@@ -112,6 +115,68 @@ describe('2026 feed layout', () => {
   });
 });
 
+describe('"For you" feed (2026-10)', () => {
+  it('reads "Promoted • Partnership with LinkedIn" on a person\'s post as an ad, also on Light', () => {
+    const { post } = only(PARTNERSHIP_AD);
+    expect(post.author).toMatchObject({
+      name: 'Dana Whitfield',
+      kind: 'person',
+      url: 'https://www.linkedin.com/in/dana-whitfield/',
+    });
+    expect(post.signals.sponsored).toBe(true);
+    // The label sits in the age slot (ADR 0009 §9; before 2026.10.2 any of the first 16 lines, as li.promoted.line).
+    expect(post.evidence).toContainEqual({ signal: 'sponsored', detector: 'li.promoted.age-slot', strength: 'strong' });
+    expect(ruleFilter(post, li)?.reason).toBe('sponsored');
+    expect(ruleFilter(post, applyPreset('linkedin', li, 'light'))?.reason).toBe('sponsored');
+  });
+
+  it('knows "Promoted" with its known suffixes, and reads a new suffix as a near miss', () => {
+    const match = (label: string) => matchLabel(label, m.labels.promoted)?.match ?? null;
+    for (const label of ['Promoted', 'Sponsored', 'Promoted •']) expect(match(label), label).toBe('exact');
+    for (const label of [
+      'Promoted by Acme',
+      'Promoted • Partnership with LinkedIn',
+      'Promoted · Partnership with LinkedIn',
+      'Promoted • Partnership with',
+    ])
+      expect(match(label), label).toBe('known');
+    // Since 2026.10.2 a new suffix is a near miss (reported, and hidden only with more evidence), not "not an ad".
+    for (const label of ['Promoted • Brand content', 'Promoted | Acme']) expect(match(label), label).toBe('near');
+    for (const label of ['Promotedness', 'Promoted • to Director of Sales', 'Promoted to Director', 'Partnership with LinkedIn'])
+      expect(match(label), label).toBeNull();
+  });
+
+  it('reads "• Following" in place of the degree as someone you follow', () => {
+    const { post } = only(FOLLOWING_POST);
+    expect(post.author).toMatchObject({ name: 'Jamie Okafor', kind: 'person', relationship: 'followed' });
+    expect(post.signals.sponsored).toBe(false);
+    expect(ruleFilter(post, li)).toBeNull();
+    // Their posts stay even when someone else's reaction is shown above them.
+    const liked = FOLLOWING_POST.replace(
+      '<div class="e0sactor">',
+      '<div class="e0shdr"><p><span><a href="https://www.linkedin.com/in/pat-morgan/">Pat Morgan</a> likes this</span></p></div><div class="e0sactor">',
+    );
+    const activity = only(liked).post;
+    expect(activity.signals.networkActivity).toBe(true);
+    expect(activity.author.relationship).toBe('followed');
+    expect(ruleFilter(activity, li)).toBeNull();
+  });
+
+  it("keeps a post's id when the feed's sort changes", () => {
+    expect(only(FOLLOWING_POST).post.id).toBe('li:ck:KKKkeyFollowing01');
+    expect(only(PARTNERSHIP_AD).post.id).toBe('li:ck:JJJkeyPartnerAd01');
+    const recent = FOLLOWED_BY_POST.replace(
+      'update-card-focusAAAkeyFollowedBy01',
+      'update-card-focusAAAkeyFollowedBy01FeedType_MAIN_FEED_RECENCY',
+    );
+    expect(only(recent).post.id).toBe(only(FOLLOWED_BY_POST).post.id);
+  });
+
+  it('passes the adapter contract', () => {
+    expect(checkAdapterContract(linkedinAdapter, feed2026(PARTNERSHIP_AD, FOLLOWING_POST, FIRST_DEGREE_POST))).toEqual([]);
+  });
+});
+
 describe('privacy of what the AI could see', () => {
   it('never reads comments as the post text, even when the post has no text box of its own', () => {
     const noOwnText = POST_WITH_COMMENTS.replace(/<div data-testid="expandable-text-box">[\s\S]*?<\/div>/, '');
@@ -161,9 +226,19 @@ describe('regressions fixed in the port', () => {
   });
 
   it('only runs on the feed itself, never on a single post you opened', () => {
-    expect(linkedinAdapter.isFeedPage(new URL('https://www.linkedin.com/feed/'))).toBe(true);
-    expect(linkedinAdapter.isFeedPage(new URL('https://www.linkedin.com/feed/update/urn:li:activity:1/'))).toBe(false);
-    expect(linkedinAdapter.isFeedPage(new URL('https://www.linkedin.com/in/someone/'))).toBe(false);
+    const onFeed = (path: string) => linkedinAdapter.isFeedPage(new URL(`https://www.linkedin.com${path}`));
+    // Some accounts are sent from /feed/ to /feed/foryou/ (a 2026-10 LinkedIn experiment).
+    for (const path of ['/feed/', '/feed', '/feed/?sortBy=RECENT', '/feed/foryou/', '/feed/foryou'])
+      expect(onFeed(path)).toBe(true);
+    for (const path of [
+      '/feed/update/urn:li:activity:1/',
+      '/feed/hashtag/x/',
+      '/feed/following/',
+      '/feed/foryou/x/',
+      '/feedback/',
+      '/in/someone/',
+    ])
+      expect(onFeed(path)).toBe(false);
   });
 });
 

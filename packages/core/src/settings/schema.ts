@@ -3,8 +3,10 @@ import {
   LIST_KINDS,
   MAX_OUTLET_DOMAINS,
   NOISE_LABELS,
+  type NoticeKind,
   OutletDomainSchema,
   type PLATFORMS,
+  type PlatformId,
 } from '@unalgorithm/protocol';
 import { z } from 'zod';
 import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
@@ -13,8 +15,11 @@ import { AISourceConfigSchema, WebSearchKeySchema } from '../ai-source.ts';
  * Synced settings (Phase 2 syncs them field by field). Objects are "loose" so a field written by a newer
  * version survives an older one reading and saving it. User-edited lists are maps keyed by stable ids so two
  * devices can add entries at the same time without overwriting each other.
+ *
+ * Version 2: Facebook's Balanced hides people and pages you don't follow, as LinkedIn's always has (settings/migrate.ts).
+ * Version 3: hidden posts in a row each keep their own fold line unless the person groups them (`display.groupRuns`).
  */
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 3;
 
 export const PRESETS = ['light', 'balanced', 'calm'] as const;
 export type Preset = (typeof PRESETS)[number];
@@ -110,7 +115,10 @@ export const SettingsSchema = z.looseObject({
     mode: z.enum(DISPLAY_MODES),
     showReason: z.boolean(),
     showAuthor: z.boolean(),
-    /** Merge hidden posts that sit next to each other into one line ("3 hidden"). */
+    /**
+     * Merge hidden posts that sit next to each other into one line ("3 hidden · Show all"). Off by default since
+     * version 3: each hidden post keeps its own fold line, with Why? and Show.
+     */
     groupRuns: z.boolean(),
     forYou: z.enum(['ring', 'label', 'off']),
     badgeCount: z.boolean(),
@@ -155,6 +163,24 @@ export type Settings = z.infer<typeof SettingsSchema>;
 export const LabsSchema = z.looseObject({ factcheck: z.boolean(), perspectives: z.boolean() });
 export type Labs = z.infer<typeof LabsSchema>;
 
+/** A notice snooze's key: the platform and the notice kind, `linkedin:ads-through`. */
+export type NoticeSnoozeKey = `${PlatformId}:${NoticeKind}`;
+export const NoticeSnoozeKeySchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,39}$/);
+export function noticeSnoozeKey(platform: PlatformId, kind: NoticeKind): NoticeSnoozeKey {
+  return `${platform}:${kind}`;
+}
+
+/**
+ * The in-feed breakage notices (ADR 0009 §3), per device: Settings → Display's "Tell me when something breaks", and
+ * the snoozes *Not now* (24 hours) and a sent report (7 days) set. A snooze names the adapter version it was set under
+ * and ends early when that changes. Device-local like everything here: shared by this browser's tabs, never synced.
+ */
+export const NoticePrefsSchema = z.looseObject({
+  enabled: z.boolean(),
+  snoozed: z.record(NoticeSnoozeKeySchema, z.looseObject({ until: z.number(), adapter: z.string().max(64) })),
+});
+export type NoticePrefs = z.infer<typeof NoticePrefsSchema>;
+
 /** Device-local state, never synced or exported. */
 export const DeviceSchema = z.looseObject({
   version: z.literal(1),
@@ -175,6 +201,7 @@ export const DeviceSchema = z.looseObject({
   labs: LabsSchema,
   /** The web search key this device uses with an OpenAI-compatible source (which provider; the key is a secret). */
   webSearch: WebSearchKeySchema.nullable(),
+  notices: NoticePrefsSchema,
 });
 export type Device = z.infer<typeof DeviceSchema>;
 

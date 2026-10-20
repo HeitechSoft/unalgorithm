@@ -4,6 +4,7 @@ import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
   ADMIN_PRICES_PAGE_PATH,
+  ADMIN_REPORTS_PAGE_PATH,
   ADMIN_SOURCES_PAGE_PATH,
   AUTHORIZE_PAGE_PATH,
   OUTLETS_PAGE_PATH,
@@ -16,6 +17,7 @@ import { createRoot } from 'react-dom/client';
 import { Account } from './Account.tsx';
 import { Admin } from './Admin.tsx';
 import { AdminPrices } from './AdminPrices.tsx';
+import { AdminReports } from './AdminReports.tsx';
 import { AdminSources } from './AdminSources.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
@@ -72,6 +74,8 @@ if (root) {
           <AdminSources />
         ) : pathname === ADMIN_PRICES_PAGE_PATH ? (
           <AdminPrices />
+        ) : pathname === ADMIN_REPORTS_PAGE_PATH ? (
+          <AdminReports />
         ) : pathname === OUTLETS_PAGE_PATH ? (
           <SourceList />
         ) : (

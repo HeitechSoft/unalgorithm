@@ -50,7 +50,13 @@ import * as fixtureModule from './fixtures/billing-module/index.ts';
 import { serverPost } from './support/classify.ts';
 import { TEST_PRICE_SCHEDULE } from './support/job-prices.ts';
 import { seedPassingRoute } from './support/routes.ts';
-import { DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  signInDevice,
+} from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -376,6 +382,27 @@ describe('perspectives jobs: run', { timeout: PGLITE_TIMEOUT }, () => {
     const done = t.events().filter((e) => e.event === 'perspectives.done');
     expect(done).toMatchObject([{ rid: id, outcome: 'done', sources: result.sources.length }]);
     expect(t.lines.join('\n')).not.toContain('news.example.com');
+  });
+
+  it('test_perspectives_job_from_firefox', async () => {
+    const t = await perspectivesApp();
+    const token = (await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID)).access_token;
+    const firefox = { Origin: FIREFOX_EXTENSION_ORIGIN, Authorization: `Bearer ${token}` };
+
+    // Started and polled from a Firefox page, with a Firefox device's token: each answer is readable there.
+    const res = await postJson(t.app, PERSPECTIVES_JOBS_PATH, request(), firefox);
+    expect(res.status).toBe(202);
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const { id } = PerspectivesJobSchema.parse(await res.json());
+    for (;;) {
+      const polled = await t.app.request(`${perspectivesJobPath(id)}?wait=1`, { headers: firefox });
+      expect(polled.status).toBe(200);
+      expect(polled.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+      const job = PerspectivesJobSchema.parse(await polled.json());
+      if (job.status === 'running') continue;
+      expect(job.status, JSON.stringify(job.error)).toBe('done');
+      break;
+    }
   });
 
   it('test_perspectives_job_searches_only_the_sent_list', async () => {

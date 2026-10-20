@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type BrowserContext, test as base, chromium, type Locator, type Page, type Route } from '@playwright/test';
+import { REPORTS_PATH } from '@unalgorithm/protocol';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
   COMPANY_NOT_FOLLOWED,
@@ -17,7 +18,12 @@ import {
 } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const EXTENSION_PATH = resolve(here, '../.output/chrome-mv3-e2e');
+/** The Chromium browsers the Playwright projects load the extension into (Firefox has its own driver, `firefox/`). */
+export type ExtensionBrowser = 'chromium' | 'edge';
+/** The e2e build each browser loads: `wxt build --mode e2e` and `wxt build -b edge --mode e2e`. */
+export function extensionPath(browser: ExtensionBrowser): string {
+  return resolve(here, `../.output/${browser === 'edge' ? 'edge' : 'chrome'}-mv3-e2e`);
+}
 const devKey = JSON.parse(readFileSync(resolve(here, '../dev-key.json'), 'utf8')) as { id: string };
 
 /** A LinkedIn-like page built from anonymized fixtures, with just enough styling to look like cards. */
@@ -45,22 +51,120 @@ export function linkedinShell(scheme: 'light' | 'dark' = 'light'): string {
 </style></head><body>${cards}</body></html>`;
 }
 
+const VIEWPORT = { width: 1280, height: 860 };
+
 /**
- * A persistent context on a temporary profile with the e2e build of the extension loaded. No real network at all:
- * every request other than the extension's own is aborted unless a test routes it.
+ * A persistent context on a temporary profile with the browser's e2e build of the extension loaded. No real network at
+ * all: every request other than the extension's own is aborted unless a test routes it.
+ *
+ * Chromium is Playwright's own unless `UA_CHROMIUM` names another Chromium binary; it loads the build with
+ * `--load-extension`. Edge is the installed Microsoft Edge (Playwright's `msedge` channel) unless `UA_EDGE` names a
+ * binary. Branded Edge ignores `--load-extension`, so the build is loaded over the DevTools pipe Playwright already
+ * holds (`Extensions.loadUnpacked`), which needs `--enable-unsafe-extension-debugging` and Playwright's default
+ * `--disable-extensions` left out. The dev key gives the same extension id either way.
  */
-export async function launchExtensionContext(): Promise<BrowserContext> {
-  const context = await chromium.launchPersistentContext('', {
-    channel: 'chromium',
-    viewport: { width: 1280, height: 860 },
-    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
-  });
+export async function launchExtensionContext(browser: ExtensionBrowser = 'chromium'): Promise<BrowserContext> {
+  const path = extensionPath(browser);
+  const context =
+    browser === 'edge'
+      ? await chromium.launchPersistentContext('', {
+          ...(process.env.UA_EDGE ? { executablePath: process.env.UA_EDGE } : { channel: 'msedge' }),
+          viewport: VIEWPORT,
+          ignoreDefaultArgs: ['--disable-extensions'],
+          args: ['--enable-unsafe-extension-debugging'],
+        })
+      : await chromium.launchPersistentContext('', {
+          ...(process.env.UA_CHROMIUM ? { executablePath: process.env.UA_CHROMIUM } : { channel: 'chromium' }),
+          viewport: VIEWPORT,
+          args: [`--disable-extensions-except=${path}`, `--load-extension=${path}`],
+        });
+  if (browser === 'edge') {
+    try {
+      const session = await context.browser()?.newBrowserCDPSession();
+      if (!session) throw new Error('Edge gave no DevTools session to load the extension through.');
+      const { id } = (await session.send('Extensions.loadUnpacked', { path })) as { id: string };
+      if (id !== devKey.id) throw new Error(`unexpected extension id ${id}`);
+      await session.detach();
+    } catch (err) {
+      await context.close();
+      throw err;
+    }
+  }
   await context.route('**/*', (route) => {
     const url = route.request().url();
     if (url.startsWith('chrome-extension://') || url.startsWith('data:')) return route.continue();
     return route.abort();
   });
+  await guardReports(context);
   return context;
+}
+
+/**
+ * The e2e guard (ADR 0009 §1): a problem report may leave the browser only after the person clicked *Send report* (or
+ * *Try again*) on that report's page. Every page of the context reports such clicks, with the report's id from the
+ * page's address; every POST to the report route, the background's included, is counted by the id in its body. A
+ * report sent more often than its page was clicked, or one whose id no page was clicked for, fails the test (the
+ * `context` fixture, and `expectReportsAsked` for a context a spec launched itself).
+ */
+export interface ReportGuard {
+  /** Send clicks, by report id. */
+  clicks: Map<string, number>;
+  /** Report requests, by report id (`?` when the body named none). */
+  sent: Map<string, number>;
+}
+
+const guards = new WeakMap<BrowserContext, ReportGuard>();
+
+/** The guard of a context from `launchExtensionContext`. */
+export function reportGuard(context: BrowserContext): ReportGuard {
+  const guard = guards.get(context);
+  if (!guard) throw new Error('This context was not launched with launchExtensionContext.');
+  return guard;
+}
+
+/** Reports `context` sent without a Send click for them: empty when every report was asked for. */
+export function unaskedReports(context: BrowserContext): string[] {
+  const { clicks, sent } = reportGuard(context);
+  return [...sent]
+    .filter(([id, n]) => n > (clicks.get(id) ?? 0))
+    .map(([id, n]) => `${id}: ${n} sent, ${clicks.get(id) ?? 0} clicked`);
+}
+
+/** Fails when `context` sent a report nobody clicked Send for. */
+export function expectReportsAsked(context: BrowserContext): void {
+  const unasked = unaskedReports(context);
+  expect(unasked, `problem reports sent without a Send click:\n${unasked.join('\n')}`).toEqual([]);
+}
+
+async function guardReports(context: BrowserContext): Promise<void> {
+  const guard: ReportGuard = { clicks: new Map(), sent: new Map() };
+  guards.set(context, guard);
+  await context.exposeBinding('__uaReportClicked', (_source, id: unknown) => {
+    if (typeof id === 'string') guard.clicks.set(id, (guard.clicks.get(id) ?? 0) + 1);
+  });
+  await context.addInitScript(() => {
+    if (!location.pathname.endsWith('/report.html')) return;
+    document.addEventListener(
+      'click',
+      (e) => {
+        const button = e.target instanceof Element ? e.target.closest('button') : null;
+        const label = button?.textContent?.trim();
+        if (!e.isTrusted || (label !== 'Send report' && label !== 'Try again')) return;
+        (window as unknown as { __uaReportClicked?: (id: string) => void }).__uaReportClicked?.(location.hash.slice(1));
+      },
+      true,
+    );
+  });
+  context.on('request', (request) => {
+    if (request.method() !== 'POST' || new URL(request.url()).pathname !== REPORTS_PATH) return;
+    let id = '?';
+    try {
+      id = String((JSON.parse(request.postData() ?? '') as { id?: unknown }).id ?? '?');
+    } catch {
+      // Not a report body: counted under '?', which no click ever covers.
+    }
+    guard.sent.set(id, (guard.sent.get(id) ?? 0) + 1);
+  });
 }
 
 /** The loaded extension's id, read from its service worker; always the id of the e2e build's dev key. */
@@ -82,16 +186,27 @@ export async function linkedinFeed(context: BrowserContext, scheme: 'light' | 'd
   return page;
 }
 
-export const test = base.extend<{
-  context: BrowserContext;
-  extensionId: string;
-  feed: (scheme?: 'light' | 'dark') => Promise<Page>;
-}>({
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture signature
-  context: async ({}, use) => {
-    const context = await launchExtensionContext();
+export const test = base.extend<
+  {
+    context: BrowserContext;
+    extensionId: string;
+    feed: (scheme?: 'light' | 'dark') => Promise<Page>;
+  },
+  {
+    /** The project's browser (`playwright.config.ts`); a worker fixture, so `beforeAll` can launch it too. */
+    extensionBrowser: ExtensionBrowser;
+  }
+>({
+  extensionBrowser: ['chromium', { option: true, scope: 'worker' }],
+  context: async ({ extensionBrowser }, use) => {
+    const context = await launchExtensionContext(extensionBrowser);
     await use(context);
-    await context.close();
+    try {
+      // Every test, whatever it does: no problem report without a Send click (ADR 0009 §1).
+      expectReportsAsked(context);
+    } finally {
+      await context.close();
+    }
   },
   extensionId: async ({ context }, use) => {
     await use(await extensionIdOf(context));
@@ -158,6 +273,41 @@ export async function turnOnLabs(options: Page, name: 'Fact-check' | 'UnEcho Cha
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+}
+
+/**
+ * Turns Settings → Display → *Group hidden posts in a row* on (or, with `on` false, off again), as a person would. Off by
+ * default: each hidden post has its own fold line. On, posts hidden one after another share one "N hidden · Show all"
+ * line. Open feed tabs follow at once.
+ */
+export async function groupHiddenPosts(context: BrowserContext, extensionId: string, on = true): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html#/display`);
+  const toggle = page.getByRole('switch', { name: 'Group hidden posts in a row' });
+  await expect(toggle).toHaveAttribute('aria-checked', String(!on));
+  await toggle.click();
+  // Checked once the settings are stored.
+  await expect(toggle).toHaveAttribute('aria-checked', String(on));
+  await page.close();
+}
+
+/** A starter topic that no fixture post mentions, in name or in its words. */
+export const UNMENTIONED_TOPIC = 'Small business';
+
+/**
+ * Marks the topic `label` More in Settings → Interests, as a person would. The AI highlights and hides posts by
+ * relevance only once the person has said what they want: a topic marked More, an About you note or ratings it learned
+ * (core `decide`). So a spec that waits for an AI pick marks a topic first: by default one no fixture post mentions,
+ * so the pick is the AI's and never a match of the topic's own words.
+ */
+export async function markTopicMore(context: BrowserContext, extensionId: string, label = UNMENTIONED_TOPIC): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html#/interests`);
+  const more = page.getByRole('button', { name: `More: ${label}` });
+  await more.click();
+  // Pressed once the settings are stored.
+  await expect(more).toHaveAttribute('aria-pressed', 'true');
+  await page.close();
 }
 
 /** A Facebook-like feed: the friends-only post first, then the public link share. */

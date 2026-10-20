@@ -86,8 +86,8 @@ test('store screenshots', async ({ context, extensionId, feed }) => {
     await onboarding.goto(ext('onboarding.html'));
     await onboarding.getByRole('button', { name: 'Get started' }).click();
     await onboarding.getByRole('button', { name: 'Continue' }).click();
-    await onboarding.getByRole('button', { name: 'AI & tech' }).click();
-    await onboarding.getByRole('button', { name: 'Small business' }).click();
+    await onboarding.getByRole('button', { name: 'More: AI & tech' }).click();
+    await onboarding.getByRole('button', { name: 'More: Small business' }).click();
     await onboarding.getByRole('button', { name: 'Continue' }).click();
     await onboarding.getByRole('button', { name: 'Set up later' }).click();
     await expect(onboarding.getByRole('heading', { name: "You're all set." })).toBeVisible();

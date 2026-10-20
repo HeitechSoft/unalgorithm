@@ -23,6 +23,8 @@ import {
 } from '@unalgorithm/ui';
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { type BrowserKind, browserKind } from '../lib/browser-kind.ts';
+import { POST_DATA, withConsent } from '../lib/data-consent.ts';
 import { sendToBackground } from '../lib/messages.ts';
 import { serverLabel } from '../lib/server-label.ts';
 import { ORIGIN_RULE_ID } from '../lib/storage.ts';
@@ -50,30 +52,58 @@ const LOCAL_PRESETS: CompatPreset[] = ['ollama', 'lmstudio', 'heitech-private', 
 
 /**
  * Add a rule that strips the Origin header from this extension's own requests to a local server (Ollama otherwise
- * refuses them). Limited to requests initiated by the extension so web pages gain nothing. See ADR 0004.
+ * refuses them). Limited to requests initiated by the extension so web pages gain nothing. See ADR 0004. False when
+ * the permission isn't there or the rule can't be added: the error above it still says how to fix it by hand.
  */
 async function fixLocalOrigin(baseUrl: string): Promise<boolean> {
-  const granted = await browser.permissions.request({ permissions: ['declarativeNetRequestWithHostAccess'] });
-  if (!granted) return false;
-  const u = new URL(baseUrl);
-  const dnr = browser.declarativeNetRequest;
-  await dnr.updateDynamicRules({
-    removeRuleIds: [ORIGIN_RULE_ID],
-    addRules: [
-      {
-        id: ORIGIN_RULE_ID,
-        priority: 1,
-        action: { type: 'modifyHeaders', requestHeaders: [{ header: 'origin', operation: 'remove' }] },
-        condition: {
-          urlFilter: `|${u.protocol}//${u.host}/`,
-          resourceTypes: ['xmlhttprequest', 'other'],
-          initiatorDomains: [browser.runtime.id],
+  const permission = { permissions: ['declarativeNetRequestWithHostAccess' as const] };
+  try {
+    // Firefox can't make this permission optional, so its manifest has it from the install, without a prompt.
+    const granted =
+      browserKind() === 'firefox'
+        ? await browser.permissions.contains(permission)
+        : await browser.permissions.request(permission);
+    if (!granted) return false;
+    const u = new URL(baseUrl);
+    const dnr = browser.declarativeNetRequest;
+    await dnr.updateDynamicRules({
+      removeRuleIds: [ORIGIN_RULE_ID],
+      addRules: [
+        {
+          id: ORIGIN_RULE_ID,
+          priority: 1,
+          action: { type: 'modifyHeaders', requestHeaders: [{ header: 'origin', operation: 'remove' }] },
+          condition: {
+            urlFilter: `|${u.protocol}//${u.host}/`,
+            resourceTypes: ['xmlhttprequest', 'other'],
+            // The host of the extension's own pages: its ID in Chrome and Edge, a random per-install UUID in Firefox
+            // (whose add-on ID isn't a domain at all).
+            initiatorDomains: [new URL(browser.runtime.getURL('/')).hostname],
+          },
         },
-      },
-    ] as never,
-  });
-  return true;
+      ] as never,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
+
+/** The on-device card's copy: Chrome's built-in AI, or Edge's preview. Firefox has none and shows no card. */
+const ON_DEVICE_TEXT: Record<Exclude<BrowserKind, 'firefox'>, { unavailable: string; ready: string; finishes: string }> = {
+  chrome: {
+    unavailable:
+      "Not available on this computer. Chrome's built-in AI needs a recent Chrome, about 22 GB of free disk space, and a graphics card with more than 4 GB of memory or 16 GB of RAM.",
+    ready: "Uses Chrome's built-in AI. Posts never leave your computer.",
+    finishes: 'Chrome finishes in the background.',
+  },
+  edge: {
+    unavailable:
+      "Not available on this computer. Edge's built-in AI is a preview: it needs Edge Canary or Dev with the Prompt API turned on in edge://flags, on Windows or macOS, about 20 GB of free disk space, and a graphics card with at least 5.5 GB of memory.",
+    ready: "Uses Edge's built-in AI, a preview. Posts never leave your computer.",
+    finishes: 'Edge finishes in the background.',
+  },
+};
 
 export function AiSetup({
   device,
@@ -96,6 +126,8 @@ export function AiSetup({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string; fix?: boolean } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const kind = browserKind();
+  const onDevice = kind === 'firefox' ? null : ON_DEVICE_TEXT[kind];
 
   useEffect(() => {
     void sendToBackground({ type: 'onDeviceStatus' })
@@ -137,11 +169,12 @@ export function AiSetup({
     });
   };
 
-  // Permission prompts must start directly from the click, before any other await.
+  // Permission prompts must start directly from the click, before any other await. In Firefox the same prompt asks for
+  // consent to send post text there, a server on this computer included (ADR 0008).
   const testKey = () => {
     const p = detectProvider(key) ?? provider;
     const info = KEY_PROVIDERS[p];
-    void browser.permissions.request({ origins: [`${info.origin}/*`] }).then((granted) => {
+    void browser.permissions.request(withConsent({ origins: [`${info.origin}/*`] }, POST_DATA)).then((granted) => {
       if (!granted)
         return setResult({
           ok: false,
@@ -159,7 +192,7 @@ export function AiSetup({
       return setResult({ ok: false, text: 'Enter a full address, like http://localhost:11434/v1' });
     }
     const info = COMPAT_PRESET_INFO[preset];
-    void browser.permissions.request({ origins: [pattern] }).then((granted) => {
+    void browser.permissions.request(withConsent({ origins: [pattern] }, POST_DATA)).then((granted) => {
       if (!granted) return setResult({ ok: false, text: `unAlgorithm needs permission to reach ${info.label}.` });
       void test(localConfig(), token || undefined);
     });
@@ -223,39 +256,37 @@ export function AiSetup({
           description="Nothing to set up and works on all your devices. Pay only for what you use."
         />
       )}
-      <ChoiceCard
-        value="on-device"
-        disabled={availability === 'no-api' || availability === 'unavailable'}
-        title="On this device"
-        badge={<Badge tone="success">Free · Private</Badge>}
-        description={
-          availability === 'no-api' || availability === 'unavailable'
-            ? "Not available on this computer. Chrome's built-in AI needs a recent Chrome, about 22 GB of free disk space, and a graphics card with more than 4 GB of memory or 16 GB of RAM."
-            : "Uses Chrome's built-in AI. Posts never leave your computer."
-        }
-      >
-        {availability === 'available' ? (
-          <div className="ua-stack">
-            <Button variant="primary" loading={busy} onClick={() => void test({ kind: 'on-device' })}>
-              Turn on
-            </Button>
-          </div>
-        ) : progress !== null || availability === 'downloading' ? (
-          <div className="ua-stack">
-            <ProgressBar value={progress ?? 0} label="Downloading the on-device model" />
-            <span className="ua-footnote">
-              Downloading… {Math.round((progress ?? 0) * 100)}%. You can keep going; Chrome finishes in the background.
-            </span>
-          </div>
-        ) : (
-          <div className="ua-stack">
-            <Button variant="primary" onClick={download}>
-              Download and turn on
-            </Button>
-            <span className="ua-footnote">A one-time download of a few gigabytes.</span>
-          </div>
-        )}
-      </ChoiceCard>
+      {onDevice ? (
+        <ChoiceCard
+          value="on-device"
+          disabled={availability === 'no-api' || availability === 'unavailable'}
+          title="On this device"
+          badge={<Badge tone="success">Free · Private</Badge>}
+          description={availability === 'no-api' || availability === 'unavailable' ? onDevice.unavailable : onDevice.ready}
+        >
+          {availability === 'available' ? (
+            <div className="ua-stack">
+              <Button variant="primary" loading={busy} onClick={() => void test({ kind: 'on-device' })}>
+                Turn on
+              </Button>
+            </div>
+          ) : progress !== null || availability === 'downloading' ? (
+            <div className="ua-stack">
+              <ProgressBar value={progress ?? 0} label="Downloading the on-device model" />
+              <span className="ua-footnote">
+                Downloading… {Math.round((progress ?? 0) * 100)}%. You can keep going; {onDevice.finishes}
+              </span>
+            </div>
+          ) : (
+            <div className="ua-stack">
+              <Button variant="primary" onClick={download}>
+                Download and turn on
+              </Button>
+              <span className="ua-footnote">A one-time download of a few gigabytes.</span>
+            </div>
+          )}
+        </ChoiceCard>
+      ) : null}
       <ChoiceCard
         value="key"
         title="Your own API key"

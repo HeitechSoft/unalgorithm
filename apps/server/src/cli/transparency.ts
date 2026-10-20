@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { BUCKET_LABELS, FEATURE_NAMES, LEAN_BUCKETS, markdownCell } from '@unalgorithm/protocol';
 import { FACTCHECK_PROMPT_VERSION, PERSPECTIVES_PROMPT_VERSION } from '@unalgorithm/research';
 import { type ListAtQuarterEnd, listAtQuarterEnd } from '../admin/outlets.ts';
-import { type CheckCounts, checkCounts } from '../admin/queries.ts';
+import { type CheckCounts, type CorrectionTally, checkCounts, countCorrections } from '../admin/queries.ts';
 import { enabledRoute, ROUTE_TASKS } from '../ai/routes.ts';
 import { type Config, ConfigError, loadConfig, SERVER_VERSION } from '../config.ts';
 import { type DbHandle, openPostgres, queryErrorFields } from '../db/client.ts';
@@ -13,9 +13,11 @@ import { type DbHandle, openPostgres, queryErrorFields } from '../db/client.ts';
  * environment; in production, inside the container with
  * `docker compose exec server node apps/server/src/cli/transparency.ts --quarter 2026-Q4`. It reads only what the server
  * keeps without content: the `usage_events` rows of fact-checks and comparisons, the enabled AI routes, the prompt
- * versions and the source list's change history. Counts of checks and people from 1 to 9 print as "fewer than 10". It
- * prints to standard output only, inside a read-only transaction: no file, no row. Corrections, appeals and the audit
- * are added by hand (`docs/site/transparency.md`). Exit code 0 when the report was printed, 1 otherwise.
+ * versions, the source list's change history, and the corrections people sent from the extension (ADR 0009: the
+ * quarterly `correction_counts` plus the problem reports still kept), by how they ended. Counts of checks and people
+ * from 1 to 9 print as "fewer than 10"; corrections, which count no one, print as they are. It prints to standard output
+ * only, inside a read-only transaction: no file, no row. Source list appeals and the audit are added by hand
+ * (`docs/site/transparency.md`). Exit code 0 when the report was printed, 1 otherwise.
  */
 
 export interface TransparencyDeps {
@@ -65,6 +67,8 @@ export interface ReportInput {
   routes: readonly { task: string; model: string; provider: string }[];
   promptVersions: { factcheck: number; perspectives: number };
   list: ListAtQuarterEnd;
+  /** The quarter's corrections by feature and how they ended (`countCorrections`). */
+  corrections: readonly CorrectionTally[];
 }
 
 const month = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' });
@@ -78,6 +82,29 @@ const ROWS: readonly [string, (c: CheckCounts) => number][] = [
   ['Web searches', (c) => c.webSearches],
   ['People who used it', (c) => c.people],
 ];
+
+/** How a correction ended, as the corrections table names it; the others are summed as "Closed another way". */
+const CORRECTION_ROWS: readonly [string, (resolution: string) => boolean][] = [
+  ['Corrected', (r) => r === 'corrected'],
+  ['No change', (r) => r === 'no-change'],
+  ['Out of scope', (r) => r === 'out-of-scope'],
+  ['Closed another way (a duplicate, spam and the like)', (r) => !['corrected', 'no-change', 'out-of-scope', 'none'].includes(r)],
+  ['Not answered yet', (r) => r === 'none'],
+];
+
+/** The corrections table: received, then each way they ended, per feature. */
+function correctionLines(corrections: readonly CorrectionTally[]): string[] {
+  const sum = (feature: string, keep: (resolution: string) => boolean) =>
+    corrections.filter((c) => c.feature === feature && keep(c.resolution)).reduce((n, c) => n + c.n, 0);
+  const row = (label: string, keep: (resolution: string) => boolean) =>
+    `| ${label} | ${thousands.format(sum('factcheck', keep))} | ${thousands.format(sum('perspectives', keep))} |`;
+  return [
+    `| Corrections | ${FEATURE_NAMES.factcheck} | ${FEATURE_NAMES.perspectives} |`,
+    '| --- | ---: | ---: |',
+    row('Received', () => true),
+    ...CORRECTION_ROWS.map(([label, keep]) => row(label, keep)),
+  ];
+}
 
 /** The report as Markdown lines: a `##` section, so each quarter's report is added to the page as printed. */
 export function reportMarkdown(r: ReportInput): string[] {
@@ -105,6 +132,10 @@ export function reportMarkdown(r: ReportInput): string[] {
     `Source list: version ${version} at the end of the quarter; outlets with a lean: ` +
       `${LEAN_BUCKETS.map((b) => `${BUCKET_LABELS[b]} ${leans[b]}`).join(' · ')}; changes this quarter: ` +
       `${changes.add} added, ${changes.edit} edited, ${changes.remove} removed, ${changes.import} imported.`,
+    '',
+    'Corrections people sent from unAlgorithm, and how they ended:',
+    '',
+    ...correctionLines(r.corrections),
     '',
     NO_VERDICTS,
   ];
@@ -143,6 +174,7 @@ export async function main(argv: readonly string[], deps: TransparencyDeps = {})
         if (route) routes.push({ task, model: route.model, provider: route.provider });
       }
       const list = await listAtQuarterEnd(tx, range.from, range.to);
+      const corrections = await countCorrections(tx, quarter, range.from, range.to);
       return reportMarkdown({
         quarter,
         ...range,
@@ -152,6 +184,7 @@ export async function main(argv: readonly string[], deps: TransparencyDeps = {})
         routes,
         promptVersions: { factcheck: FACTCHECK_PROMPT_VERSION, perspectives: PERSPECTIVES_PROMPT_VERSION },
         list,
+        corrections,
       });
     }, READ_ONLY);
     for (const line of report) out(line);

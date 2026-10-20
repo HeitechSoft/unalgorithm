@@ -4,6 +4,8 @@ import {
   AUTHORIZE_API_PATH,
   AuthorizeResponseSchema,
   chromiumRedirectUri,
+  FIREFOX_ADDON_ID,
+  geckoRedirectUri,
   ServerErrorSchema,
   TOKEN_PATH,
   TokenResponseSchema,
@@ -18,6 +20,8 @@ import {
   codeFrom,
   DEV_EXTENSION_ID,
   DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
   pkcePair,
   postAuthorize,
   postJson,
@@ -30,6 +34,9 @@ import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 const TOM = 'tom@example.com';
 const OTHER_ID = 'b'.repeat(32);
 const UNLISTED_ID = 'c'.repeat(32);
+/** Firefox's redirect address for the development add-on id: the SHA-1 of `feed-dev@unalgorithmfeed.com`. */
+const FIREFOX_REDIRECT = 'https://050785fd621b7eeb0c98874aa5418eafb61158f5.extensions.allizom.org/';
+const UNLISTED_FIREFOX_ID = 'someone-else@example.org';
 /** Every refused exchange answers exactly this, so a caller cannot tell why. */
 const AUTH_REQUIRED = { code: 'auth-required', message: 'Sign in to Test server again.' };
 
@@ -117,6 +124,27 @@ describe('authorize', { timeout: PGLITE_TIMEOUT }, () => {
     expect(await codeRows(t)).toHaveLength(2);
   });
 
+  it('test_authorize_firefox_returns_allizom_redirect', async () => {
+    const t = await tokenApp();
+    const cookie = await webSession(t);
+    const { challenge } = pkcePair();
+    const req = { ...authorizeRequest(challenge, FIREFOX_EXTENSION_ID), state: 'state-0123456789abcdef' };
+    expect(req.redirect_uri).toBe(FIREFOX_REDIRECT);
+
+    const res = await postAuthorize(t.app, cookie, req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    // Under the address Firefox's `launchWebAuthFlow` watches for: it resolves on the first request starting with it.
+    const { redirect } = AuthorizeResponseSchema.parse(await res.json());
+    expect(redirect.startsWith(`${FIREFOX_REDIRECT}?code=`)).toBe(true);
+    expect(redirect.endsWith('&state=state-0123456789abcdef')).toBe(true);
+    const code = new URL(redirect).searchParams.get('code') ?? '';
+    secrets.push(code);
+    expect(code).toMatch(/^[\w-]{43}$/);
+    // The code is bound to the add-on id and its redirect, as given.
+    expect(await codeRows(t)).toMatchObject([{ clientId: FIREFOX_EXTENSION_ID, redirectUri: FIREFOX_REDIRECT }]);
+  });
+
   it('test_authorize_requires_session', async () => {
     const t = await tokenApp();
     const { challenge } = pkcePair();
@@ -136,6 +164,9 @@ describe('authorize', { timeout: PGLITE_TIMEOUT }, () => {
     // No Origin at all, and the extension itself: only the server's own page may ask for a code.
     await expectRefused(await postJson(t.app, AUTHORIZE_API_PATH, authorizeRequest(challenge), { Cookie: cookie }));
     await expectRefused(await postAuthorize(t.app, cookie, authorizeRequest(challenge), DEV_EXTENSION_ORIGIN));
+    await expectRefused(
+      await postAuthorize(t.app, cookie, authorizeRequest(challenge, FIREFOX_EXTENSION_ID), FIREFOX_EXTENSION_ORIGIN),
+    );
     expect(await codeRows(t)).toHaveLength(0);
   });
 
@@ -151,6 +182,27 @@ describe('authorize', { timeout: PGLITE_TIMEOUT }, () => {
     for (const redirect_uri of ['https://evil.example/', chromiumRedirectUri(OTHER_ID)]) {
       const res = await postAuthorize(t.app, cookie, { ...authorizeRequest(challenge), redirect_uri });
       expect(res.status).toBe(400);
+      expect(await res.json()).toEqual(notValid);
+    }
+
+    // The same in Firefox: an add-on this server does not list, and its ids are compared exactly, case included.
+    await expectRefused(await postAuthorize(t.app, cookie, authorizeRequest(challenge, UNLISTED_FIREFOX_ID)));
+    await expectRefused(await postAuthorize(t.app, cookie, authorizeRequest(challenge, FIREFOX_EXTENSION_ID.toUpperCase())));
+    // A listed add-on whose code would go anywhere but the SHA-1 of its own id: another add-on's (listed too), another
+    // browser's form, a near miss, Firefox's loopback form, or a Chrome id sent to a Firefox address.
+    const hash = new URL(FIREFOX_REDIRECT).hostname.split('.')[0];
+    const firefox = authorizeRequest(challenge, FIREFOX_EXTENSION_ID);
+    for (const req of [
+      { ...firefox, redirect_uri: geckoRedirectUri(FIREFOX_ADDON_ID) },
+      { ...firefox, redirect_uri: chromiumRedirectUri(DEV_EXTENSION_ID) },
+      { ...firefox, redirect_uri: `https://${'0'.repeat(40)}.extensions.allizom.org/` },
+      { ...firefox, redirect_uri: FIREFOX_REDIRECT.slice(0, -1) },
+      { ...firefox, redirect_uri: `${FIREFOX_REDIRECT}callback` },
+      { ...firefox, redirect_uri: `http://127.0.0.1/mozoauth2/${hash}` },
+      { ...authorizeRequest(challenge), redirect_uri: FIREFOX_REDIRECT },
+    ]) {
+      const res = await postAuthorize(t.app, cookie, req);
+      expect(res.status, req.redirect_uri).toBe(400);
       expect(await res.json()).toEqual(notValid);
     }
     expect(await codeRows(t)).toHaveLength(0);
@@ -183,6 +235,29 @@ describe('token: authorization_code', { timeout: PGLITE_TIMEOUT }, () => {
     });
     expect(typeof payload?.iat).toBe('number');
     expect(Number(payload?.exp) - Number(payload?.iat)).toBe(900);
+  });
+
+  it('test_firefox_exchange_issues_tokens_and_device', async () => {
+    const t = await tokenApp();
+    const { code, verifier } = await authorized(t, await webSession(t), FIREFOX_EXTENSION_ID);
+
+    const body = codeExchange(code, verifier, FIREFOX_EXTENSION_ID, 'Firefox on Linux');
+    expect(body).toMatchObject({ client_id: FIREFOX_EXTENSION_ID, redirect_uri: FIREFOX_REDIRECT });
+    const res = await exchange(t, body);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    // Sent from a Firefox extension page, whose origin names no add-on: the extension can read the answer.
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+    const tokens = TokenResponseSchema.parse(await res.json());
+    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 900, account: { email: TOM } });
+
+    const [owner] = await t.deps.db.db.select().from(user).where(eq(user.email, TOM));
+    const { payload } = await t.deps.auth.api.verifyJWT({ body: { token: tokens.access_token } });
+    expect(payload).toMatchObject({ sub: owner?.id, did: tokens.device_id, cid: FIREFOX_EXTENSION_ID });
+    expect(await t.deps.db.db.select().from(devices)).toMatchObject([
+      { id: tokens.device_id, userId: owner?.id, clientId: FIREFOX_EXTENSION_ID, name: 'Firefox on Linux', revokedAt: null },
+    ]);
   });
 
   it('test_code_is_single_use', async () => {
@@ -244,6 +319,40 @@ describe('token: authorization_code', { timeout: PGLITE_TIMEOUT }, () => {
     const kept = await authorized(t, cookie);
     await expectRefused(await exchange(t, codeExchange(kept.code, kept.verifier, UNLISTED_ID)));
     expect((await exchange(t, codeExchange(kept.code, kept.verifier))).status).toBe(200);
+  });
+
+  it('test_exchange_binds_client_across_browsers', async () => {
+    const t = await tokenApp({ EXTENSION_IDS: `${DEV_EXTENSION_ID},${FIREFOX_EXTENSION_ID},${FIREFOX_ADDON_ID}` });
+    const cookie = await webSession(t);
+
+    // A code issued to Chrome's extension cannot be redeemed by a Firefox one, with either redirect, nor the reverse.
+    const forChrome = await authorized(t, cookie);
+    await expectAuthRequired(await exchange(t, codeExchange(forChrome.code, forChrome.verifier, FIREFOX_EXTENSION_ID)));
+    const forChromeAgain = await authorized(t, cookie);
+    await expectAuthRequired(
+      await exchange(t, {
+        ...codeExchange(forChromeAgain.code, forChromeAgain.verifier, FIREFOX_EXTENSION_ID),
+        redirect_uri: chromiumRedirectUri(DEV_EXTENSION_ID),
+      }),
+    );
+    const forFirefox = await authorized(t, cookie, FIREFOX_EXTENSION_ID);
+    await expectAuthRequired(await exchange(t, codeExchange(forFirefox.code, forFirefox.verifier)));
+    // Nor by the other Firefox add-on, or with another redirect address.
+    const forDev = await authorized(t, cookie, FIREFOX_EXTENSION_ID);
+    await expectAuthRequired(await exchange(t, codeExchange(forDev.code, forDev.verifier, FIREFOX_ADDON_ID)));
+    const elsewhere = await authorized(t, cookie, FIREFOX_EXTENSION_ID);
+    await expectAuthRequired(
+      await exchange(t, {
+        ...codeExchange(elsewhere.code, elsewhere.verifier, FIREFOX_EXTENSION_ID),
+        redirect_uri: geckoRedirectUri(FIREFOX_ADDON_ID),
+      }),
+    );
+
+    // An add-on the server does not list is refused before the code is looked at, so the code still works.
+    const kept = await authorized(t, cookie, FIREFOX_EXTENSION_ID);
+    await expectRefused(await exchange(t, codeExchange(kept.code, kept.verifier, UNLISTED_FIREFOX_ID)));
+    expect((await exchange(t, codeExchange(kept.code, kept.verifier, FIREFOX_EXTENSION_ID))).status).toBe(200);
+    expect(await t.deps.db.db.select().from(devices)).toMatchObject([{ clientId: FIREFOX_EXTENSION_ID }]);
   });
 
   it('test_concurrent_exchange_one_winner', async () => {
@@ -330,6 +439,20 @@ describe('storage and hygiene', { timeout: PGLITE_TIMEOUT }, () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
     expect(res.headers.get('access-control-allow-methods')).toContain('POST');
     expect(res.headers.get('access-control-allow-headers')).toContain('content-type');
+
+    // Firefox preflights the same JSON POST from its extension page.
+    const firefox = await t.app.request(TOKEN_PATH, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: FIREFOX_EXTENSION_ORIGIN,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+    });
+    expect(firefox.status).toBe(204);
+    expect(firefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(firefox.headers.get('access-control-allow-methods')).toContain('POST');
+    expect(firefox.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
   it('test_auth_token_logs_hold_no_secrets', async () => {

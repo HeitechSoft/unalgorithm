@@ -13,7 +13,7 @@ import {
   TOKEN_PATH,
 } from '@unalgorithm/protocol';
 import { FIRST_DEGREE_POST } from '../../../packages/platforms/fixtures/linkedin/y2026.ts';
-import { expect, test } from './fixtures.ts';
+import { expect, markTopicMore, test } from './fixtures.ts';
 import { useLocalServer } from './server-lifecycle.ts';
 import { allowServer, expectAccessible, expectDialogTrapsFocus, signInFromSettings } from './server-sign-in.ts';
 
@@ -33,6 +33,8 @@ const AUTHOR = 'Morgan Ellis';
 const CLOUD = 'https://cloud.unalgorithm.app';
 /** The balance pill's accessible name (CL2-12). */
 const BALANCE_PILL = /^Credit balance:/;
+/** The operating system as a device name says it (device-name.ts). */
+const OS_NAMES: Record<string, string> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
 
 test.describe('a self-hosted server', () => {
   test.skip(SKIP, NEEDS);
@@ -40,7 +42,7 @@ test.describe('a self-hosted server', () => {
   // test_harness_cleans_up: useLocalServer's afterAll, also when a test failed.
   const started = useLocalServer();
 
-  test('test_self_hosted_sign_in_and_labels', async ({ context, extensionId, feed }) => {
+  test('test_self_hosted_sign_in_and_labels', async ({ context, extensionId, extensionBrowser, feed }) => {
     test.setTimeout(120_000);
     const { ai, server } = started();
     const { url, logs } = server;
@@ -61,13 +63,25 @@ test.describe('a self-hosted server', () => {
     // The sign-in left a web session in this browser: the account page's confirm dialogs, as only a browser runs them.
     await test.step('test_account_dialogs_trap_focus', () => expectAccountDialogsTrapFocus(context, url));
 
+    // Edge names this device by its brand (device-name.ts). With UA_EDGE another Chromium stands in for Edge.
+    if (extensionBrowser === 'edge' && !process.env.UA_EDGE) {
+      await test.step('test_edge_device_name', async () => {
+        const account = await context.newPage();
+        await account.goto(`${url}${ACCOUNT_PAGE_PATH}`);
+        await expect(account.getByText(`Edge on ${OS_NAMES[process.platform] ?? process.platform}`)).toBeVisible();
+        await account.close();
+      });
+    }
+
     // Privacy & Data names the server by its host, with the self-hosted recipient text.
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options.html#/privacy`);
     await expect(options.locator('.flow-box').last()).toHaveText(host);
     await expect(options.getByText(/not HeitechSoft/)).toContainText(host);
 
-    // The feed, labelled by the mock provider through the server.
+    // The feed, labelled by the mock provider through the server; the AI highlights by relevance once the person has
+    // said what they want.
+    await markTopicMore(context, extensionId);
     const page = await feed();
     const friend = page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');
     await expect(friend).toHaveAttribute('data-unalgo-pick', '', { timeout: 20_000 });

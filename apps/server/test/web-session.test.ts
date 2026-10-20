@@ -4,7 +4,15 @@ import { Hono } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ownPageOnly, REFUSED, requireWebSession } from '../src/auth/web-session.ts';
 import { user } from '../src/db/schema.ts';
-import { authorizeRequest, DEV_EXTENSION_ORIGIN, pkcePair, postAuthorize, postJson, signInWeb } from './support/sign-in.ts';
+import {
+  authorizeRequest,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ORIGIN,
+  pkcePair,
+  postAuthorize,
+  postJson,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -102,9 +110,11 @@ describe('session', { timeout: PGLITE_TIMEOUT }, () => {
     expect(anonymous.headers.get('cache-control')).toBe('no-store');
 
     // From elsewhere, the Origin is still checked first.
-    const foreign = await postAuthorize(t.app, '', noClientId, DEV_EXTENSION_ORIGIN);
-    expect(foreign.status).toBe(403);
-    expect(await foreign.json()).toEqual(REFUSED);
+    for (const origin of [DEV_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ORIGIN]) {
+      const foreign = await postAuthorize(t.app, '', noClientId, origin);
+      expect(foreign.status).toBe(403);
+      expect(await foreign.json()).toEqual(REFUSED);
+    }
 
     // With a session the body is validated as before.
     const cookie = await webSession(t);

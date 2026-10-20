@@ -3,6 +3,7 @@ import { FEATURE_NAMES } from '@unalgorithm/protocol';
 import { Banner, Button, ChoiceCard, ChoiceCardGroup, ExternalLink, SecretField } from '@unalgorithm/ui';
 import { useState } from 'react';
 import { browser } from 'wxt/browser';
+import { POST_DATA, withConsent } from '../lib/data-consent.ts';
 import { sendToBackground } from '../lib/messages.ts';
 
 /** Where each provider hands out API keys. */
@@ -20,8 +21,9 @@ type Result = { ok: boolean; text: string };
 
 /**
  * Settings → AI, above the Fact-check switch, for an OpenAI-compatible source only (P3-45, F24): the person's own
- * Brave or Tavily key, which fact-check and UnEcho Chamber search the web with. The provider's host permission is
- * asked for from the Save click only. The saved key stays in the background and is never read back into this page.
+ * Brave or Tavily key, which fact-check and UnEcho Chamber search the web with. The provider's host permission (and in
+ * Firefox the consent to send it search words, ADR 0008) is asked for from the Save click only. The saved key stays in
+ * the background and is never read back into this page.
  */
 export function WebSearchKey({ device }: { device: Device }) {
   const saved = device.webSearch;
@@ -44,7 +46,7 @@ export function WebSearchKey({ device }: { device: Device }) {
     }
   };
 
-  // The permission prompt must start directly from the click, before any other await (Chrome needs the gesture).
+  // The permission prompt must start directly from the click, before any other await (the browser needs the gesture).
   const save = () => {
     const p = provider;
     const apiKey = key.trim();
@@ -55,7 +57,7 @@ export function WebSearchKey({ device }: { device: Device }) {
       });
     setResult(null);
     void browser.permissions
-      .request({ origins: [`${webSearchOrigin(p)}/*`] })
+      .request(withConsent({ origins: [`${webSearchOrigin(p)}/*`] }, POST_DATA))
       .then((granted) => (granted ? store(p, apiKey) : denied()), denied);
   };
 

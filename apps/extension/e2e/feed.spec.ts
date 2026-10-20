@@ -1,13 +1,16 @@
 import { type MockOpenAI, startMockOpenAI } from '@unalgorithm/ai/testing';
 import {
   FRIEND_POST,
+  FRIEND_RESHARE,
   fbFeed,
+  JOINED_GROUP_MEMBER_FOLLOW,
+  NOT_FOLLOWED_PAGE_POST,
   REELS_TRAY,
   SPONSORED_SPLIT,
   SUGGESTED_PAGE_POST,
   UNJOINED_GROUP_POST,
 } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
-import { expect, settled, test } from './fixtures.ts';
+import { expect, groupHiddenPosts, markTopicMore, settled, test } from './fixtures.ts';
 
 test('opens onboarding on install', async ({ context, extensionId }) => {
   await expect
@@ -21,13 +24,39 @@ test('LinkedIn: folds away noise, keeps people you follow, and Show reveals', as
   const promoted = page.locator('[componentkey="update-card-focusBBBkeyPromoted0002"]');
   await expect(promoted).toHaveAttribute('data-unalgo', 'collapsed');
   await expect(friend).not.toHaveAttribute('data-unalgo', /.+/);
-  // Adjacent hidden posts merge into one line.
-  await expect(page.locator('[data-unalgo-run="member"]').first()).toBeAttached();
   const stub = promoted.locator('unalgo-post');
   await expect(stub.getByText('Promoted', { exact: true })).toBeVisible();
   await stub.getByRole('button', { name: /^Show / }).click();
   await expect(promoted).toHaveAttribute('data-unalgo', 'revealed');
   await expect(promoted.locator('unalgo-post').getByRole('button', { name: 'Hide again' })).toBeVisible();
+});
+
+test('LinkedIn: each hidden post has its own line; grouping them is a switch that applies at once', async ({
+  context,
+  extensionId,
+  feed,
+}) => {
+  const page = await feed();
+  // The fixture feed's last hidden post folds last: from then on, every post that will be hidden is.
+  await expect(page.locator('[componentkey="update-card-focusFFFkeyCompanyNF006"]')).toHaveAttribute('data-unalgo', 'collapsed');
+  const folded = await page.locator('[data-unalgo="collapsed"]').count();
+  expect(folded).toBeGreaterThan(2);
+  const why = page.locator('[data-unalgo="collapsed"] unalgo-post').getByRole('button', { name: /Why was this hidden/ });
+  const showAll = page.getByRole('button', { name: /^Show all \d+ hidden posts$/ });
+  // By default, each hidden post its own line with Why? and Show, even those hidden one after another.
+  await expect(why).toHaveCount(folded);
+  await expect(page.locator('[data-unalgo-run]')).toHaveCount(0);
+  await expect(showAll).toHaveCount(0);
+  // Settings → Display → Group hidden posts in a row: the open feed merges them into one line each run.
+  await groupHiddenPosts(context, extensionId);
+  await expect(page.locator('[data-unalgo-run="member"]').first()).toBeAttached();
+  await expect(showAll.first()).toBeVisible();
+  await expect(page.locator('[data-unalgo="collapsed"]')).toHaveCount(folded);
+  // Off again: every hidden post has its own line again.
+  await groupHiddenPosts(context, extensionId, false);
+  await expect(page.locator('[data-unalgo-run]')).toHaveCount(0);
+  await expect(showAll).toHaveCount(0);
+  await expect(why).toHaveCount(folded);
 });
 
 test('LinkedIn: Why? explains, and "Stop hiding" changes the rule live with Undo', async ({ feed }) => {
@@ -49,19 +78,21 @@ test('LinkedIn: Why? explains, and "Stop hiding" changes the rule live with Undo
   await expect(promoted).toHaveAttribute('data-unalgo', 'collapsed');
 });
 
-test('Facebook: hides Sponsored, Suggested, Reels tray and unjoined groups; keeps friends', async ({ context }) => {
+test('Facebook: hides noise and pages you don’t follow; keeps friends, their shares and your groups', async ({ context }) => {
   await context.route('https://www.facebook.com/**', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/html',
-      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px sans-serif;background:#f0f2f5}[role=feed]>div{background:#fff;margin:8px auto;max-width:560px;padding:12px;border-radius:8px}</style></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST)}</body></html>`,
+      body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>body{font:14px sans-serif;background:#f0f2f5}[role=feed]>div{background:#fff;margin:8px auto;max-width:560px;padding:12px;border-radius:8px}</style></head><body>${fbFeed(FRIEND_POST, SPONSORED_SPLIT, SUGGESTED_PAGE_POST, REELS_TRAY, UNJOINED_GROUP_POST, FRIEND_RESHARE, NOT_FOLLOWED_PAGE_POST, JOINED_GROUP_MEMBER_FOLLOW)}</body></html>`,
     }),
   );
   const page = await context.newPage();
   await page.goto('https://www.facebook.com/');
   const items = page.locator('[role="feed"] > div');
-  await expect(items.nth(0)).not.toHaveAttribute('data-unalgo', /.+/);
-  for (const i of [1, 2, 3, 4]) await expect(items.nth(i)).toHaveAttribute('data-unalgo', 'collapsed');
+  for (const i of [1, 2, 3, 4, 6]) await expect(items.nth(i)).toHaveAttribute('data-unalgo', 'collapsed');
+  // A friend's post, a friend sharing a page's post (the Follow button is the page's), and a group the account is in.
+  for (const i of [0, 5, 7]) await expect(items.nth(i)).not.toHaveAttribute('data-unalgo', /.+/);
+  await expect(items.nth(6).locator('unalgo-post').getByText('Not followed', { exact: true })).toBeVisible();
   await expect(page.locator('[role="complementary"] [data-unalgo]')).toHaveCount(1);
 });
 
@@ -88,6 +119,8 @@ test.describe('AI through a local OpenAI-compatible server', () => {
       return test;
     }, ai.baseUrl);
     expect(result).toMatchObject({ ok: true, model: 'mock-model' });
+    // The AI highlights by relevance once the person has said what they want.
+    await markTopicMore(context, extensionId);
 
     const page = await feed();
     const friend = page.locator('[componentkey="update-card-focusEEEkeyFirstDegree5"]');

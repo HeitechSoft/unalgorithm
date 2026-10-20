@@ -7,6 +7,10 @@ import { AIError, describeError } from '@unalgorithm/ai';
 import {
   AUTHORIZE_PAGE_PATH,
   AuthorizeRequestSchema,
+  chromiumRedirectUri,
+  FIREFOX_ADDON_ID,
+  FIREFOX_DEV_ADDON_ID,
+  geckoRedirectUri,
   REVOKE_PATH,
   RevokeRequestSchema,
   SERVER_INFO_PATH,
@@ -27,7 +31,15 @@ import {
   signOut,
   webAuthFlow,
 } from '../src/background/server-auth.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { PINNED_CLOUD_ORIGIN, serverLabel } from '../src/lib/server-label.ts';
+
+// Vitest builds for Chrome; the Firefox cases switch `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const ID = 'abcdefghijklmnopabcdefghijklmnop';
 const REDIRECT = `https://${ID}.chromiumapp.org/`;
@@ -105,6 +117,7 @@ const isRefresh = (init: RequestInit) => (JSON.parse(String(init.body)) as { gra
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   fakeBrowser.runtime.id = ID;
   vi.spyOn(fakeBrowser.identity, 'getRedirectURL').mockReturnValue(REDIRECT);
   await clearSecrets();
@@ -492,6 +505,196 @@ describe('tokens', () => {
     const [second] = await fakeBrowser.tabs.query({ url });
     await fakeBrowser.tabs.onRemoved.trigger(second?.id ?? -1, { isWindowClosing: false, windowId: 0 });
     await expect(closed).rejects.toThrow();
+  });
+});
+
+describe('firefox and other client kinds', () => {
+  /** Firefox's `getRedirectURL()` for the store add-on id, worked out by hand (ADR 0008). */
+  const GECKO_REDIRECT = 'https://fa1fc373df59566227d5f6860e1bb584c0410048.extensions.allizom.org/';
+  const BOTH: ServerInfo = { ...INFO, auth: { ...INFO.auth, clients: ['chromium', 'gecko'] } };
+
+  /** The server's data-collection consent, which the sign-in click asks for first (ADR 0008). */
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+  /** What Firefox's `getAll()` reports as granted. */
+  let granted: string[];
+
+  function asFirefox(id = FIREFOX_ADDON_ID, redirect = geckoRedirectUri(id)) {
+    env.kind = 'firefox';
+    fakeBrowser.runtime.id = id;
+    vi.mocked(fakeBrowser.identity.getRedirectURL).mockReturnValue(redirect);
+    granted = CLOUD_DATA;
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+  }
+
+  it('test_firefox_sign_in_refresh_and_revoke_use_gecko_id', async () => {
+    asFirefox();
+    expect(geckoRedirectUri(FIREFOX_ADDON_ID)).toBe(GECKO_REDIRECT);
+    const s = fakeServer({ info: () => json(BOTH) });
+    const flow = authFlow();
+    expect(await signIn('ai.example.org', { fetch: s.fetch, webAuthFlow: flow, now: () => NOW })).toMatchObject({ ok: true });
+
+    const q = new URL(flow.mock.calls[0]?.[0].url ?? '').searchParams;
+    expect(q.get('client_id')).toBe(FIREFOX_ADDON_ID);
+    expect(q.get('redirect_uri')).toBe(GECKO_REDIRECT);
+    expect(AuthorizeRequestSchema.safeParse(Object.fromEntries(q)).success).toBe(true);
+    const code = TokenRequestSchema.parse(s.bodyOf(s.posts(TOKEN_PATH)[0]));
+    expect(code).toMatchObject({ grant_type: 'authorization_code', client_id: FIREFOX_ADDON_ID, redirect_uri: GECKO_REDIRECT });
+
+    // The refresh and the sign-out carry the same id, in the shapes the protocol takes.
+    expect(await getAccessToken(ORIGIN, {}, { fetch: s.fetch, now: () => NOW + 16 * MINUTE })).toBe(access(1));
+    expect(TokenRequestSchema.parse(s.bodyOf(s.posts(TOKEN_PATH)[1]))).toStrictEqual({
+      grant_type: 'refresh_token',
+      refresh_token: refresh(1),
+      client_id: FIREFOX_ADDON_ID,
+    });
+    await signOut(ORIGIN, { fetch: s.fetch });
+    expect(RevokeRequestSchema.parse(s.bodyOf(s.posts(REVOKE_PATH)[0]))).toStrictEqual({
+      refresh_token: refresh(1),
+      client_id: FIREFOX_ADDON_ID,
+    });
+
+    // The development id signs in the same way, at its own address.
+    asFirefox(FIREFOX_DEV_ADDON_ID);
+    const dev = authFlow();
+    expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: dev, now: () => NOW })).toMatchObject({ ok: true });
+    expect(new URL(dev.mock.calls[0]?.[0].url ?? '').searchParams.get('redirect_uri')).toBe(
+      'https://050785fd621b7eeb0c98874aa5418eafb61158f5.extensions.allizom.org/',
+    );
+  });
+
+  it('test_firefox_sign_in_needs_the_server_consent', async () => {
+    asFirefox();
+    // Any one type of the server's set missing: no sign-in window and no code exchange, only the public discovery.
+    for (const missing of CLOUD_DATA) {
+      granted = CLOUD_DATA.filter((type) => type !== missing);
+      const s = fakeServer({ info: () => json(BOTH) });
+      const flow = authFlow();
+      expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: flow, now: () => NOW }), missing).toStrictEqual({
+        ok: false,
+        error: {
+          code: 'host-permission',
+          message: 'unAlgorithm needs your permission to send post text and account details to ai.example.org.',
+        },
+      });
+      expect(flow, missing).not.toHaveBeenCalled();
+      expect(
+        s.calls.map((c) => new URL(c.url).pathname),
+        missing,
+      ).toStrictEqual([SERVER_INFO_PATH]);
+    }
+    expect(await serverAccountItem.getValue()).toBeNull();
+
+    // Chrome and Edge have no such consent: nothing reads it.
+    env.kind = 'chrome';
+    fakeBrowser.runtime.id = ID;
+    vi.mocked(fakeBrowser.identity.getRedirectURL).mockReturnValue(REDIRECT);
+    vi.mocked(fakeBrowser.permissions.getAll).mockClear();
+    await signedIn();
+    expect(fakeBrowser.permissions.getAll).not.toHaveBeenCalled();
+  });
+
+  it('test_firefox_device_name_follows_technical_data_only', async () => {
+    asFirefox();
+    vi.spyOn(fakeBrowser.runtime, 'getPlatformInfo').mockResolvedValue({ os: 'linux' } as never);
+    const info = { name: 'Firefox', vendor: 'Mozilla', version: '147.0', buildID: '20260113000000' };
+    Object.assign(fakeBrowser.runtime, { getBrowserInfo: async () => info });
+    const permissionRequest = vi.spyOn(fakeBrowser.permissions, 'request');
+    const tokenRequest = async () => {
+      const s = fakeServer({ info: () => json(BOTH) });
+      expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: authFlow(), now: () => NOW })).toMatchObject({ ok: true });
+      const request = TokenRequestSchema.parse(s.bodyOf(s.posts(TOKEN_PATH)[0]));
+      if (request.grant_type !== 'authorization_code') throw new Error('Not a sign-in.');
+      return request;
+    };
+    try {
+      // Technical and interaction data left on (Firefox's install prompt, or its add-ons page): the device goes by its
+      // name.
+      granted = [...CLOUD_DATA, 'technicalAndInteraction'];
+      expect((await tokenRequest()).device_name).toBe('Firefox on Linux');
+      // Turned off: signed in all the same, without a name. Nothing else depends on it, and nothing asks for it.
+      granted = CLOUD_DATA;
+      expect(await tokenRequest()).not.toHaveProperty('device_name');
+      expect(await serverAccountItem.getValue()).toMatchObject({ origin: ORIGIN, needsSignIn: false });
+      expect(permissionRequest).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(fakeBrowser.runtime, 'getBrowserInfo');
+    }
+  });
+
+  it('test_redirect_must_be_the_one_for_the_id', async () => {
+    const cant = { ok: false, error: { code: 'not-available', message: "This browser can't open the sign-in window." } };
+    for (const [what, setUp] of [
+      ['Chromium id, Firefox address', () => asFirefox(ID, GECKO_REDIRECT)],
+      ['Firefox id, Chromium address', () => asFirefox(FIREFOX_ADDON_ID, chromiumRedirectUri(ID))],
+      ["another add-on's address", () => asFirefox(FIREFOX_ADDON_ID, geckoRedirectUri(FIREFOX_DEV_ADDON_ID))],
+      ['upper-case hash', () => asFirefox(FIREFOX_ADDON_ID, GECKO_REDIRECT.toUpperCase())],
+      ['no client id', () => asFirefox('not-an-extension-id', GECKO_REDIRECT)],
+    ] as const) {
+      setUp();
+      const s = fakeServer({ info: () => json(BOTH) });
+      const flow = authFlow();
+      expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: flow, now: () => NOW }), what).toStrictEqual(cant);
+      expect(flow, what).not.toHaveBeenCalled();
+      expect(s.posts(TOKEN_PATH), what).toHaveLength(0);
+    }
+  });
+
+  it('test_server_without_firefox_refuses_before_the_window', async () => {
+    asFirefox();
+    for (const [what, info] of [
+      ['a server from before Firefox', INFO],
+      ['Chrome and Edge only', { ...INFO, auth: { ...INFO.auth, clients: ['chromium'] } }],
+      ['only kinds this extension does not know', { ...INFO, auth: { ...INFO.auth, clients: ['webkit'] } }],
+    ] as const) {
+      const s = fakeServer({ info: () => json(info) });
+      const flow = authFlow();
+      expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: flow, now: () => NOW }), what).toStrictEqual({
+        ok: false,
+        error: { code: 'permission', message: "ai.example.org doesn't accept sign-ins from Firefox yet." },
+      });
+      expect(flow, what).not.toHaveBeenCalled();
+      expect(s.posts(TOKEN_PATH), what).toHaveLength(0);
+    }
+    const cloud = fakeServer();
+    expect(await signIn(PINNED_CLOUD_ORIGIN, { fetch: cloud.fetch, webAuthFlow: authFlow(), now: () => NOW })).toMatchObject({
+      error: { message: "unAlgorithm Cloud doesn't accept sign-ins from Firefox yet." },
+    });
+
+    // A server that lists Firefox, newer kinds beside it or not.
+    for (const clients of [['gecko'], ['chromium', 'gecko', 'webkit']]) {
+      const s = fakeServer({ info: () => json({ ...INFO, auth: { ...INFO.auth, clients } }) });
+      expect(await signIn(ORIGIN, { fetch: s.fetch, webAuthFlow: authFlow(), now: () => NOW })).toMatchObject({ ok: true });
+    }
+
+    // Chrome and Edge: a missing list means them; a Firefox-only server refuses them by name.
+    env.kind = 'edge';
+    fakeBrowser.runtime.id = ID;
+    vi.mocked(fakeBrowser.identity.getRedirectURL).mockReturnValue(REDIRECT);
+    const geckoOnly = fakeServer({ info: () => json({ ...INFO, auth: { ...INFO.auth, clients: ['gecko'] } }) });
+    expect(await signIn(ORIGIN, { fetch: geckoOnly.fetch, webAuthFlow: authFlow(), now: () => NOW })).toStrictEqual({
+      ok: false,
+      error: { code: 'permission', message: "ai.example.org doesn't accept sign-ins from Edge yet." },
+    });
+    expect(await signIn(ORIGIN, { fetch: fakeServer().fetch, webAuthFlow: authFlow(), now: () => NOW })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  it('test_firefox_e2e_opens_the_real_window', async () => {
+    vi.stubEnv('MODE', 'e2e');
+    env.kind = 'firefox';
+    const back = `${GECKO_REDIRECT}?code=${CODE}&state=abc`;
+    const launch = vi.spyOn(fakeBrowser.identity, 'launchWebAuthFlow').mockResolvedValue(back as never);
+    const create = vi.spyOn(fakeBrowser.tabs, 'create');
+    const details = { url: `${ORIGIN}${AUTHORIZE_PAGE_PATH}?state=abc`, interactive: true };
+    expect(await webAuthFlow(details)).toBe(back);
+    expect(launch).toHaveBeenCalledWith(details);
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

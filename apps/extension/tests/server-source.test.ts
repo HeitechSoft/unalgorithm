@@ -30,9 +30,17 @@ import { recordVote } from '../src/background/feedback.ts';
 import { clearCache } from '../src/background/idb.ts';
 import { type getAccessToken, type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { classifyViaServer, MAX_CLASSIFY_BODY_BYTES } from '../src/background/server-source.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import type { ClassifyItem } from '../src/lib/messages.ts';
 import { PINNED_CLOUD_ORIGIN } from '../src/lib/server-label.ts';
 import { deviceItem, learnedItem, usageItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 // `classifyItems` and `testSource` take no dependencies: the device token comes from this stub.
 const auth = vi.hoisted(() => ({ getAccessToken: vi.fn() }));
@@ -152,6 +160,7 @@ async function setSource(cfg: AISourceConfig) {
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   await clearCache();
   auth.getAccessToken.mockReset();
   auth.getAccessToken.mockImplementation(tokens());
@@ -202,6 +211,42 @@ describe('classifyViaServer', () => {
     const bad = await classifyViaServer(CFG, posts, OPTS, { fetch: garbled.fetch, getAccessToken: tokens() });
     expect(codes(bad)).toStrictEqual(['unknown', 'unknown', 'unknown']);
     expect(bad).toMatchObject({ calls: 1, failedCalls: 1 });
+  });
+
+  it('test_firefox_sends_nothing_without_the_server_consent', async () => {
+    // The callers check first (`missingAccess`); this is the check for a batch that waited its turn meanwhile.
+    env.kind = 'firefox';
+    let granted = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo'];
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    const s = fakeServer();
+    const token = tokens();
+    const posts = [withRef('p1', 'A'), withRef('p2', 'B')];
+    const refused = await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token });
+    expect(codes(refused)).toStrictEqual(['host-permission', 'host-permission']);
+    expect(refused.byRef.get('p1')).toMatchObject({
+      error: { message: 'unAlgorithm needs your permission to send posts to ai.example.org. Open Settings → AI and allow it.' },
+    });
+    expect(s.calls).toHaveLength(0);
+    expect(token).not.toHaveBeenCalled();
+
+    granted = [...granted, 'authenticationInfo'];
+    expect(codes(await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token }))).toStrictEqual([
+      'ok',
+      'ok',
+    ]);
+    expect(s.requests()).toHaveLength(1);
+
+    // Chrome and Edge have no such consent.
+    env.kind = 'chrome';
+    getAll.mockClear();
+    await classifyViaServer(CFG, posts, OPTS, { fetch: s.fetch, getAccessToken: token });
+    expect(s.requests()).toHaveLength(2);
+    expect(getAll).not.toHaveBeenCalled();
   });
 
   it('test_401_refreshes_once_then_succeeds', async () => {

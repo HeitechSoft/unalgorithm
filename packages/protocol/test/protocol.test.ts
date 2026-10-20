@@ -3,14 +3,23 @@ import type { NormalizedUsage } from '../src/index.ts';
 import {
   AuthorizeRequestSchema,
   AuthorizeResponseSchema,
+  CHROME_WEB_STORE_ID,
+  ChromiumIdSchema,
   ClassifyRequestSchema,
   ClassifyResponseSchema,
+  ClientIdSchema,
+  ClientKindSchema,
   chromiumRedirectUri,
+  clientKind,
   compareHlc,
   costMicros,
+  DEV_CHROMIUM_ID,
   EMAIL_OTP_METHOD,
-  ExtensionIdSchema,
+  FIREFOX_ADDON_ID,
+  FIREFOX_DEV_ADDON_ID,
   formatHlc,
+  GeckoIdSchema,
+  geckoRedirectUri,
   MAX_MODEL_CHARS,
   MAX_POSTS_PER_REQUEST,
   OPENAI_FACTCHECK_TYPICAL_COST_MICROS,
@@ -19,6 +28,7 @@ import {
   parseHlc,
   platformOfKey,
   RevokeRequestSchema,
+  redirectUriFor,
   ServerErrorSchema,
   ServerInfoSchema,
   serverMayReceive,
@@ -213,6 +223,9 @@ describe('contracts', () => {
 });
 
 const DEV_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+const UUID_ID = '{12345678-1234-1234-1234-123456789abc}';
+/** sha1('feed@unalgorithmfeed.com'), as Firefox's getRedirectURL() puts it. */
+const ADDON_REDIRECT = 'https://fa1fc373df59566227d5f6860e1bb584c0410048.extensions.allizom.org/';
 const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
 const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 
@@ -256,18 +269,134 @@ describe('discovery', () => {
       expect(ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, authorizePath: path } }).success).toBe(false);
     }
   });
+
+  it('test_server_info_clients_optional', () => {
+    // A server from before Firefox leaves the list out; that means Chromium clients only.
+    expect(ServerInfoSchema.parse(info).auth.clients).toBeUndefined();
+    for (const clients of [['chromium'], ['gecko'], ['chromium', 'gecko']]) {
+      const parsed = ServerInfoSchema.parse({ ...info, auth: { ...info.auth, clients } });
+      expect(parsed.auth.clients).toEqual(clients);
+      expect(ServerInfoSchema.parse(parsed)).toEqual(parsed);
+    }
+  });
+
+  it('test_server_info_drops_unknown_clients', () => {
+    // A newer server may accept kinds this client has never heard of: they are dropped, and the document still parses.
+    const later = { ...info, auth: { ...info.auth, clients: ['chromium', 'webkit', 'gecko'] } };
+    const parsed = ServerInfoSchema.parse(later);
+    expect(parsed.auth.clients).toEqual(['chromium', 'gecko']);
+    // Stored accounts keep the parsed document and parse it again.
+    expect(ServerInfoSchema.parse(parsed)).toEqual(parsed);
+    // Nothing known left reads as missing, never as an empty list a second parse would refuse.
+    const foreign = ServerInfoSchema.parse({ ...info, auth: { ...info.auth, clients: ['webkit'] } });
+    expect(foreign.auth.clients).toBeUndefined();
+    expect(ServerInfoSchema.safeParse(foreign).success).toBe(true);
+  });
+
+  it('test_server_info_rejects_bad_clients', () => {
+    const many = Array.from({ length: 11 }, () => 'gecko');
+    for (const clients of [[], [''], ['x'.repeat(41)], many, [1], 'gecko', null]) {
+      const result = ServerInfoSchema.safeParse({ ...info, auth: { ...info.auth, clients } });
+      expect(result.success, JSON.stringify(clients)).toBe(false);
+    }
+  });
 });
 
 describe('ids and redirects', () => {
-  it('test_extension_id_schema', () => {
-    expect(ExtensionIdSchema.safeParse(DEV_ID).success).toBe(true);
-    expect(ExtensionIdSchema.safeParse(DEV_ID.slice(1)).success).toBe(false);
-    expect(ExtensionIdSchema.safeParse(`q${DEV_ID.slice(1)}`).success).toBe(false);
-    expect(ExtensionIdSchema.safeParse(DEV_ID.toUpperCase()).success).toBe(false);
+  /** Valid add-on ids: Firefox's pattern ignores case, and the part before @ may be empty. */
+  const GECKO_IDS = [
+    FIREFOX_ADDON_ID,
+    FIREFOX_DEV_ADDON_ID,
+    UUID_ID,
+    UUID_ID.toUpperCase(),
+    'FEED@UNALGORITHMFEED.COM',
+    'a.b-c_d@x.y',
+    '@x',
+    'a@b',
+    `${'a'.repeat(68)}@example.com`, // 80 characters
+  ];
+  const NOT_IDS = [
+    '',
+    'feed',
+    'feed@',
+    'a b@c',
+    'x@y,z',
+    'a@b@c',
+    'ü@x.y',
+    'feed@unalgorithmfeed.com/',
+    ' feed@unalgorithmfeed.com',
+    'feed@unalgorithmfeed.com\n',
+    `${'a'.repeat(69)}@example.com`, // 81 characters
+    '{1234}',
+    '{12345678-1234-1234-1234-123456789abg}',
+    '12345678-1234-1234-1234-123456789abc',
+    '{12345678-1234-1234-1234-123456789abc',
+    '{12345678123412341234123456789abc}',
+    DEV_ID.slice(1),
+    `q${DEV_ID.slice(1)}`,
+    DEV_ID.toUpperCase(),
+    `${DEV_ID}a`,
+  ];
+
+  it('test_chromium_id_schema', () => {
+    expect(ChromiumIdSchema.safeParse(DEV_ID).success).toBe(true);
+    expect(ChromiumIdSchema.safeParse('p'.repeat(32)).success).toBe(true);
+    for (const id of [...NOT_IDS, ...GECKO_IDS]) expect(ChromiumIdSchema.safeParse(id).success, id).toBe(false);
+  });
+
+  it('test_gecko_id_schema', () => {
+    expect(`${'a'.repeat(68)}@example.com`).toHaveLength(80);
+    for (const id of GECKO_IDS) expect(GeckoIdSchema.safeParse(id).success, id).toBe(true);
+    for (const id of [...NOT_IDS, DEV_ID]) expect(GeckoIdSchema.safeParse(id).success, id).toBe(false);
+  });
+
+  it('test_client_id_schema_takes_both_kinds', () => {
+    for (const id of [DEV_ID, ...GECKO_IDS]) expect(ClientIdSchema.safeParse(id).success, id).toBe(true);
+    for (const id of NOT_IDS) expect(ClientIdSchema.safeParse(id).success, id).toBe(false);
+  });
+
+  it('test_client_kind', () => {
+    expect(ClientKindSchema.options).toEqual(['chromium', 'gecko']);
+    expect(clientKind(DEV_ID)).toBe('chromium');
+    for (const id of GECKO_IDS) expect(clientKind(id), id).toBe('gecko');
+    for (const id of NOT_IDS) expect(clientKind(id), id).toBeNull();
+    // Total: whatever arrives in a request body, it answers without throwing.
+    for (const value of [undefined, null, 5, {}, [], Symbol('id')]) expect(clientKind(value as unknown as string)).toBeNull();
+  });
+
+  it('test_known_ids', () => {
+    expect(DEV_CHROMIUM_ID).toBe(DEV_ID);
+    expect(clientKind(DEV_CHROMIUM_ID)).toBe('chromium');
+    expect(CHROME_WEB_STORE_ID).toBe('finhbclelafmnfcpdmnglicegopdlaph');
+    expect(clientKind(CHROME_WEB_STORE_ID)).toBe('chromium');
+    expect(FIREFOX_ADDON_ID).toBe('feed@unalgorithmfeed.com');
+    expect(FIREFOX_DEV_ADDON_ID).toBe('feed-dev@unalgorithmfeed.com');
+    expect(clientKind(FIREFOX_ADDON_ID)).toBe('gecko');
+    expect(clientKind(FIREFOX_DEV_ADDON_ID)).toBe('gecko');
   });
 
   it('test_chromium_redirect_uri', () => {
     expect(chromiumRedirectUri(DEV_ID)).toBe('https://aokmlebkpkeniofcnbeajmgabinicggm.chromiumapp.org/');
+  });
+
+  it('test_gecko_redirect_uri', () => {
+    expect(geckoRedirectUri(FIREFOX_ADDON_ID)).toBe(ADDON_REDIRECT);
+    expect(geckoRedirectUri(FIREFOX_DEV_ADDON_ID)).toBe(
+      'https://050785fd621b7eeb0c98874aa5418eafb61158f5.extensions.allizom.org/',
+    );
+    expect(geckoRedirectUri(UUID_ID)).toBe('https://81128efacdb47fdc8641a8913694f8bd997543a4.extensions.allizom.org/');
+    // Firefox hashes runtime.id exactly as given: the same id in other case is another address.
+    expect(geckoRedirectUri(FIREFOX_ADDON_ID.toUpperCase())).not.toBe(ADDON_REDIRECT);
+  });
+
+  it('test_redirect_uri_for', () => {
+    expect(redirectUriFor(DEV_ID)).toBe(chromiumRedirectUri(DEV_ID));
+    expect(redirectUriFor(FIREFOX_ADDON_ID)).toBe(ADDON_REDIRECT);
+    for (const id of GECKO_IDS) expect(redirectUriFor(id), id).toBe(geckoRedirectUri(id));
+    for (const id of NOT_IDS) expect(redirectUriFor(id), id).toBeNull();
+    for (const value of [undefined, null, 5, {}, [], Symbol('id')]) {
+      expect(redirectUriFor(value as unknown as string)).toBeNull();
+    }
   });
 });
 
@@ -291,6 +420,18 @@ describe('auth contracts', () => {
     expect(TokenRequestSchema.safeParse({ ...code, grant_type: 'password' }).success).toBe(false);
   });
 
+  it('test_token_request_takes_firefox_ids', () => {
+    const firefox = { ...code, client_id: FIREFOX_ADDON_ID, redirect_uri: ADDON_REDIRECT };
+    expect(TokenRequestSchema.parse(firefox)).toEqual(firefox);
+    const refresh = { grant_type: 'refresh_token', refresh_token: 'r'.repeat(43), client_id: FIREFOX_ADDON_ID };
+    expect(TokenRequestSchema.parse(refresh)).toEqual(refresh);
+    expect(TokenRequestSchema.safeParse({ ...refresh, client_id: UUID_ID }).success).toBe(true);
+    for (const client_id of ['feed@', `${'a'.repeat(69)}@example.com`, DEV_ID.toUpperCase()]) {
+      expect(TokenRequestSchema.safeParse({ ...firefox, client_id }).success, client_id).toBe(false);
+      expect(TokenRequestSchema.safeParse({ ...refresh, client_id }).success, client_id).toBe(false);
+    }
+  });
+
   const req = {
     client_id: DEV_ID,
     redirect_uri: chromiumRedirectUri(DEV_ID),
@@ -308,19 +449,83 @@ describe('auth contracts', () => {
 
   it('test_authorize_request_binds_redirect_uri', () => {
     const otherId = 'b'.repeat(32);
-    for (const redirect_uri of ['https://evil.example/cb', 'javascript:alert(1)', chromiumRedirectUri(otherId)]) {
+    for (const redirect_uri of [
+      'https://evil.example/cb',
+      'javascript:alert(1)',
+      chromiumRedirectUri(otherId),
+      geckoRedirectUri(FIREFOX_ADDON_ID),
+      chromiumRedirectUri(DEV_ID).slice(0, -1),
+      `${chromiumRedirectUri(DEV_ID)}cb`,
+    ]) {
       const result = AuthorizeRequestSchema.safeParse({ ...req, redirect_uri });
-      expect(result.success).toBe(false);
+      expect(result.success, redirect_uri).toBe(false);
       expect(result.error?.issues[0]?.path).toEqual(['redirect_uri']);
     }
   });
 
-  it('test_authorize_response_redirect_is_chromiumapp', () => {
-    const redirect = `${chromiumRedirectUri(DEV_ID)}?code=${'c'.repeat(43)}&state=${'s'.repeat(32)}`;
-    expect(AuthorizeResponseSchema.safeParse({ redirect }).success).toBe(true);
-    expect(AuthorizeResponseSchema.safeParse({ redirect: 'javascript:alert(1)' }).success).toBe(false);
-    expect(AuthorizeResponseSchema.safeParse({ redirect: 'https://evil.example/?code=x' }).success).toBe(false);
-    expect(AuthorizeResponseSchema.safeParse({ redirect: redirect.replace('https:', 'http:') }).success).toBe(false);
+  it('test_authorize_request_binds_firefox_redirect_uri', () => {
+    const firefox = { ...req, client_id: FIREFOX_ADDON_ID, redirect_uri: ADDON_REDIRECT };
+    expect(AuthorizeRequestSchema.parse(firefox)).toEqual(firefox);
+    expect(
+      AuthorizeRequestSchema.safeParse({ ...req, client_id: UUID_ID, redirect_uri: geckoRedirectUri(UUID_ID) }).success,
+    ).toBe(true);
+    for (const redirect_uri of [
+      // Another kind's address, another add-on's hash, or this hash anywhere but Firefox's form.
+      chromiumRedirectUri(DEV_ID),
+      geckoRedirectUri(FIREFOX_DEV_ADDON_ID),
+      geckoRedirectUri(FIREFOX_ADDON_ID.toUpperCase()),
+      ADDON_REDIRECT.toUpperCase().replace('HTTPS', 'https'),
+      ADDON_REDIRECT.slice(0, -1),
+      ADDON_REDIRECT.replace('https:', 'http:'),
+      ADDON_REDIRECT.replace('extensions.allizom.org', 'example.com'),
+      'http://127.0.0.1/mozoauth2/fa1fc373df59566227d5f6860e1bb584c0410048',
+    ]) {
+      const result = AuthorizeRequestSchema.safeParse({ ...firefox, redirect_uri });
+      expect(result.success, redirect_uri).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(['redirect_uri']);
+    }
+  });
+
+  it('test_authorize_request_check_survives_bad_client_id', () => {
+    // zod still runs the redirect check after client_id fails: it must refuse, not throw.
+    for (const client_id of ['nope', 'feed@', DEV_ID.toUpperCase(), `${'a'.repeat(69)}@example.com`, 5, null, {}, []]) {
+      for (const redirect_uri of [ADDON_REDIRECT, chromiumRedirectUri(DEV_ID), chromiumRedirectUri(String(client_id))]) {
+        const result = AuthorizeRequestSchema.safeParse({ ...req, client_id, redirect_uri });
+        expect(result.success, `${String(client_id)} ${redirect_uri}`).toBe(false);
+        expect(result.error?.issues.map((issue) => issue.path[0])).toContain('client_id');
+      }
+    }
+    // A request with nothing valid in it is refused too.
+    for (const body of [{}, { client_id: undefined, redirect_uri: undefined }, { redirect_uri: null }, null, 'x']) {
+      expect(AuthorizeRequestSchema.safeParse(body).success).toBe(false);
+    }
+  });
+
+  it('test_authorize_response_redirect_is_extension_host', () => {
+    const query = `?code=${'c'.repeat(43)}&state=${'s'.repeat(32)}`;
+    for (const redirect of [`${chromiumRedirectUri(DEV_ID)}${query}`, `${ADDON_REDIRECT}${query}`]) {
+      expect(AuthorizeResponseSchema.safeParse({ redirect }).success, redirect).toBe(true);
+      expect(AuthorizeResponseSchema.safeParse({ redirect: redirect.replace('https:', 'http:') }).success).toBe(false);
+    }
+    const hash = 'fa1fc373df59566227d5f6860e1bb584c0410048';
+    for (const redirect of [
+      'javascript:alert(1)',
+      'https://evil.example/?code=x',
+      `https://${'a'.repeat(31)}.chromiumapp.org/${query}`,
+      `https://${hash.slice(1)}.extensions.allizom.org/${query}`,
+      `https://${hash}0.extensions.allizom.org/${query}`,
+      `https://${hash.slice(1)}g.extensions.allizom.org/${query}`,
+      `https://${hash}.extensions.allizom.org.evil.example/${query}`,
+      `https://x.${hash}.extensions.allizom.org/${query}`,
+      `https://${hash}.allizom.org/${query}`,
+      `https://evil.example/${hash}.extensions.allizom.org/${query}`,
+      // Firefox's loopback form is not one we hand out.
+      `http://127.0.0.1/mozoauth2/${hash}${query}`,
+      `https://127.0.0.1/mozoauth2/${hash}${query}`,
+      `moz-extension://12345678-1234-1234-1234-123456789abc/${query}`,
+    ]) {
+      expect(AuthorizeResponseSchema.safeParse({ redirect }).success, redirect).toBe(false);
+    }
   });
 
   it('test_refresh_token_bounds_match_everywhere', () => {
@@ -339,6 +544,15 @@ describe('auth contracts', () => {
       false,
     );
     expect(RevokeRequestSchema.safeParse({ refresh_token: long, client_id: DEV_ID }).success).toBe(false);
+  });
+
+  it('test_revoke_request_takes_both_kinds', () => {
+    for (const client_id of [DEV_ID, FIREFOX_ADDON_ID, UUID_ID]) {
+      expect(RevokeRequestSchema.safeParse({ refresh_token: 'r'.repeat(43), client_id }).success, client_id).toBe(true);
+    }
+    for (const client_id of ['feed@', 'nope', DEV_ID.toUpperCase()]) {
+      expect(RevokeRequestSchema.safeParse({ refresh_token: 'r'.repeat(43), client_id }).success, client_id).toBe(false);
+    }
   });
 
   it('test_server_error_schema', () => {

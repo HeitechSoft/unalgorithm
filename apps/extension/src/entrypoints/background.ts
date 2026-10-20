@@ -13,12 +13,15 @@ import {
   saveSource,
   testSource,
 } from '../background/ai.ts';
-import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab } from '../background/factcheck.ts';
+import { openFactcheckPanel, runFactcheckForTab, runPerspectivesForTab, sidebarShortcut } from '../background/factcheck.ts';
 import { recordVote } from '../background/feedback.ts';
 import { clearSecrets } from '../background/idb.ts';
+import { keepAwake } from '../background/keep-awake.ts';
 import { startOfficialListUpdates } from '../background/official-list.ts';
+import { forgetReportTab, fromReportPage, openReport, reportDraft, sendReport, snoozeNotice } from '../background/report.ts';
 import { forgetSearchKey, saveSearchKey } from '../background/search-key.ts';
 import {
+  clientRefusal,
   discoverServer,
   type ServerAccount,
   serverAccountItem,
@@ -31,13 +34,15 @@ import { listDevices, revokeDevice } from '../background/server-devices.ts';
 import { applySettingsAction } from '../background/settings-actions.ts';
 import { initSync, resetSync, runSync, setSyncEnabled, syncStatus } from '../background/sync-scheduler.ts';
 import { forgetTab, mergeTabState } from '../background/tabs.ts';
+import { browserKind } from '../lib/browser-kind.ts';
 import { FEED_HOSTS, FEED_TAB_URLS } from '../lib/feed-hosts.ts';
 import { type BgFailure, type BgRequest, type BgResponses, type PublicServerAccount, sendToTab } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
-import { updateDevice } from '../lib/settings-store.ts';
+import { updateDevice, upgradeStoredSettings } from '../lib/settings-store.ts';
 import {
   learnedItem,
   readDevice,
+  reportLogItem,
   settingsClocksItem,
   settingsItem,
   statsItem,
@@ -200,8 +205,11 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
         () => serverAccountItem.removeValue(),
         () => usageItem.removeValue(),
         clearAiCapabilities,
-        // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes.
+        // Per-tab Highlights (author names, snippets, links) live in session storage until the tab closes, and so do
+        // problem report drafts.
         () => browser.storage.session.clear(),
+        // When this browser sent problem reports, for the local limits.
+        () => reportLogItem.removeValue(),
         // Settings and their clocks go too: the defaults written next then stay at clock 0, so they never travel to
         // the person's other computers, and the server's values win on the next sync.
         () => settingsItem.removeValue(),
@@ -234,7 +242,10 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   serverDiscover: async (msg, sender) => {
     if (!fromExtensionPage(sender)) deny('serverDiscover');
     const found = await discoverServer(msg.baseUrl);
-    return found.ok ? { ...found, label: serverLabel(found.origin, found.info) } : found;
+    if (!found.ok) return found;
+    // Said at "Continue", before the person reads what is sent: this browser can't sign in there at all.
+    const refused = clientRefusal(found.origin, found.info);
+    return refused ? { ok: false, error: refused } : { ...found, label: serverLabel(found.origin, found.info) };
   },
   serverSignIn: async (msg, sender) => {
     if (!fromExtensionPage(sender)) deny('serverSignIn');
@@ -288,15 +299,19 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
   factcheck: async (msg, sender) => {
     const tabId = sender.tab?.id;
     if (tabId === undefined || !fromFeedTab(sender)) deny('factcheck');
-    // Before any `await`, so Chrome still sees the click's user gesture (relayed from the content script).
-    void openFactcheckPanel(tabId);
+    // Before any `await`, so Chrome and Edge still see the click's user gesture (relayed from the content script).
+    // Firefox can't open its sidebar from here at all (`openFactcheckPanel`).
+    void openFactcheckPanel({ id: tabId, windowId: sender.tab?.windowId });
     return runFactcheckForTab(tabId, msg.key, msg.input);
   },
   openFactcheck: async (_msg, sender) => {
     const tabId = sender.tab?.id;
     if (tabId === undefined || !fromFeedTab(sender)) deny('openFactcheck');
-    // When Chrome refuses, the in-feed item points to the toolbar button, whose popup opens the side panel.
-    return { ok: await openFactcheckPanel(tabId) };
+    // When the panel doesn't open, the in-feed item says how to open it: the toolbar button, whose popup opens the
+    // side panel, or in Firefox also the sidebar's keyboard shortcut.
+    if (await openFactcheckPanel({ id: tabId, windowId: sender.tab?.windowId })) return { ok: true };
+    const shortcut = await sidebarShortcut();
+    return { ok: false, ...(shortcut ? { shortcut } : {}) };
   },
   balanceCheck: async (_msg, sender) => {
     if (!fromFeedTab(sender)) deny('balanceCheck');
@@ -309,9 +324,34 @@ export const handlers: { [K in BgRequest['type']]: Handler<K> } = {
     const tabId = sender.tab?.id;
     if (tabId === undefined || !fromFeedTab(sender)) deny('perspectives');
     // Before any `await`, as fact-check's.
-    void openFactcheckPanel(tabId);
+    void openFactcheckPanel({ id: tabId, windowId: sender.tab?.windowId });
     // Field by field: anything else on the message (post text included) goes nowhere.
     return runPerspectivesForTab(tabId, msg.key, { link: msg.link, platform: msg.platform, audience: msg.audience });
+  },
+  // Problem reports (ADR 0009 §2). A draft of a page comes from that page's content script (`openReport` checks which
+  // sender may send which draft); the popup and Settings ask for one about no page facts. Only the report page reads a
+  // draft back or sends it.
+  openReport: async (msg, sender) => {
+    if (!fromOwnUi(sender)) deny('openReport');
+    if ('about' in msg) {
+      if (!fromExtensionPage(sender)) deny('openReport');
+      return openReport({ about: msg.about }, sender);
+    }
+    return openReport({ draft: msg.draft, notice: msg.notice, nextTo: msg.nextTo }, sender);
+  },
+  reportDraft: async (msg, sender) => {
+    if (!fromReportPage(sender)) deny('reportDraft');
+    return { report: await reportDraft(String(msg.id)) };
+  },
+  sendReport: async (msg, sender) => {
+    if (!fromReportPage(sender)) deny('sendReport');
+    if (typeof msg.body !== 'string') return { ok: false, code: 'refused' };
+    return sendReport(String(msg.id), msg.body);
+  },
+  snoozeNotice: async (msg, sender) => {
+    if (!fromOwnUi(sender)) deny('snoozeNotice');
+    await snoozeNotice(msg);
+    return { ok: true };
   },
 };
 
@@ -336,6 +376,8 @@ async function injectIntoOpenTabs(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  // Settings an older version stored: stored again at this version, with clocks for what the upgrade changed.
+  void upgradeStoredSettings().catch((err: unknown) => console.warn('[unAlgorithm] settings upgrade', err));
   initSync();
   syncServerOffer();
   // unAlgorithm Cloud's source list, while UnEcho Chamber is on: at most daily, anonymous (D98).
@@ -343,7 +385,8 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
     const handler = handlers[msg?.type] as unknown as ((m: BgRequest, s: Sender) => Promise<unknown>) | undefined;
     if (!handler) return false;
-    handler(msg, sender)
+    // Firefox: the event page stays up until the answer is sent, however long the AI or the server takes.
+    keepAwake(handler(msg, sender))
       .then(sendResponse)
       .catch((err: unknown) => {
         console.warn('[unAlgorithm]', msg.type, err);
@@ -355,11 +398,23 @@ export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(async ({ reason }) => {
     if (reason === 'install') {
       await openPage('onboarding');
-      await injectIntoOpenTabs();
+      // Firefox puts the content scripts on open tabs itself (and its manifest has no `scripting`).
+      if (browserKind() !== 'firefox') await injectIntoOpenTabs();
     }
   });
 
-  browser.tabs.onRemoved.addListener((tabId) => void forgetTab(tabId));
+  // Firefox: consent to send given again (Settings, or Firefox's add-on settings) lifts the pause it caused in the feed.
+  if (browserKind() === 'firefox') {
+    browser.permissions.onAdded.addListener((added) => {
+      if (added.data_collection?.length) void resumeFeedTabs();
+    });
+  }
+
+  browser.tabs.onRemoved.addListener((tabId) => {
+    void forgetTab(tabId);
+    // A closed report page forgets its draft.
+    void forgetReportTab(tabId).catch(() => undefined);
+  });
   // A popup is the toolbar action; the side panel ("Highlights") opens from it.
   void browser.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => undefined);
 });

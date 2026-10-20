@@ -1,22 +1,35 @@
 /**
- * The links under a finished result (P3-69, decisions D88, D107): how the feature works, and the correction form on
- * GitHub prefilled with technical facts only (the feature's name, the extension's version, the result's prompt version
- * and, for UnEcho Chamber, which list it used). Never anything from the post, the result or the person. Outlets are
- * fictional fixtures.
+ * The links under a finished result (P3-69, decisions D88, D107; ADR 0009 §2): how the feature works, and *Report a
+ * wrong verdict* / *Report a mistake*, which open the report page with a correction draft of technical facts only (the
+ * feature, the result's prompt version, for UnEcho Chamber which list it used, and which AI made it). Never anything
+ * from the post, the result or the person, and never a GitHub form. Also the answers each kind of report takes, and the
+ * AI a report names. Outlets are fictional fixtures.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { FactcheckResult, PerspectivesResult } from '@unalgorithm/protocol';
-import { describe, expect, it } from 'vitest';
-import { correctionUrl, LIST_OPTIONS, sheetLinks } from '../src/lib/report-links.ts';
+import type { AISourceConfig } from '@unalgorithm/core';
+import {
+  CLOUD_ORIGIN,
+  CORRECTION_CHOICES,
+  type FactcheckResult,
+  type PerspectivesResult,
+  REPORT_CHOICES,
+  REPORT_FROM,
+  REPORT_KINDS,
+} from '@unalgorithm/protocol';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  aiKindOf,
+  choiceRequired,
+  choicesFor,
+  correctionDraft,
+  correctionVia,
+  type SheetLink,
+  sheetLinks,
+  singleChoice,
+  validChoices,
+} from '../src/lib/report-links.ts';
 import type { FactcheckEntry } from '../src/lib/storage.ts';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const read = (file: string) => readFileSync(join(REPO_ROOT, file), 'utf8').replace(/\r\n/g, '\n');
-
 const CHECKED_AT = '2026-10-14T09:30:00.000Z';
-const VERSION = '0.3.0';
 
 /** One marker per field that must never reach a link. No spaces, so `+` encoding can't hide one. */
 const M = {
@@ -130,40 +143,29 @@ const comparison = (overrides: Partial<FactcheckEntry> = {}): FactcheckEntry => 
   ...overrides,
 });
 
-/** A URL's query as an object, failing on a repeated key. */
-function queryOf(href: string): Record<string, string> {
-  const params = new URL(href).searchParams;
-  const keys = [...params.keys()];
-  expect(new Set(keys).size).toBe(keys.length);
-  return Object.fromEntries(params);
-}
+const ANTHROPIC: AISourceConfig = { kind: 'anthropic', model: null };
+const CLOUD: AISourceConfig = { kind: 'server', baseUrl: CLOUD_ORIGIN };
+const OWN_SERVER: AISourceConfig = { kind: 'server', baseUrl: 'https://ai.example.org' };
 
-describe('report links', () => {
-  it('test_correction_url_carries_versions_only', () => {
-    const fc = new URL(correctionUrl({ task: 'factcheck', extensionVersion: VERSION, promptVersion: 2 }));
-    expect(fc.origin).toBe('https://github.com');
-    expect(fc.pathname).toBe('/HeitechSoft/unalgorithm/issues/new');
-    expect(fc.hash).toBe('');
-    expect(queryOf(fc.href)).toStrictEqual({
-      template: 'correction.yml',
-      feature: 'Fact-check',
-      version: VERSION,
-      prompt: '2',
+const hrefs = (links: SheetLink[]) => links.map((l) => ('href' in l ? l.href : null));
+
+describe('sheet links', () => {
+  it('test_correction_draft_carries_versions_only', () => {
+    expect(correctionDraft(factcheck(), ANTHROPIC)).toStrictEqual({
+      kind: 'correction',
+      from: 'sidepanel',
+      correction: { feature: 'factcheck', promptVersion: 3, via: 'own-key' },
     });
-
-    const own = new URL(correctionUrl({ task: 'perspectives', extensionVersion: VERSION, promptVersion: 5, list: 'own' }));
-    expect(own.origin).toBe('https://github.com');
-    expect(own.pathname).toBe('/HeitechSoft/unalgorithm/issues/new');
-    expect(queryOf(own.href)).toStrictEqual({
-      template: 'correction.yml',
-      feature: 'UnEcho Chamber',
-      version: VERSION,
-      prompt: '5',
-      list: 'My own list',
+    expect(correctionDraft(comparison(), CLOUD)).toStrictEqual({
+      kind: 'correction',
+      from: 'sidepanel',
+      correction: { feature: 'perspectives', promptVersion: 4, list: 'cloud', via: 'cloud' },
     });
-
-    const cloud = correctionUrl({ task: 'perspectives', extensionVersion: VERSION, promptVersion: 5, list: 'cloud' });
-    expect(queryOf(cloud).list).toBe("unAlgorithm Cloud's list");
+    const own = correctionDraft(
+      comparison({ perspectives: perspectivesResult({ list: 'own', registryVersion: '' }) }),
+      OWN_SERVER,
+    );
+    expect(own?.correction).toStrictEqual({ feature: 'perspectives', promptVersion: 4, list: 'own', via: 'own-server' });
   });
 
   it('test_sheet_links_never_carry_result_or_post_text', () => {
@@ -177,76 +179,90 @@ describe('report links', () => {
       ...perspectivesResult().sources.map((s) => s.domain),
       'story.example',
     ];
-    const forbidden = [...Object.values(M), CHECKED_AT, CHECKED_AT.slice(0, 10), ...domains];
+    const forbidden = [...Object.values(M), CHECKED_AT, CHECKED_AT.slice(0, 10), ...domains, 'registryVersion', 'github.com'];
     for (const entry of entries) {
-      const links = sheetLinks(entry, VERSION);
+      const opened: unknown[] = [];
+      const links = sheetLinks(entry, (draft) => opened.push(draft), CLOUD);
       expect(links).toHaveLength(2);
-      for (const link of links) {
-        const decoded = decodeURIComponent(link.href);
-        for (const marker of forbidden) {
-          expect(decoded, `${link.text} carries ${marker}`).not.toContain(marker);
-          expect(link.text).not.toContain(marker);
-        }
-        expect(decoded).not.toContain('registryVersion');
-        expect(new URL(link.href).protocol).toBe('https:');
-      }
+      const [how, report] = links as [SheetLink, SheetLink];
+      expect('href' in how && new URL(how.href).protocol).toBe('https:');
+      // The report is an action in the extension, never a link to a form.
+      expect(report).not.toHaveProperty('href');
+      if ('onSelect' in report) report.onSelect();
+      expect(opened).toHaveLength(1);
+      const sent = JSON.stringify([links.map((l) => l.text), hrefs(links), opened]);
+      for (const marker of forbidden) expect(sent, `${entry.task ?? 'factcheck'} carries ${marker}`).not.toContain(marker);
     }
   });
 
   it('test_sheet_links_by_task_and_status', () => {
-    expect(sheetLinks(factcheck({ status: 'running', result: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(factcheck({ status: 'failed', result: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(factcheck({ status: 'done', result: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(comparison({ status: 'running', perspectives: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(comparison({ status: 'failed', perspectives: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(comparison({ status: 'done', perspectives: undefined }), VERSION)).toStrictEqual([]);
+    const none = vi.fn();
+    expect(sheetLinks(factcheck({ status: 'running', result: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(factcheck({ status: 'failed', result: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(factcheck({ status: 'done', result: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(comparison({ status: 'running', perspectives: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(comparison({ status: 'failed', perspectives: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(comparison({ status: 'done', perspectives: undefined }), none, null)).toStrictEqual([]);
     // A comparison never links from a fact-check result, nor the other way round.
-    expect(sheetLinks(comparison({ result: factcheckResult(), perspectives: undefined }), VERSION)).toStrictEqual([]);
-    expect(sheetLinks(factcheck({ result: undefined, perspectives: perspectivesResult() }), VERSION)).toStrictEqual([]);
+    expect(sheetLinks(comparison({ result: factcheckResult(), perspectives: undefined }), none, null)).toStrictEqual([]);
+    expect(sheetLinks(factcheck({ result: undefined, perspectives: perspectivesResult() }), none, null)).toStrictEqual([]);
 
-    expect(sheetLinks(factcheck(), VERSION)).toStrictEqual([
-      { text: 'How Fact-check works', href: 'https://unalgorithmfeed.com/methodology' },
-      {
-        text: 'Report a wrong verdict',
-        href: correctionUrl({ task: 'factcheck', extensionVersion: VERSION, promptVersion: 3 }),
-      },
-    ]);
-    expect(sheetLinks(comparison(), VERSION)).toStrictEqual([
-      { text: 'How UnEcho Chamber works', href: 'https://unalgorithmfeed.com/methodology' },
-      {
-        text: 'Report a mistake',
-        href: correctionUrl({ task: 'perspectives', extensionVersion: VERSION, promptVersion: 4, list: 'cloud' }),
-      },
-    ]);
-    const own = sheetLinks(comparison({ perspectives: perspectivesResult({ list: 'own', registryVersion: '' }) }), VERSION);
-    expect(queryOf(own[1]!.href).list).toBe('My own list');
+    const fc = sheetLinks(factcheck(), none, ANTHROPIC);
+    expect(fc.map((l) => l.text)).toStrictEqual(['How Fact-check works', 'Report a wrong verdict']);
+    expect(hrefs(fc)).toStrictEqual(['https://unalgorithmfeed.com/methodology', null]);
+    const pc = sheetLinks(comparison(), none, CLOUD);
+    expect(pc.map((l) => l.text)).toStrictEqual(['How UnEcho Chamber works', 'Report a mistake']);
+    expect(hrefs(pc)).toStrictEqual(['https://unalgorithmfeed.com/methodology', null]);
+    expect(none).not.toHaveBeenCalled();
+  });
+});
+
+describe('the AI a report names', () => {
+  it('test_ai_kind_names_a_kind_only', () => {
+    expect(aiKindOf(null)).toBe('off');
+    expect(aiKindOf({ kind: 'on-device' })).toBe('on-device');
+    expect(aiKindOf(ANTHROPIC)).toBe('own-key');
+    expect(aiKindOf({ kind: 'openai', model: null })).toBe('own-key');
+    expect(
+      aiKindOf({ kind: 'openai-compatible', preset: 'ollama', baseUrl: 'http://localhost:11434/v1', auth: 'none', model: 'm' }),
+    ).toBe('own-key');
+    expect(aiKindOf(CLOUD)).toBe('cloud');
+    expect(aiKindOf({ kind: 'server', baseUrl: `${CLOUD_ORIGIN}/` })).toBe('cloud');
+    expect(aiKindOf(OWN_SERVER)).toBe('own-server');
+    expect(aiKindOf({ kind: 'server', baseUrl: 'not a url' })).toBe('own-server');
+    // A result being corrected was made by a sending source; with the source now off, the person's own key.
+    expect(correctionVia(null)).toBe('own-key');
+    expect(correctionVia({ kind: 'on-device' })).toBe('own-key');
+    expect(correctionVia(CLOUD)).toBe('cloud');
+  });
+});
+
+describe('answers each kind takes', () => {
+  it('test_choices_by_kind', () => {
+    for (const kind of REPORT_KINDS.filter((k) => k !== 'correction')) expect(choicesFor({ kind })).toBe(REPORT_CHOICES[kind]);
+    expect(choicesFor({ kind: 'correction', correction: { feature: 'factcheck' } })).toBe(CORRECTION_CHOICES.factcheck);
+    expect(choicesFor({ kind: 'correction', correction: { feature: 'perspectives' } })).toBe(CORRECTION_CHOICES.perspectives);
+    expect(choicesFor({ kind: 'correction' })).toEqual([]);
+    expect(REPORT_KINDS.filter(singleChoice)).toEqual(['wrong-call', 'correction', 'other']);
+    // Required, except a detection report from the in-feed card or a tab that didn't answer.
+    const optional = REPORT_KINDS.flatMap((kind) =>
+      REPORT_FROM.filter((from) => !choiceRequired({ kind, from })).map((f) => `${kind}/${f}`),
+    );
+    expect(optional).toEqual(['detection/popup-no-script', 'detection/notice']);
   });
 
-  it('test_prefilled_keys_are_form_fields', () => {
-    const form = read('.github/ISSUE_TEMPLATE/correction.yml');
-    const ids = [...form.matchAll(/^\s*id:\s*(\S+)\s*$/gm)].map((m) => m[1]);
-    expect(ids).toEqual(expect.arrayContaining(['feature', 'version', 'prompt', 'list']));
-
-    const listBlock = form.slice(form.search(/^\s*id:\s*list\s*$/m)).split(/^\s*- type:/m)[0] as string;
-    const optionsBlock = listBlock.slice(listBlock.search(/^\s*options:\s*$/m)).split(/^\s*validations:/m)[0] as string;
-    const options = [...optionsBlock.matchAll(/^\s*- (.+?)\s*$/gm)].map((m) => m[1]);
-    expect(options).toStrictEqual(Object.values(LIST_OPTIONS));
-
-    const featureBlock = form.slice(form.search(/^\s*id:\s*feature\s*$/m)).split(/^\s*- type:/m)[0] as string;
-    const features = [...featureBlock.matchAll(/^\s+- (.+?)\s*$/gm)].map((m) => m[1]);
-
-    for (const href of [
-      ...sheetLinks(factcheck(), VERSION),
-      ...sheetLinks(comparison(), VERSION),
-      ...sheetLinks(comparison({ perspectives: perspectivesResult({ list: 'own', registryVersion: '' }) }), VERSION),
-    ]
-      .map((l) => l.href)
-      .filter((h) => h.includes('/issues/new'))) {
-      const query = queryOf(href);
-      expect(query.template).toBe('correction.yml');
-      for (const key of Object.keys(query).filter((k) => k !== 'template')) expect(ids).toContain(key);
-      expect(features).toContain(query.feature);
-      if (query.list) expect(options).toContain(query.list);
-    }
+  it('test_valid_choices', () => {
+    const detection = { kind: 'detection' as const, from: 'popup' };
+    expect(validChoices(detection, ['ads-showing', 'page-broken'])).toBe(true);
+    expect(validChoices(detection, [])).toBe(false);
+    expect(validChoices({ ...detection, from: 'notice' }, [])).toBe(true);
+    expect(validChoices(detection, ['ads-showing', 'ads-showing'])).toBe(false);
+    expect(validChoices(detection, ['verdict-wrong'])).toBe(false);
+    const wrongCall = { kind: 'wrong-call' as const, from: 'why' };
+    expect(validChoices(wrongCall, ['should-show'])).toBe(true);
+    expect(validChoices(wrongCall, ['should-show', 'wrong-reason'])).toBe(false);
+    const correction = { kind: 'correction' as const, from: 'sidepanel', correction: { feature: 'perspectives' as const } };
+    expect(validChoices(correction, ['outlet-wrong'])).toBe(true);
+    expect(validChoices(correction, ['verdict-wrong'])).toBe(false);
   });
 });

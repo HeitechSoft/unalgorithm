@@ -3,7 +3,9 @@ import { CLOUD_BETA_DOCUMENTS, MAX_POST_CHARS, siteUrl } from '@unalgorithm/prot
 import { Badge, Banner, Button, ListRow, TextField } from '@unalgorithm/ui';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { useAiStatus } from '../lib/hooks.ts';
+import { browserKind } from '../lib/browser-kind.ts';
+import { CLOUD_DATA, requestConsent } from '../lib/data-consent.ts';
+import { useAiStatus, useConsent } from '../lib/hooks.ts';
 import { type PublicServerAccount, sendToBackground } from '../lib/messages.ts';
 import { isServerAt, PINNED_CLOUD_ORIGIN, recipientText, type ServerLabel } from '../lib/server-label.ts';
 import { AccountSync } from './AccountSync.tsx';
@@ -26,7 +28,19 @@ export const CLOUD_ENABLED: boolean = import.meta.env.UA_CLOUD === true;
 const WHAT_IS_SENT = `What is sent: the text of posts that pass your filters (up to ${MAX_POST_CHARS.toLocaleString('en-US')} characters, emails and phone numbers masked), the kind of media and a shared link's site and title, whether the author is a person or a page, and your interests.`;
 const NEVER_SENT = "Never sent: author names, profile links, comments, images, and Facebook posts that aren't public.";
 const NO_PERMISSION = 'unAlgorithm needs permission to open the sign-in window.';
+const NO_CONSENT = 'unAlgorithm needs your permission to send post text and account details to the server.';
 const NO_ANSWER = "unAlgorithm couldn't finish that. Reload this page and try again.";
+
+/**
+ * Asks, from the click, for what signing in needs, and must be the first thing the click awaits. Chrome and Edge: the
+ * optional `identity` permission. Firefox has that from the install (it can't be optional there) and asks for its
+ * consent to send post text, the people named in synced settings and the account's details instead, for every server,
+ * one on this computer included (ADR 0008). Never for technical data: the device name only follows Firefox's own choice.
+ */
+function askToSignIn(): Promise<boolean> {
+  if (browserKind() === 'firefox') return requestConsent(CLOUD_DATA);
+  return browser.permissions.request({ permissions: ['identity'] }).catch(() => false);
+}
 
 type View =
   | { step: 'loading' }
@@ -44,11 +58,15 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
   // Counts sign-ins to a server that bills, so the balance is asked for again: "Sign in again" (R26), or a first sign-in
   // while AI already uses that server, leaves the source unchanged, and the status from before has no balance.
   const [billedSignIns, setBilledSignIns] = useState(0);
+  const [view, setView] = useState<View>({ step: 'loading' });
+  // Firefox: consent withdrawn in its add-on settings after the sign-in pauses AI on this server (ADR 0008).
+  const consented = useConsent(view.step === 'account' ? CLOUD_DATA : []);
   // The balance for the account row (R31). The first message, in every view: `aiStatus` then goes out before
   // `serverAccount`, and the messages after that one stay exactly the sign-in steps (server-setup.test.tsx records
-  // every message and checks them; its server doesn't bill, so no `aiStatus` follows the sign-in).
-  const ai = useAiStatus(`${JSON.stringify(device.aiSource)} ${billedSignIns}`);
-  const [view, setView] = useState<View>({ step: 'loading' });
+  // every message and checks them; its server doesn't bill, so no `aiStatus` follows the sign-in). Asked for again when
+  // Firefox's consent is withdrawn or given back, so the pill follows it; only `false` counts, so the first check never
+  // sends a second message.
+  const ai = useAiStatus(`${JSON.stringify(device.aiSource)} ${billedSignIns} ${consented === false}`);
   const [address, setAddress] = useState(PINNED_CLOUD_ORIGIN);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,11 +117,11 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
     });
   };
 
-  // Called from a click: Chrome opens the permission prompt only before anything else is awaited.
+  // Called from a click: the browser opens its permission prompt only before anything else is awaited.
   const signIn = (origin: string) =>
     run(async () => {
-      const granted = await browser.permissions.request({ permissions: ['identity'] }).catch(() => false);
-      if (!granted) return setError(NO_PERMISSION);
+      const granted = await askToSignIn();
+      if (!granted) return setError(browserKind() === 'firefox' ? NO_CONSENT : NO_PERMISSION);
       const res = await sendToBackground({ type: 'serverSignIn', baseUrl: origin });
       if (!res.ok) return setError(res.error.message);
       go({ step: 'account', account: res.account });
@@ -117,13 +135,21 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
       go({ step: 'address' });
     });
 
-  // Signed in, but AI was switched to something else since: the account is still there, so no new sign-in.
+  // Signed in, but AI was switched to something else since: the account is still there, so no new sign-in. Firefox asks
+  // again for consent withdrawn since (at once when it still stands).
   const turnOn = (origin: string) =>
     run(async () => {
+      if (!(await requestConsent(CLOUD_DATA))) return setError(NO_CONSENT);
       const config: AISourceConfig = { kind: 'server', baseUrl: origin };
       const res = await sendToBackground({ type: 'saveSource', config });
       if (!res.ok) return setError(res.error.message);
       onSaved?.(config);
+    });
+
+  // Firefox: consent given again here; the background then resumes the paused feed tabs.
+  const allow = () =>
+    run(async () => {
+      if (!(await requestConsent(CLOUD_DATA))) setError(NO_CONSENT);
     });
 
   const problem = error ? (
@@ -195,7 +221,8 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
   }
 
   const { account } = view;
-  const off = !account.needsSignIn && !isServerAt(device.aiSource, account.origin);
+  const inUse = !account.needsSignIn && isServerAt(device.aiSource, account.origin);
+  const off = !account.needsSignIn && !inUse;
   const balance = ai?.balance;
   const accountUrl = balance?.accountUrl;
   return (
@@ -205,6 +232,13 @@ export function ServerSetup({ device, onSaved }: { device: Device; onSaved?(cfg:
           tone="warning"
           title={`Sign in to ${account.label.title} again.`}
           action={{ label: 'Sign in again', onAction: () => signIn(account.origin) }}
+        />
+      ) : null}
+      {inUse && consented === false ? (
+        <Banner
+          tone="warning"
+          title={`unAlgorithm needs your permission to send posts to ${account.label.title}.`}
+          action={{ label: 'Allow', onAction: allow }}
         />
       ) : null}
       {problem}

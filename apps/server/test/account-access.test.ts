@@ -4,7 +4,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { requireAccount } from '../src/auth/account-access.ts';
 import { REFUSED } from '../src/auth/web-session.ts';
 import { session, user } from '../src/db/schema.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice, signInWeb } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  signInDevice,
+  signInWeb,
+} from './support/sign-in.ts';
 import { createTestApp, TEST_PUBLIC_URL, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -138,6 +146,8 @@ describe('CSRF', { timeout: PGLITE_TIMEOUT }, () => {
     const elsewhere: Record<string, string>[] = [
       { Cookie: cookie, Origin: 'https://evil.example' },
       { Cookie: cookie, Origin: DEV_EXTENSION_ORIGIN },
+      // A Firefox page is answered by CORS once a Firefox id is listed, but it is still not this server's page.
+      { Cookie: cookie, Origin: FIREFOX_EXTENSION_ORIGIN },
       { Cookie: cookie },
     ];
     for (const headers of elsewhere) {
@@ -161,6 +171,11 @@ describe('CSRF', { timeout: PGLITE_TIMEOUT }, () => {
     });
     // And from the extension's own origin.
     expect((await whoami(t, { ...bearer(tokens), Origin: DEV_EXTENSION_ORIGIN }, 'POST')).status).toBe(200);
+    // Firefox's too.
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID);
+    const fromFirefox = await whoami(t, { ...bearer(firefox), Origin: FIREFOX_EXTENSION_ORIGIN }, 'POST');
+    expect(fromFirefox.status).toBe(200);
+    expect(await fromFirefox.json()).toMatchObject({ deviceId: firefox.device_id, via: 'device' });
   });
 });
 

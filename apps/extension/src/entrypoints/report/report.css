@@ -1,0 +1,120 @@
+/* The report page (ADR 0009 §2): one column, 640 px at most. Components and tokens come from @unalgorithm/ui. */
+
+.report {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+  display: grid;
+  gap: 16px;
+}
+.report h1 {
+  font: var(--ua-type-title1);
+}
+.report h2 {
+  font: var(--ua-type-headline);
+}
+.report-lead {
+  color: var(--ua-text-secondary);
+}
+.report-form,
+.report-result {
+  display: grid;
+  gap: 20px;
+}
+.report-group {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+}
+.report-legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+  font: var(--ua-type-headline);
+}
+.report-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.report-option input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--ua-accent);
+}
+.report-error {
+  margin: 0;
+}
+.report-field {
+  display: grid;
+  gap: 6px;
+}
+.report-counter {
+  justify-self: end;
+}
+.report-preview {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+}
+.report-lines {
+  display: grid;
+  gap: 4px;
+  padding-inline-start: 18px;
+  list-style: disc;
+  font: var(--ua-type-callout);
+}
+.report-exact summary {
+  cursor: pointer;
+  color: var(--ua-accent);
+  font: var(--ua-type-callout);
+}
+.report-exact pre {
+  max-height: 360px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: var(--ua-radius-control);
+  background: var(--ua-bg-secondary);
+  font: 12px / 1.45 var(--ua-font-mono);
+  white-space: pre;
+}
+.report-note {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+.report-failure {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+  border-inline-start: 3px solid var(--ua-warning);
+}
+.report-ref {
+  font-family: var(--ua-font-mono);
+  letter-spacing: 0.04em;
+}
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Links inside a sentence are underlined, so they don't rely on colour alone (WCAG 1.4.1). */
+.report p a {
+  text-decoration: underline;
+}

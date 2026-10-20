@@ -8,14 +8,23 @@
  * `toISOString()`: both drivers return them as raw text, and `user.created_at` has no time zone, so text parsed by
  * `new Date` would be read as local time. Days are selected as `to_char` text and never parsed.
  */
-import { type AdminOverview, type AdminUsers, MAX_ADMIN_USERS, USAGE_DAYS, type UsageDay } from '@unalgorithm/protocol';
+import {
+  type AdminOverview,
+  type AdminUsers,
+  CORRECTION_FEATURES,
+  type CorrectionFeature,
+  MAX_ADMIN_USERS,
+  USAGE_DAYS,
+  type UsageDay,
+} from '@unalgorithm/protocol';
 import { and, asc, count, eq, gte, inArray, lt, type SQL, sql } from 'drizzle-orm';
 import { spendBreakerTripped } from '../ai/limits.ts';
 import { utcDayStart } from '../ai/metering.ts';
 import type { Config } from '../config.ts';
 import type { Db } from '../db/client.ts';
-import { devices, usageEvents, user, userLimits } from '../db/schema.ts';
+import { correctionCounts, devices, problemReports, usageEvents, user, userLimits } from '../db/schema.ts';
 import { type OpsDeps, readOpsStatus } from '../ops/status.ts';
+import { reportsOverview } from '../reports/admin.ts';
 import { ADMIN_ROLE } from './access.ts';
 import { listInvites } from './invites.ts';
 
@@ -188,14 +197,53 @@ export async function checkCounts(db: Db, from: Date, to: Date): Promise<CheckCo
   });
 }
 
+/** Corrections of one feature that ended one way in a quarter (`none`: not handled). */
+export interface CorrectionTally {
+  feature: CorrectionFeature;
+  resolution: string;
+  n: number;
+}
+
 /**
- * What `GET /v1/admin/overview` answers: `adminOverview` with the server's status (`readOpsStatus`, CL4-14) as `ops`,
- * both read at once. CL4-17's metrics reuse it.
+ * The corrections people sent in a quarter, by feature and how they ended (ADR 0009 §6): the counts kept in
+ * `correction_counts` for rows the purge has deleted, plus the rows still kept that arrived in the quarter (`from`
+ * inclusive, `to` exclusive). The purge moves a row from one to the other in one transaction, so in one snapshot each
+ * correction counts once. Sorted by feature, then resolution.
+ */
+export async function countCorrections(db: Db, quarter: string, from: Date, to: Date): Promise<CorrectionTally[]> {
+  const stored = await db
+    .select({ feature: correctionCounts.feature, resolution: correctionCounts.resolution, n: correctionCounts.n })
+    .from(correctionCounts)
+    .where(eq(correctionCounts.quarter, quarter));
+  const feature = sql<string | null>`${problemReports.details} -> 'correction' ->> 'feature'`;
+  const resolution = sql<string>`coalesce(${problemReports.resolution}, 'none')`;
+  const live = await db
+    .select({ feature, resolution, n: count() })
+    .from(problemReports)
+    .where(and(eq(problemReports.kind, 'correction'), gte(problemReports.receivedAt, from), lt(problemReports.receivedAt, to)))
+    .groupBy(feature, resolution);
+  const totals = new Map<string, CorrectionTally>();
+  for (const row of [...stored, ...live]) {
+    if (!(CORRECTION_FEATURES as readonly (string | null)[]).includes(row.feature)) continue;
+    const key = `${row.feature}|${row.resolution}`;
+    const n = (totals.get(key)?.n ?? 0) + row.n;
+    totals.set(key, { feature: row.feature as CorrectionFeature, resolution: row.resolution, n });
+  }
+  return [...totals.values()].sort((a, b) =>
+    a.feature === b.feature ? (a.resolution < b.resolution ? -1 : 1) : a.feature < b.feature ? -1 : 1,
+  );
+}
+
+/**
+ * What `GET /v1/admin/overview` answers: `adminOverview` with the server's status (`readOpsStatus`, CL4-14) as `ops`
+ * and the problem reports' line (ADR 0009 §7: open and last-24-hour counts, and whether `REPORTS` is on), all read at
+ * once. CL4-17's metrics reuse it.
  */
 export async function fullOverview(deps: OpsDeps & { config: Config }, now: Date = new Date()): Promise<AdminOverview> {
-  const [overview, ops] = await Promise.all([
+  const [overview, ops, reports] = await Promise.all([
     adminOverview(deps.db, deps.config, now),
     readOpsStatus({ ...deps, now: now.getTime() }),
+    reportsOverview(deps.db, deps.config, now),
   ]);
-  return { ...overview, ops };
+  return { ...overview, ops, reports };
 }

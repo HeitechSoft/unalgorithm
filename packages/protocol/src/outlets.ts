@@ -38,7 +38,7 @@ export const OfficialListSchema = z.object({
 export type OfficialList = z.infer<typeof OfficialListSchema>;
 export type OfficialOutlet = z.infer<typeof OfficialOutletSchema>;
 
-/** Served outside `/v1` (its CORS answers extension ids only): public, read by any origin (decision D96). */
+/** Served outside `/v1` (its CORS answers extension origins only): public, read by any origin (decision D96). */
 export const OUTLETS_JSON_PATH = '/outlets.json';
 export const OUTLET_CHANGES_JSON_PATH = '/outlets/changes.json';
 export const OUTLETS_PAGE_PATH = '/outlets';

@@ -1,4 +1,5 @@
 import type { AUDIENCES, AuthorKind, MediaKind, PlatformId, PostKey } from '@unalgorithm/protocol';
+import type { Strength } from './evidence.ts';
 
 /** Whether the user follows the author. `unknown` never hides a post (fail open). */
 export type Relationship = 'followed' | 'not-followed' | 'unknown';
@@ -31,7 +32,7 @@ export const NO_SIGNALS: PostSignals = {
 export interface Evidence {
   signal: keyof PostSignals | 'relationship' | 'module';
   detector: string;
-  strength: 'strong' | 'medium' | 'weak';
+  strength: Strength;
 }
 
 /** One feed post as read from the page. Built by a platform adapter; never contains the viewer's own data. */
@@ -57,7 +58,20 @@ export interface PostData {
   audience?: Audience;
   age?: { text: string; hours?: number };
   /** Extraction quality, used by the health monitor. */
-  quality: { authorFound: boolean; textFound: boolean };
+  quality: {
+    authorFound: boolean;
+    textFound: boolean;
+    /**
+     * A hash of an ad label that nearly matched ("Promoted • Brand content"), kept in memory only and never sent: two
+     * posts on one page load with the same hash raise `ad-label-near-miss` (ADR 0009 §3).
+     */
+    adNearMiss?: string;
+    /** Looks like an ad without its label (LinkedIn: no post age and a Follow button). */
+    adCue?: boolean;
+    /** The post has header lines above the author: at least one the markers recognise, at least one they don't. */
+    headerKnown?: boolean;
+    headerUnknown?: boolean;
+  };
 }
 
 export const MODULE_KINDS = [

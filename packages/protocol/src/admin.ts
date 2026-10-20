@@ -13,6 +13,8 @@ export const ADMIN_PAGE_PATH = '/admin';
 export const ADMIN_SOURCES_PAGE_PATH = '/admin/sources';
 /** The Pricing page (PA-05, PA-06): admins edit the server's price book through `ADMIN_PRICES_PATH`'s routes. */
 export const ADMIN_PRICES_PAGE_PATH = '/admin/prices';
+/** Problem reports (ADR 0009 §7): admins read and handle reports through `ADMIN_REPORTS_PATH`'s routes (report.ts). */
+export const ADMIN_REPORTS_PAGE_PATH = '/admin/reports';
 
 /** Routes; all behind a web session (CL2-02). The setup route needs no admin; every other one needs the admin role. */
 export const ADMIN_SETUP_PATH = '/v1/admin/setup';
@@ -126,6 +128,8 @@ export const AdminOverviewSchema = z.object({
   defaultDailyPostCap: Count,
   /** null until the server reports its status (CL4-14). */
   ops: OpsStatusSchema.nullable(),
+  /** Problem reports (ADR 0009 §7): absent from servers older than reports. `enabled` is false with REPORTS=off. */
+  reports: z.object({ enabled: z.boolean(), open: Count, last24h: Count }).optional(),
 });
 export type AdminOverview = z.infer<typeof AdminOverviewSchema>;
 

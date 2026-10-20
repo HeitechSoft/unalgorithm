@@ -1,7 +1,16 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import { COMPARISON_PHRASE, type MockVerdict, STORY_PHRASE } from '@unalgorithm/ai/testing';
 import { type MockSearxng, startMockSearxng } from '@unalgorithm/research/testing';
-import { expect, extensionIdOf, FB_PUBLIC_FLAGGED, facebookFeed, launchExtensionContext, test, turnOnLabs } from './fixtures.ts';
+import {
+  expect,
+  expectReportsAsked,
+  extensionIdOf,
+  FB_PUBLIC_FLAGGED,
+  facebookFeed,
+  launchExtensionContext,
+  test,
+  turnOnLabs,
+} from './fixtures.ts';
 import {
   coverageHit,
   coveredBucketInQuery,
@@ -79,9 +88,14 @@ test.describe
     // Declared before the server's, so the profile closes first, also when a test failed.
     test.afterAll(async () => {
       try {
-        await context?.close();
+        // No problem report without a Send click (ADR 0009 §1), as the `context` fixture checks its own.
+        if (context) expectReportsAsked(context);
       } finally {
-        await searx?.close();
+        try {
+          await context?.close();
+        } finally {
+          await searx?.close();
+        }
       }
     });
 
@@ -95,11 +109,11 @@ test.describe
       { verdict },
     );
 
-    test.beforeAll(async () => {
+    test.beforeAll(async ({ extensionBrowser }) => {
       const { ai } = started();
       baseline.model = ai.bodies.length;
       baseline.searches = searx?.queries.length ?? 0;
-      context = await launchExtensionContext();
+      context = await launchExtensionContext(extensionBrowser);
       extensionId = await extensionIdOf(context);
     });
 

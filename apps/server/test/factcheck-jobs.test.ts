@@ -44,7 +44,13 @@ import * as fixtureModule from './fixtures/billing-module/index.ts';
 import { classifyBody, postClassify, serverPost } from './support/classify.ts';
 import { TEST_PRICE_SCHEDULE } from './support/job-prices.ts';
 import { seedPassingRoute } from './support/routes.ts';
-import { DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  signInDevice,
+} from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -230,8 +236,9 @@ function untilAbort(held: Promise<void>, signal?: AbortSignal | null): Promise<v
   });
 }
 
-function headers(token: string) {
-  return { Origin: DEV_EXTENSION_ORIGIN, Authorization: `Bearer ${token}` };
+/** A request from the extension's page with this device's token: Chrome's development build unless `origin` says. */
+function headers(token: string, origin = DEV_EXTENSION_ORIGIN) {
+  return { Origin: origin, Authorization: `Bearer ${token}` };
 }
 
 function startCheck(t: TestApp, post: PostForAI | unknown, token = t.token): Promise<Response> {
@@ -296,6 +303,27 @@ describe('fact-check jobs: happy path', { timeout: PGLITE_TIMEOUT }, () => {
     expect([...urls].every((u) => /^https:\/\/[abc]\.example\//.test(u))).toBe(true);
     expect(citedIds(result).length).toBeGreaterThanOrEqual(2);
     expect(t.searx.queries.length).toBeGreaterThan(0);
+  });
+
+  it('test_factcheck_job_from_firefox', async () => {
+    const t = await searchApp();
+    const token = (await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID)).access_token;
+    const firefox = headers(token, FIREFOX_EXTENSION_ORIGIN);
+
+    // Started and polled from a Firefox page, with a Firefox device's token: each answer is readable there.
+    const res = await postJson(t.app, FACTCHECK_JOBS_PATH, { v: 1, post: await publicPost() }, firefox);
+    expect(res.status, await res.clone().text()).toBe(202);
+    expect(res.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const { id } = FactcheckJobSchema.parse(await res.json());
+    for (;;) {
+      const polled = await t.app.request(`${factcheckJobPath(id)}?wait=1`, { headers: firefox });
+      expect(polled.status).toBe(200);
+      expect(polled.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+      const job = FactcheckJobSchema.parse(await polled.json());
+      if (job.status === 'running') continue;
+      expect(job.status).toBe('done');
+      break;
+    }
   });
 
   it('test_factcheck_job_anthropic_mode_three_calls', async () => {

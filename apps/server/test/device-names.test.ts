@@ -8,6 +8,7 @@ import {
   codeExchange,
   codeFrom,
   DEV_EXTENSION_ID,
+  FIREFOX_EXTENSION_ID,
   pkcePair,
   postAuthorize,
   postToken,
@@ -20,6 +21,7 @@ import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 const TOM = 'tom@example.com';
 const WINDOWS = 'Chrome on Windows';
 const LINUX = 'Chrome on Linux';
+const FIREFOX = 'Firefox on Linux';
 const NOT_A_NAME = '<img src=x>';
 /** What every request that fails its schema answers (CL1-06). */
 const NOT_VALID = { code: 'bad-request', message: 'The request was not valid.' };
@@ -70,6 +72,22 @@ describe('storing the name', { timeout: PGLITE_TIMEOUT }, () => {
     const t = await namesApp();
     const tokens = await signInDevice(t.app, t.outbox, TOM, DEV_EXTENSION_ID, WINDOWS);
     expect((await deviceRow(t, tokens)).name).toBe(WINDOWS);
+  });
+
+  it('test_firefox_device_name_stored', async () => {
+    const t = await namesApp();
+    // Stored as the extension sent it: the server never names a browser from the add-on id or the request.
+    const tokens = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID, FIREFOX);
+    expect(await deviceRow(t, tokens)).toMatchObject({ name: FIREFOX, clientId: FIREFOX_EXTENSION_ID });
+    // A refresh does not rename it either.
+    const res = await postToken(t.app, {
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+      client_id: FIREFOX_EXTENSION_ID,
+      device_name: 'Another name',
+    });
+    expect(res.status).toBe(200);
+    expect((await deviceRow(t, TokenResponseSchema.parse(await res.json()))).name).toBe(FIREFOX);
   });
 
   it('test_device_name_optional', async () => {

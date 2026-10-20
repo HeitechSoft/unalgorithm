@@ -1,7 +1,7 @@
 import type { BrowserContext, Page, Route } from '@playwright/test';
 import type { Settings } from '@unalgorithm/core';
 import { ACCOUNT_DEVICE_REVOKE_PATH, ACCOUNT_PAGE_PATH, SYNC_PUSH_PATH, SyncPushRequestSchema } from '@unalgorithm/protocol';
-import { expect, extensionIdOf, launchExtensionContext, test } from './fixtures.ts';
+import { expect, extensionIdOf, launchExtensionContext, test, unaskedReports } from './fixtures.ts';
 import { useLocalServer } from './server-lifecycle.ts';
 import { allowServer, expectAccessible, expectDialogTrapsFocus, signInFromSettings } from './server-sign-in.ts';
 
@@ -48,9 +48,9 @@ test.describe
     let a: Profile;
     let b: Profile;
 
-    test.beforeAll(async () => {
+    test.beforeAll(async ({ extensionBrowser }) => {
       const launch = async (name: Profile['name']): Promise<Profile> => {
-        const context = await launchExtensionContext();
+        const context = await launchExtensionContext(extensionBrowser);
         return { name, context, extensionId: await extensionIdOf(context), requests: [] };
       };
       a = await launch('a');
@@ -59,8 +59,12 @@ test.describe
 
     // Declared before the server's, so both profiles close first, also when a test failed.
     test.afterAll(async () => {
+      // No problem report without a Send click (ADR 0009 §1), as the `context` fixture checks its own; read before the
+      // profiles close, and checked after.
+      const unasked = [a, b].flatMap((p) => (p ? unaskedReports(p.context) : []));
       const closing = await Promise.allSettled([a?.context.close(), b?.context.close()]);
       for (const result of closing) if (result.status === 'rejected') throw result.reason;
+      expect(unasked, `problem reports sent without a Send click:\n${unasked.join('\n')}`).toEqual([]);
     });
 
     // The server and its mock AI provider; afterAll checks the process exited and the run's database is dropped.

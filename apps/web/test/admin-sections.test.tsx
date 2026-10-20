@@ -1,8 +1,9 @@
 /**
- * The admin page's other two sections (R38, R43): the invites (CL4-06's routes, the sentence the admin passes on and the
- * line about store builds under it) and the server's usage against its daily spend limit with its content-free status
- * (CL4-05's overview, CL4-14's `ops`). `fetch` is the shared fake server: its invite routes change the next accounts
- * list as the server's do, and every request is recorded.
+ * The admin page's other two sections (R38, R43): the invites (CL4-06's routes and the sentence the admin passes on,
+ * with no line about store builds now that every store version offers servers) and the server's usage against its daily spend limit with its content-free status
+ * (CL4-05's overview, CL4-14's `ops`); and the link to the problem reports page, which the overview's `reports` decides
+ * (ADR 0009 §7). `fetch` is the shared fake server: its invite routes change the next accounts list as the server's
+ * do, and every request is recorded.
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { formatApproxCost } from '@unalgorithm/core';
@@ -10,6 +11,7 @@ import {
   ADMIN_INVITE_REMOVE_PATH,
   ADMIN_INVITES_PATH,
   ADMIN_OVERVIEW_PATH,
+  ADMIN_REPORTS_PAGE_PATH,
   ADMIN_USERS_PATH,
   type AdminOverview,
   type AdminUsers,
@@ -24,8 +26,7 @@ import { fakeServer, OVERVIEW, type Reply, SESSION_GONE, TOM } from './support/f
 
 const HAS_ACCOUNT = 'This address already has an account.';
 const STORE_LINE =
-  'Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with ' +
-  'its id in EXTENSION_IDS.';
+  'Until the store versions of unAlgorithm Feed offer servers, they need a build that does, with its id in EXTENSION_IDS.';
 const BREAKER = "Today's AI spending limit is reached. AI resumes for everyone at 00:00 UTC.";
 const LOAD_FAILED = "Couldn't load usage.";
 const NOT_WATCHED = "Backups aren't watched on this server.";
@@ -189,10 +190,9 @@ describe('invites', () => {
     const sentence = await screen.findByText(
       `Tell new@example.org: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`,
     );
-    const line = screen.getByText(STORE_LINE);
-    // A plain line: it links nowhere.
-    expect(line.querySelector('a')).toBeNull();
-    expect(line && sentence.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sentence).toBeTruthy();
+    // Every store version offers servers (docs/release.md): no note about builds under the sentence.
+    expect(screen.queryByText(STORE_LINE)).toBeNull();
 
     // The last address invited is the one to pass on.
     await invite(user, LEO);
@@ -331,22 +331,66 @@ describe('usage', () => {
   });
 
   it('test_admin_usage_errors', async () => {
+    // The page opens with two reads of the overview, the usage section's and the reports link's: both fail.
     let tries = 0;
     const flaky: Reply = () =>
-      ++tries === 1 ? { status: 500, body: { code: 'internal', message: 'Oops.' } } : { status: 200, body: BUSY_DAY };
+      ++tries <= 2
+        ? { status: 500, body: { code: 'internal', message: 'Oops.' } }
+        : { status: 200, body: { ...BUSY_DAY, reports: { enabled: true, open: 2, last24h: 2 } } };
     const { server, user } = openAdmin({ routes: { [`GET ${ADMIN_OVERVIEW_PATH}`]: flaky } });
     expect(await screen.findByText(LOAD_FAILED)).toBeTruthy();
-    // The rest of the page still works.
+    // The rest of the page still works; the link is simply left out.
     expect(screen.getByLabelText('Email address')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /^Problem reports/ })).toBeNull();
     await user.click(within(section('Usage')).getByRole('button', { name: 'Try again' }));
     expect(await within(section('Usage')).findByRole('table')).toBeTruthy();
     expect(screen.queryByText(LOAD_FAILED)).toBeNull();
-    expect(server.count('GET', ADMIN_OVERVIEW_PATH)).toBe(2);
+    expect(server.count('GET', ADMIN_OVERVIEW_PATH)).toBe(3);
     cleanup();
 
     openAdmin({ routes: { [`GET ${ADMIN_OVERVIEW_PATH}`]: SESSION_GONE } });
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
     expect(screen.getByText(SIGNED_OUT)).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Usage' })).toBeNull();
+  });
+});
+
+describe('problem reports link', () => {
+  /** The line of links under the intro. */
+  async function links(): Promise<HTMLElement> {
+    const pricing = await screen.findByRole('link', { name: 'Pricing' });
+    return pricing.closest('p') as HTMLElement;
+  }
+
+  it('test_admin_links_problem_reports_with_open_count', async () => {
+    const { server } = openAdmin({ adminOverview: { ...BUSY_DAY, reports: { enabled: true, open: 1234, last24h: 40 } } });
+    const link = await screen.findByRole('link', { name: 'Problem reports (1,234 open)' });
+    expect(link.getAttribute('href')).toBe(ADMIN_REPORTS_PAGE_PATH);
+    // Beside the other admin pages, in one line under the intro.
+    const line = await links();
+    expect(line.textContent).toBe('Source list · Pricing · Problem reports (1,234 open)');
+    expect(line.contains(link)).toBe(true);
+    // The usage section and the link each read the overview once.
+    await within(section('Usage')).findByRole('table');
+    expect(server.count('GET', ADMIN_OVERVIEW_PATH)).toBe(2);
+  });
+
+  it('test_admin_hides_problem_reports_when_off', async () => {
+    // REPORTS=off: no link, even with reports kept from before.
+    let { server } = openAdmin({ adminOverview: { ...BUSY_DAY, reports: { enabled: false, open: 3, last24h: 0 } } });
+    await within(await screen.findByRole('region', { name: 'Usage' })).findByRole('table');
+    expect(server.count('GET', ADMIN_OVERVIEW_PATH)).toBe(2);
+    await settle();
+    expect((await links()).textContent).toBe('Source list · Pricing');
+    expect(screen.queryByRole('link', { name: /^Problem reports/ })).toBeNull();
+    cleanup();
+
+    // A server older than reports says nothing about them.
+    ({ server } = openAdmin({ adminOverview: BUSY_DAY }));
+    await within(await screen.findByRole('region', { name: 'Usage' })).findByRole('table');
+    expect(server.count('GET', ADMIN_OVERVIEW_PATH)).toBe(2);
+    await settle();
+    expect((await links()).textContent).toBe('Source list · Pricing');
+    expect(screen.queryByRole('link', { name: /^Problem reports/ })).toBeNull();
   });
 });

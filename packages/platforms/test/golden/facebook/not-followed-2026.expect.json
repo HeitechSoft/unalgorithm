@@ -1,0 +1,121 @@
+{
+  "setup": {
+    "url": "https://www.facebook.com/",
+    "list": "[role=\"main\"] h3 + div + div"
+  },
+  "notes": [
+    "friend's post: no Follow button",
+    "Page post with a Follow button: not followed",
+    "followed Page: no Follow button",
+    "person you follow without being friends: \"Following\"",
+    "group you're in, \"Follow\" after the member's name",
+    "group you're not in, \"Join\"",
+    "friend sharing a Page's post with words of their own; the Page's Follow button is in the shared post",
+    "friend sharing a Page's post without words, its name a plain heading and its text in a message box",
+    "friend's own reel",
+    "friend sharing a reel from someone not followed: \"Follow\" in the reel",
+    "Page photo post with a Follow button and no message box",
+    "\"Ad\" in the age slot",
+    "friend sharing a Page's post without words, its name a plain link and its text in a message box"
+  ],
+  "decisions": {
+    "light": [
+      "show/unknown",
+      "show/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/not-followed",
+      "sponsored/unknown",
+      "show/unknown"
+    ],
+    "balanced": [
+      "show/unknown",
+      "not-followed/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "unjoined-group/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "show/unknown"
+    ],
+    "calm": [
+      "show/unknown",
+      "not-followed/not-followed",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "unjoined-group/unknown",
+      "reshare/unknown",
+      "show/unknown",
+      "reel/unknown",
+      "reel/unknown",
+      "not-followed/not-followed",
+      "sponsored/unknown",
+      "show/unknown"
+    ]
+  },
+  "ids": [
+    "fb:h:1o150f6v2q7",
+    "fb:h:7asg4qd4z6",
+    "fb:h:198ylr7kwq7",
+    "fb:h:nor1nqo72l",
+    "fb:h:vf7bn0j4t1",
+    "fb:h:7teucku3jc",
+    "fb:h:576ipnfghx",
+    "fb:h:xf0ahxda2n",
+    "fb:100001",
+    "fb:100002",
+    "fb:2026101902",
+    "fb:h:s8o32a3qtc",
+    "fb:h:xf0ahxda2n"
+  ],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "fb.items.heading-list",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "strong",
+    "signedIn": true,
+    "loadMore": false
+  },
+  "emitted": {
+    "detectors": {
+      "fb.follow-button": 2,
+      "fb.join-button": 1,
+      "fb.reshare": 1,
+      "fb.sponsored.rendered-label": 1,
+      "fb.sponsored.slot-label": 1,
+      "fb.sponsored.no-timestamp": 1
+    },
+    "observations": {}
+  },
+  "errors": {}
+}

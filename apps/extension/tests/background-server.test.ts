@@ -4,15 +4,30 @@
  * itself is stubbed (`server-auth.test.ts` covers it); extension storage is the WXT fake browser.
  */
 import { type AISourceConfig, defaultDevice, emptyDay } from '@unalgorithm/core';
-import { AUTHORIZE_PAGE_PATH, CREDIT_BALANCE_PATH, type ServerInfo, TOKEN_PATH } from '@unalgorithm/protocol';
+import {
+  AUTHORIZE_PAGE_PATH,
+  CREDIT_BALANCE_PATH,
+  DEV_CHROMIUM_ID,
+  FIREFOX_ADDON_ID,
+  type ServerInfo,
+  TOKEN_PATH,
+} from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { type ServerAccount, serverAccountItem } from '../src/background/server-auth.ts';
 import { type StoredBalance, serverBalanceItem } from '../src/background/server-balance.ts';
 import { handlers } from '../src/entrypoints/background.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import { PINNED_CLOUD_ORIGIN, serverLabel } from '../src/lib/server-label.ts';
 import { deviceItem, readDevice, usageItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const mocks = vi.hoisted(() => ({
   discoverServer: vi.fn(),
@@ -85,6 +100,7 @@ async function setSource(cfg: AISourceConfig | null) {
 
 beforeEach(() => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   mocks.discoverServer.mockReset();
   mocks.signIn.mockReset();
   mocks.signOut.mockReset();
@@ -176,6 +192,26 @@ describe('discover and sign-in', () => {
       ok: false,
       error,
     });
+  });
+
+  it('test_server_discover_refuses_a_server_without_this_browser', async () => {
+    // Said at "Continue", before the consent step: Firefox can't sign in to a server that only takes Chrome and Edge.
+    env.kind = 'firefox';
+    fakeBrowser.runtime.id = FIREFOX_ADDON_ID;
+    mocks.discoverServer.mockResolvedValue({ ok: true, origin: PINNED_CLOUD_ORIGIN, info: INFO });
+    expect(await handlers.serverDiscover({ type: 'serverDiscover', baseUrl: PINNED_CLOUD_ORIGIN }, page())).toStrictEqual({
+      ok: false,
+      error: { code: 'permission', message: "unAlgorithm Cloud doesn't accept sign-ins from Firefox yet." },
+    });
+    const both = { ...INFO, auth: { ...INFO.auth, clients: ['chromium', 'gecko'] } } as ServerInfo;
+    mocks.discoverServer.mockResolvedValue({ ok: true, origin: ORIGIN, info: both });
+    expect(await handlers.serverDiscover({ type: 'serverDiscover', baseUrl: ORIGIN }, page())).toMatchObject({ ok: true });
+
+    // Chrome and Edge: a server from before Firefox takes them.
+    env.kind = 'edge';
+    fakeBrowser.runtime.id = DEV_CHROMIUM_ID;
+    mocks.discoverServer.mockResolvedValue({ ok: true, origin: ORIGIN, info: INFO });
+    expect(await handlers.serverDiscover({ type: 'serverDiscover', baseUrl: ORIGIN }, page())).toMatchObject({ ok: true });
   });
 
   it('test_server_sign_in_saves_source_and_hides_credentials', async () => {

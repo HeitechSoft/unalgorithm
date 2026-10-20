@@ -26,16 +26,16 @@ export interface FactcheckSheetProps {
   earlier?: { label: string; onOpen(): void }[];
   /** What the check cost or was charged (`checkCostLine`), shown in the footer when set. */
   costLine?: string | null | undefined;
-  /** Links shown last in the footer of a finished check (how it works, report a mistake): the extension's own URLs. */
+  /** Links shown last in the footer of a finished check (how it works, report a mistake). */
   links?: readonly SheetFootLink[] | undefined;
   onBack(): void;
 }
 
-/** A link in a sheet's footer. Its `href` is one of the extension's own `https:` URLs, never one from a result. */
-export interface SheetFootLink {
-  text: string;
-  href: string;
-}
+/**
+ * A link in a sheet's footer: an `href` that is one of the extension's own `https:` URLs, never one from a result, or
+ * an action that stays in the extension (*Report a mistake* opens the report page), rendered as a link-styled button.
+ */
+export type SheetFootLink = { text: string; href: string } | { text: string; onSelect(): void };
 
 const CHECKED_AT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
 /** The date only: a cached time is kept only to the hour, and a clock time would say when someone else checked. */
@@ -134,17 +134,26 @@ function ClaimItem({ claim, sources }: { claim: FactcheckClaim; sources: Factche
   );
 }
 
-/** A sheet footer's links in one line, separated by " · ", each opening in a new tab; nothing when there are none. */
+/**
+ * A sheet footer's links in one line, separated by " · ": a link opens in a new tab, an action is a button that looks
+ * like a link (`.ua-link`); nothing when there are none.
+ */
 export function FootLinks({ links = [] }: { links?: readonly SheetFootLink[] | undefined }) {
   if (!links.length) return null;
   return (
     <div>
       {links.map((l, i) => (
-        <Fragment key={l.href}>
+        <Fragment key={'href' in l ? l.href : l.text}>
           {i ? ' · ' : null}
-          <a href={l.href} target="_blank" rel="noopener noreferrer">
-            {l.text}
-          </a>
+          {'href' in l ? (
+            <a href={l.href} target="_blank" rel="noopener noreferrer">
+              {l.text}
+            </a>
+          ) : (
+            <button type="button" className="ua-link" onClick={l.onSelect}>
+              {l.text}
+            </button>
+          )}
         </Fragment>
       ))}
     </div>

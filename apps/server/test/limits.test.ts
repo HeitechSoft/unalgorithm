@@ -10,7 +10,7 @@ import type { Db } from '../src/db/client.ts';
 import { usageEvents, user, userLimits } from '../src/db/schema.ts';
 import { classifyBody, postClassify, serverPost, usageRowOf } from './support/classify.ts';
 import { createTestDb } from './support/db.ts';
-import { DEV_EXTENSION_ORIGIN, signInDevice } from './support/sign-in.ts';
+import { DEV_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, FIREFOX_EXTENSION_ORIGIN, signInDevice } from './support/sign-in.ts';
 import { createTestApp, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -234,6 +234,15 @@ describe('rate limit', { timeout: PGLITE_TIMEOUT }, () => {
     const exposed = (limited.headers.get('access-control-expose-headers') ?? '').split(',').map((h) => h.trim());
     expect(exposed.map((h) => h.toLowerCase())).toContain('retry-after');
     expect(limited.headers.get('retry-after')).toBe('60');
+
+    // Firefox reads it from its own page the same way; the limit is per person, whichever browser asks.
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID);
+    const body = classifyBody(await linkedInPosts(1));
+    const fromFirefox = await postClassify(t.app, body, firefox.access_token, FIREFOX_EXTENSION_ORIGIN);
+    expect(fromFirefox.status).toBe(429);
+    expect(fromFirefox.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    expect(fromFirefox.headers.get('access-control-expose-headers')).toBe(limited.headers.get('access-control-expose-headers'));
+    expect(fromFirefox.headers.get('retry-after')).toBe('60');
   });
 });
 

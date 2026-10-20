@@ -2,6 +2,8 @@
  * Signing in from tests the way people and the extension do, through the real routes only: the emailed code on the
  * server's own page gives a web session (`signInWeb`); the page asks for a PKCE-bound code, and the extension trades it
  * for device tokens (`signInDevice`). The address must be on the test server's `SIGNUP_ALLOWLIST`, be invited or have an account.
+ * The extension is Chrome's (and Edge's) development build unless a test passes a Firefox add-on id: its redirect
+ * address and its origin follow the id, as each browser makes them.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -9,6 +11,10 @@ import {
   type AuthorizeRequest,
   AuthorizeResponseSchema,
   chromiumRedirectUri,
+  clientKind,
+  DEV_CHROMIUM_ID,
+  FIREFOX_DEV_ADDON_ID,
+  redirectUriFor,
   TOKEN_PATH,
   type TokenRequest,
   type TokenResponse,
@@ -18,9 +24,26 @@ import type { App } from '../../src/http/app.ts';
 import type { MailMessage } from '../../src/mail/mailer.ts';
 import { TEST_PUBLIC_URL } from './test-app.ts';
 
-/** The development key's extension id (ADR 0004): the one `EXTENSION_IDS` lists by default. */
-export const DEV_EXTENSION_ID = 'aokmlebkpkeniofcnbeajmgabinicggm';
+/** The development key's extension id (ADR 0004), in Chrome and Edge: listed in `EXTENSION_IDS` by default. */
+export const DEV_EXTENSION_ID = DEV_CHROMIUM_ID;
 export const DEV_EXTENSION_ORIGIN = `chrome-extension://${DEV_EXTENSION_ID}`;
+/** Firefox's development build (ADR 0008), also listed by default. */
+export const FIREFOX_EXTENSION_ID = FIREFOX_DEV_ADDON_ID;
+/**
+ * A Firefox extension page's origin. Firefox picks the UUID at random for each profile and install, so it says nothing
+ * of the add-on id; any one does.
+ */
+export const FIREFOX_EXTENSION_ORIGIN = 'moz-extension://8c2f4e1a-5b7d-4c9e-a3f6-0d1e2b3c4a5f';
+
+/** The origin the extension with this id sends: its `chrome-extension://` one, or a Firefox page's. */
+export function extensionOrigin(clientId: string): string {
+  return clientKind(clientId) === 'gecko' ? FIREFOX_EXTENSION_ORIGIN : `chrome-extension://${clientId}`;
+}
+
+/** The redirect address the extension with this id signs in with (one that is no client id gets Chrome's form). */
+export function redirectUri(clientId: string): string {
+  return redirectUriFor(clientId) ?? chromiumRedirectUri(clientId);
+}
 
 /** Better Auth's two mounted sign-in endpoints: email a code, then sign in with it. */
 export const SEND_CODE = '/api/auth/email-otp/send-verification-otp';
@@ -90,7 +113,7 @@ export function pkcePair(): { verifier: string; challenge: string } {
 export function authorizeRequest(challenge: string, clientId = DEV_EXTENSION_ID): AuthorizeRequest {
   return {
     client_id: clientId,
-    redirect_uri: chromiumRedirectUri(clientId),
+    redirect_uri: redirectUri(clientId),
     code_challenge: challenge,
     code_challenge_method: 'S256',
     state: randomBytes(16).toString('base64url'),
@@ -121,14 +144,20 @@ export function codeExchange(code: string, verifier: string, clientId = DEV_EXTE
     code,
     code_verifier: verifier,
     client_id: clientId,
-    redirect_uri: chromiumRedirectUri(clientId),
+    redirect_uri: redirectUri(clientId),
     ...(deviceName === undefined ? {} : { device_name: deviceName }),
   };
 }
 
-/** `POST /v1/auth/token` from the extension's origin. */
-export function postToken(app: App, body: unknown, origin = DEV_EXTENSION_ORIGIN): Promise<Response> {
+/** `POST /v1/auth/token` from the extension's origin: by default, that of the body's `client_id`. */
+export function postToken(app: App, body: unknown, origin = originOf(body)): Promise<Response> {
   return postJson(app, TOKEN_PATH, body, { Origin: origin });
+}
+
+/** The origin of the extension a request body names in `client_id`; the development build's when it names none. */
+function originOf(body: unknown): string {
+  const clientId = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).client_id : undefined;
+  return typeof clientId === 'string' ? extensionOrigin(clientId) : DEV_EXTENSION_ORIGIN;
 }
 
 /**

@@ -50,7 +50,8 @@ export function openaiCompatibleClient(opts: {
   fetch?: typeof fetch;
   extraHeaders?: Record<string, string>;
 }): AIClient {
-  const base = opts.baseUrl.replace(/\/+$/, '');
+  let base = opts.baseUrl;
+  while (base.endsWith('/')) base = base.slice(0, -1);
   const doFetch = opts.fetch ?? ((input: string | URL, init?: RequestInit) => fetch(input, init));
   const host = (() => {
     try {

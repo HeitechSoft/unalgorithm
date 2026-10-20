@@ -1,5 +1,5 @@
 import { balanceLine, dateKey, isPaused, type Preset, presetOf } from '@unalgorithm/core';
-import type { PlatformId } from '@unalgorithm/protocol';
+import { type NoticeKind, PLATFORM_NAMES } from '@unalgorithm/protocol';
 import {
   Banner,
   BriefcaseBusiness,
@@ -14,6 +14,8 @@ import {
   ListRow,
   Lockup,
   MessageSquareWarning,
+  NOTICE_ACTIONS,
+  noticeCopy,
   PanelRight,
   SegmentedControl,
   Settings,
@@ -25,6 +27,7 @@ import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { BalancePill, shouldShowLowBalance } from '../../components/BalancePill.tsx';
 import {
+  type ActiveTab,
   FEED_URLS,
   platformOfUrl,
   useActiveTab,
@@ -37,8 +40,21 @@ import {
 import { type AiStatus, sendQuietly, sendToBackground, sendToTab } from '../../lib/messages.ts';
 import { lowBalanceNoticeItem, statsItem } from '../../lib/storage.ts';
 
-const SITE: Record<PlatformId, string> = { linkedin: 'LinkedIn', facebook: 'Facebook' };
-const NEW_ISSUE = 'https://github.com/HeitechSoft/unalgorithm/issues/new/choose';
+const SITE = PLATFORM_NAMES;
+/** How long the popup waits for the tab's content script before saying it isn't running (ADR 0009 §3). */
+export const PING_WAIT_MS = 1500;
+/** The popup's own words for a page unAlgorithm isn't on or isn't running on (ADR 0009 §3). */
+export const POPUP_COPY = {
+  noScript: {
+    title: "unAlgorithm isn't running on this page",
+    body: 'Reloading the page usually fixes this.',
+    reload: 'Reload page',
+    report: 'Still not working? Let us know',
+  },
+  feedLike: "unAlgorithm isn't running on this feed.",
+  noAds: 'No ads found on this page yet.',
+  report: 'Report a problem',
+} as const;
 const STRENGTHS = [
   { value: 'light', label: 'Light' },
   { value: 'balanced', label: 'Balanced' },
@@ -78,6 +94,38 @@ function useLowBalanceNotice(ai: AiStatus | undefined): [boolean, () => void] {
   return [show === true, () => setShow(false)];
 }
 
+/**
+ * Whether the tab's content script is running: `silent` when a LinkedIn or Facebook tab that has finished loading, and
+ * has no state from unAlgorithm, gave no answer to a ping within 1.5 s (`no-content-script`). Anything else is
+ * `running` or still `unknown`.
+ */
+function useScriptState(tab: ActiveTab | undefined, onPlatform: boolean, hasState: boolean): 'unknown' | 'running' | 'silent' {
+  const [state, setState] = useState<'unknown' | 'running' | 'silent'>('unknown');
+  const tabId = tab?.id;
+  useEffect(() => {
+    if (tabId === undefined || !onPlatform) return;
+    let alive = true;
+    let answered = false;
+    setState('unknown');
+    void sendToTab(tabId, { type: 'ping' }).then((res) => {
+      answered = !!res;
+      if (alive && res) setState('running');
+    });
+    const timer = setTimeout(() => {
+      if (answered) return;
+      void browser.tabs
+        .get(tabId)
+        .then((t) => alive && !answered && setState(t.status === 'complete' ? 'silent' : 'unknown'))
+        .catch(() => undefined);
+    }, PING_WAIT_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [tabId, onPlatform]);
+  return state === 'silent' && hasState ? 'unknown' : state;
+}
+
 export function App() {
   const tab = useActiveTab();
   const tabState = useTabState(tab?.id);
@@ -89,6 +137,7 @@ export function App() {
   const [lowBalance, dismissLowBalance] = useLowBalanceNotice(ai);
   const [copied, setCopied] = useState<string | null>(null);
   const platform = tab ? platformOfUrl(tab.url) : null;
+  const script = useScriptState(tab, !!platform, tabState.updatedAt > 0);
   const devBuild = import.meta.env.MODE !== 'production';
 
   if (!settings || !device) return null;
@@ -122,15 +171,32 @@ export function App() {
     </>
   );
 
+  // Straight from the click, before the popup closes: Firefox opens its sidebar (in this window) only then.
   const openPanel = () => {
-    if (tab) void browser.sidePanel.open({ windowId: tab.windowId });
+    const sidebar = browser.sidebarAction;
+    if (sidebar) void sidebar.open().catch(() => undefined);
+    else if (tab) void browser.sidePanel.open({ windowId: tab.windowId });
     window.close();
   };
 
-  // The content script builds the report: it holds the page's (content-free) diagnostics.
-  const reportProblem = async () => {
-    const res = tab ? await sendToTab(tab.id, { type: 'reportUrl' }) : undefined;
-    await browser.tabs.create({ url: res?.url ?? NEW_ISSUE });
+  // The content script builds the report's draft where it runs: it holds the page's facts (counts and codes, never
+  // content). Without an answer, or off LinkedIn and Facebook, the background builds one without them. Either way the
+  // report page opens, and nothing is sent until the person sends it there (ADR 0009 §2).
+  const reportProblem = async (from: 'popup' | 'popup-banner' | 'popup-no-script' = 'popup') => {
+    const snapshot =
+      tab && platform && from !== 'popup-no-script'
+        ? await sendToTab(tab.id, { type: 'reportSnapshot', from: from === 'popup-banner' ? 'popup-banner' : 'popup' })
+        : undefined;
+    if (!snapshot?.ok) {
+      await sendToBackground({
+        type: 'openReport',
+        about: { from: from === 'popup-no-script' ? 'popup-no-script' : 'popup', platform, tabId: tab?.id ?? null },
+      }).catch(() => undefined);
+    }
+    window.close();
+  };
+  const reloadTab = () => {
+    if (tab) void browser.tabs.reload(tab.id);
     window.close();
   };
 
@@ -179,16 +245,14 @@ export function App() {
         {balance ? <BalancePill balance={balance} onOpen={openAccount} /> : null}
       </span>
       <span className="ua-hstack" style={{ gap: 12 }}>
-        {platform ? (
-          <button
-            type="button"
-            className="ua-button ua-button--plain ua-button--sm"
-            onClick={() => void reportProblem()}
-            style={{ paddingInline: 4 }}
-          >
-            <MessageSquareWarning aria-hidden="true" /> Report a problem
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="ua-button ua-button--plain ua-button--sm"
+          onClick={() => void reportProblem(script === 'silent' ? 'popup-no-script' : 'popup')}
+          style={{ paddingInline: 4 }}
+        >
+          <MessageSquareWarning aria-hidden="true" /> {POPUP_COPY.report}
+        </button>
         <a href="https://unalgorithmfeed.com/help/" target="_blank" rel="noreferrer" className="ua-hstack" style={{ gap: 4 }}>
           <CircleHelp size={14} aria-hidden="true" /> Help
         </a>
@@ -242,6 +306,10 @@ export function App() {
   const ps = settings.platforms[platform];
   const paused = isPaused(device, platform);
   const on = ps.enabled && !paused;
+  // The in-feed card's notice, whatever its snoozes (ADR 0009 §3); else the paused banner when health broke without one.
+  const notice: NoticeKind | undefined = tabState.notice?.kind ?? (tabState.health.status === 'broken' ? 'paused' : undefined);
+  const noticeText = notice ? noticeCopy(notice, tabState.notice?.issues ?? tabState.health.issues) : undefined;
+  const noAds = tabState.onFeed && tabState.health.issues.includes('no-ads-seen');
   const preset = presetOf(platform, ps);
   const hidden = tabState.counts.hiddenTotal;
   const chips = Object.entries(tabState.counts.hidden).sort((a, b) => b[1] - a[1]);
@@ -259,13 +327,29 @@ export function App() {
       <div className="ua-stack">
         {creditBanners}
         {setupBanner}
-        {tabState.health.status === 'broken' && on ? (
+        {script === 'silent' && on ? (
           <Banner
             tone="warning"
-            title="Filtering is paused on this page"
-            action={{ label: 'Report a problem', onAction: () => void reportProblem() }}
+            title={POPUP_COPY.noScript.title}
+            action={{ label: POPUP_COPY.noScript.reload, onAction: reloadTab }}
           >
-            {SITE[platform]}'s layout looks different, and we'd rather show everything than hide posts by mistake.
+            <p>{POPUP_COPY.noScript.body}</p>
+            <Button
+              variant="plain"
+              size="sm"
+              onClick={() => void reportProblem('popup-no-script')}
+              style={{ marginInlineStart: -8 }}
+            >
+              {POPUP_COPY.noScript.report}
+            </Button>
+          </Banner>
+        ) : notice && noticeText && on ? (
+          <Banner
+            tone={notice === 'ads-through' ? 'info' : 'warning'}
+            title={noticeText.title}
+            action={{ label: NOTICE_ACTIONS.report, onAction: () => void reportProblem('popup-banner') }}
+          >
+            {noticeText.body(SITE[platform])}
           </Banner>
         ) : null}
         {tabState.health.status === 'unsupported-locale' && on ? (
@@ -308,6 +392,11 @@ export function App() {
                   <div className="ua-footnote" style={{ marginBottom: 10 }}>
                     {today} today
                   </div>
+                  {noAds ? (
+                    <div className="ua-footnote" style={{ marginBottom: 10 }}>
+                      {POPUP_COPY.noAds}
+                    </div>
+                  ) : null}
                   {chips.length ? (
                     <div className="ua-hstack ua-wrap" style={{ gap: 6, marginBottom: 14 }}>
                       {chips.slice(0, 4).map(([key, n]) => (
@@ -324,6 +413,13 @@ export function App() {
                     </div>
                   ) : null}
                 </>
+              ) : tabState.feedLike ? (
+                // The banner above says it when the card's notice is up; never "Go to feed" on the feed itself.
+                notice === 'not-running' ? null : (
+                  <div className="ua-secondary ua-callout" style={{ padding: '10px 0 14px' }}>
+                    {POPUP_COPY.feedLike}
+                  </div>
+                )
               ) : (
                 <div className="ua-hstack" style={{ justifyContent: 'space-between', padding: '10px 0 14px' }}>
                   <span className="ua-secondary ua-callout">unAlgorithm works on your home feed.</span>

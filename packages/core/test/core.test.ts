@@ -2,6 +2,8 @@ import {
   type Classification,
   CREDIT_PRICE_SCHEDULE,
   type CreditPriceSchedule,
+  compareHlc,
+  formatHlc,
   MAX_MODEL_CHARS,
   ZERO_USAGE as ZERO,
 } from '@unalgorithm/protocol';
@@ -19,7 +21,7 @@ import {
   decide,
   defaultSettings,
   EMPTY_LEARNED,
-  evaluateHealth,
+  editPaths,
   findKeyword,
   formatBalance,
   formatBytes,
@@ -32,11 +34,17 @@ import {
   normalizeItem,
   type PostData,
   presetOf,
+  presetSummary,
   recordUsage,
   ruleFilter,
+  SETTINGS_VERSION,
+  type Settings,
+  type SettingsClocks,
   safeExternalUrl,
   stampClocks,
   toPostForAI,
+  upgradeClocks,
+  upgradeMerged,
 } from '../src/index.ts';
 
 function post(over: Partial<PostData> = {}): PostData {
@@ -102,14 +110,61 @@ describe('rules', () => {
     expect(ruleFilter(suggested, { ...li, alwaysShow: { a: rule } })).toBeNull();
     expect(ruleFilter(post(), { ...li, alwaysHide: { a: rule } })?.reason).toBe('always-hide');
   });
+
+  it('test_cautious_mode_hides_only_strong_signals', () => {
+    // A fallback discovery strategy is winning (ADR 0009 §9): an item may not be one whole post.
+    const strongAd = post({
+      signals: { ...NO_SIGNALS, sponsored: true },
+      evidence: [{ signal: 'sponsored', detector: 'li.promoted.age-slot', strength: 'strong' }],
+    });
+    const mediumAd = post({
+      signals: { ...NO_SIGNALS, sponsored: true },
+      evidence: [
+        { signal: 'sponsored', detector: 'li.promoted.near', strength: 'medium' },
+        { signal: 'sponsored', detector: 'li.age-slot.no-age', strength: 'weak' },
+      ],
+    });
+    // A signal with no evidence at all (an adapter that doesn't record it) is never strong.
+    const bare = post({ signals: { ...NO_SIGNALS, suggested: true } });
+    expect(ruleFilter(strongAd, li, undefined, true)?.reason).toBe('sponsored');
+    expect(ruleFilter(mediumAd, li)?.reason).toBe('sponsored');
+    expect(ruleFilter(mediumAd, li, undefined, true)).toBeNull();
+    expect(ruleFilter(bare, li)?.reason).toBe('suggested');
+    expect(ruleFilter(bare, li, undefined, true)).toBeNull();
+  });
+
+  it('test_cautious_mode_turns_not_followed_off_and_keeps_your_lists', () => {
+    const notFollowed = post({ author: { ...post().author, relationship: 'not-followed' } });
+    expect(ruleFilter(notFollowed, li)?.reason).toBe('not-followed');
+    expect(ruleFilter(notFollowed, li, undefined, true)).toBeNull();
+    const rule = { label: 'Jane Doe', match: '/in/janedoe', addedAt: 1 };
+    expect(ruleFilter(post(), { ...li, alwaysHide: { a: rule } }, undefined, true)?.reason).toBe('always-hide');
+  });
 });
 
 describe('presets', () => {
-  it('Balanced hides not-followed on LinkedIn but not yet on Facebook', () => {
+  it('test_balanced_hides_people_you_dont_follow_on_both_platforms', () => {
     const s = defaultSettings();
-    expect(s.platforms.linkedin.filters.notFollowed).toBe(true);
-    expect(s.platforms.facebook.filters.notFollowed).toBe(false);
-    expect(presetOf('linkedin', s.platforms.linkedin)).toBe('balanced');
+    for (const platform of ['linkedin', 'facebook'] as const) {
+      const ps = s.platforms[platform];
+      expect([platform, ps.preset, ps.filters.notFollowed]).toEqual([platform, 'balanced', true]);
+      expect(presetOf(platform, ps)).toBe('balanced');
+      expect(applyPreset(platform, ps, 'calm').filters.notFollowed).toBe(true);
+      // Balanced without the rule is the person's own mix.
+      expect(presetOf(platform, { ...ps, filters: { ...ps.filters, notFollowed: false } })).toBe('custom');
+    }
+    expect(presetSummary('facebook', 'balanced')).toBe(presetSummary('linkedin', 'balanced'));
+    expect(presetSummary('facebook', 'balanced')).toContain("people you don't follow");
+  });
+
+  it('test_light_hides_only_ads_and_feed_panels', () => {
+    for (const platform of ['linkedin', 'facebook'] as const) {
+      const light = applyPreset(platform, defaultSettings().platforms[platform], 'light');
+      const on = Object.entries(light.filters).flatMap(([key, value]) => (value ? [key] : []));
+      expect(on.sort()).toEqual(['modules', 'sponsored']);
+      expect(Object.values(light.ai.noise).some(Boolean)).toBe(false);
+      expect(light.ai.lowRelevance).toBe(false);
+    }
   });
 
   it('detects custom after a manual change and matches presets after applying one', () => {
@@ -143,6 +198,38 @@ describe('decide', () => {
     expect(boosted.highlight?.source).toBe('ai');
   });
 
+  it('test_no_ai_highlight_or_relevance_hiding_without_interests', () => {
+    // On-device AI on, nothing chosen: a high score is the model's guess about nothing, so no highlight.
+    const c = classification({ relevance: 95, topics: ['futuristic car'] });
+    expect(decide({ item: { kind: 'post', post: post() }, settings, classification: c, aiActive: true }).highlight).toBeNull();
+    // Calm hides low-relevance posts, but only once there is something to be relevant to.
+    const calm = defaultSettings();
+    calm.platforms.linkedin.ai.lowRelevance = true;
+    const low = classification({ relevance: 5 });
+    expect(
+      decide({ item: { kind: 'post', post: post() }, settings: calm, classification: low, aiActive: true }).filter,
+    ).toBeNull();
+    calm.interests.about = 'I run a small software company.';
+    expect(
+      decide({ item: { kind: 'post', post: post() }, settings: calm, classification: low, aiActive: true }).filter?.reason,
+    ).toBe('low-relevance');
+  });
+
+  it('test_ai_highlight_names_only_the_persons_own_topics', () => {
+    const s = defaultSettings();
+    s.interests.more.cars = { label: 'Electric cars', keywords: ['electric car', 'ev'], addedAt: 1 };
+    s.interests.more.hr = { label: 'Hiring', keywords: ['hiring'], addedAt: 1 };
+    // The AI's own topic overlaps one chosen topic: "Matches Electric cars", never "futuristic car".
+    const c = classification({ relevance: 90, topics: ['electric car design', 'futuristic car'] });
+    const d = decide({ item: { kind: 'post', post: post() }, settings: s, classification: c, aiActive: true });
+    expect(d.highlight).toMatchObject({ source: 'ai', matched: ['Electric cars'] });
+    // On topic by the About you note alone: highlighted, with no topic named.
+    const about = defaultSettings();
+    about.interests.about = 'I follow product design.';
+    const d2 = decide({ item: { kind: 'post', post: post() }, settings: about, classification: c, aiActive: true });
+    expect(d2.highlight).toMatchObject({ source: 'ai', matched: [] });
+  });
+
   it('highlights interest keywords without AI, and mutes "less of" topics', () => {
     const s = defaultSettings();
     s.interests.more.hr = { label: 'Onboarding', keywords: ['onboarding'], addedAt: 1 };
@@ -158,6 +245,14 @@ describe('decide', () => {
     expect(decide({ item: { kind: 'post', post: post() }, settings, aiActive: false, vote: 'less' }).filter?.reason).toBe(
       'less-like-this',
     );
+  });
+
+  it('test_decide_passes_cautious_to_the_rules', () => {
+    const notFollowed = post({ author: { ...post().author, relationship: 'not-followed' } });
+    const item = { kind: 'post' as const, post: notFollowed };
+    expect(decide({ item, settings, aiActive: false }).filter?.reason).toBe('not-followed');
+    expect(decide({ item, settings, aiActive: false, cautious: false }).filter?.reason).toBe('not-followed');
+    expect(decide({ item, settings, aiActive: false, cautious: true }).filter).toBeNull();
   });
 
   it('modules follow the feed panels switch for their own platform', () => {
@@ -214,6 +309,236 @@ describe('settings migration', () => {
     expect(broken.perspectives.outlets).toStrictEqual({});
     expect(broken.display.mode).toBe('dim');
     expect(broken.interests.about).toBe('Local news');
+  });
+
+  /** Settings as version 1 stored them: Facebook's Balanced left people and pages you don't follow to Calm. */
+  function storedByVersion1(mutate: (s: Settings) => void = () => {}): Record<string, unknown> {
+    const s = defaultSettings();
+    s.platforms.facebook.filters.notFollowed = false;
+    mutate(s);
+    return { ...structuredClone(s), version: 1 };
+  }
+
+  it('test_settings_v2_gives_facebook_balanced_the_not_followed_rule', () => {
+    const v1 = storedByVersion1((s) => {
+      s.display.mode = 'dim';
+      s.platforms.facebook.alwaysShow.a = { label: 'Riley Chen', match: '/riley.chen', addedAt: 1 };
+    });
+    const s = migrateSettings(v1);
+    expect(s.version).toBe(SETTINGS_VERSION);
+    expect(s.platforms.facebook.filters.notFollowed).toBe(true);
+    expect(s.platforms.facebook.preset).toBe('balanced');
+    expect(presetOf('facebook', s.platforms.facebook)).toBe('balanced');
+    // Nothing else moves: the other filters, the lists, LinkedIn and the rest of the settings.
+    const unmigrated = migrateSettings({ ...v1, version: 2 });
+    unmigrated.platforms.facebook.filters.notFollowed = true;
+    expect(s).toStrictEqual(unmigrated);
+    // A Facebook that is switched off keeps its strength for when it is back on.
+    const off = migrateSettings(storedByVersion1((x) => void (x.platforms.facebook.enabled = false)));
+    expect(off.platforms.facebook).toMatchObject({ enabled: false, preset: 'balanced', filters: { notFollowed: true } });
+    // Sections version 1 never wrote are filled in from the defaults, which hide people you don't follow already.
+    const sparse = migrateSettings({ version: 1, platforms: { facebook: { preset: 'balanced', filters: { reels: false } } } });
+    expect(sparse.platforms.facebook.filters.notFollowed).toBe(true);
+    expect(presetOf('facebook', sparse.platforms.facebook)).toBe('balanced');
+  });
+
+  it('test_settings_v2_keeps_custom_and_every_other_strength', () => {
+    const cases: [string, (s: Settings) => void][] = [
+      [
+        'custom',
+        (s) =>
+          void (s.platforms.facebook = {
+            ...s.platforms.facebook,
+            preset: 'custom',
+            filters: { ...s.platforms.facebook.filters, reels: true },
+          }),
+      ],
+      // Marked Custom with Balanced's filters: the person's own choice, as stored.
+      ['custom, same filters', (s) => void (s.platforms.facebook.preset = 'custom')],
+      // Marked Balanced, but a filter (or an AI filter) changed since: Custom in all but name.
+      ['changed filter', (s) => void (s.platforms.facebook.filters.suggested = false)],
+      ['changed AI filter', (s) => void (s.platforms.facebook.ai.noise.promotional = true)],
+      ['light', (s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'light'))],
+      [
+        'calm, rule off',
+        (s) => {
+          s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm');
+          s.platforms.facebook.filters.notFollowed = false;
+          s.platforms.facebook.preset = 'custom';
+        },
+      ],
+    ];
+    for (const [name, mutate] of cases) {
+      const v1 = storedByVersion1(mutate);
+      const s = migrateSettings(v1);
+      expect([name, s.platforms.facebook]).toEqual([name, (v1.platforms as Settings['platforms']).facebook]);
+    }
+    // Calm already hid them; LinkedIn's Balanced always did.
+    const calm = migrateSettings(
+      storedByVersion1((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm'))),
+    );
+    expect(presetOf('facebook', calm.platforms.facebook)).toBe('calm');
+    const li = migrateSettings(storedByVersion1((s) => void (s.platforms.linkedin.filters.notFollowed = false)));
+    expect(li.platforms.linkedin.filters.notFollowed).toBe(false);
+  });
+
+  it('test_settings_v2_migrates_once', () => {
+    // Version 2 settings are read as stored: the migration ran when version 1's were.
+    const v2 = { ...storedByVersion1(), version: 2 };
+    expect(migrateSettings(v2).platforms.facebook.filters.notFollowed).toBe(false);
+  });
+
+  /** Settings as version 2 stored them: hidden posts in a row were grouped into one line by default. */
+  function storedByVersion2(mutate: (s: Settings) => void = () => {}): Record<string, unknown> {
+    const s = defaultSettings();
+    s.display.groupRuns = true;
+    mutate(s);
+    return { ...structuredClone(s), version: 2 };
+  }
+
+  it('test_settings_v3_gives_each_hidden_post_its_own_line_by_default', () => {
+    // A fresh install: every hidden post keeps its own fold line.
+    expect(defaultSettings().display.groupRuns).toBe(false);
+    // Version 2's default, never changed (no clock for it): the new default. Nothing else moves.
+    const v2 = storedByVersion2((s) => {
+      s.display.mode = 'dim';
+      s.display.showAuthor = false;
+      s.interests.about = 'Local news';
+    });
+    const s = migrateSettings(v2, { 'display.mode': formatHlc({ ms: 5000, counter: 0, device: 'dev-a' }) });
+    expect(s.version).toBe(SETTINGS_VERSION);
+    expect(s.display.groupRuns).toBe(false);
+    const asStored = migrateSettings({ ...v2, version: SETTINGS_VERSION });
+    expect(asStored.display.groupRuns).toBe(true);
+    asStored.display.groupRuns = false;
+    expect(s).toStrictEqual(asStored);
+    // Read without clocks, by a page or a content script before the background stores the upgrade: the same.
+    expect(migrateSettings(v2).display.groupRuns).toBe(false);
+    // Grouping off already, or never written: off.
+    expect(migrateSettings(storedByVersion2((x) => void (x.display.groupRuns = false))).display.groupRuns).toBe(false);
+    const sparse = migrateSettings({ version: 2, display: { mode: 'collapse' } });
+    expect(sparse.display).toMatchObject({ mode: 'collapse', groupRuns: false });
+    // Version 1's settings get both upgrades.
+    const v1 = migrateSettings(storedByVersion1((x) => void (x.display.groupRuns = true)));
+    expect(v1.display.groupRuns).toBe(false);
+    expect(v1.platforms.facebook.filters.notFollowed).toBe(true);
+  });
+
+  it('test_settings_v3_keeps_grouping_the_person_chose', () => {
+    const at = formatHlc({ ms: 5000, counter: 0, device: 'dev-b' });
+    // Turned off and on again, here or on a synced computer: its clock says so, and the choice stays.
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRuns': at }).display.groupRuns).toBe(true);
+    // A stamp on the whole section covers it too; a stamp on a neighbour does not.
+    expect(migrateSettings(storedByVersion2(), { display: at }).display.groupRuns).toBe(true);
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRunsLater': at }).display.groupRuns).toBe(false);
+    // A clock that isn't one (storage a content script could write) is no choice.
+    expect(migrateSettings(storedByVersion2(), { 'display.groupRuns': 'garbage' }).display.groupRuns).toBe(false);
+    // Settings at this version read as stored: the upgrade ran once, and turning grouping on later is a choice.
+    const v3 = { ...storedByVersion2(), version: SETTINGS_VERSION };
+    expect(migrateSettings(v3).display.groupRuns).toBe(true);
+  });
+
+  it('test_settings_v3_upgrade_stamps_nothing', () => {
+    // Each computer moves its own default when it updates, as with any default: nothing is sent for it.
+    const clocks: SettingsClocks = { 'display.mode': formatHlc({ ms: 5000, counter: 0, device: 'dev-a' }) };
+    const last = clocks['display.mode'];
+    expect(upgradeClocks(storedByVersion2(), clocks, 'dev-a', last)).toStrictEqual({ clocks, last });
+    expect(upgradeClocks(storedByVersion2(), {}, 'dev-a', undefined)).toStrictEqual({ clocks: {}, last: undefined });
+  });
+
+  describe("sync of Facebook's not-followed filter, whose Balanced value changed in version 2", () => {
+    const NF = 'platforms.facebook.filters.notFollowed';
+    const PRESET = 'platforms.facebook.preset';
+    const at = (ms: number, counter = 0, device = 'dev-b') => formatHlc({ ms, counter, device });
+
+    it('test_merge_reads_a_strength_as_this_version_does', () => {
+      // Version 1's Balanced, picked in one edit (strength and filter stamped in the same millisecond): today's Balanced.
+      const old = migrateSettings({ ...storedByVersion1(), version: 2 });
+      const picked = upgradeMerged(old, { [PRESET]: at(5000, 0), [NF]: at(5000, 3) });
+      expect(picked.platforms.facebook.filters.notFollowed).toBe(true);
+      expect(presetOf('facebook', picked.platforms.facebook)).toBe('balanced');
+      expect(upgradeMerged(picked, { [PRESET]: at(5000, 0), [NF]: at(5000, 3) })).toBe(picked);
+      // The filter changed after the strength was set: someone's own change (maybe before its Custom arrives), kept.
+      expect(upgradeMerged(old, { [PRESET]: at(5000), [NF]: at(6000) })).toBe(old);
+      // Light and Calm set it as they always did, over a value no device sent (a later version's default).
+      for (const [preset, value] of [
+        ['light', false],
+        ['calm', true],
+      ] as const) {
+        const s = defaultSettings();
+        s.platforms.facebook = { ...applyPreset('facebook', s.platforms.facebook, preset) };
+        s.platforms.facebook.filters.notFollowed = !value;
+        const merged = upgradeMerged(s, { [PRESET]: at(7000) });
+        expect([preset, merged.platforms.facebook.filters.notFollowed]).toEqual([preset, value]);
+        expect(presetOf('facebook', merged.platforms.facebook)).toBe(preset);
+      }
+      // Custom is the person's own mix, and what this version wrote reads as written.
+      const custom = defaultSettings();
+      custom.platforms.facebook.filters.notFollowed = false;
+      custom.platforms.facebook.preset = 'custom';
+      expect(upgradeMerged(custom, { [PRESET]: at(9000) })).toBe(custom);
+      const current = defaultSettings();
+      expect(upgradeMerged(current, {})).toBe(current);
+      // LinkedIn's Balanced never changed.
+      const li = defaultSettings();
+      li.platforms.linkedin.filters.notFollowed = false;
+      expect(upgradeMerged(li, {})).toBe(li);
+    });
+
+    it('test_an_edit_that_changes_the_strength_sends_the_filter', () => {
+      const before = defaultSettings();
+      const edit = (mutate: (s: Settings) => void) => {
+        const after = structuredClone(before);
+        mutate(after);
+        after.platforms.facebook.preset = presetOf('facebook', after.platforms.facebook);
+        return editPaths(before, after);
+      };
+      // Off Balanced by one filter, or to another strength that keeps the filter as it was: sent anyway.
+      expect(edit((s) => void (s.platforms.facebook.ai.noise.promotional = true))).toEqual([
+        'platforms.facebook.preset',
+        'platforms.facebook.ai.noise.promotional',
+        NF,
+      ]);
+      expect(edit((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'calm')))).toContain(NF);
+      // Nothing more when the strength stays, or for LinkedIn.
+      expect(edit((s) => void (s.display.mode = 'dim'))).toEqual(['display.mode']);
+      const li = structuredClone(before);
+      li.platforms.linkedin = applyPreset('linkedin', li.platforms.linkedin, 'calm');
+      expect(editPaths(before, li).filter((p) => p.startsWith('platforms.facebook'))).toEqual([]);
+    });
+
+    it('test_upgrade_stamps_the_filter_once_right_after_the_choice', () => {
+      const v1 = storedByVersion1();
+      // Nothing to stamp for settings at this version, or none stored.
+      const none = {};
+      for (const raw of [undefined, { ...v1, version: 2 }, { ...v1, version: undefined }]) {
+        expect(upgradeClocks(raw, none, 'dev-a', undefined)).toEqual({ clocks: none, last: undefined });
+      }
+      // Balanced picked after Calm on version 1: the strength and the filter in one edit. The stamp follows both, and
+      // anything stamped a millisecond later wins over it.
+      const picked = { [PRESET]: at(5000, 0), [NF]: at(5000, 3), 'display.mode': at(9000) };
+      const up = upgradeClocks(v1, picked, 'dev-a', at(9000));
+      expect(up.clocks).toEqual({ ...picked, [NF]: at(5000, 4, 'dev-a') });
+      expect(up.last).toBe(at(9000));
+      expect(compareHlc(up.clocks[NF] as string, at(5001))).toBeLessThan(0);
+      // Never stamped (version 1's default Balanced): the very first stamp, behind any edit.
+      expect(upgradeClocks(v1, {}, 'dev-a', undefined)).toEqual({
+        clocks: { [NF]: at(0, 1, 'dev-a') },
+        last: at(0, 1, 'dev-a'),
+      });
+      // Custom left as it was, its filter never sent: sent now, so a device that pulls later reads it as it is.
+      const custom = storedByVersion1((s) => {
+        s.platforms.facebook.ai.noise.promotional = true;
+        s.platforms.facebook.preset = 'custom';
+      });
+      const customClocks = { [PRESET]: at(4000), 'platforms.facebook.ai.noise.promotional': at(4000, 1) };
+      expect(upgradeClocks(custom, customClocks, 'dev-a', at(4000, 1)).clocks[NF]).toBe(at(4000, 1, 'dev-a'));
+      // A value already sent, and kept by the upgrade, is not sent again; an ancestor's stamp counts as the filter's.
+      const light = storedByVersion1((s) => void (s.platforms.facebook = applyPreset('facebook', s.platforms.facebook, 'light')));
+      for (const clocks of [{ [PRESET]: at(3000), [NF]: at(2000) }, { 'platforms.facebook': at(3000) }] as SettingsClocks[]) {
+        expect(upgradeClocks(light, clocks, 'dev-a', at(3000)).clocks).toBe(clocks);
+      }
+    });
   });
 
   it('stamps per-field clocks for changed leaves', () => {
@@ -361,41 +686,6 @@ describe('learning', () => {
     expect(local).toEqual(['Public post.', 'Friends-only post.', 'Older rating, unmarked.']);
     const server = buildInterestProfile(defaultSettings(), prefs, { forServer: true }).examples;
     expect(server).toEqual([{ summary: 'Public post.', verdict: 'more' }]);
-  });
-});
-
-describe('health', () => {
-  const sample = (over = {}) => ({
-    kind: 'post' as const,
-    authorFound: true,
-    textFound: true,
-    sponsored: false,
-    hidden: false,
-    ageMs: 1000,
-    ...over,
-  });
-
-  it('stops hiding when nearly everything would be hidden', () => {
-    const samples = Array.from({ length: 20 }, () => sample({ hidden: true }));
-    expect(
-      evaluateHealth({ feedFound: true, elapsedMs: 20_000, samples, localeSupported: true, preset: 'balanced' }).status,
-    ).toBe('broken');
-  });
-
-  it('switches off relationship rules when authors cannot be found', () => {
-    const samples = Array.from({ length: 12 }, (_, i) => sample({ authorFound: i < 3 }));
-    const r = evaluateHealth({ feedFound: true, elapsedMs: 20_000, samples, localeSupported: true, preset: 'balanced' });
-    expect(r.status).toBe('degraded');
-    expect(r.degraded).toContain('relationship');
-  });
-
-  it('is patient before the feed appears', () => {
-    expect(
-      evaluateHealth({ feedFound: false, elapsedMs: 3000, samples: [], localeSupported: true, preset: 'balanced' }).status,
-    ).toBe('ok');
-    expect(
-      evaluateHealth({ feedFound: false, elapsedMs: 11_000, samples: [], localeSupported: true, preset: 'balanced' }).issues,
-    ).toEqual(['no-feed']);
   });
 });
 

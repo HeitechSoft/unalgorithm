@@ -316,6 +316,25 @@ describe('configuration parity', () => {
     }
   });
 
+  it('test_env_example_names_report_values', () => {
+    const entries = parseEnvExample(ENV_EXAMPLE);
+    const entry = (name: string) => entries.find((e) => e.name === name);
+    // Each documented with its default, commented, so a server changes nothing until its operator does.
+    expect(entry('REPORTS')).toMatchObject({ commented: true, value: 'off' });
+    expect(entry('REPORTS_DAILY_MAX')).toMatchObject({ commented: true, value: '1000' });
+    expect(entry('REPORTS_PER_HOUR')).toMatchObject({ commented: true, value: '6' });
+    expect(entry('REPORTS_ALERT_NETWORKS')).toMatchObject({ commented: true, value: '2' });
+    expect(entry('REPORTS')?.comment).toMatch(
+      /POST \/v1\/reports, with no account.*off \(the default\) gives this server no anonymous write route\.$/,
+    );
+    expect(entry('REPORTS_DAILY_MAX')?.comment).toMatch(/503 until 00:00 UTC/);
+    expect(entry('REPORTS_PER_HOUR')?.comment).toMatch(/IPv6 by \/64.*20 a day.*\/24.*\/48.*60 a day/);
+    expect(entry('REPORTS_ALERT_NETWORKS')?.comment).toMatch(/0 turns the report alerts off\.$/);
+    // The documented defaults are the ones the server uses.
+    const config = testConfig();
+    expect(config.reports).toEqual({ enabled: false, dailyMax: 1000, perHour: 6, alertNetworks: 2 });
+  });
+
   it('test_ollama_values_are_a_valid_config', () => {
     const ollama = {
       AI_PROVIDER: 'openai-compatible',

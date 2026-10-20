@@ -3,6 +3,13 @@
  * [role=listitem] keyed "update-card-focus<opaque id>", a screen-reader "Feed post" heading, author in
  * "Open control menu for post by …", text in [data-testid=expandable-text-box], counts inside the action buttons.
  *
+ * The "For you" feed (/feed/foryou/, 2026-10; see the captures 2026-10-foryou-*.html) is the same markup with small
+ * changes: each card key ends with the feed's sort ("…FeedType_MAIN_FEED_RELEVANCE"), the card sits in one more
+ * div[componentkey] wrapper, the text box is a span inside a p, and the feed list also holds items that are not cards
+ * (the "Start a post" box, the "Sort by" control, a "New posts" button). Ads can run as a person's post, labelled
+ * "Promoted • Partnership with LinkedIn", and people you follow without being connected show "• Following" in place
+ * of the degree.
+ *
  * Every name, headline, group, company, post text and count here is invented. Never paste real feed content into
  * these builders; capture real layouts with scripts/capture/linkedin.js, which scrambles all text.
  */
@@ -165,6 +172,37 @@ export const COMPANY_NOT_FOLLOWED = card(
     actions('58', '6', '4'),
 );
 
+/** An ad run as a person's post on the "For you" feed: no age, "Promoted • Partnership with LinkedIn" instead. */
+export const PARTNERSHIP_AD = card(
+  'JJJkeyPartnerAd01FeedType_MAIN_FEED_RELEVANCE',
+  actor({
+    name: 'Dana Whitfield',
+    slug: 'dana-whitfield',
+    degree: '3rd+',
+    badge: 'Verified Profile',
+    sub: 'Growth Advisor | Example Consulting',
+    age: '<span>Promoted • Partnership with<span> </span><a href="https://www.linkedin.com/company/linkedin/posts/" aria-label="View company: LinkedIn"><strong>LinkedIn</strong></a></span>',
+    follow: true,
+  }) +
+    body('Three questions to ask before you hire your first salesperson. A short guide for founders.') +
+    actions('41', '7', '3'),
+);
+
+/** Someone you follow without being connected: "• Following" where the degree would be, and no Follow button. */
+export const FOLLOWING_POST = card(
+  'KKKkeyFollowing01FeedType_MAIN_FEED_RELEVANCE',
+  actor({
+    name: 'Jamie Okafor',
+    slug: 'jamie-okafor',
+    degree: 'Following',
+    badge: 'Verified Profile',
+    sub: 'Author, Example Press',
+    age: '3d •',
+  }) +
+    body('Notes from a week of writing without a phone in the room: shorter drafts, fewer rewrites.') +
+    actions('132', '18', '6'),
+);
+
 function comment(author: string, degree: string, text: string) {
   return `<div><div data-display-contents="true">
     <a href="https://www.linkedin.com/in/${author.toLowerCase().replace(/\W+/g, '-')}/"><p>${author} ${degree}</p></a>
@@ -205,3 +243,31 @@ export function feed2026(...cards: string[]): string {
     <div class="load-more-marker"></div>
   </div></section></main>`;
 }
+
+/** LinkedIn's global navigation as a signed-in member sees it: links to My Network, Messaging and Notifications. */
+const MEMBER_NAV = `<header><nav aria-label="Primary Navigation"><ul>
+  <li><a href="https://www.linkedin.com/feed/">Home</a></li>
+  <li><a href="https://www.linkedin.com/mynetwork/">My Network</a></li>
+  <li><a href="https://www.linkedin.com/jobs/">Jobs</a></li>
+  <li><a href="https://www.linkedin.com/messaging/">Messaging</a></li>
+  <li><a href="https://www.linkedin.com/notifications/">Notifications</a></li>
+</ul></nav></header>`;
+
+/** The guest navigation of LinkedIn's public pages: articles, people, learning and jobs, then join or sign in. */
+const GUEST_NAV = `<header><nav><ul>
+  <li><a href="https://www.linkedin.com/pulse/topics/home/">Articles</a></li>
+  <li><a href="https://www.linkedin.com/pub/dir/">People</a></li>
+  <li><a href="https://www.linkedin.com/learning/">Learning</a></li>
+  <li><a href="https://www.linkedin.com/jobs/">Jobs</a></li>
+</ul><a href="https://www.linkedin.com/signup/">Join now</a><a href="https://www.linkedin.com/login/">Sign in</a></nav></header>`;
+
+/** A page body inside the signed-in shell. */
+export const signedInShell = (main: string) => `${MEMBER_NAV}${main}`;
+/** A page body inside the logged-out shell (the guest home page, a sign-in or consent page). */
+export const guestShell = (main: string) => `${GUEST_NAV}${main}`;
+
+/** A member's profile: sections and a short activity list, no feed list and no main-feed card keys. */
+export const PROFILE_PAGE = `<main><section><h1>Morgan Ellis</h1><p>HR Director at Northwind Clinics</p>
+  <a href="https://www.linkedin.com/messaging/compose/">Message</a></section>
+  <section><h2>About</h2><p>Twenty years in people operations.</p></section>
+  <section><h2>Activity</h2><ul><li>${FIRST_DEGREE_POST}</li></ul></section></main>`;

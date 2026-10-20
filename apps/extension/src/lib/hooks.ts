@@ -3,6 +3,8 @@ import { uuid } from '@unalgorithm/protocol';
 import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type { WxtStorageItem } from 'wxt/utils/storage';
+import { browserKind } from './browser-kind.ts';
+import { type DataCollection, hasConsent } from './data-consent.ts';
 import { type AiStatus, sendToBackground } from './messages.ts';
 import { updateDevice, updateSettings } from './settings-store.ts';
 import { deviceItem, settingsItem, syncStateItem, tabStateItem } from './storage.ts';
@@ -54,27 +56,74 @@ export interface ActiveTab {
   windowId: number;
 }
 
-/** The tab the popup or side panel is looking at, following tab switches and navigation. */
+/**
+ * The tab the popup or side panel is looking at: the active tab of its own window, following tab switches and
+ * navigation there. Every window has its own side panel (Chrome, Edge) or sidebar (Firefox), so a panel never shows
+ * the tab of another window, even the focused one.
+ */
 export function useActiveTab(): ActiveTab | undefined {
   const [tab, setTab] = useState<ActiveTab>();
   useEffect(() => {
+    let alive = true;
+    /** This page's window, once known. */
+    let windowId: number | undefined;
+    const own = browser.windows.getCurrent().then(
+      (w) => (windowId = w?.id),
+      () => undefined,
+    );
     const refresh = async () => {
-      const [t] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
-      if (t?.id !== undefined) setTab({ id: t.id, url: t.url ?? '', windowId: t.windowId });
+      const id = await own;
+      const [t] = await browser.tabs.query(
+        id === undefined ? { active: true, currentWindow: true } : { active: true, windowId: id },
+      );
+      if (alive && t?.id !== undefined) setTab({ id: t.id, url: t.url ?? '', windowId: t.windowId });
     };
-    void refresh();
-    const onActivated = () => void refresh();
-    const onUpdated = (_id: number, info: { url?: string; status?: string }) => {
-      if (info.url || info.status === 'complete') void refresh();
+    /** Events from another window are for its own panel. Before the window is known, every event refreshes. */
+    const mine = (id: number | undefined) => windowId === undefined || id === windowId;
+    void refresh().catch(() => undefined);
+    const onActivated = (info: { windowId: number }) => {
+      if (mine(info.windowId)) void refresh().catch(() => undefined);
+    };
+    const onUpdated = (_id: number, info: { url?: string; status?: string }, changed?: { windowId?: number }) => {
+      if ((info.url || info.status === 'complete') && mine(changed?.windowId)) void refresh().catch(() => undefined);
     };
     browser.tabs.onActivated.addListener(onActivated);
     browser.tabs.onUpdated.addListener(onUpdated);
     return () => {
+      alive = false;
       browser.tabs.onActivated.removeListener(onActivated);
       browser.tabs.onUpdated.removeListener(onUpdated);
     };
   }, []);
   return tab;
+}
+
+/**
+ * Whether the person agreed to send `types` (Firefox's data-collection consent, ADR 0008), following changes made in
+ * Firefox's add-on settings while the page is open. Always true in Chrome and Edge; undefined until known.
+ */
+export function useConsent(types: readonly DataCollection[]): boolean | undefined {
+  const [granted, setGranted] = useState<boolean>();
+  const key = types.join(' ');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the types, a new array on every render
+  useEffect(() => {
+    let alive = true;
+    const check = () => void hasConsent(types).then((ok) => alive && setGranted(ok));
+    check();
+    const firefox = browserKind() === 'firefox';
+    if (firefox) {
+      browser.permissions.onAdded.addListener(check);
+      browser.permissions.onRemoved.addListener(check);
+    }
+    return () => {
+      alive = false;
+      if (firefox) {
+        browser.permissions.onAdded.removeListener(check);
+        browser.permissions.onRemoved.removeListener(check);
+      }
+    };
+  }, [key]);
+  return granted;
 }
 
 export function useTabState(tabId: number | undefined): TabState {
@@ -130,8 +179,9 @@ export function useSyncedServer(active: boolean): string | null {
 export function platformOfUrl(url: string): 'linkedin' | 'facebook' | null {
   try {
     const host = new URL(url).hostname;
-    if (host.endsWith('linkedin.com')) return 'linkedin';
-    if (host.endsWith('facebook.com')) return 'facebook';
+    const on = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+    if (on('linkedin.com')) return 'linkedin';
+    if (on('facebook.com')) return 'facebook';
   } catch {
     // not a URL
   }

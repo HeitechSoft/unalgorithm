@@ -1,0 +1,143 @@
+{
+  "setup": {
+    "url": "https://www.facebook.com/",
+    "list": "[role=\"feed\"]"
+  },
+  "notes": [
+    "FRIEND_POST",
+    "SUGGESTED_PAGE_POST: \"Suggested for you\", Follow",
+    "SPONSORED_ARIA",
+    "SPONSORED_LABELLEDBY",
+    "SPONSORED_SPLIT: letters split with hidden decoys",
+    "SPONSORED_SVG",
+    "SPONSORED_ADLINK",
+    "ORGANIC_LINK_SHARE: \"Learn more\" on a link share",
+    "FRIEND_ACTIVITY: \"… commented on this.\"",
+    "UNJOINED_GROUP_POST",
+    "JOINED_GROUP_POST",
+    "FRIEND_RESHARE: a stranger's post shared by a friend",
+    "TRUNCATED_POST: \"See more\"",
+    "REELS_TRAY",
+    "PYMK",
+    "SKELETON"
+  ],
+  "decisions": {
+    "light": [
+      "show/unknown",
+      "show/not-followed",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "panel",
+      "panel",
+      "pending"
+    ],
+    "balanced": [
+      "show/unknown",
+      "suggested/not-followed",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "show/unknown",
+      "network-activity/unknown",
+      "unjoined-group/unknown",
+      "show/unknown",
+      "show/unknown",
+      "show/unknown",
+      "panel",
+      "panel",
+      "pending"
+    ],
+    "calm": [
+      "show/unknown",
+      "suggested/not-followed",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "sponsored/unknown",
+      "show/unknown",
+      "network-activity/unknown",
+      "unjoined-group/unknown",
+      "show/unknown",
+      "reshare/unknown",
+      "show/unknown",
+      "panel",
+      "panel",
+      "pending"
+    ]
+  },
+  "ids": [
+    "fb:pfbid0aBcD123",
+    "fb:1002",
+    "fb:h:2b5bmmgd0gx",
+    "fb:h:hjwx9zmuif",
+    "fb:h:a2g311xpgu",
+    "fb:h:2ah4ymgi6hu",
+    "fb:h:1df71y2se7x",
+    "fb:555",
+    "fb:777",
+    "fb:8888",
+    "fb:9999",
+    "fb:4444",
+    "fb:321",
+    null,
+    null,
+    null
+  ],
+  "idsStable": true,
+  "health": {
+    "light": {
+      "status": "ok",
+      "issues": []
+    },
+    "balanced": {
+      "status": "ok",
+      "issues": []
+    },
+    "calm": {
+      "status": "ok",
+      "issues": []
+    }
+  },
+  "discovery": {
+    "strategy": "fb.items.role-feed",
+    "fallback": false
+  },
+  "page": {
+    "route": "feed",
+    "runs": "controller",
+    "homeSignature": "strong",
+    "signedIn": true,
+    "loadMore": false
+  },
+  "emitted": {
+    "detectors": {
+      "fb.header.suggested": 1,
+      "fb.follow-button": 1,
+      "fb.sponsored.aria-label": 1,
+      "fb.sponsored.no-timestamp": 5,
+      "fb.sponsored.labelledby": 1,
+      "fb.sponsored.rendered-label": 2,
+      "fb.sponsored.adlink": 1,
+      "fb.sponsored.cta": 1,
+      "fb.header.activity": 1,
+      "fb.join-button": 1,
+      "fb.reshare": 1
+    },
+    "observations": {
+      "fb.slot.action-bar.aria": 13
+    }
+  },
+  "errors": {}
+}

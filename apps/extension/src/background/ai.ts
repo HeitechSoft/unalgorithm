@@ -17,7 +17,12 @@ import {
   originPattern,
   pickModel,
 } from '@unalgorithm/ai';
-import { type OnDeviceAvailability, onDeviceAvailability, onDeviceClient } from '@unalgorithm/ai/chrome-builtin';
+import {
+  isNoWorkingModel,
+  type OnDeviceAvailability,
+  onDeviceAvailability,
+  onDeviceClient,
+} from '@unalgorithm/ai/chrome-builtin';
 import {
   type AISourceConfig,
   buildInterestProfile,
@@ -44,6 +49,8 @@ import {
 } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
+import { brandNames, browserKind, browserLabel } from '../lib/browser-kind.ts';
+import { hasConsent, serverConsentMessage, sourceConsent } from '../lib/data-consent.ts';
 import type { AiStatus, BgError, BgResponses, ClassifyItem, ClassifyItemResult, TestSourceResult } from '../lib/messages.ts';
 import { isServerAt, serverLabel } from '../lib/server-label.ts';
 import { updateDevice } from '../lib/settings-store.ts';
@@ -93,13 +100,46 @@ export function sourceLabel(cfg: AISourceConfig | null): string {
   }
 }
 
-/** Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title. */
+/**
+ * Who answers for a source, as error texts name it: "Anthropic", "OpenAI", a preset's label, a server's title, or the
+ * browser whose built-in AI runs on this computer ("Chrome", "Edge").
+ */
 export function providerName(cfg: AISourceConfig): string {
   if (cfg.kind === 'anthropic') return 'Anthropic';
   if (cfg.kind === 'openai') return 'OpenAI';
   if (cfg.kind === 'openai-compatible') return COMPAT_PRESET_INFO[cfg.preset].label;
-  if (cfg.kind === 'on-device') return 'Chrome';
+  if (cfg.kind === 'on-device') return browserLabel(browserKind());
   return serverLabel(cfg.baseUrl).title;
+}
+
+/**
+ * What the person reads when a source fails: `describeError` with who answered, except for on-device AI, whose model
+ * runs in this browser, so a failure says what is wrong here instead of that "Chrome rejected the request" (ADR 0003).
+ */
+export function errorMessage(e: AIError, cfg: AISourceConfig): string {
+  return cfg.kind === 'on-device' ? onDeviceMessage(e) : describeError(e.code, providerName(cfg));
+}
+
+function onDeviceMessage(e: AIError): string {
+  if (isNoWorkingModel(e)) {
+    // The browser offers the Prompt API and says its model is ready, but nothing behind it answers.
+    if (browserKind() === 'edge')
+      return "Edge says its built-in AI is ready, but no model answered. Edge's built-in AI is a preview: choose another option for now.";
+    if (brandNames().includes('Google Chrome'))
+      return 'Chrome says its built-in AI is ready, but no model answered. Update Chrome and try again, or choose another option.';
+    return "This browser has no on-device model behind its built-in AI. Chromium builds don't include one: built-in AI needs Google Chrome, or Edge's preview. Choose another option.";
+  }
+  const name = providerName({ kind: 'on-device' });
+  // An answer the model gave but classify couldn't use: nobody rejected anything.
+  if (e.code === 'bad-request') return `${name}'s built-in AI gave an answer unAlgorithm couldn't read.`;
+  return describeError(e.code, name);
+}
+
+/** Why on-device AI can't be tested yet, from what `availability()` says. */
+function onDeviceNotReady(a: Exclude<OnDeviceAvailability, 'available'>): string {
+  if (a === 'downloading') return 'The on-device model is still downloading. Try again when it finishes.';
+  if (a === 'downloadable') return "The on-device model isn't downloaded yet. Choose Download and turn on.";
+  return describeError('not-available');
 }
 
 /** The host permission a source needs, as a match pattern (null when it needs none). */
@@ -153,7 +193,7 @@ function modelFor(cfg: AISourceConfig): string {
   throw new AIError('no-model', 'Choose a model in Settings → AI.');
 }
 
-export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
+async function hasHostPermission(cfg: AISourceConfig): Promise<boolean> {
   const pattern = sourcePermission(cfg);
   if (!pattern) return true;
   try {
@@ -163,13 +203,26 @@ export async function hasPermission(cfg: AISourceConfig): Promise<boolean> {
   }
 }
 
+/**
+ * What stops a source from running now, as the error the person sees: a host permission it lacks, or in Firefox the
+ * consent to send post text there (ADR 0008), which counts the same. Both were asked for from a click in Settings,
+ * where the person can give them again. Null when nothing is missing.
+ */
+export async function missingAccess(cfg: AISourceConfig): Promise<AIError | null> {
+  if ((await hasHostPermission(cfg)) && (await hasConsent(sourceConsent(cfg)))) return null;
+  const name = providerName(cfg);
+  // A server has no host permission to lose (it answers the extension's origin itself): this is its consent.
+  const message = cfg.kind === 'server' ? serverConsentMessage(name) : describeError('host-permission', name);
+  return new AIError('host-permission', message);
+}
+
 // ---------- classification ----------
 
 const usageLock = createLock();
 const limiters = new Map<string, ReturnType<typeof createLimiter>>();
 
 function toBgError(e: AIError, cfg: AISourceConfig): BgError {
-  return { code: e.code, message: describeError(e.code, providerName(cfg)) };
+  return { code: e.code, message: errorMessage(e, cfg) };
 }
 
 /**
@@ -222,15 +275,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const cfg = device.aiSource;
   if (!cfg) return { results: items.map((i) => ({ key: i.key, status: 'skipped', reason: 'ai-off' })) };
 
-  const fail = (e: AIError): BgResponses['classify'] => ({
-    results: items.map((i) => ({
-      key: i.key,
-      status: 'failed',
-      code: e.code,
-      message: describeError(e.code, providerName(cfg)),
-      retryable: isRetryable(e.code),
-    })),
-    ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: toBgError(e, cfg) } : {}),
+  const fail = (e: AIError, message = errorMessage(e, cfg)): BgResponses['classify'] => ({
+    results: items.map((i) => ({ key: i.key, status: 'failed', code: e.code, message, retryable: isRetryable(e.code) })),
+    ...(BLOCKING_AI_ERRORS.has(e.code) ? { pause: { code: e.code, message } } : {}),
   });
 
   const limits = SOURCE_LIMITS[cfg.kind];
@@ -238,8 +285,9 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
   const pHash = profileHash(profile);
   let model: string;
   let classify: (posts: PostForAI[]) => Promise<ServerClassifyOutcome>;
+  const denied = await missingAccess(cfg);
+  if (denied) return fail(denied, denied.message);
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission for the AI server.');
     model = modelFor(cfg);
     if (cfg.kind === 'server') {
       classify = (posts) => classifyViaServer(cfg, posts, { profile, profileHash: pHash, locale: uiLocale() });
@@ -351,7 +399,7 @@ export async function classifyItems(items: ClassifyItem[], opts: { cacheOnly?: b
                 key: p.item.key,
                 status: 'failed',
                 code: e.code,
-                message: describeError(e.code, providerName(cfg)),
+                message: errorMessage(e, cfg),
                 retryable: isRetryable(e.code),
               });
             if (BLOCKING_AI_ERRORS.has(e.code) && !pause) pause = toBgError(e, cfg);
@@ -390,12 +438,13 @@ const PROBE: PostForAI = {
  */
 export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<TestSourceResult> {
   const started = Date.now();
+  const denied = await missingAccess(cfg);
+  if (denied) return { ok: false, error: { code: denied.code, message: denied.message } };
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
     if (cfg.kind === 'server') return await testServer(cfg, started);
     if (cfg.kind === 'on-device') {
       const a = await onDeviceAvailability();
-      if (a !== 'available') throw new AIError('not-available', `On-device AI is ${a}.`);
+      if (a !== 'available') return { ok: false, error: { code: 'not-available', message: onDeviceNotReady(a) } };
     }
     const client = await clientFor(cfg, apiKey);
     let models: string[] = [];
@@ -429,7 +478,7 @@ export async function testSource(cfg: AISourceConfig, apiKey?: string): Promise<
     return { ok: true, model, mode: out.mode ?? 'json-schema', latencyMs: Date.now() - started, models };
   } catch (err) {
     const e = err instanceof AIError ? err : new AIError('unknown', String(err));
-    return { ok: false, error: { code: e.code, message: describeError(e.code, providerName(cfg)) } };
+    return { ok: false, error: { code: e.code, message: errorMessage(e, cfg) } };
   }
 }
 
@@ -453,8 +502,9 @@ async function testServer(cfg: ServerSource, started: number): Promise<TestSourc
 
 /** The models a configured source offers, using its saved key. Nothing is classified. */
 export async function listSourceModels(cfg: AISourceConfig): Promise<BgResponses['listModels']> {
+  const denied = await missingAccess(cfg);
+  if (denied) return { ok: false, error: { code: denied.code, message: denied.message } };
   try {
-    if (!(await hasPermission(cfg))) throw new AIError('host-permission', 'Missing permission.');
     // A server chooses its own model.
     if (cfg.kind === 'server') return { ok: true, models: [] };
     const client = await clientFor(cfg);

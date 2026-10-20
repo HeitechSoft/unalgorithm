@@ -4,8 +4,9 @@
  * bills, the account's devices and passkeys, the setup link's claim that makes the first admin, and the admin page's
  * accounts and the changes an admin makes to one, its invites and the server's usage overview; the source control
  * page's list with who made each change, an admin's change to one outlet and the import of the candidate list; the
- * Pricing page's price book with its history and an admin's change to it; and the public source list with its history,
- * which need no session. All same-origin, so the browser sends the session cookie
+ * Pricing page's price book with its history and an admin's change to it; the problem reports page's summary, lists,
+ * single reports and the four changes an admin makes to them (ADR 0009 §7); and the public source list with its
+ * history, which need no session. All same-origin, so the browser sends the session cookie
  * and the `Origin` header the server checks. Every failure is an `ApiError` carrying the HTTP status (0: no answer at
  * all) and the error body's `code` and `message` when it has them, except the browser's passkey prompt: a cancelled one
  * is `PasskeyCancelled`, and its other errors keep their name.
@@ -31,6 +32,12 @@ import {
   ADMIN_OUTLETS_PATH,
   ADMIN_OVERVIEW_PATH,
   ADMIN_PRICES_PATH,
+  ADMIN_REPORTS_DELETE_PATH,
+  ADMIN_REPORTS_FLOOR_PATH,
+  ADMIN_REPORTS_FORGET_CONTACT_PATH,
+  ADMIN_REPORTS_HANDLE_PATH,
+  ADMIN_REPORTS_PATH,
+  ADMIN_REPORTS_SUMMARY_PATH,
   ADMIN_SETUP_PATH,
   ADMIN_USERS_PATH,
   AdminOkSchema,
@@ -40,16 +47,26 @@ import {
   AdminOverviewSchema,
   type AdminPrices,
   AdminPricesSchema,
+  AdminReportDetailSchema,
+  type AdminReportList,
+  AdminReportListSchema,
+  type AdminReportsListQuery,
+  type AdminReportsSummary,
+  AdminReportsSummarySchema,
   type AdminRole,
   type AdminUsers,
   AdminUsersSchema,
   AUTHORIZE_API_PATH,
   type AuthorizeRequest,
   AuthorizeResponseSchema,
+  adminReportPath,
   adminUserActionPath,
   CREDIT_ACCOUNT_PATH,
   type CreditAccount,
   CreditAccountSchema,
+  type DeleteReportsRequest,
+  type ForgetContactRequest,
+  type HandleReportsRequest,
   type InviteRequest,
   type OfficialList,
   OfficialListSchema,
@@ -73,6 +90,7 @@ import {
   ServerInfoSchema,
   type SetAccessRequest,
   type SetCapRequest,
+  type SetFloorRequest,
   type SetRoleRequest,
   type SetupRequest,
   type UserAccess,
@@ -422,4 +440,67 @@ export async function adminPrices(): Promise<AdminPrices> {
  */
 export async function changePrices(req: PriceChangeRequest): Promise<PriceChanged> {
   return request(ADMIN_PRICES_PATH, PriceChangedSchema, req);
+}
+
+/**
+ * The problem reports summary (ADR 0009 §7): today's count against the daily limit, unlisted reports of the last 7
+ * days, `days` days of daily counts, the groups (open first) and the "Fixed in" floors. Development builds count only
+ * with `dev`. 401 without a session, 403 for a non-admin.
+ */
+export async function adminReportsSummary(opts: { days: number; dev: boolean }): Promise<AdminReportsSummary> {
+  const query = new URLSearchParams({ days: String(opts.days), dev: opts.dev ? '1' : '0' });
+  return request(`${ADMIN_REPORTS_SUMMARY_PATH}?${query}`, AdminReportsSummarySchema);
+}
+
+/**
+ * A page of reports, newest first: a group's, by status, from `before` (the previous page's `nextBefore`, passed back
+ * as it came: the server reads it as a cursor, not a time). A `ref` finds one report whatever its group or status.
+ */
+export async function adminReports(query: Partial<AdminReportsListQuery>): Promise<AdminReportList> {
+  const params = new URLSearchParams();
+  for (const name of ['group', 'status', 'before', 'ref'] as const) {
+    const value = query[name];
+    if (value !== undefined) params.set(name, value);
+  }
+  return request(`${ADMIN_REPORTS_PATH}?${params}`, AdminReportListSchema);
+}
+
+/**
+ * One report as the detail view reads it. The reply address is taken as any short text: the page makes a `mailto:`
+ * link only from one that is an email address, so an answer holding something else still opens, with it as plain text.
+ */
+const ReportDetailSchema = AdminReportDetailSchema.extend({ contact: z.string().max(254).nullable() });
+export type ReportDetail = z.output<typeof ReportDetailSchema>;
+
+/** One report in full, with `describeReport`'s lines; 404 when no report has this id (deleted, or purged). */
+export async function adminReport(id: string): Promise<ReportDetail> {
+  return request(adminReportPath(id), ReportDetailSchema);
+}
+
+/**
+ * Marks reports handled with a resolution, or reopens them: by id, or a whole group (the rows received by then).
+ * Marking changes only open reports and reopening only handled ones.
+ */
+export async function handleReports(req: HandleReportsRequest): Promise<void> {
+  await request(ADMIN_REPORTS_HANDLE_PATH, AdminOkSchema, req);
+}
+
+/**
+ * Sets a platform's "Fixed in" detection version, which marks its open reports from older versions handled
+ * (`older-version`); `adapter: null` clears it.
+ */
+export async function setReportFloor(req: SetFloorRequest): Promise<void> {
+  await request(ADMIN_REPORTS_FLOOR_PATH, AdminOkSchema, req);
+}
+
+/** Clears a report's reply address now; 404 when no report has this id. */
+export async function forgetReportContact(id: string): Promise<void> {
+  const body: ForgetContactRequest = { id };
+  await request(ADMIN_REPORTS_FORGET_CONTACT_PATH, AdminOkSchema, body);
+}
+
+/** Deletes reports for good: a privacy request, or a message holding personal data. */
+export async function deleteReports(ids: string[]): Promise<void> {
+  const body: DeleteReportsRequest = { ids };
+  await request(ADMIN_REPORTS_DELETE_PATH, AdminOkSchema, body);
 }

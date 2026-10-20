@@ -5,14 +5,17 @@ This is the engineering view of [PRIVACY.md](../PRIVACY.md): what data exists, w
 ## Principles
 
 1. **Rules only means no network.** The extension's required host permissions are only linkedin.com and
-   facebook.com. With AI off, the service worker makes no requests. The one request that doesn't depend on the AI
-   source is unAlgorithm Cloud's source list, and only while UnEcho Chamber is on
-   ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)).
-2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose.
-3. **Nothing identifying is reported, and little is kept.** Caches, statistics, diagnostics and logs hold no post
-   text and no names. Names are stored only where the user asked for them (always show/hide exceptions) and in the
-   memory-only session state behind the current tab's Highlights (author, short snippet, link), which is dropped when
-   the tab closes.
+   facebook.com. With AI off, the background makes no requests on its own. The one request that doesn't depend on the
+   AI source is unAlgorithm Cloud's source list, and only while UnEcho Chamber is on
+   ([UnEcho Chamber's source lists](#unecho-chambers-source-lists)). The one the person can make whatever the AI
+   source is a problem report, sent only by the report page's **Send report** click
+   ([Problem reports](#problem-reports)).
+2. **Only `PostForAI` leaves the device**, and only to the AI source the user chose. A problem report the user sends
+   carries codes, counts and versions, never post content.
+3. **Nothing identifying is reported, and little is kept.** Caches, statistics, problem reports and logs hold no post
+   text and no names; a correction adds only the person's own words, cleaned, and a reply address if they give one.
+   Names are stored only where the user asked for them (always show/hide exceptions) and in the memory-only session
+   state behind the current tab's Highlights (author, short snippet, link), which is dropped when the tab closes.
 4. **Keys stay where pages can't reach them.**
 
 ## What leaves the device when AI is on
@@ -52,7 +55,7 @@ and the E2E AI test checks the body received by the mock server.
 | Source | Destination | Who sees it |
 |---|---|---|
 | Rules only | — | — |
-| On this device | Chrome's built-in model, in process | Nobody |
+| On this device | The browser's built-in model (Chrome; Edge's preview builds), in process. Firefox has none | Nobody |
 | Local or self-hosted model (OpenAI-compatible) | The URL the user entered (an optional host permission granted for that origin only) | The server's operator |
 | Own key | The provider's API, directly from the browser | The provider, under their terms. OpenAI calls send `store: false` |
 | An unAlgorithm server you or your organization run | That server, then the AI provider its operator configured | The server's operator and the AI provider they configure |
@@ -62,6 +65,38 @@ For both kinds of unAlgorithm server, Facebook posts that aren't public are neve
 (`serverMayReceive`), and a server declines any that reach it without calling a model. The extension names each server
 by its address; only `https://cloud.unalgorithm.app` is called unAlgorithm Cloud
 (`apps/extension/src/lib/server-label.ts`).
+
+**Firefox's data-collection consent.** The Firefox build declares `data_collection_permissions` with `required:
+['none']` and, as optional, only the types its code uses (ADR 0008, ADR 0009 §5): `['websiteContent',
+'personalCommunications', 'technicalAndInteraction']` in every build, plus `'personallyIdentifyingInfo'` and
+`'authenticationInfo'` in builds with the server card (`manifestFor` in `apps/extension/wxt.config.ts`;
+`apps/extension/tests/manifest.test.ts` ties each build's list to the sets below). Every place post text, settings or
+account details go (all but on-device AI) needs consent before anything is sent there, one on `localhost`, `127.0.0.1`
+or `[::1]` included: a local server is outside the browser, and an unAlgorithm server passes posts on to the AI its
+operator configured (table above). The source list download carries none of these and needs none. `POST_DATA`
+(`websiteContent` and `personalCommunications`: post text, which is other people's social media posts) covers an own-key
+provider, a model server and a web search service; `CLOUD_DATA` (post text, plus `personallyIdentifyingInfo` for the
+people sync names and `authenticationInfo` for the account and this device's sign-in) covers an unAlgorithm server
+(`sourceConsent` in `apps/extension/src/lib/data-consent.ts`). The consent is requested in the same click and the same
+prompt as the host permission, or, for a server, in the click that signs in, turns it on, turns on sync or allows it
+again. The background checks it again before every send: `missingAccess` in `background/ai.ts` for classify, model
+lists, tests, fact-check and UnEcho Chamber; the search key in `background/search-key.ts`; for a server, `signIn` in
+`background/server-auth.ts`, `classifyViaServer` in `background/server-source.ts` and `serverRequest` in
+`background/server-http.ts`, through which the balance (checked first in `background/server-balance.ts` too, so none is
+shown), the devices list and revoking a device, sync (its `consent` problem) and server jobs go, each refused before the
+token is read. So consent withdrawn in Firefox's add-ons page stops the sending like a removed host permission, and the
+server card, the devices list and sync offer *Allow*. Of what carries the person's data or this device's sign-in, only
+signing out (`signOut`, which ends the device on the server) goes without it. Two anonymous reads (no cookie, token or
+user data) need no consent: the server's discovery document (`discoverServer` in `background/server-auth.ts`), read
+whenever the extension checks what a server offers, and the download of unAlgorithm Cloud's source list
+(`background/official-list.ts`, [below](#unecho-chambers-source-lists)), a request to the Cloud whether or not the
+person signed in to it. `technicalAndInteraction` (`DEVICE_NAME_DATA`, `REPORT_DATA`) is never requested and gates
+nothing else, as Mozilla's add-on policies require: Firefox's install prompt offers it, on unless the person turns it
+off, and its add-ons page changes it. It decides two things only: whether *Send report* posts a problem report or the
+report page offers the person's email program instead ([Problem reports](#problem-reports)), and whether the sign-in
+sends the device name (`background/server-auth.ts`). Chrome and Edge have no such consent, and the checks pass there
+without asking. The loopback addresses keep one rule of their own: tokens may go to them over `http`
+(`isTrustedServerOrigin` in `apps/extension/src/lib/server-label.ts`), since the request never crosses the network.
 
 ### Fact-check
 
@@ -198,10 +233,11 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   expires and when it was used (`setup_tokens`). A used link's row is kept until the account with that address is
   deleted; an unused one until a new link replaces it. The link itself travels in the URL fragment, which browsers never
   send to a server.
-- **Devices:** one row per signed-in copy of the extension: its extension id, the short name the extension gave itself
-  at sign-in (such as "Chrome on Windows", never read from request headers), when it signed in and was last used, and
-  when and why it was signed out or revoked: signed out from the extension, a refresh token used twice, or revoked
-  from the account page (`devices`).
+- **Devices:** one row per signed-in copy of the extension: its extension id (a Chrome or Edge id, or a Firefox add-on
+  id), the short name the extension gave itself at sign-in (such as "Chrome on Windows" or "Firefox on Linux", from the
+  browser's brand names or Firefox's `runtime.getBrowserInfo()`, never read from request headers), when it signed in
+  and was last used, and when and why it was signed out or revoked: signed out from the extension, a refresh token
+  used twice, or revoked from the account page (`devices`).
 - **Passkeys:** for each passkey the person added on the account page, its public key, its credential id, the
   authenticator model's id (AAGUID), its sign count, a label and when it was added (`passkey`). Never a private key or
   biometric data: they never leave the person's device.
@@ -264,16 +300,38 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
   admin's account id for audits: the server's admins see that admin's address beside each change, it is never
   published, and it is cleared when that account is deleted, while the change itself stays. An account's export does
   not list its admin's changes: they are edits to the server's prices. No other user data.
+- **Problem reports** (only on a server with `REPORTS=on`, as unAlgorithm Cloud runs; [Problem
+  reports](#problem-reports)): one row per report a person sent (`problem_reports`): the extension's random id for it
+  and the reference the server picked; the hour it arrived; its kind, where it started, the extension's version,
+  channel and browser with its major version, and whether its extension id is listed (`listed`, a boolean: never the
+  id, the Origin or any request header); the platform, detection version and topic; the person's choices; the
+  `first_from_network` bit; the page's codes and counts, registry codes only (`details`), and how many codes were
+  dropped (`unknown_codes`); for a correction, the person's own words and, if they gave one, a reply address
+  (`message`, `contact`); and who handled it, when and how. A reply address is cleared 30 days after the report is
+  handled and never kept more than 60 days after it arrived, and an admin can forget it sooner; rows are deleted after
+  90 days. Deleting an account clears its address from any report that gave it. "Fixed in" per platform
+  (`report_floors`): the detection version and when and by which admin it was set. Quarterly counts of corrections by
+  feature and outcome (`correction_counts`), with nothing about anyone, which each correction joins when its row is
+  deleted, for the transparency report.
+- **Report limits:** the report route counts requests per address (an IPv6 address by its /64) and per /24 or /48, in
+  memory only, under an HMAC-SHA-256 with a random salt replaced at each UTC midnight and never written down, and
+  remembers, for the same day, which networks already sent a report of each kind about each platform (at most 50,000),
+  to set `first_from_network`. Not by detection version, which a sender can vary at will: one network gets one bit a day
+  per platform and kind, and the broken alerts count the UTC day with more networks, never both. A restart clears them
+  all; only the day's total is read back, from `problem_reports`.
 - **Background jobs:** the hourly purge of expired sign-in rows above, the hourly purge of expired claim cache rows
-  (`factcheck.purge-claim-cache`), the sync cleanup every 6 hours (`sync.gc`, which
-  removes deletion markers after 90 days and push records after 24 hours), and any job a billing module registers
+  (`factcheck.purge-claim-cache`), the hourly purge of problem reports (`reports.purge`, above), the sync cleanup every
+  6 hours (`sync.gc`, which removes deletion markers after 90 days and push records after 24 hours), and any job a
+  billing module registers
   ([ARCHITECTURE.md → Jobs](ARCHITECTURE.md#jobs)). graphile-worker's queue (schema `graphile_worker`) holds each job's
   task name, a payload of ids and numbers (a scheduled run adds the time it was due), when it runs and its attempts,
   and after a failure the error's name and code, never its message. A job's row is deleted once it succeeds; one that
   fails every attempt stays.
 - **Open alerts:** for each alert open now, a fixed key, a level, when it opened, when it was last seen and last
   notified, and one measured number (`ops_alerts`); the row goes when the alert closes. No user data. The check runs
-  every five minutes (`ops.check-alerts`).
+  every five minutes (`ops.check-alerts`). With `REPORTS=on`, the report alerts (`reports-linkedin-broken`,
+  `reports-facebook-broken`, `reports-waiting`, `reports-cap`) measure counts of reports and networks, never a report's
+  content.
 - **The signing key** for access tokens, its private half encrypted with the server's secret (`jwks`).
 - **Backups:** every night a copy of the whole database, encrypted to the operator's key (the server cannot read it),
   kept for `BACKUP_KEEP` nights (14 by default) in the backups folder, plus any copies the operator makes. A deleted
@@ -282,8 +340,9 @@ those a billing module adds of its own ([What a billing module sees](#what-a-bil
 - **Export and deletion:** the account page downloads everything above about the account as JSON: the address, its
   devices, passkeys (label, kind and when added; never the public key or credential id), linked sign-in methods, page
   sessions, daily usage counts and synced settings, with no token, hash or code. Deleting the account removes all of it
-  at once, in one transaction, and signs out every device. A billing module's own records (on unAlgorithm Cloud, the
-  credit ledger and the keyed starter-credit hash) follow that module's deletion policy, not this cascade
+  at once, in one transaction, signs out every device, and clears the account's address from any problem report that
+  gave it as a reply address. A billing module's own records (on unAlgorithm Cloud, the credit ledger and the keyed
+  starter-credit hash) follow that module's deletion policy, not this cascade
   ([What a billing module sees](#what-a-billing-module-sees)). On unAlgorithm Cloud, the module puts the account's
   credit ledger in the download and erases the account's promotional credit records with the account, keeping only the
   keyed starter-credit hash, which no longer names the account.
@@ -310,6 +369,10 @@ method, path, status and timing (`requestLog`). Other lines name an event and a 
   or restores access, sets a role, or adds or removes an invite, and when a setup link is claimed. Never an address.
 - `setup.*`: fixed reason codes, when a setup link is refused (`setup.refused`) and, at start, that the server has no
   admin yet (`setup.needed`).
+- `report.received`: a problem report's kind, platform, detection version, topic and whether its extension is listed;
+  never its id, reference, words, reply address or the request's address. `reports.purged` holds only counts.
+  `admin.reports_*` and `admin.report_*`: the admin's id and counts, when an admin handles, deletes or sets "Fixed in"
+  for reports, or forgets a reply address.
 - `alert.*`: an alert's key, level and measured number when it opens, how long it was open when it closes, and a
   delivery that failed (the webhook's status code, or an error's name and code).
 - `backup.*` and `restore.*`, from the backup service's scripts: file names, sizes, times and, after a restore, the row
@@ -370,25 +433,101 @@ the browser beyond the token the extension already sends. The answer is kept in 
 See the storage table in [ARCHITECTURE.md](ARCHITECTURE.md#storage). API keys, and the refresh token of the server
 the user signed in to, live in the extension origin's IndexedDB (`secrets`); the server's 15-minute access token lives
 only in session memory. Content scripts run in the page's origin and cannot open either; they also never receive keys
-or tokens through messages. Keys and tokens are never synced, exported or included in diagnostics. "Erase everything"
-in Privacy & Data clears settings, statistics, votes, the classification cache and keys. When the user is signed in to
+or tokens through messages. Keys and tokens are never synced, exported or included in problem reports. "Erase
+everything" in Privacy & Data clears settings, statistics, votes, the classification cache, keys, problem report drafts
+and the local log of report sends. When the user is signed in to
 a server, it first signs this browser out of that server, which ends its device and refresh token there, and then
 removes the account from the extension.
 
-## Diagnostics
+## Problem reports
 
-"Report a problem" builds a GitHub issue URL with at most 2 KB of JSON: versions, Chrome major version, page
-language, health status, counts, detector hit counts and landmark counts. No text, names, ids or URLs. The user sees
-the issue before submitting it.
+People report problems from inside the extension, in every browser, with or without an account (ADR 0009). Every
+report goes to unAlgorithm Cloud only: `REPORTS_URL` (`CLOUD_ORIGIN` + `REPORTS_PATH`,
+`packages/protocol/src/report.ts`), whatever the AI source, from every build but the e2e one, which posts to its test
+server. Never the person's own AI or server, GitHub or a third party.
 
-A finished fact-check or UnEcho Chamber result in the side panel links the correction form (P3-69, decisions D88,
-D107): `correctionUrl` sets `template=correction.yml` and four fields only, `feature` (the feature's name), `version`
-(the extension's), `prompt` (the result's prompt version) and, for UnEcho Chamber, `list` ("unAlgorithm Cloud's list"
-or "My own list"). No date, verdict, claim, source, link, list content or anything from the post or about the person.
-The other links under a result are fixed: the methodology page on the website and unAlgorithm Cloud's public source
-list (a Cloud result only).
+- **User-submitted only.** Every entry point (the popup's *Report a problem* and its banners, the in-feed notice card's
+  *Let us know*, *Why? → Wrong call?*, Settings → About, and the side panel's banner and *Report a wrong verdict* /
+  *Report a mistake*) only opens `report.html` with a draft. The background keeps the draft in `storage.session`
+  (`report:<id>`, an hour at most, 5 at most, gone when the page closes) and sends nothing before that page's **Send
+  report**. Then `sendReport` (`apps/extension/src/background/report.ts`, the only module that names the route, which
+  `background-report.test.ts` checks):
+  - takes the message only from `report.html`;
+  - parses the body with `ProblemReportSchema`, and refuses it if the schema dropped anything or if it isn't the
+    stored draft plus what the page may add (the choices, and a correction's cleaned words and reply address);
+  - checks the local limits (3 sends an hour and 10 a day, kept as timestamps only in `local:reportLog`, never sent)
+    and, in Firefox, consent (below);
+  - makes one `fetch` with `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `redirect: 'error'`,
+    `cache: 'no-store'` and a 15-second timeout, inside `keepAwake`.
 
-`content/report.ts` and `lib/report-links.ts` are the only places that build a GitHub issue URL.
+  There is no queue, beacon or automatic retry. A double click waits for the first send; *Try again* resends the same
+  id, and the server answers a repeat with the same reference. No host permission is needed: the route answers CORS
+  for extension pages, never with credentials.
+- **Drafts come only from the page they describe.** A content script's draft (`buildReportDraft`,
+  `content/report.ts`) is accepted only from a LinkedIn or Facebook tab, and an extension page may open only a
+  correction. The popup's drafts for a tab that didn't answer or a page off LinkedIn and Facebook, and Settings' drafts,
+  are built by the background from the settings, with `route: 'unknown'` and no page facts. A draft from a private
+  window (`sender.tab.incognito`) keeps only `env` and the answers (`private: true`, Mozilla's policy 6.3). The in-feed
+  card acts only on `event.isTrusted` clicks, and a feed tab opens at most one report page a minute.
+- **The schema** is a zod `z.object`, so unknown keys are stripped, never stored and never a 400. Codes, ids and keys
+  are pattern-checked, so a newer extension's new code is never refused; counts are capped integers, and every record
+  has a size cap. `env` names the extension's version and channel and the browser with its major version, and in
+  Firefox `client`, the add-on id, which the server reads to set `listed` and never stores. `page` carries the route
+  class only (`feed`, `feed-candidate`, `other` or `unknown`) and, for a candidate, one `feedWord` that follows
+  `/feed/`, `/feeds/` or `/home/` and is never a deny-listed word (`routeWord`), so a profile's slug can't become one.
+  No URL, query string, date, OS or per-filter switch.
+- **Content-free by construction.** `summarizePostForReport` gives a wrong call's post as its reason and source, its
+  evidence ids with their strengths, its author kind and relationship, its media and a text bucket (`none`, `short`,
+  `long`); never text, names, ids, keywords or topics. The key the content script finds that post by never enters the
+  draft. A correction's words go through `cleanReportMessage` (NFKC; control, zero-width and bidi characters stripped;
+  `redact()` with mentions masked; every link, with or without a scheme or `www.`, reduced to its site, and a profile or
+  post address on its own to `[link]`; at most 1,000 characters) in the page's preview, and again on the server; the
+  page never writes the cleaned text back into the field. The wire schema refuses words that still hold a link
+  (`BARE_LINK_PATTERN`, `PROFILE_PATH_PATTERN`), so the server's check catches a sender that skipped the cleaning.
+  `describeReport` turns a report into the plain lines the page, the email fallback and the admin page show.
+- **The registry.** The server stores only codes listed in `packages/protocol/src/report-codes.ts` (issues, choices,
+  origins, count and landmark keys, filter reasons, module kinds, and each adapter's detector, observation and strategy
+  ids). `keepKnownCodes` drops anything else, and any id of the other platform, and counts what it dropped in
+  `unknown_codes`, so a bug or a forged request can't store a name in a code. The one value not held to the registry
+  is a candidate route's feed word (`page.feedWord`, the one word of a new feed address such as `foryou`): it is
+  checked only by its pattern (`^[a-z][a-z0-9-]{1,24}$`), a deny list and the route (only `feed-candidate` carries
+  one), so a forged request could store a slug there. A new code goes into the registry, and the Cloud is deployed,
+  before an extension that sends it ships; a platforms test checks that every id an adapter can emit is listed.
+- **Firefox.** Every report is `technicalAndInteraction` (`REPORT_DATA` in `apps/extension/src/lib/data-consent.ts`),
+  declared optional in every Firefox build and never requested. `reportConsent(report)` adds `personalCommunications`
+  for a correction's words and `personallyIdentifyingInfo` for a reply address. Without them `sendReport` answers
+  `consent` and sends nothing, and the page offers *Email this report*: a `mailto:` to `SUPPORT_EMAIL`
+  (`supportMailto`) with `describeReport`'s lines, which the person's own email program sends. The page follows
+  `permissions.onAdded` (`useConsent`), so *Send report* comes back as soon as the type is allowed, and the reply
+  address field shows only while `personallyIdentifyingInfo` is granted. Since no report asks for or returns a type,
+  sending one never changes the consent AI, sync or sign-in check.
+- **On the server** (`POST /v1/reports`, mounted only with `REPORTS=on`; [ARCHITECTURE.md → Problem
+  reports](ARCHITECTURE.md#problem-reports)): the Origin is reduced to the boolean `listed`, and a correction from an
+  extension the server doesn't list is refused (403 `unlisted`), so the words of a fork's users never reach HeitechSoft
+  under the wrong privacy policy. The IP address, Origin, User-Agent, Accept-Language and client hints are never
+  stored, logged or used as they are ([What a server stores](#what-a-server-stores)). In Firefox the Origin is
+  `moz-extension://` and a UUID random per install, the one per-install value a report request carries (in the header
+  the browser adds, never in the body): the server only checks its shape, and `listed` comes from the add-on id the
+  report names (`env.client`), which is the same for every install of a build.
+- **What enforces it:**
+  - The e2e guard (`apps/extension/e2e/fixtures.ts` for Chromium and Edge, `e2e/firefox/driver.ts` for Firefox): every
+    browser context or Firefox profile the specs launch counts each *Send report* and *Try again* click by report id,
+    and each request to the report route, the background's included, by the id in its body. A test whose browser sent
+    a report more often than its page was clicked fails (`reportGuard`, `expectReportsAsked` for a context a spec
+    launched itself, and the Firefox profile's `close`, through `unaskedReports`).
+  - The leak tests: a post summary never carries content (`packages/core/test/report.test.ts`); drafts built from every
+    fixture feed, with a wrong call for each hidden post, hold none of the fixture's names, text, links, URNs or
+    component keys (`apps/extension/tests/report-draft.test.ts`); the production builds name no GitHub issue form, and
+    only `background.js` names the report route, at unAlgorithm Cloud's address (`report-bundle.test.ts`); and no table,
+    log line or limiter key on the server holds the address, its network, the Origin's id, the add-on id or a request
+    header (`apps/server/test/asvs-review.test.ts`).
+  - `apps/extension/tests/privacy-gate.test.ts`: a bundle that can send reports ships only with PRIVACY.md's *Report a
+    problem* section, whose retention numbers it pins to the protocol's constants.
+- **Policy.** A report a user sent is never committed, attached to an issue or published. Maintainers capture new markup
+  themselves, from a report's route, versions and issues ([fixtures.md](fixtures.md)).
+
+Development builds' popup can also copy the page's diagnostics to the clipboard (*Developer: copy diagnostics*). That
+sends nothing.
 
 ## Untrusted input
 

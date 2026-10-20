@@ -35,7 +35,7 @@ export const NAV: { id: PaneId; label: string; group: string; icon: LucideIcon; 
     group: '',
     icon: Palette,
     tint: 'pink',
-    keywords: ['collapse', 'hide', 'dim', 'badge', 'tips', 'for you'],
+    keywords: ['collapse', 'hide', 'dim', 'group', 'show all', 'badge', 'tips', 'for you', 'notice', 'breaks'],
   },
   {
     id: 'interests',
@@ -74,5 +74,12 @@ export const NAV: { id: PaneId; label: string; group: string; icon: LucideIcon; 
     tint: 'green',
     keywords: ['export', 'import', 'erase', 'permissions', 'data'],
   },
-  { id: 'about', label: 'About', group: '', icon: Info, tint: 'gray', keywords: ['version', 'license', 'help', 'source'] },
+  {
+    id: 'about',
+    label: 'About',
+    group: '',
+    icon: Info,
+    tint: 'gray',
+    keywords: ['version', 'license', 'help', 'source', 'report', 'problem'],
+  },
 ];

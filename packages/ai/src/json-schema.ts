@@ -43,8 +43,10 @@ export function toStrictJsonSchema(schema: z.ZodType): Json {
 
 /** Pull the first JSON object out of free text (for servers that only do prompt-instructed JSON). */
 export function extractJson(text: string): string {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const body = fenced?.[1] ?? text;
+  // A fenced block, found with indexOf: a backtracking pattern over a long answer could take a long time.
+  const open = text.indexOf('```');
+  const close = open === -1 ? -1 : text.indexOf('```', open + 3);
+  const body = close === -1 ? text : text.slice(open + 3, close).replace(/^json/, '');
   const start = body.indexOf('{');
   const end = body.lastIndexOf('}');
   return start >= 0 && end > start ? body.slice(start, end + 1) : body.trim();

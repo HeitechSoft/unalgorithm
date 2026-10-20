@@ -7,7 +7,10 @@ export function defaultPlatformSettings(platform: PlatformId, preset: Preset = '
   return { enabled: true, preset, filters: v.filters, ai: v.ai, alwaysShow: {}, alwaysHide: {} };
 }
 
-/** Fresh-install settings: Balanced on both platforms, collapse display, no interests, no AI, the Cloud's source list. */
+/**
+ * Fresh-install settings: Balanced on both platforms, collapse display with a fold line for each hidden post (no runs),
+ * no interests, no AI, the Cloud's source list.
+ */
 export function defaultSettings(): Settings {
   return {
     version: SETTINGS_VERSION,
@@ -19,7 +22,7 @@ export function defaultSettings(): Settings {
       mode: 'collapse',
       showReason: true,
       showAuthor: true,
-      groupRuns: true,
+      groupRuns: false,
       forYou: 'ring',
       badgeCount: true,
       tips: true,
@@ -46,5 +49,6 @@ export function defaultDevice(deviceId: string): Device {
     dev: { debugOverlay: false },
     labs: { factcheck: false, perspectives: false },
     webSearch: null,
+    notices: { enabled: true, snoozed: {} },
   };
 }

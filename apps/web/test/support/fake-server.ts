@@ -1,10 +1,12 @@
 /**
  * A fake server for the web app's tests: `fetch` stubbed with the server's routes, keeping a session as the real one
- * does (an accepted code or passkey starts it and signing out ends it), and every request recorded. Also the query the
- * extension opens the authorize page with, and what Google and a passkey sign-in answer. The account's devices and
- * passkeys are kept too: revoking or removing one takes it off its list and adding a passkey puts one on. The account
- * exports as `EXPORT`, and deleting it (with the address typed again) ends the session. The setup link's `SETUP_TOKEN`
- * can be claimed once, as CL4-04's can. Without a session those routes answer 401, as the real ones do.
+ * does (an accepted code or passkey starts it and signing out ends it), and every request recorded. Also the queries
+ * the extension opens the authorize page with in Chrome and in Firefox, and what Google and a passkey sign-in answer.
+ * The authorize route answers as the real one does: the request's own redirect address with a code and its state. The
+ * account's devices and passkeys are kept too: revoking or removing one takes it off its list and adding a passkey
+ * puts one on. The account exports as `EXPORT`, and deleting it (with the address typed again) ends the session. The
+ * setup link's `SETUP_TOKEN` can be claimed once, as CL4-04's can. Without a session those routes answer 401, as the
+ * real ones do.
  *
  * The session's `role` is the admin plugin's: the admin routes answer 403 unless it is `admin`. The accounts the admin
  * page lists (`adminUsers`) are kept too: setting one's cap, access or role changes the next list, as CL4-06's routes
@@ -56,6 +58,8 @@ import {
   cancelTaskChange,
   chromiumRedirectUri,
   DEFAULT_PRICE_BOOK,
+  FIREFOX_ADDON_ID,
+  geckoRedirectUri,
   moveTaskChange,
   type OfficialList,
   type OfficialOutlet,
@@ -107,8 +111,13 @@ export const PARAMS = {
   code_challenge_method: 'S256',
   state: 'Qm9vdHN0cmFwLXN0YXRlLTE',
 };
+/** The single-use code the authorize endpoint answers. */
+const AUTHORIZE_CODE = 'c'.repeat(43);
 /** Where the authorize endpoint sends the browser: back to the extension with its single-use code. */
-export const REDIRECT = `${PARAMS.redirect_uri}?code=${'c'.repeat(43)}&state=${PARAMS.state}`;
+export const REDIRECT = `${PARAMS.redirect_uri}?code=${AUTHORIZE_CODE}&state=${PARAMS.state}`;
+/** The query Firefox's `launchWebAuthFlow` opens the authorize page with: the store build's id and its redirect. */
+export const GECKO_PARAMS = { ...PARAMS, client_id: FIREFOX_ADDON_ID, redirect_uri: geckoRedirectUri(FIREFOX_ADDON_ID) };
+export const GECKO_REDIRECT = `${GECKO_PARAMS.redirect_uri}?code=${AUTHORIZE_CODE}&state=${GECKO_PARAMS.state}`;
 
 /** Google's address `sign-in/social` answers, where the page sends the browser. */
 export const GOOGLE_URL = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test-client&state=test-state';
@@ -304,7 +313,7 @@ export const INFO: ServerInfo = {
   source: 'https://example.org/source/server-v0.1.0',
   billing: false,
   capabilities: { classify: true, sync: false },
-  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/v1/auth/token' },
+  auth: { methods: ['email-otp'], authorizePath: '/authorize', tokenPath: '/v1/auth/token', clients: ['chromium', 'gecko'] },
   limits: { maxPostsPerRequest: 12 },
 };
 
@@ -453,7 +462,12 @@ export function fakeServer({
       current = null;
       return { status: 200, body: { success: true } };
     },
-    [`POST ${AUTHORIZE_API_PATH}`]: { status: 200, body: { redirect: REDIRECT } },
+    [`POST ${AUTHORIZE_API_PATH}`]: (call) => ({
+      status: 200,
+      body: {
+        redirect: `${field(call, 'redirect_uri')}?code=${AUTHORIZE_CODE}&state=${encodeURIComponent(field(call, 'state') ?? '')}`,
+      },
+    }),
     [`POST ${SOCIAL_SIGN_IN_PATH}`]: { status: 200, body: { url: GOOGLE_URL, redirect: false } },
     [`GET ${PASSKEY_AUTH_OPTIONS_PATH}`]: { status: 200, body: PASSKEY_OPTIONS },
     [`POST ${PASSKEY_AUTH_VERIFY_PATH}`]: () => {

@@ -13,7 +13,9 @@ import {
   DeleteAccountRequestSchema,
   DeviceNameSchema,
   EMAIL_OTP_METHOD,
+  FIREFOX_ADDON_ID,
   GOOGLE_METHOD,
+  geckoRedirectUri,
   OkResponseSchema,
   PASSKEY_METHOD,
   RevokeDeviceRequestSchema,
@@ -32,7 +34,7 @@ const LATER = '2026-10-21T09:30:00.000Z';
 
 describe('device names', () => {
   it('test_device_name_accepts_plain_names', () => {
-    for (const name of ['Chrome on Windows', 'Edge on macOS (work)', 'Chrome sur Linux']) {
+    for (const name of ['Chrome on Windows', 'Edge on macOS (work)', 'Chrome sur Linux', 'Firefox on Linux']) {
       expect(DeviceNameSchema.parse(name), name).toBe(name);
     }
     for (const bad of ['', '   ', 'x'.repeat(61), '<script>', 'a\nb']) {
@@ -61,6 +63,22 @@ describe('device names', () => {
     const parsed = TokenRequestSchema.parse({ ...refresh, device_name: 'Chrome on Windows' });
     expect(parsed).toEqual(refresh);
     expect(parsed).not.toHaveProperty('device_name');
+  });
+
+  it('test_token_request_device_name_from_firefox', () => {
+    const code = {
+      grant_type: 'authorization_code',
+      code: 'c'.repeat(32),
+      code_verifier: VERIFIER,
+      client_id: FIREFOX_ADDON_ID,
+      redirect_uri: geckoRedirectUri(FIREFOX_ADDON_ID),
+    } as const;
+    expect(TokenRequestSchema.parse({ ...code, device_name: 'Firefox on Linux' })).toEqual({
+      ...code,
+      device_name: 'Firefox on Linux',
+    });
+    const refresh = { grant_type: 'refresh_token', refresh_token: 'r'.repeat(43), client_id: FIREFOX_ADDON_ID } as const;
+    expect(TokenRequestSchema.parse({ ...refresh, device_name: 'Firefox on Linux' })).toEqual(refresh);
   });
 });
 

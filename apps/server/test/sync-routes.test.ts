@@ -29,7 +29,14 @@ import { syncItems, syncPushes, syncSpaces } from '../src/db/schema.ts';
 import { SYNC_REQUESTS_PER_MINUTE } from '../src/routes/sync.ts';
 import { createSpaceNotifier } from '../src/sync/notifier.ts';
 import { userSpaceAccess } from '../src/sync/spaces.ts';
-import { DEV_EXTENSION_ID, DEV_EXTENSION_ORIGIN, postJson, signInDevice } from './support/sign-in.ts';
+import {
+  DEV_EXTENSION_ID,
+  DEV_EXTENSION_ORIGIN,
+  FIREFOX_EXTENSION_ID,
+  FIREFOX_EXTENSION_ORIGIN,
+  postJson,
+  signInDevice,
+} from './support/sign-in.ts';
 import { createTestApp, type TestAppOptions, testConfig } from './support/test-app.ts';
 import { PGLITE_TIMEOUT } from './support/timeouts.ts';
 
@@ -251,6 +258,35 @@ describe('round trip', { timeout: PGLITE_TIMEOUT }, () => {
 
     const after = SyncChangesResponseSchema.parse(await (await changes(t, t.desktop, since(space, body.cursor))).json());
     expect(after).toMatchObject({ cursor: 2, more: false, items: [] });
+  });
+
+  it('test_sync_between_chrome_and_firefox', async () => {
+    const t = await syncApp();
+    // Tom's Firefox device shares his one space with his Chrome devices.
+    const firefox = await signInDevice(t.app, t.outbox, TOM, FIREFOX_EXTENSION_ID);
+    const space = await spaceOf(t, firefox);
+    expect(space).toEqual(await spaceOf(t, t.laptop));
+
+    const fromChrome = [live('display.mode', 'hide')];
+    expect((await push(t, t.laptop, pushBody(space, fromChrome))).status).toBe(200);
+    // Firefox pulls from its own page and can read the answer, then pushes back.
+    const pulled = await t.app.request(changesPath(since(space, 0)), {
+      headers: { ...bearer(firefox), Origin: FIREFOX_EXTENSION_ORIGIN },
+    });
+    expect(pulled.status).toBe(200);
+    expect(pulled.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const body = SyncChangesResponseSchema.parse(await pulled.json());
+    expect(body.items).toEqual([{ ...fromChrome[0], seq: 1 }]);
+
+    const fromFirefox = [live('interests.more.climate', topic('Climate'))];
+    const pushed = await postJson(t.app, SYNC_PUSH_PATH, pushBody(space, fromFirefox), {
+      ...bearer(firefox),
+      Origin: FIREFOX_EXTENSION_ORIGIN,
+    });
+    expect(pushed.status).toBe(200);
+    expect(pushed.headers.get('access-control-allow-origin')).toBe(FIREFOX_EXTENSION_ORIGIN);
+    const back = SyncChangesResponseSchema.parse(await (await changes(t, t.desktop, since(space, body.cursor))).json());
+    expect(back.items).toEqual([{ ...fromFirefox[0], seq: 2 }]);
   });
 
   it('test_sync_routes_isolate_accounts', async () => {
@@ -670,27 +706,30 @@ describe('privacy and CORS', { timeout: PGLITE_TIMEOUT }, () => {
   it('test_sync_cors_preflight', async () => {
     const t = await createTestApp();
     cleanup.push(t.close);
-    for (const [path, method] of [
-      [SYNC_PUSH_PATH, 'POST'],
-      [SYNC_CHANGES_PATH, 'GET'],
-      [SYNC_SPACES_PATH, 'GET'],
-    ] as const) {
-      const res = await t.app.request(path, {
-        method: 'OPTIONS',
-        headers: {
-          Origin: DEV_EXTENSION_ORIGIN,
-          'Access-Control-Request-Method': method,
-          'Access-Control-Request-Headers': 'authorization,content-type',
-        },
-      });
-      expect(res.status).toBe(204);
-      expect(res.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
-      expect(res.headers.get('access-control-allow-methods')).toContain(method);
-      expect(res.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+    // Chrome's and Firefox's extension pages alike: a GET with `Authorization` (the long poll) is preflighted too.
+    for (const origin of [DEV_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ORIGIN]) {
+      for (const [path, method] of [
+        [SYNC_PUSH_PATH, 'POST'],
+        [SYNC_CHANGES_PATH, 'GET'],
+        [SYNC_SPACES_PATH, 'GET'],
+      ] as const) {
+        const res = await t.app.request(path, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: origin,
+            'Access-Control-Request-Method': method,
+            'Access-Control-Request-Headers': 'authorization,content-type',
+          },
+        });
+        expect(res.status).toBe(204);
+        expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+        expect(res.headers.get('access-control-allow-methods')).toContain(method);
+        expect(res.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+      }
+      // The answers carry it too, so the extension can read a refusal.
+      const refused = await t.app.request(SYNC_SPACES_PATH, { headers: { Origin: origin } });
+      expect(refused.status).toBe(401);
+      expect(refused.headers.get('access-control-allow-origin')).toBe(origin);
     }
-    // The answers carry it too, so the extension can read a refusal.
-    const refused = await t.app.request(SYNC_SPACES_PATH, { headers: { Origin: DEV_EXTENSION_ORIGIN } });
-    expect(refused.status).toBe(401);
-    expect(refused.headers.get('access-control-allow-origin')).toBe(DEV_EXTENSION_ORIGIN);
   });
 });

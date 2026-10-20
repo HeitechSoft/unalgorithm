@@ -41,8 +41,16 @@ import { clearClaimChecks, getSecret, setSecret } from '../src/background/idb.ts
 import { serverAccountItem } from '../src/background/server-auth.ts';
 import { forgetTab } from '../src/background/tabs.ts';
 import { handlers } from '../src/entrypoints/background.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
 import type { BgRequest } from '../src/lib/messages.ts';
 import { deviceItem, factcheckItem, usageItem } from '../src/lib/storage.ts';
+
+// Vitest builds for Chrome; the Firefox cases switch `browserKind()` and add Firefox's `sidebarAction`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 // The device's claim cache, as itself, watched: a server check must never create one.
 vi.mock('../src/background/claim-cache.ts', async (importOriginal) => {
@@ -142,6 +150,7 @@ const entries = async (tabId = TAB) => (await factcheckItem(tabId).getValue()).e
 
 beforeEach(async () => {
   fakeBrowser.reset();
+  env.kind = 'chrome';
   permitted = true;
   deniedOrigins = new Set();
   vi.spyOn(fakeBrowser.permissions, 'contains').mockImplementation(
@@ -155,9 +164,32 @@ beforeEach(async () => {
   useAnthropic(happy);
 });
 afterEach(() => {
+  delete (fakeBrowser as { sidebarAction?: unknown }).sidebarAction;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** Firefox: its sidebar (open in window 2 only), its commands, and the data-collection consent `granted`. */
+function asFirefox(granted: string[] = ['websiteContent', 'personalCommunications']) {
+  env.kind = 'firefox';
+  const sidebar = {
+    isOpen: vi.fn(async ({ windowId }: { windowId?: number }) => windowId === 2),
+    open: vi.fn(async () => undefined),
+  };
+  (fakeBrowser as { sidebarAction?: unknown }).sidebarAction = sidebar;
+  const commands = vi
+    .spyOn(fakeBrowser.commands, 'getAll')
+    .mockResolvedValue([{ name: '_execute_sidebar_action', shortcut: 'Alt+Shift+U' }] as never);
+  // `as never`: spyOn picks the callback overload, typed as returning void.
+  vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+    origins: [],
+    permissions: [],
+    data_collection: granted,
+  })) as never);
+  return { sidebar, commands };
+}
+const inWindow = (windowId: number, id = TAB) =>
+  ({ tab: { id, url: FEED_URL, windowId }, url: FEED_URL }) as Browser.runtime.MessageSender;
 
 describe('gates', () => {
   it('test_factcheck_denied_from_non_feed_sender', async () => {
@@ -424,6 +456,43 @@ describe('errors and storage', () => {
     expect(panelOpen).not.toHaveBeenCalled();
   });
 
+  it('test_firefox_open_factcheck_reports_the_sidebar', async () => {
+    const { sidebar, commands } = asFirefox();
+    const msg = { type: 'openFactcheck' } as const;
+    // Firefox opens its sidebar only from a user action, which a relayed click isn't: open in that window, or how to.
+    expect(await handlers.openFactcheck(msg, inWindow(2))).toStrictEqual({ ok: true });
+    expect(sidebar.isOpen).toHaveBeenLastCalledWith({ windowId: 2 });
+    expect(await handlers.openFactcheck(msg, inWindow(1))).toStrictEqual({ ok: false, shortcut: 'Alt+Shift+U' });
+    expect(sidebar.isOpen).toHaveBeenLastCalledWith({ windowId: 1 });
+    expect(sidebar.open).not.toHaveBeenCalled();
+    expect(panelOpen).not.toHaveBeenCalled();
+
+    // The shortcut as the person has it: Firefox's Mac Control key in words, none when it was removed.
+    commands.mockResolvedValueOnce([{ name: '_execute_sidebar_action', shortcut: 'MacCtrl+Shift+U' }] as never);
+    expect(await handlers.openFactcheck(msg, inWindow(1))).toStrictEqual({ ok: false, shortcut: 'Control+Shift+U' });
+    commands.mockResolvedValueOnce([{ name: '_execute_sidebar_action', shortcut: '' }] as never);
+    expect(await handlers.openFactcheck(msg, inWindow(1))).toStrictEqual({ ok: false });
+    commands.mockRejectedValueOnce(new Error('no commands'));
+    expect(await handlers.openFactcheck(msg, inWindow(1))).toStrictEqual({ ok: false });
+    sidebar.isOpen.mockRejectedValueOnce(new Error('gone'));
+    expect(await handlers.openFactcheck(msg, inWindow(2))).toMatchObject({ ok: false });
+
+    // Starting a check asks the same, and the check runs either way.
+    sidebar.isOpen.mockClear();
+    await setup();
+    expect((await factcheck(POST, KEY, inWindow(1))).ok).toBe(true);
+    expect(sidebar.isOpen).toHaveBeenCalledWith({ windowId: 1 });
+    expect(sidebar.open).not.toHaveBeenCalled();
+    expect(panelOpen).not.toHaveBeenCalled();
+  });
+
+  it('test_chrome_shortcut_never_asked', async () => {
+    const commands = vi.spyOn(fakeBrowser.commands, 'getAll');
+    panelOpen.mockRejectedValueOnce(new Error('`sidePanel.open()` may only be called in response to a user gesture.'));
+    expect(await handlers.openFactcheck({ type: 'openFactcheck' }, inWindow(1))).toStrictEqual({ ok: false });
+    expect(commands).not.toHaveBeenCalled();
+  });
+
   it('test_factcheck_web_search_off_stores_unsupported_message', async () => {
     await setup();
     useAnthropic((body, kind) =>
@@ -630,6 +699,33 @@ describe('own-key modes', () => {
 
     expect(net.urls).toHaveLength(0);
     expect(await entries()).toStrictEqual([]);
+  });
+
+  it('test_firefox_consent_counts_like_a_host_permission', async () => {
+    const net = useOwnKeyNetwork();
+    // Withdrawn in Firefox's add-on settings: nothing is sent to the key's provider.
+    asFirefox([]);
+    await setup({ source: OPENAI });
+    expect(await factcheck()).toStrictEqual({
+      ok: false,
+      error: { code: 'host-permission', message: describeError('host-permission', 'OpenAI') },
+    });
+
+    // A model on this computer needs it too (it is outside the browser), as does its web search service, and every
+    // type of it: post text is other people's posts as well as page content.
+    await setup({ source: COMPAT, webSearch: BRAVE });
+    const ollama = { ok: false, error: { code: 'host-permission', message: describeError('host-permission', 'Ollama') } };
+    expect(await factcheck(POST_2)).toStrictEqual(ollama);
+    asFirefox(['websiteContent']);
+    expect(await factcheck(POST_2)).toStrictEqual(ollama);
+    expect(net.urls).toHaveLength(0);
+    expect(await entries()).toStrictEqual([]);
+
+    // Given: both run.
+    asFirefox(['websiteContent', 'personalCommunications']);
+    expect((await factcheck(POST_2)).ok).toBe(true);
+    await setup({ source: OPENAI });
+    expect((await factcheck()).ok).toBe(true);
   });
 
   it('test_factcheck_provider_error_texts', async () => {

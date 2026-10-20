@@ -308,7 +308,7 @@ describe('credits page copy', () => {
     expect(page).not.toMatch(/\{\{|\}\}/);
     expect(text).toContain('unAlgorithm Cloud');
     expect(page).toContain('(https://cloud.unalgorithm.app)');
-    expect(text).toContain('Add credit, or switch to on-device or your own key');
+    expect(text).toContain('Add credit, or switch to your own key, or to on-device AI where your browser offers it.');
     for (const free of ['Rules', 'On-device AI', 'Your own key']) expect(text).toContain(free);
     // Running the server yourself is not promoted.
     expect(text).not.toMatch(/self-host/i);

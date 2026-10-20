@@ -19,6 +19,7 @@ import {
   FLAGGED,
   facebookFeed,
   linkedinPost,
+  markTopicMore,
   runCheck,
   saveSource,
   test,
@@ -365,6 +366,8 @@ test.describe('OpenAI-compatible with a Brave key', () => {
     const options = await saveCompat(context, extensionId, ai);
     await expect(options.getByText(NEEDS_KEY, { exact: true })).toHaveCount(2);
     await expect(options.getByRole('switch', { name: 'Fact-check' })).toBeDisabled();
+    // The AI highlights by relevance once the person has said what they want: the pick shows the post was classified.
+    await markTopicMore(context, extensionId);
     const page = await feed();
     await expect(linkedinPost(page)).toHaveAttribute('data-unalgo-pick', '');
     await expect(checkButtons(page)).toHaveCount(0);

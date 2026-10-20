@@ -1,4 +1,4 @@
-import { applyPreset, type Preset, presetOf, STARTER_LESS_OF, STARTER_TOPICS } from '@unalgorithm/core';
+import { applyPreset, type Preset, presetOf } from '@unalgorithm/core';
 import type { PlatformId } from '@unalgorithm/protocol';
 import {
   ArrowRight,
@@ -20,6 +20,8 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { AiSetup } from '../../components/AiSetup.tsx';
+import { markedCount, TOPIC_COPY, TopicList } from '../../components/TopicList.tsx';
+import { type BrowserKind, browserKind } from '../../lib/browser-kind.ts';
 import { FEED_URLS, useDevice, useSettings } from '../../lib/hooks.ts';
 import { serverLabel } from '../../lib/server-label.ts';
 
@@ -27,12 +29,17 @@ const STEPS = ['welcome', 'strength', 'interests', 'ai', 'done'] as const;
 type Step = (typeof STEPS)[number];
 const QUESTION_STEPS: Step[] = ['strength', 'interests', 'ai'];
 
+/** How to put the toolbar button on the toolbar. Firefox starts it there (`default_area`); this is for when it moved. */
+const PIN_STEPS: Record<BrowserKind, string> = {
+  chrome: 'Click the puzzle piece in Chrome’s toolbar, then the pin next to unAlgorithm.',
+  edge: 'Click Extensions (the puzzle piece) in Edge’s toolbar, then Show in toolbar (the eye) next to unAlgorithm.',
+  firefox: 'Click Extensions (the puzzle piece) in Firefox’s toolbar, then the gear next to unAlgorithm and Pin to Toolbar.',
+};
+
 export function App() {
   const [settings, save] = useSettings();
   const [device, saveDevice] = useDevice();
   const [step, setStep] = useState<Step>('welcome');
-  const [showLess, setShowLess] = useState(false);
-  const [custom, setCustom] = useState('');
   const h1 = useRef<HTMLHeadingElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: persist and announce only when the step changes
@@ -67,12 +74,7 @@ export function App() {
       for (const id of ['linkedin', 'facebook'] as const) s.platforms[id] = applyPreset(id, s.platforms[id], p);
     });
   const togglePlatform = (p: PlatformId, on: boolean) => save((s) => void (s.platforms[p].enabled = on));
-  const toggleTopic = (list: 'more' | 'less', t: { id: string; label: string; keywords: string[] }, on: boolean) =>
-    save((s) => {
-      if (on) s.interests[list][t.id] = { label: t.label, keywords: t.keywords, addedAt: Date.now() };
-      else delete s.interests[list][t.id];
-    });
-  const selectedCount = Object.keys(settings.interests.more).length;
+  const selectedCount = markedCount(settings.interests);
 
   return (
     <div className="onboarding">
@@ -136,7 +138,7 @@ export function App() {
                 media={<PresetMiniFeed fold={2} />}
                 title="What you didn't ask for"
                 badge={<Badge tone="accent">Recommended</Badge>}
-                description="Also hides suggested posts, likes and comments from your network, and people you don't follow on LinkedIn."
+                description="Also hides suggested posts, likes and comments from your network, and people you don't follow."
               />
               <ChoiceCard
                 value="calm"
@@ -162,66 +164,11 @@ export function App() {
         {step === 'interests' ? (
           <>
             <h1 ref={h1} tabIndex={-1}>
-              What do you want more of?
+              What do you want more or less of?
             </h1>
-            <p className="ob-sub">Pick a few topics. Posts about them get a quiet "For you" highlight.</p>
-            <div className="ua-hstack ua-wrap" style={{ gap: 8 }}>
-              {STARTER_TOPICS.map((t) => (
-                <Chip
-                  key={t.id}
-                  label={t.label}
-                  selected={!!settings.interests.more[t.id]}
-                  onSelectedChange={(on) => void toggleTopic('more', t, on)}
-                />
-              ))}
-              {Object.entries(settings.interests.more)
-                .filter(([id]) => !STARTER_TOPICS.some((t) => t.id === id))
-                .map(([id, t]) => (
-                  <Chip
-                    key={id}
-                    label={t.label}
-                    selected
-                    onSelectedChange={() => void save((s) => void delete s.interests.more[id])}
-                  />
-                ))}
-              <input
-                className="ua-input ua-pchip"
-                style={{ width: 200, cursor: 'text' }}
-                placeholder="Add a topic, e.g. Supply chain"
-                aria-label="Add a topic"
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-                onKeyDown={(e) => {
-                  const label = custom.trim();
-                  if (e.key === 'Enter' && label) {
-                    void save(
-                      (s) => void (s.interests.more[`custom-${Date.now()}`] = { label, keywords: [label], addedAt: Date.now() }),
-                    );
-                    setCustom('');
-                  }
-                }}
-              />
-            </div>
-            <div style={{ marginTop: 24 }}>
-              <Button variant="plain" onClick={() => setShowLess(!showLess)} aria-expanded={showLess}>
-                Anything you'd like less of?
-              </Button>
-              {showLess ? (
-                <div className="ua-hstack ua-wrap" style={{ gap: 8, marginTop: 10 }}>
-                  {STARTER_LESS_OF.map((t) => (
-                    <Chip
-                      key={t.id}
-                      label={t.label}
-                      selected={!!settings.interests.less[t.id]}
-                      onSelectedChange={(on) => void toggleTopic('less', t, on)}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <p className="ua-footnote" style={{ marginTop: 20 }}>
-              Without AI, unAlgorithm matches related words. With AI, it understands topics.
-            </p>
+            <p className="ob-sub">{TOPIC_COPY.intro}</p>
+            <TopicList interests={settings.interests} save={save} limit={10} />
+            <p className="ua-footnote">Without AI, unAlgorithm matches related words. With AI, it understands topics.</p>
           </>
         ) : null}
 
@@ -242,7 +189,7 @@ export function App() {
           <Done
             platforms={platforms}
             h1={h1}
-            interests={selectedCount}
+            topics={selectedCount}
             aiLabel={
               !device.aiSource
                 ? null
@@ -286,16 +233,18 @@ export function App() {
 function Done({
   platforms,
   h1,
-  interests,
+  topics,
   aiLabel,
 }: {
   platforms: PlatformId[];
   h1: React.RefObject<HTMLHeadingElement | null>;
-  interests: number;
+  /** Topics marked More or Less. */
+  topics: number;
   /** The AI source kind, or `server:` and the server's title. */
   aiLabel: string | null;
 }) {
   const [pinned, setPinned] = useState<boolean | null>(null);
+  const kind = browserKind();
   useEffect(() => {
     const action = browser.action as typeof browser.action & { getUserSettings?: () => Promise<{ isOnToolbar: boolean }> };
     if (!action.getUserSettings) return;
@@ -338,11 +287,13 @@ function Done({
             {pinned ? <CircleCheck /> : <Puzzle />}
           </span>
           <div className="ua-grow">
-            <div className="ua-headline">{pinned ? 'Pinned to your toolbar' : 'Pin unAlgorithm to your toolbar'}</div>
+            <div className="ua-headline">
+              {pinned ? (kind === 'firefox' ? 'On your toolbar' : 'Pinned to your toolbar') : 'Pin unAlgorithm to your toolbar'}
+            </div>
             <div className="ua-callout ua-secondary" style={{ marginTop: 2 }}>
               {pinned
                 ? 'You’ll see how many posts are hidden on each page.'
-                : 'Click the puzzle piece in Chrome’s toolbar, then the pin next to unAlgorithm. It shows how many posts are hidden.'}
+                : `${PIN_STEPS[kind]} It shows how many posts are hidden.`}
             </div>
           </div>
           {pinned === false ? <Pin size={18} aria-hidden="true" className="ua-tertiary" /> : null}
@@ -350,8 +301,7 @@ function Done({
       </div>
       <p className="ua-footnote" style={{ marginTop: 6 }}>
         {platforms.length ? platforms.map((p) => (p === 'linkedin' ? 'LinkedIn' : 'Facebook')).join(' and ') : 'No sites'} ·{' '}
-        {interests} interest
-        {interests === 1 ? '' : 's'} · {ai} ·{' '}
+        {topics} topic{topics === 1 ? '' : 's'} · {ai} ·{' '}
         <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
           Edit
         </a>

@@ -4,7 +4,8 @@
  *
  * No table holds post text or prompts. The server keeps accounts, devices, tokens, AI routes, usage counts and each
  * person's synced settings, whose only names are the labels of people that person chose to always show or hide (CL3)
- * and the outlet names of their own UnEcho Chamber source list (P3-76).
+ * and the outlet names of their own UnEcho Chamber source list (P3-76), and the problem reports people send (ADR 0009),
+ * whose only words are a correction's own.
  * Post content passes through classification and is never written down (ADR 0007).
  *
  * Adding a table: define it here (or in a module re-exported from here), run
@@ -19,7 +20,12 @@ import {
   type LeanBucket,
   type OfficialOutlet,
   type OutletChangeAction,
+  type PlatformId,
   type PriceChangeAction,
+  type ReportBrowser,
+  type ReportChannel,
+  type ReportKind,
+  type ReportResolution,
 } from '@unalgorithm/protocol';
 import { sql } from 'drizzle-orm';
 import {
@@ -51,11 +57,11 @@ export const devices = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    /** The extension id the device signed in with. */
+    /** The extension id the device signed in with: a Chrome or Edge id, or a Firefox add-on id. */
     clientId: text('client_id').notNull(),
     /**
-     * What the extension called itself at sign-in (CL3-02 `DeviceNameSchema`), e.g. 'Chrome on Windows'. Never derived
-     * from request headers. Null for devices from before CL3.
+     * What the extension called itself at sign-in (CL3-02 `DeviceNameSchema`), e.g. 'Chrome on Windows' or 'Firefox on
+     * Linux'. Never derived from request headers. Null for devices from before CL3.
      */
     name: text('name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -404,4 +410,95 @@ export const priceChanges = pgTable(
     changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('price_changes_at').on(table.changedAt)],
+);
+
+/*
+ * Problem reports (ADR 0009 §6): what people chose to send from the extension's report page, with no account, cookie or
+ * identifier for the person, browser or install. Codes, counts and versions only, except a correction's own words and
+ * the reply address they may give. Never the Origin, the extension id, an IP address or a request header. Rows are
+ * deleted 90 days after they arrive (`reports.purge`), a correction first becoming one more in `correction_counts`.
+ */
+
+/** One report as the server keeps it: registry codes only (`keepKnownCodes`), the time to the hour. */
+export const problemReports = pgTable(
+  'problem_reports',
+  {
+    /** The extension's random id for the report, for idempotency only: a resend gets the same reference. */
+    id: uuid('id').primaryKey(),
+    /** The reference the person sees, `7KQ3-M2PA`: 40 random bits the server picks. */
+    ref: text('ref').notNull(),
+    /** When it arrived, rounded down to the hour. */
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+    /** A REPORT_KINDS member. */
+    kind: text('kind').$type<ReportKind>().notNull(),
+    /** Where the report started (`REPORT_FROM`), or `unknown`. */
+    from: text('from'),
+    /** Where this copy of unAlgorithm came from (`REPORT_CHANNELS`). */
+    channel: text('channel').$type<ReportChannel>().notNull(),
+    /** Whether it came from an extension id in `EXTENSION_IDS`. The id itself is never stored. */
+    listed: boolean('listed').notNull(),
+    extension: text('extension').notNull(),
+    browser: text('browser').$type<ReportBrowser>().notNull(),
+    browserMajor: integer('browser_major').notNull(),
+    /** The page's platform and detection version; null for corrections, and reports from Settings or a private window. */
+    platform: text('platform').$type<PlatformId>(),
+    adapter: text('adapter'),
+    /** `adapterOrder(adapter)`, so floors and alerts compare versions with `>=`. */
+    adapterOrder: bigint('adapter_order', { mode: 'number' }),
+    /** What the report is mainly about (`reportTopic`): it groups reports on the admin page and in alerts. */
+    topic: text('topic'),
+    choices: jsonb('choices').$type<string[]>().notNull(),
+    /** The first report of its kind that day, about this platform, from its /24 or /48. No address is kept. */
+    firstFromNetwork: boolean('first_from_network').notNull(),
+    /** `ReportDetailsSchema`: page, health, detection, post and correction (without its words), registry codes only. */
+    details: jsonb('details').notNull(),
+    /** How many codes the server dropped because the registry does not list them. */
+    unknownCodes: integer('unknown_codes').notNull().default(0),
+    /** A correction's own words, cleaned again by the server; null for every other kind. */
+    message: text('message'),
+    /** A correction's reply address, lowercased; cleared 30 days after handling, and never kept past 60 days. */
+    contact: text('contact'),
+    handledAt: timestamp('handled_at', { withTimezone: true }),
+    /** The admin who handled it; null when the server did (an older detection version) or that account is deleted. */
+    handledBy: text('handled_by').references(() => user.id, { onDelete: 'set null' }),
+    /** An ALL_REPORT_RESOLUTIONS member; null while open. */
+    resolution: text('resolution').$type<ReportResolution>(),
+  },
+  (table) => [
+    uniqueIndex('problem_reports_ref').on(table.ref),
+    index('problem_reports_received_at').on(table.receivedAt),
+    index('problem_reports_group').on(table.platform, table.adapterOrder, table.kind, table.topic),
+    index('problem_reports_open').on(table.receivedAt).where(sql`${table.handledAt} is null`),
+  ],
+);
+
+/**
+ * "Fixed in", per platform: reports from an older detection version count as handled (`older-version`), so installs
+ * that haven't updated yet don't reopen alerts.
+ */
+export const reportFloors = pgTable('report_floors', {
+  platform: text('platform').$type<PlatformId>().primaryKey(),
+  adapter: text('adapter').notNull(),
+  adapterOrder: bigint('adapter_order', { mode: 'number' }).notNull(),
+  setAt: timestamp('set_at', { withTimezone: true }).notNull(),
+  /** The admin; null once that account is deleted. */
+  setBy: text('set_by').references(() => user.id, { onDelete: 'set null' }),
+});
+
+/**
+ * Corrections counted for the transparency report once their rows are deleted (`reports.purge`): per quarter, feature
+ * and resolution (`none` when never handled). Numbers only, nothing about anyone.
+ */
+export const correctionCounts = pgTable(
+  'correction_counts',
+  {
+    /** `quarterOf(received_at)`, such as `2026-Q4`. */
+    quarter: text('quarter').notNull(),
+    /** A CORRECTION_FEATURES member. */
+    feature: text('feature').notNull(),
+    /** An ALL_REPORT_RESOLUTIONS member, or `none`. */
+    resolution: text('resolution').notNull(),
+    n: integer('n').notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.quarter, table.feature, table.resolution] })],
 );

@@ -1,6 +1,6 @@
 import { defaultDevice, defaultSettings, EMPTY_LEARNED } from '@unalgorithm/core';
 import { facebookAdapter, linkedinAdapter } from '@unalgorithm/platforms';
-import type { Classification, PostKey } from '@unalgorithm/protocol';
+import { type Classification, type PostKey, REPORT_ID_PATTERN, ReportDetectionSchema } from '@unalgorithm/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FRIEND_POST, fbFeed, ORGANIC_LINK_SHARE } from '../../../packages/platforms/fixtures/facebook/synthetic.ts';
 import {
@@ -108,9 +108,40 @@ describe('FeedController on LinkedIn', () => {
     expect(state('EEEkeyFirstDegree5') ?? null).toBeNull();
     const states = [...document.querySelectorAll('[componentkey]')].map((el) => el.getAttribute('data-unalgo'));
     expect(states.filter((s) => s === 'collapsed')).toHaveLength(4);
-    // Four hidden in a row merge into one "4 hidden" line.
-    expect(document.querySelectorAll('[data-unalgo-run="member"]')).toHaveLength(3);
+    // Four hidden in a row: each keeps its own fold line by default.
+    expect(document.querySelectorAll('[data-unalgo-run]')).toHaveLength(0);
     expect(document.querySelectorAll('unalgo-post')).toHaveLength(4);
+    c.stop();
+  });
+
+  it('test_grouping_on_merges_hidden_posts_in_a_row_into_one_line', async () => {
+    // Settings → Display → Group hidden posts in a row: the four make one "4 hidden · Show all" line.
+    const rt = runtime();
+    rt.settings.display.groupRuns = true;
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(rt);
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('[data-unalgo-run="lead"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-unalgo-run="member"]')).toHaveLength(3);
+    const lead = c.mounted().find((e) => e.el.getAttribute('data-unalgo-run') === 'lead') as Entry;
+    expect(c.modelFor(lead).run).toMatchObject({ count: 4 });
+    c.stop();
+  });
+
+  it('test_finds_the_feed_when_the_page_swaps_its_main_after_sign_in', async () => {
+    // LinkedIn after sign-in: the address is already the feed, but the page still shows the login form in its <main>.
+    const feed = document.body.innerHTML;
+    document.body.innerHTML = '<main><form><input name="session_key"></form></main>';
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('unalgo-post')).toHaveLength(0);
+    // Then it replaces the whole <main> with the feed's. Nothing watches the new one until the next tick.
+    document.body.innerHTML = feed;
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.runAllTicks();
+    expect(document.querySelectorAll('[data-unalgo="collapsed"]')).toHaveLength(4);
+    expect(state('EEEkeyFirstDegree5') ?? null).toBeNull();
     c.stop();
   });
 
@@ -174,6 +205,66 @@ describe('FeedController on LinkedIn', () => {
     c.stop();
   });
 
+  it('test_wrong_call_opens_a_report_about_that_post', async () => {
+    const b = bridge();
+    const c = new FeedController(linkedinAdapter, b, mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    const ad = c.mounted().find((e) => e.id === 'li:ck:BBBkeyPromoted0002');
+    ad?.handlers?.onWhyAction('report');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.report).toHaveBeenCalledWith({ kind: 'wrong-call', from: 'why', key: 'li:ck:BBBkeyPromoted0002' });
+    const summary = c.postReportSummary('li:ck:BBBkeyPromoted0002');
+    expect(summary).toMatchObject({ reason: 'sponsored', source: 'rule' });
+    // What the report says about the post is codes only: no name, text or key from the card.
+    expect(JSON.stringify(summary)).not.toMatch(/BBBkey|Promoted0002|linkedin\.com/);
+    c.stop();
+  });
+
+  it('test_diagnostics_fit_the_report_wire_and_count_each_post_once', async () => {
+    const c = new FeedController(linkedinAdapter, bridge(), mountUi);
+    c.start(runtime());
+    await vi.runAllTicks();
+    const first = c.diagnostics();
+    // The page changes and every post is read again: the counts stay per post.
+    for (const card of document.querySelectorAll('[componentkey]')) card.append(document.createElement('span'));
+    await vi.advanceTimersByTimeAsync(2000);
+    const d = c.diagnostics();
+    expect(d.detectors).toStrictEqual(first.detectors);
+    expect(Object.keys(d.counts)).toEqual([
+      'items',
+      'posts',
+      'modules',
+      'pending',
+      'offscreen',
+      'hidden',
+      'classified',
+      'unknownAuthor',
+    ]);
+    expect(d.counts.items).toBe(5);
+    for (const [id, n] of Object.entries(d.detectors)) {
+      expect(id).toMatch(REPORT_ID_PATTERN);
+      expect(n).toBeLessThanOrEqual(d.counts.posts);
+    }
+    expect(Object.values(d.hiddenBy).reduce((a, n) => a + n, 0)).toBe(d.counts.hidden);
+    expect(d.errors).toStrictEqual({});
+    expect(ReportDetectionSchema.safeParse(d).success).toBe(true);
+    c.stop();
+  });
+
+  it('test_a_healthy_feed_raises_no_notice', async () => {
+    const b = bridge();
+    const c = new FeedController(linkedinAdapter, b, mountUi);
+    c.start(runtime());
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(c.getHealth()).toMatchObject({ status: 'ok', issues: [] });
+    expect(c.notice()).toBeNull();
+    const pushed = vi.mocked(b.pushTabState).mock.lastCall?.[0];
+    expect(pushed).toMatchObject({ onFeed: true, routeNew: false, health: { status: 'ok' } });
+    expect(pushed?.notice).toBeUndefined();
+    c.stop();
+  });
+
   it('a stale copy after an extension reload removes its UI and stops without throwing', () => {
     let alive = true;
     const b = bridge();
@@ -231,7 +322,8 @@ describe('paused AI', () => {
   const postCard = (key: string) => FIRST_DEGREE_POST.replaceAll('EEEkeyFirstDegree5', key);
   const PAUSE = {
     code: 'insufficient-credits' as const,
-    message: 'Your ai.example.org balance is empty. Add credit, or switch to on-device or your own key.',
+    message:
+      'Your ai.example.org balance is empty. Add credit, or switch to your own key, or to on-device AI where your browser offers it.',
   };
   const BAIT: Classification = {
     relevance: 10,

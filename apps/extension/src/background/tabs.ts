@@ -8,11 +8,18 @@ const lock = createLock();
 /** Post keys already counted in today's stats during this browser session. */
 const counted = new Map<string, Set<string>>();
 
-/** Merge a content script's live state into session storage, then update the toolbar badge. */
+/**
+ * Merge a content script's live state into session storage, then update the toolbar badge. Messages travel as JSON, so
+ * a notice cleared as `notice: undefined` arrives as no `notice` at all: a patch that carries the page's health without
+ * a notice means the notice is gone (the controller sends both together; ADR 0009 §3).
+ */
 export async function mergeTabState(tabId: number, patch: Partial<TabState>): Promise<void> {
   await lock(async () => {
     const item = tabStateItem(tabId);
     const next = { ...(await item.getValue()), ...patch, updatedAt: Date.now() } as TabState;
+    if ('health' in patch && !('notice' in patch && patch.notice)) delete next.notice;
+    // The controller runs (its state says it's on the feed): this is no longer a feed unAlgorithm isn't running on.
+    if (patch.onFeed === true && !('feedLike' in patch)) delete next.feedLike;
     await item.setValue(next);
     await updateBadge(tabId, next);
     await countToday(next);
@@ -50,9 +57,11 @@ export async function updateBadge(tabId: number, s: TabState): Promise<void> {
     ? 'unAlgorithm'
     : s.paused
       ? `unAlgorithm is paused on ${site}`
-      : s.health.status === 'broken'
-        ? `unAlgorithm: ${site}'s layout looks different, so nothing is hidden`
-        : `unAlgorithm: ${count} post${count === 1 ? '' : 's'} hidden on this page`;
+      : s.feedLike || s.notice?.kind === 'not-running'
+        ? `unAlgorithm isn't running on this ${site} page`
+        : s.health.status === 'broken'
+          ? `unAlgorithm: ${site}'s layout looks different, so nothing is hidden`
+          : `unAlgorithm: ${count} post${count === 1 ? '' : 's'} hidden on this page`;
   await action.setTitle({ tabId, title }).catch(() => undefined);
   const paused = !!site && s.paused;
   await action

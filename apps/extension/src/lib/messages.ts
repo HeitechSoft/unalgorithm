@@ -15,18 +15,20 @@ import type {
   Classification,
   FactcheckResult,
   NoiseLabel,
+  NoticeKind,
   PerspectivesJobRequest,
   PerspectivesResult,
   PlatformId,
   PostForAI,
   PostKey,
+  ReportSendFailure,
   ServerInfo,
   SharedLink,
 } from '@unalgorithm/protocol';
 import { browser } from 'wxt/browser';
 import type { PublicBalance } from '../background/server-balance.ts';
 import type { ServerLabel } from './server-label.ts';
-import type { SyncProblem } from './storage.ts';
+import type { ReportDraft, SyncProblem } from './storage.ts';
 
 /** A post to classify: its local key and exactly what the AI may see (no names, no URLs). */
 export interface ClassifyItem {
@@ -98,6 +100,38 @@ export interface SyncStatus {
   message?: string;
 }
 
+/**
+ * A report draft as a content script or the side panel builds it (ADR 0009 §2): the background adds the version, the
+ * id and `env`, checks it against the schema and keeps it for the report page. Never sent anywhere from here.
+ */
+export type ReportDraftInput = Omit<ReportDraft, 'v' | 'id' | 'env'>;
+
+/**
+ * A report page about no page facts: the popup on a tab whose content script didn't answer (`popup-no-script`, or
+ * `popup` with no answer to its snapshot) or off LinkedIn and Facebook (`platform` null), and Settings, where the page
+ * asks what it's about. The background builds these drafts itself; `tabId` is the tab the popup was looking at.
+ */
+export type ReportAbout =
+  | { from: 'popup' | 'popup-no-script'; platform: PlatformId | null; tabId: number | null }
+  | { from: 'settings' };
+
+/**
+ * Why a send didn't go through: the server's answers, and the extension's own: `consent` (Firefox's technical data is
+ * off), `limit` (this browser's own limits) and `expired` (the draft is gone).
+ */
+export type ReportSendCode = ReportSendFailure | 'consent' | 'limit' | 'expired';
+export type ReportSendResult = { ok: true; ref: string } | { ok: false; code: ReportSendCode; retryAfterSec?: number };
+
+/** What the report page reads for its draft: the report minus the person's answers, and where it stands. */
+export interface ReportPageData {
+  /** One draft, or, from Settings, three (LinkedIn, Facebook, something else) for the page's first question. */
+  drafts: ReportDraft[];
+  state: 'open' | 'sent';
+  ref?: string;
+  /** The feed tab the report came from, for *Back to LinkedIn*; absent from Settings and the side panel. */
+  opener?: { tabId: number; site: PlatformId };
+}
+
 export type BgRequest =
   /** `cacheOnly`: AI is paused, so only the cache answers (nothing is sent, nothing is metered). */
   | { type: 'classify'; platform: PlatformId; items: ClassifyItem[]; cacheOnly?: boolean }
@@ -138,7 +172,7 @@ export type BgRequest =
   | { type: 'syncNow' }
   /** Fact-check one public post on the person's own Anthropic key. Opens the side panel for the tab. */
   | { type: 'factcheck'; key: PostKey; input: Omit<PostForAI, 'ref'> }
-  /** Opens the side panel for the sending feed tab, where the newest check shows. */
+  /** Opens the side panel for the sending feed tab, where the newest check shows (Firefox: says whether it is open). */
   | { type: 'openFactcheck' }
   /**
    * A feed tab paused for want of credit became visible: the background refreshes an empty balance at most every 30 s,
@@ -155,7 +189,24 @@ export type BgRequest =
       link: SharedLink;
       platform: PlatformId;
       audience?: PerspectivesJobRequest['audience'];
-    };
+    }
+  /**
+   * Opens the report page (ADR 0009 §2) with a draft: from a feed tab's content script (detection, wrong call; `notice`
+   * is the in-feed card it came from) or the side panel (a correction). `nextTo`: the tab to open it beside when the
+   * sender has none (the side panel). Nothing is sent from here.
+   */
+  | { type: 'openReport'; draft: ReportDraftInput; notice?: NoticeKind; nextTo?: number }
+  /** Opens the report page about no page facts (`ReportAbout`): the popup without an answering tab, and Settings. */
+  | { type: 'openReport'; about: ReportAbout }
+  /** The report page's draft, by the id in its address. From report.html only. */
+  | { type: 'reportDraft'; id: string }
+  /**
+   * The report page's *Send report*: the exact body it showed. From report.html only; the background checks it against
+   * the draft and sends it, once.
+   */
+  | { type: 'sendReport'; id: string; body: string }
+  /** Keeps an in-feed notice card away on this platform for `ms` (`device.notices`), under this adapter version. */
+  | { type: 'snoozeNotice'; platform: PlatformId; kind: NoticeKind; ms: number; adapter: string };
 
 export interface BgResponses {
   classify: { results: ClassifyItemResult[]; pause?: BgError };
@@ -185,10 +236,19 @@ export interface BgResponses {
   syncSetEnabled: SyncStatus;
   syncNow: SyncStatus;
   factcheck: { ok: true; result: FactcheckResult; costMicros?: number } | { ok: false; error: BgError };
-  /** False when Chrome refused to open the side panel (no user gesture reached it). */
-  openFactcheck: { ok: boolean };
+  /**
+   * False when the side panel didn't open: Chrome or Edge refused (no user gesture reached it), or Firefox's sidebar
+   * isn't open in the tab's window. `shortcut`: Firefox's keyboard shortcut for the sidebar, when it has one.
+   */
+  openFactcheck: { ok: boolean; shortcut?: string };
   balanceCheck: { ok: true };
   perspectives: { ok: true; result: PerspectivesResult; costMicros?: number } | { ok: false; error: BgError };
+  /** False when the draft was refused (not a report this version can make). */
+  openReport: { ok: boolean };
+  /** Null once the draft has expired, its tab closed, or everything was erased. */
+  reportDraft: { report: ReportPageData | null };
+  sendReport: ReportSendResult;
+  snoozeNotice: { ok: true };
 }
 
 /** How the background reports a failed handler (an `undefined` reply would look like success). */
@@ -222,8 +282,14 @@ export type ContentRequest =
   | { type: 'peek'; on: boolean }
   | { type: 'reveal'; key: PostKey }
   | { type: 'diagnostics' }
-  /** The prefilled "Filtering looks wrong" issue URL for this page (content-free diagnostics only). */
-  | { type: 'reportUrl' }
+  /**
+   * The popup's *Report a problem* (`popup`), its banner's *Let us know* (`popup-banner`) or the side panel's
+   * (`sidepanel`): the content script builds a draft of this page as it is now and opens the report page. False when it
+   * couldn't.
+   */
+  | { type: 'reportSnapshot'; from: 'popup' | 'popup-banner' | 'sidepanel' }
+  /** A report about this tab was sent (from the background): its in-feed card goes away for a while. */
+  | { type: 'reportSent'; kind?: NoticeKind }
   /** The person signed in to the server again: try AI again (the device in storage may not have changed). */
   | { type: 'aiResume' };
 
@@ -237,6 +303,10 @@ export interface Diagnostics {
   counts: Record<string, number>;
   detectors: Record<string, number>;
   landmarks: Record<string, number>;
+  hiddenBy?: Record<string, number>;
+  observations?: Record<string, number>;
+  errors?: Record<string, number>;
+  strategy?: string;
 }
 
 export interface ContentResponses {
@@ -245,7 +315,8 @@ export interface ContentResponses {
   peek: { ok: true };
   reveal: { ok: boolean };
   diagnostics: Diagnostics;
-  reportUrl: { url: string };
+  reportSnapshot: { ok: boolean };
+  reportSent: { ok: true };
   aiResume: { ok: true };
 }
 

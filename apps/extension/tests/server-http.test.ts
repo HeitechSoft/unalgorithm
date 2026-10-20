@@ -1,12 +1,22 @@
 /**
  * Signed-in requests from the background to the server (R10, R11, R15): the device's bearer token, one forced refresh
- * after a 401, no cookies, no redirects, a bounded wait, and a result for every failure. The network is a stubbed fetch,
- * the device token a stubbed `getAccessToken` and the sign-in mark a stubbed `markNeedsSignIn`.
+ * after a 401, no cookies, no redirects, a bounded wait, a result for every failure, and in Firefox nothing at all
+ * without the server's data-collection consent (ADR 0008). The network is a stubbed fetch, the device token a stubbed
+ * `getAccessToken` and the sign-in mark a stubbed `markNeedsSignIn`.
  */
 import { AIError, describeError } from '@unalgorithm/ai';
 import { SYNC_CHANGES_PATH, SYNC_MAX_WAIT_SECONDS, SYNC_PUSH_PATH } from '@unalgorithm/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { type ServerHttpDeps, type ServerResult, serverRequest } from '../src/background/server-http.ts';
+import type { BrowserKind } from '../src/lib/browser-kind.ts';
+
+// Vitest builds for Chrome; the Firefox case switches `browserKind()`.
+const env = vi.hoisted(() => ({ kind: 'chrome' as BrowserKind }));
+vi.mock('../src/lib/browser-kind.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/browser-kind.ts')>()),
+  browserKind: () => env.kind,
+}));
 
 const ORIGIN = 'https://ai.example.org';
 const TIMEOUT_MS = 30_000;
@@ -16,6 +26,7 @@ const EPOCH = '0199d6a5-7a20-7d41-8c3e-5f9a0b1c2d4e';
 const AUTH: ServerResult = { ok: false, status: 0, reason: 'auth' };
 const NETWORK: ServerResult = { ok: false, status: 0, reason: 'network' };
 const ABORTED: ServerResult = { ok: false, status: 0, reason: 'aborted' };
+const CONSENT: ServerResult = { ok: false, status: 0, reason: 'consent' };
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -67,6 +78,7 @@ function hangUntilAborted(signal: AbortSignal | null | undefined): Promise<Respo
 }
 
 afterEach(() => {
+  env.kind = 'chrome';
   vi.restoreAllMocks();
 });
 
@@ -314,5 +326,47 @@ describe('failures', () => {
       ok: true,
     });
     expect(timeout.mock.calls).toStrictEqual([[TIMEOUT_MS], [TIMEOUT_MS]]);
+  });
+});
+
+describe('firefox consent', () => {
+  const CLOUD_DATA = ['websiteContent', 'personalCommunications', 'personallyIdentifyingInfo', 'authenticationInfo'];
+
+  it('test_firefox_server_request_needs_the_server_consent', async () => {
+    env.kind = 'firefox';
+    let granted: string[] = [];
+    // `as never`: spyOn picks the callback overload, typed as returning void.
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll').mockImplementation((async () => ({
+      origins: [],
+      permissions: [],
+      data_collection: granted,
+    })) as never);
+    const s = fakeServer();
+    const d = deps(s.fetch);
+    const send = () => serverRequest(ORIGIN, SYNC_PUSH_PATH, { method: 'POST', body: { v: 1 }, timeoutMs: TIMEOUT_MS }, d);
+
+    // Any one type of the server's set missing: nothing is sent, and the token isn't even read.
+    for (const missing of CLOUD_DATA) {
+      granted = CLOUD_DATA.filter((type) => type !== missing);
+      expect(await send(), missing).toStrictEqual(CONSENT);
+    }
+    // Firefox doesn't answer: nothing goes out on a guess.
+    getAll.mockRejectedValueOnce(new Error('gone'));
+    expect(await send()).toStrictEqual(CONSENT);
+    expect(s.calls).toHaveLength(0);
+    expect(d.getAccessToken).not.toHaveBeenCalled();
+    expect(d.markNeedsSignIn).not.toHaveBeenCalled();
+
+    // The server's set is enough: technical and interaction data (the device name) decides nothing here.
+    granted = CLOUD_DATA;
+    expect(await send()).toMatchObject({ ok: true });
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it('test_chrome_server_request_never_reads_consent', async () => {
+    const getAll = vi.spyOn(fakeBrowser.permissions, 'getAll');
+    const s = fakeServer();
+    expect(await serverRequest(ORIGIN, SYNC_CHANGES_PATH, { timeoutMs: TIMEOUT_MS }, deps(s.fetch))).toMatchObject({ ok: true });
+    expect(getAll).not.toHaveBeenCalled();
   });
 });

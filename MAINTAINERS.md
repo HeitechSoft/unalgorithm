@@ -10,7 +10,8 @@ unAlgorithm is maintained by [HeitechSoft](https://heitechsoft.com).
 
 - Review and merge pull requests (see [CODEOWNERS](.github/CODEOWNERS) for who reviews what).
 - Triage issues, especially "Filtering looks wrong" reports, within a few days.
-- Cut releases ([docs/release.md](docs/release.md)) and submit them to the Chrome Web Store.
+- Cut releases ([docs/release.md](docs/release.md)) and submit them to the three stores: the Chrome Web Store, Firefox
+  Add-ons and Microsoft Edge Add-ons.
 - Handle security reports ([SECURITY.md](SECURITY.md)) and code of conduct reports ([CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)).
 
 ## Becoming a maintainer

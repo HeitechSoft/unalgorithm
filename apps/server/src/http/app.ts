@@ -11,9 +11,12 @@ import {
   ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
   ADMIN_PRICES_PAGE_PATH,
+  ADMIN_REPORTS_PAGE_PATH,
   ADMIN_SOURCES_PAGE_PATH,
   type AIErrorCode,
   AUTHORIZE_PAGE_PATH,
+  ClientKindSchema,
+  clientKind,
   EMAIL_OTP_METHOD,
   FACTCHECK_JOB_TTL_MS,
   type FactcheckResult,
@@ -22,6 +25,7 @@ import {
   OUTLETS_PAGE_PATH,
   PASSKEY_METHOD,
   type PerspectivesResult,
+  REPORTS_PATH,
   retailMicrosPer1000Posts,
   SERVER_INFO_PATH,
   SETUP_PAGE_PATH,
@@ -49,6 +53,7 @@ import type { DbHandle } from '../db/client.ts';
 import { createJobStore, type JobStore } from '../jobs/memory-jobs.ts';
 import { errorFields, type Logger } from '../log.ts';
 import type { ErrorWindow } from '../ops/error-window.ts';
+import type { ReportLimits } from '../reports/limits.ts';
 import { accountRoutes } from '../routes/account.ts';
 import { adminRoutes } from '../routes/admin.ts';
 import { authRoutes } from '../routes/auth.ts';
@@ -59,6 +64,8 @@ import { NOT_FOUND } from '../routes/openapi.ts';
 import { outletAdminRoutes, outletPublicRoutes } from '../routes/outlets.ts';
 import { perspectivesRoutes } from '../routes/perspectives.ts';
 import { priceAdminRoutes, pricePublicRoutes } from '../routes/prices.ts';
+import { reportRoutes } from '../routes/reports.ts';
+import { reportAdminRoutes } from '../routes/reports-admin.ts';
 import { syncRoutes } from '../routes/sync.ts';
 import type { SpaceNotifier } from '../sync/notifier.ts';
 import type { AccessResolver } from '../sync/spaces.ts';
@@ -69,6 +76,7 @@ import {
   extensionCors,
   type InFlightRequests,
   nonErrorsAsErrors,
+  reportsCors,
   requestLog,
 } from './middleware.ts';
 import { MAX_PAGE_BODY_BYTES, pageCsp, readWebIndex, webMissing } from './page-frame.ts';
@@ -121,6 +129,11 @@ export interface AppDeps {
    * BETTER_AUTH_SECRET; `createApp` writes it here, so `deps.claimCache` is the app's own.
    */
   claimCache?: ClaimCache | null;
+  /**
+   * The problem report route's limits (ADR 0009 §6), such as ones a test reads the keys of. Default: new ones made from
+   * `config.reports`, counting today's total from the app's database.
+   */
+  reportLimits?: ReportLimits;
 }
 
 export type App = OpenAPIHono<AppEnv>;
@@ -180,8 +193,12 @@ export function createApp(deps: AppDeps): App {
   app.use(requestLog(log));
   app.use(secureHeaders({ referrerPolicy: 'no-referrer' }));
   if (deps.stopping) app.use(closeWhenStopping(deps.stopping));
-  // CORS before the body limit, so the extension can read a 413 too.
-  app.use('/v1/*', extensionCors(config.extensionIds));
+  // CORS before the body limit, so the extension can read a 413 too. With REPORTS=on, the problem report route answers
+  // CORS of its own, for any extension page whatever EXTENSION_IDS lists (ADR 0009 §6); off, it is a path like any other.
+  const reportsOn = config.reports.enabled;
+  const v1Cors = extensionCors(config.extensionIds);
+  if (reportsOn) app.use(REPORTS_PATH, reportsCors());
+  app.use('/v1/*', (c, next) => (reportsOn && c.req.path === REPORTS_PATH ? next() : v1Cors(c, next)));
   app.use('/v1/*', bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json(TOO_LARGE, 413) }));
   // Everything outside `/v1` and `/api/auth` (which has its own below): the server's pages take no body, and a route a
   // billing module mounts reads none larger.
@@ -212,6 +229,8 @@ export function createApp(deps: AppDeps): App {
       methods: [EMAIL_OTP_METHOD, ...(config.google ? [GOOGLE_METHOD] : []), PASSKEY_METHOD],
       authorizePath: AUTHORIZE_PAGE_PATH,
       tokenPath: TOKEN_PATH,
+      // The browsers EXTENSION_IDS lets sign in, so Firefox can say up front when this server takes none of its ids.
+      clients: ClientKindSchema.options.filter((kind) => config.extensionIds.some((id) => clientKind(id) === kind)),
     },
     limits: { maxPostsPerRequest: MAX_POSTS_PER_REQUEST },
   };
@@ -280,6 +299,9 @@ export function createApp(deps: AppDeps): App {
   priceAdminRoutes(app, deps);
   metricsRoutes(app, deps);
   syncRoutes(app, deps);
+  // The one anonymous write route: only with REPORTS=on. Its admin routes are always there, and say whether it is on.
+  if (reportsOn) reportRoutes(app, deps);
+  reportAdminRoutes(app, deps);
 
   billing.mount?.(app);
 
@@ -302,9 +324,9 @@ export function createApp(deps: AppDeps): App {
 
 /**
  * The server's web app (apps/web), built into `config.webDist`: `/`, `/authorize`, `/account`, `/setup`, `/admin`,
- * `/admin/sources`, `/admin/prices` and `/outlets` answer its `index.html`, and `/assets/*` the files Vite built, named by their content
- * hash. Without a build those pages answer 503 and the log says so once. The build is looked up per request, so one made
- * after the server started is served.
+ * `/admin/sources`, `/admin/prices`, `/admin/reports` and `/outlets` answer its `index.html`, and `/assets/*` the files
+ * Vite built, named by their content hash. Without a build those pages answer 503 and the log says so once. The build is
+ * looked up per request, so one made after the server started is served.
  */
 function mountWeb(app: App, { config, log }: AppDeps): void {
   const page = async (c: Context<AppEnv>) => {
@@ -323,6 +345,8 @@ function mountWeb(app: App, { config, log }: AppDeps): void {
   app.get(ADMIN_SOURCES_PAGE_PATH, page);
   // The Pricing page (PA-05): public as `/admin`; its admin routes check the origin, the session and the role (PA-03).
   app.get(ADMIN_PRICES_PAGE_PATH, page);
+  // The problem reports page (ADR 0009 §7): public as `/admin`; its admin routes check the origin, the session and the role.
+  app.get(ADMIN_REPORTS_PAGE_PATH, page);
   // Public: the source list as published, read from `/outlets.json` (P3-67).
   app.get(OUTLETS_PAGE_PATH, page);
 

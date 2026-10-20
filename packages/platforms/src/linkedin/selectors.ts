@@ -12,6 +12,8 @@ const URN_KINDS = ['urn:li:activity:', 'urn:li:ugcPost:', 'urn:li:share:', 'urn:
 
 /** 2026 feed: each post card is a list item keyed by a stable, opaque component key. */
 export const CARD_KEY_PREFIX = 'update-card-focus';
+/** The "For you" feed ends each card key with the feed's sort, e.g. "FeedType_MAIN_FEED_RELEVANCE". */
+export const FEED_TYPE_SUFFIX = /FeedType_[A-Z_]+$/;
 
 export const POST_ROOT_SELECTOR = [
   `[role="listitem"][componentkey^="${CARD_KEY_PREFIX}"]`,
@@ -19,8 +21,15 @@ export const POST_ROOT_SELECTOR = [
   '[data-view-name="feed-full-update"]',
 ].join(', ');
 
+/** A "For you" card key ends with the main feed's sort: only the home feed has it (ADR 0009 §3, home signature). */
+export const MAIN_FEED_KEY = /FeedType_MAIN_FEED_[A-Z_]+$/;
+
 export const SEL = {
-  header: '.update-components-header__text-view, .update-components-header, [data-view-name="feed-header-text"]',
+  /** The header line's class (older layout) and LinkedIn's data hook for it: the first two locators of the header slot. */
+  headerClass: '.update-components-header__text-view, .update-components-header',
+  headerHook: '[data-view-name="feed-header-text"]',
+  /** The author's block (older layout). */
+  actorBlock: '.update-components-actor',
   actorTitle: '.update-components-actor__title, .update-components-actor__name',
   actorDescription: '.update-components-actor__description',
   actorSubDescription: '.update-components-actor__sub-description',
@@ -29,6 +38,12 @@ export const SEL = {
   profileLink: 'a[href*="/in/"], a[href*="/company/"], a[href*="/school/"], a[href*="/showcase/"]',
   groupLink: 'a[href*="/groups/"]',
   text: '[data-testid="expandable-text-box"], .update-components-text, .feed-shared-update-v2__description, .feed-shared-inline-show-more-text, .feed-shared-text, [data-view-name="feed-commentary"]',
+  /** The text box by class name (older layout), then by LinkedIn's data hooks (2026): the text slot's first locators. */
+  textClass:
+    '.update-components-text, .feed-shared-update-v2__description, .feed-shared-inline-show-more-text, .feed-shared-text',
+  textHook: '[data-testid="expandable-text-box"], [data-view-name="feed-commentary"]',
+  /** The action bar by class name (older layout). */
+  actionBarClass: '.feed-shared-social-action-bar',
   expander: '[data-testid="expandable-text-button"], .feed-shared-inline-show-more-text__see-more-less-toggle',
   reactionsCount: '.social-details-social-counts__reactions-count, [data-view-name="feed-reaction-count"]',
   eventLink: 'a[href*="linkedin.com/events/"], a[href^="/events/"]',

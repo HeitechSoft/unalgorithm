@@ -1,10 +1,10 @@
 /**
  * The admin page's invites (R38): an admin invites a family member's address through CL4-06's routes, and the invited
  * address may then create an account. The server sends no email, so the page gives the admin the sentence to pass on:
- * it names the extension and this server's address, never the server's own name, so it is right on any server. Under it
- * a line for the admin: until store builds offer servers (docs/release.md, *Before a store build carries the Cloud
- * card*), the person needs a build that offers servers; the release that passes that gate removes it.
- * The pending invites come from the accounts list the page keeps, asked for again after each change.
+ * it names the extension and this server's address, never the server's own name, so it is right on any server. The
+ * store versions offer servers in every browser (docs/release.md, *Before a store build carries the Cloud card*), so
+ * the sentence needs no note about builds. The pending invites come from the accounts list the page keeps, asked for
+ * again after each change.
  */
 import { type AdminUsers, InviteRequestSchema } from '@unalgorithm/protocol';
 import { Banner, Button, ListGroup, ListRow, TextField } from '@unalgorithm/ui';
@@ -90,10 +90,6 @@ export function AdminInvites({ invites, reload, onSignedOut }: AdminInvitesProps
         <div className="web-notes">
           <p>
             {`Tell ${passOn}: install unAlgorithm Feed, open Settings, then AI, choose a server, enter ${window.location.origin}, and sign in with this address.`}
-          </p>
-          <p className="ua-footnote">
-            Until the store version of unAlgorithm Feed offers servers, they need a build of unAlgorithm Feed that does, with its
-            id in EXTENSION_IDS.
           </p>
         </div>
       ) : null}

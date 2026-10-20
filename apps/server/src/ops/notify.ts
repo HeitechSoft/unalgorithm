@@ -3,13 +3,14 @@
  * the server emails its active admins through the mailer it already has; `ALERT_EMAIL` names other addresses (or
  * `none`), and `ALERT_WEBHOOK_URL` adds a JSON POST for a chat or paging tool.
  *
- * Content-free: a message carries the alert's key, level and a number, the server's name and its admin page, never post
- * content, an account's address or a client IP. Plain text, no images or tracking: operational messages to the
- * operator, not marketing (CASL). Log lines name the alert's key and an error's name, code or HTTP status, never an
- * address, the webhook's URL, a message or a response body.
+ * Content-free: a message carries the alert's key, level and a number, the server's name and its admin page (the
+ * problem reports page for a `reports-` alert), never post content, a report, an account's address or a client IP.
+ * Plain text, no images or tracking: operational messages to the operator, not marketing (CASL). Log lines name the
+ * alert's key and an error's name, code or HTTP status, never an address, the webhook's URL, a message or a response
+ * body.
  */
 import { formatBytes } from '@unalgorithm/core';
-import { ADMIN_PAGE_PATH } from '@unalgorithm/protocol';
+import { ADMIN_PAGE_PATH, ADMIN_REPORTS_PAGE_PATH } from '@unalgorithm/protocol';
 import { eq } from 'drizzle-orm';
 import { activeAdminEmails } from '../admin/access.ts';
 import type { Config } from '../config.ts';
@@ -39,8 +40,13 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'database-size-high': 'The database is large',
   'errors-high': 'The server is logging errors',
   'spend-breaker': "Today's AI spending limit is reached",
+  'reports-linkedin-broken': 'LinkedIn filtering is reported broken',
+  'reports-facebook-broken': 'Facebook filtering is reported broken',
+  'reports-waiting': 'Problem reports are waiting',
+  'reports-cap': "Problem reports reached today's limit",
 };
 const BACKUP_KEY_PREFIX = 'backup-';
+const REPORTS_KEY_PREFIX = 'reports-';
 
 const SUBJECT_PREFIX: Record<AlertState, string> = {
   opened: '',
@@ -67,9 +73,10 @@ function headline(state: AlertState, key: string, config: Config): string {
 }
 
 /** What the rule measured, in fixed words: a test has no reading, and a resolved spend breaker needs none. */
-function readingLines(state: AlertState, a: AlertSummary, t: Config['alerts']): string[] {
+function readingLines(state: AlertState, a: AlertSummary, config: Config): string[] {
   if (state === 'test') return [];
   const { key, value } = a;
+  const t = config.alerts;
   if (key === 'disk-free-low') {
     return [`Free disk space: ${formatBytes(value)}; the alert opens below ${formatBytes(t.diskFreeMinBytes)}.`];
   }
@@ -84,7 +91,27 @@ function readingLines(state: AlertState, a: AlertSummary, t: Config['alerts']): 
   if (key.startsWith(BACKUP_KEY_PREFIX)) {
     return [value === null ? 'No successful backup yet.' : `Last successful backup: ${plural(value, 'hour')} ago.`];
   }
+  if (value === null) return [];
+  if (key.endsWith('-broken') && key.startsWith(REPORTS_KEY_PREFIX)) {
+    const opens = config.reports.alertNetworks;
+    return [
+      `Reports from ${plural(value, 'network')} in the last 24 hours; the alert opens at ${opens} with a clear sign of ` +
+        `breakage, or ${2 * opens} without.`,
+    ];
+  }
+  if (key === `${REPORTS_KEY_PREFIX}waiting`) return [`${plural(value, 'report')} unhandled for more than 24 hours.`];
+  if (key === `${REPORTS_KEY_PREFIX}cap`) {
+    return [
+      `${plural(value, 'report')} accepted today; the limit is ${config.reports.dailyMax}.`,
+      ...(state === 'closed' ? [] : ['Reports are accepted again at 00:00 UTC.']),
+    ];
+  }
   return [];
+}
+
+/** The page an alert's message links to: the problem reports page for a report alert, the admin page otherwise. */
+export function alertPage(key: string): string {
+  return key.startsWith(REPORTS_KEY_PREFIX) ? ADMIN_REPORTS_PAGE_PATH : ADMIN_PAGE_PATH;
 }
 
 /** "1 hour", "27 hours": `n` rounded to a whole number. */
@@ -95,7 +122,7 @@ export function plural(n: number, unit: string): string {
 
 /** The email: plain text whose only link is the server's own admin page. */
 export function alertMessage(state: AlertState, a: AlertSummary, config: Config): { subject: string; text: string } {
-  const reading = readingLines(state, a, config.alerts);
+  const reading = readingLines(state, a, config);
   const lead =
     state === 'reminder'
       ? ['This alert is still open.']
@@ -104,7 +131,7 @@ export function alertMessage(state: AlertState, a: AlertSummary, config: Config)
         : state === 'test'
           ? ['This is a test notification sent with the alerts command.']
           : [];
-  const lines = [...lead, ...reading, '', `Level: ${a.level}.`, `Admin page: ${config.publicUrl}${ADMIN_PAGE_PATH}`];
+  const lines = [...lead, ...reading, '', `Level: ${a.level}.`, `Admin page: ${config.publicUrl}${alertPage(a.key)}`];
   return { subject: headline(state, a.key, config), text: lines.join('\n') };
 }
 

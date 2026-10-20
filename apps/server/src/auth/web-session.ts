@@ -5,8 +5,9 @@
  * that also take a device token, CL3); no route looks the session up itself.
  *
  * The rule for a route behind it: a GET needs nothing more. Better Auth's cookie is `SameSite=Lax`, so another site's
- * `fetch` carries no session, and `/v1/*` CORS answers only extension origins, so no page elsewhere can read the
- * answer. A state-changing route adds `ownPageOnly` in front of it, as the authorize route does.
+ * `fetch` carries no session, and `/v1/*` CORS never sends `Access-Control-Allow-Credentials`, so no other origin (a
+ * site, or an extension it admits) can read an answer to the cookie. A state-changing route adds `ownPageOnly` in front
+ * of it, as the authorize route does.
  *
  * The session cookie and its token are never logged, and never copied into `webUser`.
  */
