@@ -43,7 +43,7 @@ const MAX_USER_AGENT = 500;
 const MAX_PASSKEY_NAME = 200;
 
 /**
- * The sign-in code types whose rows Better Auth 1.7.7 keys by address, `<type>-otp-<email>` (its email-otp plugin's
+ * The sign-in code types whose rows Better Auth 1.7.10 keys by address, `<type>-otp-<email>` (its email-otp plugin's
  * `toOTPIdentifier`): every type the mounted `send-verification-otp` route stores. It refuses `change-email`, and stores
  * `forget-password` and `email-verification` rows for an existing account even though the server sends only sign-in
  * codes.
