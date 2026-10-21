@@ -9,6 +9,7 @@ import { domainFromInput, outletIdFromName } from '@unalgorithm/outlets';
 import {
   ADMIN_SOURCES_PAGE_PATH,
   BUCKET_LABELS,
+  FEATURE_NAMES,
   LEAN_BUCKETS,
   type LeanBucket,
   MAX_OUTLET_DOMAINS,
@@ -19,18 +20,16 @@ import {
   type OutletInput,
   OutletInputSchema,
 } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, TextField } from '@unalgorithm/ui';
-import { type FormEvent, useId, useState } from 'react';
-import { AdminGate, useAdminSession } from './Admin.tsx';
+import { Banner, Button, Dialog, IconButton, Newspaper, Pencil, Plus, TextField, Trash2 } from '@unalgorithm/ui';
+import { type FormEvent, type ReactNode, useId, useState } from 'react';
+import { AdminGate, AdminPage, useAdminSession } from './Admin.tsx';
 import { ApiError, adminOutlets, changeOutlet, importCandidates } from './api.ts';
-import { Page } from './Page.tsx';
 import { failureMessage } from './SignIn.tsx';
 import { ChangeList, COUNTRY_LABELS, OutletTable, SourceListBalance } from './SourceList.tsx';
+import { Section } from './ui.tsx';
 
 const TITLE = 'Source list';
-const INTRO =
-  'Changes are published as soon as you save them. A lean needs at least one piece of evidence. Every change is listed ' +
-  'below and on the public page.';
+const INTRO = `The news outlets ${FEATURE_NAMES.perspectives} compares coverage across. A lean needs at least one piece of evidence.`;
 const IMPORT_LINE = 'Adds the candidate outlets with their names, web addresses and country, and no leans.';
 const CHANGED = 'The list changed since you opened it.';
 const GONE = 'That outlet is no longer on the list.';
@@ -50,12 +49,12 @@ type Notice = { title: string; reload?: boolean };
 
 export function AdminSources() {
   const session = useAdminSession(TITLE, adminOutlets);
-  const { info, heading, step, reload, sessionEnded } = session;
-  const headingId = useId();
-  /** The open form: empty to add an outlet, or filled with the one being edited. */
+  const { info, step, reload, sessionEnded } = session;
+  /** The open sheet: empty to add an outlet, or filled with the one being edited. */
   const [form, setForm] = useState<{ initial?: OfficialOutlet } | null>(null);
-  /** The outlet whose removal is being confirmed. */
-  const [removing, setRemoving] = useState<string | null>(null);
+  /** The outlet whose removal is being confirmed, kept after the alert closes so its title stays while it fades. */
+  const [removing, setRemoving] = useState<OfficialOutlet | null>(null);
+  const [asking, setAsking] = useState(false);
   /** The request in flight: 'import', 'save' or 'remove'. */
   const [pending, setPending] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -64,7 +63,7 @@ export function AdminSources() {
     return <AdminGate session={session} intro={INTRO} returnTo={ADMIN_SOURCES_PAGE_PATH} />;
   }
   const { list, changes } = step.data;
-  const idle = pending === null && form === null && removing === null;
+  const idle = pending === null && form === null && !asking;
 
   /** The list and its history again; true when they came. A 401 ends the page's session. */
   async function refresh(): Promise<boolean> {
@@ -82,14 +81,13 @@ export function AdminSources() {
   async function send(key: string, action: () => Promise<unknown>) {
     setPending(key);
     setNotice(null);
+    setAsking(false);
     try {
       await action();
       setForm(null);
-      setRemoving(null);
       await refresh();
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
-      setRemoving(null);
       if (status === 401) {
         setForm(null);
         sessionEnded();
@@ -116,50 +114,29 @@ export function AdminSources() {
     if (await refresh()) setNotice(null);
   }
 
+  const noticeBanner = notice ? (
+    <Banner
+      tone="danger"
+      title={notice.title}
+      action={notice.reload ? { label: 'Reload', onAction: () => void onReload() } : undefined}
+    />
+  ) : null;
+
   return (
-    <Page info={info} heading={heading} intro={INTRO} wide>
-      <div className="web-notes web-status">
-        <p>
-          Version {list.version} · <a href={OUTLETS_PAGE_PATH}>Public page</a>
-        </p>
-      </div>
-      <SourceListBalance outlets={list.outlets} />
-      <section className="web-section" aria-labelledby={headingId}>
-        <h2 id={headingId}>Outlets</h2>
-        {notice ? (
-          <Banner
-            tone="danger"
-            title={notice.title}
-            action={notice.reload ? { label: 'Reload', onAction: () => void onReload() } : undefined}
-          />
-        ) : null}
-        {list.outlets.length === 0 ? (
-          <div className="web-section-actions">
+    <AdminPage
+      session={session}
+      nav="sources"
+      title={TITLE}
+      intro={INTRO}
+      actions={
+        <>
+          <a className="ua-button ua-button--secondary" href={OUTLETS_PAGE_PATH}>
+            Public page
+          </a>
+          {list.outlets.length > 0 ? (
             <Button
               variant="primary"
-              loading={pending === 'import'}
-              disabled={!idle}
-              onClick={() => void send('import', importCandidates)}
-            >
-              Import the candidate list
-            </Button>
-            <p className="web-status">{IMPORT_LINE}</p>
-          </div>
-        ) : null}
-        {form ? (
-          <OutletForm
-            key={form.initial?.id ?? ''}
-            initial={form.initial}
-            busy={pending === 'save'}
-            onSubmit={save}
-            onCancel={() => {
-              setForm(null);
-              setNotice(null);
-            }}
-          />
-        ) : (
-          <div>
-            <Button
+              icon={Plus}
               disabled={!idle}
               onClick={() => {
                 setNotice(null);
@@ -168,64 +145,123 @@ export function AdminSources() {
             >
               Add an outlet
             </Button>
+          ) : null}
+        </>
+      }
+    >
+      <p className="web-meta">
+        {`Version ${list.version} · Changes are published as soon as you save them, and listed below and on the public page.`}
+      </p>
+      {form ? null : noticeBanner}
+      <SourceListBalance outlets={list.outlets} />
+      <Section title="Outlets">
+        {list.outlets.length === 0 ? (
+          <div className="web-card web-empty-card">
+            <Newspaper aria-hidden="true" />
+            <p className="ua-headline">No outlets yet.</p>
+            <p className="ua-secondary">{IMPORT_LINE}</p>
+            <div className="web-form-actions">
+              <Button
+                disabled={!idle}
+                onClick={() => {
+                  setNotice(null);
+                  setForm({});
+                }}
+              >
+                Add an outlet
+              </Button>
+              <Button
+                variant="primary"
+                loading={pending === 'import'}
+                disabled={!idle}
+                onClick={() => void send('import', importCandidates)}
+              >
+                Import the candidate list
+              </Button>
+            </div>
           </div>
-        )}
-        <OutletTable
-          outlets={list.outlets}
-          actions={(outlet) =>
-            removing === outlet.id ? (
-              <div className="ua-stack">
-                <p>{`Remove ${outlet.name}? It leaves the published list now.`}</p>
-                <div className="ua-hstack ua-wrap">
-                  {/* Focused when the question appears: the destructive button never has the focus first. */}
-                  <Button size="sm" autoFocus disabled={pending !== null} onClick={() => setRemoving(null)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive-solid"
-                    loading={pending === 'remove'}
-                    disabled={pending !== null}
-                    onClick={() =>
-                      void send('remove', () => changeOutlet({ action: 'remove', baseVersion: list.version, id: outlet.id }))
-                    }
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="ua-hstack ua-wrap">
-                <Button
-                  size="sm"
-                  aria-label={`Edit ${outlet.name}`}
+        ) : (
+          <OutletTable
+            outlets={list.outlets}
+            actions={(outlet) => (
+              <div className="web-outlet-actions">
+                <IconButton
+                  icon={Pencil}
+                  label={`Edit ${outlet.name}`}
                   disabled={!idle}
                   onClick={() => {
                     setNotice(null);
                     setForm({ initial: outlet });
                   }}
-                >
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  aria-label={`Remove ${outlet.name}`}
+                />
+                <IconButton
+                  icon={Trash2}
+                  label={`Remove ${outlet.name}`}
+                  className="web-icon-destructive"
                   disabled={!idle}
                   onClick={() => {
                     setNotice(null);
-                    setRemoving(outlet.id);
+                    setRemoving(outlet);
+                    setAsking(true);
                   }}
-                >
-                  Remove
-                </Button>
+                />
               </div>
-            )
-          }
-        />
-      </section>
+            )}
+          />
+        )}
+      </Section>
       <ChangeList changes={changes} showBy />
-    </Page>
+      <Dialog
+        open={form !== null}
+        onOpenChange={(open) => {
+          if (!open && pending === null) {
+            setForm(null);
+            setNotice(null);
+          }
+        }}
+        className="web-sheet"
+        title={form?.initial ? `Edit ${form.initial.name}` : 'Add an outlet'}
+      >
+        {form ? (
+          <OutletForm
+            key={form.initial?.id ?? ''}
+            initial={form.initial}
+            busy={pending === 'save'}
+            notice={noticeBanner}
+            onSubmit={save}
+            onCancel={() => {
+              setForm(null);
+              setNotice(null);
+            }}
+          />
+        ) : null}
+      </Dialog>
+      <Dialog
+        open={asking}
+        onOpenChange={setAsking}
+        alert
+        title={`Remove ${removing?.name ?? 'this outlet'}?`}
+        description="It leaves the published list now. The change is listed in the history."
+        actions={
+          <>
+            {/* First, so the alert opens with it focused: the destructive button never has the focus first. */}
+            <Button onClick={() => setAsking(false)}>Cancel</Button>
+            <Button
+              variant="destructive-solid"
+              loading={pending === 'remove'}
+              onClick={() => {
+                const outlet = removing;
+                if (outlet) {
+                  void send('remove', () => changeOutlet({ action: 'remove', baseVersion: list.version, id: outlet.id }));
+                }
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        }
+      />
+    </AdminPage>
   );
 }
 
@@ -253,11 +289,14 @@ function blockedReason(issues: readonly { path: readonly PropertyKey[] }[]): str
 function OutletForm({
   initial,
   busy,
+  notice,
   onSubmit,
   onCancel,
 }: {
   initial?: OfficialOutlet;
   busy: boolean;
+  /** A refused save, said above the fields. */
+  notice: ReactNode;
   onSubmit(outlet: OutletInput): void;
   onCancel(): void;
 }) {
@@ -320,130 +359,130 @@ function OutletForm({
   }
 
   return (
-    <ListGroup header={initial ? `Edit ${initial.name}` : 'Add an outlet'}>
-      <form className="web-form ua-stack" noValidate onSubmit={onSave}>
-        <TextField label="Name" autoFocus autoComplete="off" value={name} onChange={(e) => onName(e.target.value)} />
-        <TextField
-          label="Id"
-          mono
-          autoComplete="off"
+    <form noValidate aria-label={initial ? `Edit ${initial.name}` : 'Add an outlet'} onSubmit={onSave}>
+      {notice}
+      <TextField label="Name" autoFocus autoComplete="off" value={name} onChange={(e) => onName(e.target.value)} />
+      <TextField
+        label="Id"
+        mono
+        autoComplete="off"
+        spellCheck={false}
+        readOnly={initial !== undefined}
+        hint={
+          initial
+            ? "An outlet's id never changes: links to it and appeals use it."
+            : 'Made from the name. It never changes once added: links to it and appeals use it.'
+        }
+        value={id}
+        onChange={(e) => {
+          setId(e.target.value);
+          setIdTyped(true);
+        }}
+      />
+      <div className="ua-field">
+        <label htmlFor={`${fieldId}-addresses`} className="ua-field-label">
+          Web addresses
+        </label>
+        <textarea
+          id={`${fieldId}-addresses`}
+          className="ua-textarea"
+          rows={2}
           spellCheck={false}
-          readOnly={initial !== undefined}
-          hint={
-            initial
-              ? "An outlet's id never changes: links to it and appeals use it."
-              : 'Made from the name. It never changes once added: links to it and appeals use it.'
-          }
-          value={id}
-          onChange={(e) => {
-            setId(e.target.value);
-            setIdTyped(true);
-          }}
+          autoCapitalize="none"
+          aria-invalid={addressError ? true : undefined}
+          aria-describedby={`${fieldId}-addresses-hint`}
+          value={addresses}
+          onChange={(e) => setAddresses(e.target.value)}
+          onBlur={() => setAddressesLeft(true)}
         />
-        <div className="ua-field">
-          <label htmlFor={`${fieldId}-addresses`} className="ua-field-label">
-            Web addresses
-          </label>
-          <textarea
-            id={`${fieldId}-addresses`}
-            className="ua-textarea"
-            rows={2}
-            spellCheck={false}
-            autoCapitalize="none"
-            aria-invalid={addressError ? true : undefined}
-            aria-describedby={`${fieldId}-addresses-hint`}
-            value={addresses}
-            onChange={(e) => setAddresses(e.target.value)}
-            onBlur={() => setAddressesLeft(true)}
-          />
-          <div id={`${fieldId}-addresses-hint`} className={addressError ? 'ua-field-error' : 'ua-field-hint'}>
-            {addressError ?? 'One per line, or separated by commas.'}
-          </div>
+        <div id={`${fieldId}-addresses-hint`} className={addressError ? 'ua-field-error' : 'ua-field-hint'}>
+          {addressError ?? 'One per line, or separated by commas.'}
         </div>
-        <div className="ua-field">
-          <label htmlFor={`${fieldId}-country`} className="ua-field-label">
-            Country
-          </label>
-          <select
-            id={`${fieldId}-country`}
-            className="ua-select"
-            value={country}
-            onChange={(e) => setCountry(e.target.value as Country)}
-          >
-            {OUTLET_COUNTRIES.map((c) => (
-              <option key={c} value={c}>
-                {COUNTRY_LABELS[c]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="ua-field">
-          <label htmlFor={`${fieldId}-lean`} className="ua-field-label">
-            Lean
-          </label>
-          <select
-            id={`${fieldId}-lean`}
-            className="ua-select"
-            value={bucket}
-            onChange={(e) => setBucket(e.target.value as LeanBucket | '')}
-          >
-            <option value="">No lean</option>
-            {LEAN_BUCKETS.map((b) => (
-              <option key={b} value={b}>
-                {BUCKET_LABELS[b]}
-              </option>
-            ))}
-          </select>
-        </div>
-        {bucket === '' ? null : (
-          <>
-            {evidence.map((row, i) => (
-              <div key={row.key} className="ua-stack">
-                <TextField
-                  label={`Evidence ${i + 1} link`}
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  value={row.url}
-                  onChange={(e) => setRow(row.key, { url: e.target.value })}
-                />
-                <TextField
-                  label={`Evidence ${i + 1} note`}
-                  autoComplete="off"
-                  value={row.note}
-                  onChange={(e) => setRow(row.key, { note: e.target.value })}
-                />
-              </div>
-            ))}
-            {evidence.length < MAX_OUTLET_EVIDENCE ? (
-              <div>
-                <Button size="sm" onClick={() => setEvidence((rows) => [...rows, evidenceRow()])}>
-                  Add evidence
-                </Button>
-              </div>
-            ) : null}
-          </>
-        )}
-        <div className="ua-hstack ua-wrap">
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={busy || !ready}
-            aria-describedby={reason ? `${fieldId}-reason` : undefined}
-          >
-            Save
-          </Button>
-          <Button disabled={busy} onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
-        {reason ? (
-          <p id={`${fieldId}-reason`} className="ua-footnote">
-            {reason}
-          </p>
-        ) : null}
-      </form>
-    </ListGroup>
+      </div>
+      <div className="ua-field">
+        <label htmlFor={`${fieldId}-country`} className="ua-field-label">
+          Country
+        </label>
+        <select
+          id={`${fieldId}-country`}
+          className="ua-select"
+          value={country}
+          onChange={(e) => setCountry(e.target.value as Country)}
+        >
+          {OUTLET_COUNTRIES.map((c) => (
+            <option key={c} value={c}>
+              {COUNTRY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="ua-field">
+        <label htmlFor={`${fieldId}-lean`} className="ua-field-label">
+          Lean
+        </label>
+        <select
+          id={`${fieldId}-lean`}
+          className="ua-select"
+          value={bucket}
+          onChange={(e) => setBucket(e.target.value as LeanBucket | '')}
+        >
+          <option value="">No lean</option>
+          {LEAN_BUCKETS.map((b) => (
+            <option key={b} value={b}>
+              {BUCKET_LABELS[b]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {bucket === '' ? null : (
+        <fieldset className="web-fieldset">
+          <legend>Evidence</legend>
+          {evidence.map((row, i) => (
+            <div key={row.key} className="web-evidence-row">
+              <TextField
+                label={`Evidence ${i + 1} link`}
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                value={row.url}
+                onChange={(e) => setRow(row.key, { url: e.target.value })}
+              />
+              <TextField
+                label={`Evidence ${i + 1} note`}
+                autoComplete="off"
+                value={row.note}
+                onChange={(e) => setRow(row.key, { note: e.target.value })}
+              />
+            </div>
+          ))}
+          {evidence.length < MAX_OUTLET_EVIDENCE ? (
+            <div>
+              <Button size="sm" variant="plain" icon={Plus} onClick={() => setEvidence((rows) => [...rows, evidenceRow()])}>
+                Add evidence
+              </Button>
+            </div>
+          ) : null}
+        </fieldset>
+      )}
+      <div className="web-form-actions">
+        <Button disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={busy}
+          disabled={busy || !ready}
+          aria-describedby={reason ? `${fieldId}-reason` : undefined}
+        >
+          Save
+        </Button>
+      </div>
+      {reason ? (
+        <p id={`${fieldId}-reason`} className="web-form-reason">
+          {reason}
+        </p>
+      ) : null}
+    </form>
   );
 }

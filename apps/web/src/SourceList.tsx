@@ -22,10 +22,24 @@ import {
   type ServerInfo,
   siteUrl,
 } from '@unalgorithm/protocol';
-import { BalanceNotice, Banner, EmptyState } from '@unalgorithm/ui';
-import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
+import {
+  BalanceNotice,
+  Banner,
+  Download,
+  EmptyState,
+  ListGroup,
+  ListRow,
+  type LucideIcon,
+  Newspaper,
+  Pencil,
+  Plus,
+  type TileTint,
+  Trash2,
+} from '@unalgorithm/ui';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { publicChanges, publicSourceList, serverInfo } from './api.ts';
-import { Page } from './Page.tsx';
+import { Page, PageLoading } from './Page.tsx';
+import { Section } from './ui.tsx';
 
 const TITLE = 'Source list';
 const INTRO =
@@ -47,6 +61,12 @@ const ACTION_LABELS: Readonly<Record<OutletChange['action'], string>> = {
   add: 'Added',
   edit: 'Edited',
   remove: 'Removed',
+};
+const ACTION_ICONS: Readonly<Record<OutletChange['action'], { icon: LucideIcon; tint: TileTint }>> = {
+  import: { icon: Download, tint: 'gray' },
+  add: { icon: Plus, tint: 'green' },
+  edit: { icon: Pencil, tint: 'blue' },
+  remove: { icon: Trash2, tint: 'slate' },
 };
 const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const leanLabel = (outlet: OfficialOutlet) => (outlet.lean ? BUCKET_LABELS[outlet.lean.bucket] : NOT_LABELLED);
@@ -79,28 +99,35 @@ export function SourceList() {
     document.getElementById(window.location.hash.slice(1))?.scrollIntoView?.();
   }, [step]);
 
-  if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
-  const heading = info ? `${TITLE} · ${info.name}` : TITLE;
+  if (step.name === 'loading') return <PageLoading />;
   if (step.name === 'unavailable') {
     return (
-      <Page info={info} heading={heading} intro={INTRO}>
+      <Page info={info} layout="app" title={TITLE} intro={INTRO}>
         <Banner tone="danger" title={UNREACHABLE} action={{ label: 'Try again', onAction: () => void load() }} />
       </Page>
     );
   }
   const { list, changes } = step;
   return (
-    <Page info={info} heading={heading} intro={INTRO} wide>
-      <div className="web-notes web-status">
+    <Page
+      info={info}
+      layout="app"
+      title={TITLE}
+      intro={INTRO}
+      wide
+      actions={
+        <a className="ua-button ua-button--secondary" href={OUTLETS_JSON_PATH} download="outlets.json">
+          <Download aria-hidden="true" />
+          Download JSON
+        </a>
+      }
+    >
+      <div className="web-meta web-prose">
         <p>
           Version {list.version}
           {list.updatedAt ? ` · Updated ${date(list.updatedAt)}` : null} · Data{' '}
           <a href={LICENSE_URL} rel="noopener noreferrer" target="_blank">
             CC BY 4.0
-          </a>{' '}
-          ·{' '}
-          <a href={OUTLETS_JSON_PATH} download="outlets.json">
-            Download JSON
           </a>
         </p>
         <p>
@@ -108,10 +135,9 @@ export function SourceList() {
         </p>
       </div>
       <SourceListBalance outlets={list.outlets} />
-      <section className="web-section">
-        <h2>Outlets</h2>
+      <Section title="Outlets">
         <OutletTable outlets={list.outlets} />
-      </section>
+      </Section>
       <ChangeList changes={changes} />
     </Page>
   );
@@ -124,11 +150,22 @@ export function SourceList() {
 export function SourceListBalance({ outlets }: { outlets: readonly OfficialOutlet[] }) {
   if (outlets.length === 0) return null;
   const balance = listBalance({ outlets });
+  const most = Math.max(1, ...LEAN_BUCKETS.map((b) => balance.counts[b]));
   return (
-    <>
+    <Section title="Balance" description="Outlets with a lean, in each bucket.">
       <BalanceNotice name="This list" empty={balance.empty} warnings={balance.warnings} />
-      <p className="web-status">{LEAN_BUCKETS.map((b) => `${BUCKET_LABELS[b]} ${balance.counts[b]}`).join(' · ')}</p>
-    </>
+      <ul className="web-card web-balance-buckets">
+        {LEAN_BUCKETS.map((b) => (
+          <li key={b}>
+            <span className="web-bucket-bar" aria-hidden="true">
+              <span style={{ height: `${(balance.counts[b] / most) * 100}%` }} />
+            </span>
+            <span className="web-bucket-count">{balance.counts[b]}</span>
+            <span className="web-bucket-label">{BUCKET_LABELS[b]}</span>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -143,9 +180,15 @@ export function OutletTable({
   outlets: readonly OfficialOutlet[];
   actions?: (outlet: OfficialOutlet) => ReactNode;
 }) {
-  if (outlets.length === 0) return <EmptyState title="No outlets yet." />;
+  if (outlets.length === 0) {
+    return (
+      <div className="web-card">
+        <EmptyState icon={Newspaper} title="No outlets yet." />
+      </div>
+    );
+  }
   return (
-    <div className="web-table-scroll">
+    <div className="web-table-card">
       <table className="web-table web-outlets">
         <thead>
           <tr>
@@ -155,7 +198,11 @@ export function OutletTable({
             <th scope="col">Lean</th>
             <th scope="col">Evidence</th>
             <th scope="col">Changed</th>
-            {actions ? <th scope="col">Actions</th> : null}
+            {actions ? (
+              <th scope="col">
+                <span className="ua-vh">Actions</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -167,7 +214,9 @@ export function OutletTable({
               </th>
               <td>{outlet.domains.join(', ')}</td>
               <td>{COUNTRY_LABELS[outlet.country]}</td>
-              <td>{leanLabel(outlet)}</td>
+              <td>
+                <span className={outlet.lean ? 'ua-badge ua-badge--accent' : 'ua-badge'}>{leanLabel(outlet)}</span>
+              </td>
               <td>
                 {outlet.lean ? (
                   <ul className="web-evidence">
@@ -203,16 +252,19 @@ function editedFields(before: OfficialOutlet, after: OfficialOutlet): string[] {
   return fields;
 }
 
-/** One change in words: its day, what happened to which outlet, what an edit changed, and who (with `showBy`). */
-function changeLine(change: OutletChange & { by?: string | null }, showBy: boolean): string {
+/** One change: what happened to which outlet, and its day, what an edit changed and who (with `showBy`). */
+function changeRow(change: OutletChange & { by?: string | null }, showBy: boolean): { title: string; subtitle: string } {
   const outlet = change.after ?? change.before;
-  const parts = [`${date(change.at)} · ${ACTION_LABELS[change.action]} ${outlet?.name ?? change.outletId} (${change.outletId})`];
+  const parts = [date(change.at)];
   if (change.action === 'edit' && change.before && change.after) {
     const fields = editedFields(change.before, change.after);
     if (fields.length > 0) parts.push(fields.join(', '));
   }
   if (showBy && change.by) parts.push(`by ${change.by}`);
-  return parts.join(' · ');
+  return {
+    title: `${ACTION_LABELS[change.action]} ${outlet?.name ?? change.outletId} (${change.outletId})`,
+    subtitle: parts.join(' · '),
+  };
 }
 
 /**
@@ -226,24 +278,22 @@ export function ChangeList({
   changes: readonly (OutletChange & { by?: string | null })[];
   showBy?: boolean;
 }) {
-  const headingId = useId();
   return (
-    <section className="web-section">
-      <h2 id={headingId}>Changes</h2>
+    <Section title="Changes">
       {changes.length === 0 ? (
-        <p className="web-status">No changes yet.</p>
+        <ListGroup>
+          <ListRow title={<span className="ua-secondary">No changes yet.</span>} />
+        </ListGroup>
       ) : (
-        <>
-          <ol className="web-changes" aria-labelledby={headingId}>
-            {[...changes]
-              .sort((a, b) => b.seq - a.seq)
-              .map((change) => (
-                <li key={change.seq}>{changeLine(change, showBy)}</li>
-              ))}
-          </ol>
-          {changes.length >= MAX_LISTED_CHANGES ? <p className="web-status">The latest {MAX_LISTED_CHANGES} changes.</p> : null}
-        </>
+        <ListGroup footer={changes.length >= MAX_LISTED_CHANGES ? `The latest ${MAX_LISTED_CHANGES} changes.` : undefined}>
+          {[...changes]
+            .sort((a, b) => b.seq - a.seq)
+            .map((change) => {
+              const { title, subtitle } = changeRow(change, showBy);
+              return <ListRow key={change.seq} icon={ACTION_ICONS[change.action]} title={title} subtitle={subtitle} />;
+            })}
+        </ListGroup>
       )}
-    </section>
+    </Section>
   );
 }

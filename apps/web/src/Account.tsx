@@ -3,18 +3,18 @@
  * out, or the sign-in (`SignIn`) when nobody is, which Google comes back to. The page names the server only by its
  * discovery document. Sections go below the account row: the credits when the server advertises billing (`Credits`),
  * the devices signed in (`Devices`), the passkeys (`Passkeys`), and the account's export and deletion (`AccountData`).
- * An admin of the server also gets a link to the admin page under the account row.
+ * An admin of the server also gets the admin sidebar, which leads to the admin pages.
  * A section that finds the session gone sends the person back to the sign-in, saying so. Once the account is deleted
  * the page says so and shows nothing else: the session went with the account.
  */
-import { ACCOUNT_PAGE_PATH, ADMIN_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
+import { ACCOUNT_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { Badge, Banner } from '@unalgorithm/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccountData } from './AccountData.tsx';
 import { getSession, serverInfo, signOut } from './api.ts';
 import { Credits } from './Credits.tsx';
 import { Devices } from './Devices.tsx';
-import { Page } from './Page.tsx';
+import { Page, PageLoading } from './Page.tsx';
 import { Passkeys } from './Passkeys.tsx';
 import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
@@ -100,7 +100,7 @@ export function Account() {
     }
   }
 
-  if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
+  if (step.name === 'loading') return <PageLoading />;
   if (step.name === 'unavailable' || !info) {
     return (
       <Page info={null} intro="Sign in to see your account.">
@@ -124,19 +124,27 @@ export function Account() {
     );
   }
   return (
-    <Page info={info} intro="Your account on this server.">
+    <Page
+      info={info}
+      layout="app"
+      title="Account"
+      intro="Your account on this server."
+      account={{ email: step.email, onSignOut: () => void onSignOut(), signingOut: busy }}
+      nav={step.admin ? 'account' : undefined}
+    >
       {error ? <Banner tone="danger" title={error} /> : null}
-      <ListGroup>
-        <ListRow
-          title={`Signed in as ${step.email}`}
-          control={
-            <Button size="sm" loading={busy} onClick={onSignOut}>
-              Sign out
-            </Button>
-          }
-        />
-        {step.admin ? <ListRow title={<a href={ADMIN_PAGE_PATH}>Admin</a>} accessory="chevron" /> : null}
-      </ListGroup>
+      <div className="web-card web-profile">
+        <span className="web-avatar web-avatar--lg" aria-hidden="true">
+          {step.email.charAt(0).toUpperCase()}
+        </span>
+        <div className="web-profile-text">
+          <p className="web-profile-email">{`Signed in as ${step.email}`}</p>
+          <p className="web-profile-server">
+            {info.name}
+            {step.admin ? <Badge tone="accent">Admin</Badge> : null}
+          </p>
+        </div>
+      </div>
       {info.billing ? <Credits onSignedOut={sessionEnded} /> : null}
       <Devices onSignedOut={sessionEnded} />
       <Passkeys onSignedOut={sessionEnded} />

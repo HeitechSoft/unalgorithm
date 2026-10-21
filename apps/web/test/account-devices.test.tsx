@@ -38,7 +38,8 @@ import {
 
 vi.mock('@simplewebauthn/browser');
 
-const DEVICES_HEADER = 'Devices signed in with unAlgorithm Feed';
+const DEVICES_HEADER = 'Devices';
+const DEVICES_TEXT = 'Browsers signed in with unAlgorithm Feed. Revoke one you no longer use, or have lost.';
 const PASSKEYS_HEADER = 'Passkeys';
 const PASSKEYS_FOOTER = 'Sign in with your fingerprint, face or device PIN instead of an emailed code.';
 const NO_DEVICES = 'No devices are signed in.';
@@ -110,9 +111,9 @@ function openAccount(
   return { server, user, ...view };
 }
 
-/** The list group under `header` (a `ListGroup` is a section headed by its header). */
+/** The page's section headed `header` (an `h2`, which names the section). */
 async function group(header: string): Promise<HTMLElement> {
-  return (await screen.findByRole('heading', { name: header })).closest('section') as HTMLElement;
+  return (await screen.findByRole('heading', { level: 2, name: header })).closest('section') as HTMLElement;
 }
 
 /** Each row's title and subtitle, in order. */
@@ -166,6 +167,8 @@ describe('devices', () => {
       routes: { [`GET ${CREDIT_ACCOUNT_PATH}`]: { status: 200, body: credits } },
     });
     const devices = await group(DEVICES_HEADER);
+    expect(screen.getByRole('region', { name: DEVICES_HEADER })).toBe(devices);
+    expect(within(devices).getByText(DEVICES_TEXT)).toBeTruthy();
     await within(devices).findByText('Chrome on Windows');
     expect(rows(devices)).toEqual([
       ['Chrome on Windows', `Signed in ${day(LAPTOP.createdAt)} · Last used ${day(LAPTOP.lastUsedAt ?? '')}`],
@@ -295,8 +298,12 @@ describe('passkeys', () => {
     expect(rows(passkeys)).toEqual([['Passkey', `Added ${day(UNNAMED.createdAt ?? '')}`]]);
     expect(within(passkeys).getByText(PASSKEYS_FOOTER)).toBeTruthy();
     expect(screen.queryByText(NO_WEBAUTHN)).toBeNull();
+    // "Add a passkey" is the list's last row, after the passkeys.
+    const add = within(passkeys).getByRole('button', { name: 'Add a passkey' });
+    const last = [...passkeys.querySelectorAll('.ua-row')].at(-1) as HTMLElement;
+    expect(last.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Add a passkey' }));
+    await user.click(add);
     await within(passkeys).findByText('Google Password Manager');
     expect(rows(passkeys)).toEqual([
       ['Passkey', `Added ${day(UNNAMED.createdAt ?? '')}`],
@@ -408,11 +415,12 @@ describe('accessibility', () => {
     await within(devices).findByText('Chrome on Windows');
     await within(passkeys).findByText('iCloud Keychain');
 
-    // Every control in page order, reached with Tab.
+    // Every control in page order, reached with Tab: the top bar's server name and "Sign out", then the sections'.
     const revoke = within(devices).getByRole('button', { name: 'Revoke' });
     const remove = within(passkeys).getByRole('button', { name: 'Remove' });
     const add = screen.getByRole('button', { name: 'Add a passkey' });
-    for (const control of [screen.getByRole('button', { name: 'Sign out' }), revoke, remove, add]) {
+    const brand = screen.getByRole('link', { name: INFO.name });
+    for (const control of [brand, screen.getByRole('button', { name: 'Sign out' }), revoke, remove, add]) {
       await user.tab();
       expect(document.activeElement).toBe(control);
     }

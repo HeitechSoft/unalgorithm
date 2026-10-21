@@ -4,6 +4,9 @@ unAlgorithm follows Apple's Human Interface Guidelines in spirit: **deference** 
 out of the way), **clarity** (one primary action per screen, plain words) and **depth** (detail is one step away,
 never in the way).
 
+The pages an unAlgorithm server serves on its own origin (sign-in, account, admin) follow
+[portal.md](portal.md), which applies the same guidelines to a web app.
+
 ## Principles in practice
 
 | Principle | What it means here |

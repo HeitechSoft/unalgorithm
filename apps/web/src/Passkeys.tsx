@@ -4,10 +4,11 @@
  * (CL3-14), so the page asks for no name. A browser without WebAuthn can still list and remove passkeys made elsewhere.
  */
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
-import { Banner, Button, Dialog, ListGroup, ListRow, useToast } from '@unalgorithm/ui';
+import { Banner, Button, Dialog, KeyRound, ListGroup, ListRow, useToast } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, addPasskey, listPasskeys, type Passkey, PasskeyCancelled, removePasskey } from './api.ts';
 import { failureMessage } from './SignIn.tsx';
+import { AddRow, Section, SectionLoading } from './ui.tsx';
 
 const LOAD_FAILED = "Couldn't load your passkeys.";
 const CANCELLED = 'Adding the passkey was cancelled.';
@@ -99,43 +100,53 @@ export function Passkeys({ onSignedOut }: PasskeysProps) {
   }
 
   return (
-    <div className="web-section" aria-busy={state.name === 'loading' || undefined}>
+    <Section title="Passkeys" busy={state.name === 'loading'}>
       {error ? <Banner tone="danger" title={error} /> : null}
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      <ListGroup header="Passkeys" footer="Sign in with your fingerprint, face or device PIN instead of an emailed code.">
-        {state.name !== 'loaded' ? null : state.passkeys.length === 0 ? (
-          <ListRow title={<span className="ua-secondary">No passkeys yet.</span>} />
-        ) : (
-          state.passkeys.map((passkey) => (
-            <ListRow
-              key={passkey.id}
-              title={passkey.name ?? 'Passkey'}
-              subtitle={passkey.createdAt ? `Added ${DAY.format(new Date(passkey.createdAt))}` : undefined}
-              control={
-                <Button
-                  size="sm"
-                  loading={busy !== null && 'removing' in busy && busy.removing === passkey.id}
-                  disabled={busy !== null}
-                  onClick={() => onAsk(passkey)}
-                >
-                  Remove
-                </Button>
-              }
+      {state.name === 'loading' ? <SectionLoading /> : null}
+      {state.name !== 'loaded' ? null : (
+        <ListGroup
+          footer={
+            webAuthn
+              ? 'Sign in with your fingerprint, face or device PIN instead of an emailed code.'
+              : "This browser can't create passkeys."
+          }
+        >
+          {state.passkeys.length === 0 ? (
+            <ListRow title={<span className="ua-secondary">No passkeys yet.</span>} />
+          ) : (
+            state.passkeys.map((passkey) => (
+              <ListRow
+                key={passkey.id}
+                icon={{ icon: KeyRound, tint: 'gray' }}
+                title={passkey.name ?? 'Passkey'}
+                subtitle={passkey.createdAt ? `Added ${DAY.format(new Date(passkey.createdAt))}` : undefined}
+                control={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    loading={busy !== null && 'removing' in busy && busy.removing === passkey.id}
+                    disabled={busy !== null}
+                    onClick={() => onAsk(passkey)}
+                  >
+                    Remove
+                  </Button>
+                }
+              />
+            ))
+          )}
+          {webAuthn ? (
+            <AddRow
+              label="Add a passkey"
+              loading={busy !== null && 'adding' in busy}
+              disabled={busy !== null}
+              onSelect={() => void onAdd()}
             />
-          ))
-        )}
-      </ListGroup>
-      <div className="web-section-actions">
-        {webAuthn ? (
-          <Button loading={busy !== null && 'adding' in busy} disabled={busy !== null} onClick={() => void onAdd()}>
-            Add a passkey
-          </Button>
-        ) : (
-          <p className="ua-footnote">This browser can't create passkeys.</p>
-        )}
-      </div>
+          ) : null}
+        </ListGroup>
+      )}
       <Dialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
@@ -152,6 +163,6 @@ export function Passkeys({ onSignedOut }: PasskeysProps) {
           </>
         }
       />
-    </div>
+    </Section>
   );
 }

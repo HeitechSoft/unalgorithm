@@ -92,8 +92,14 @@ export function webMissing(c: Context, { config, log }: { config: Pick<Config, '
   return c.text('Build apps/web first', 503);
 }
 
+/** The server's mark on its pages: the first letter of its name, as `Monogram` in apps/web's `Page.tsx`. */
+function monogram(name: string): string {
+  return name.trim().charAt(0).toUpperCase();
+}
+
 /**
- * A module's page in apps/web's frame (`Page.tsx`'s class names, so the built stylesheet styles it) under `pageCsp`,
+ * A module's page in apps/web's focus frame (`Page.tsx`'s class names, so the built stylesheet styles it: the server's
+ * monogram and name over the page, each top-level `web-section` a card) under `pageCsp`,
  * with no script. The referrer meta overrides the server's global `Referrer-Policy: no-referrer` for this page only: a
  * form POST from a no-referrer document carries `Origin: null`, which `ownPage` refuses, while `same-origin` sends the
  * real origin here and still no Referer elsewhere. (A `Referrer-Policy` header set here would be overwritten by
@@ -117,7 +123,7 @@ export async function renderModulePage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><link rel="icon" href="data:,"><title>${page.title} · ${instanceName}</title>
 ${webStylesheets(index).map((href) => html`<link rel="stylesheet" href="${href}">`)}</head>
-<body><div class="web-page"><main class="web-main"><header class="web-header"><h1>${instanceName}</h1><p>${page.intro}</p></header>
+<body><div class="web-page web-focus"><main class="web-main"><header class="web-focus-header"><span class="web-monogram web-monogram--lg" aria-hidden="true">${monogram(instanceName)}</span><h1>${instanceName}</h1><p>${page.intro}</p></header>
 ${main}</main><footer class="web-footer">${instanceName} · <a href="${sourceUrl}" target="_blank" rel="noreferrer">Source</a></footer></div></body></html>`;
   c.header('Content-Security-Policy', csp);
   c.header('Cache-Control', 'no-store');

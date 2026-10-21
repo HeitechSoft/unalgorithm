@@ -1,8 +1,8 @@
 /**
- * The admin page at `/admin` (R38): the page frame (sign-in, not an admin, unavailable, loaded), the accounts list with
- * each person's numbers, and the per-person dialog that sets the cap, removes or restores access and changes the role
- * through CL4-06's routes. Also the sign-in's message for a removed account, whichever way in refused it, and the account
- * page's link to the admin page. `fetch` is the shared fake server, whose admin routes keep the accounts and answer as
+ * The admin page at `/admin` (R38): the page frame (sign-in, not an admin, unavailable, loaded), the people table with
+ * each person's badges and numbers, and the per-person sheet that sets the cap, removes or restores access and changes
+ * the role through CL4-06's routes. Also the sign-in's message for a removed account, whichever way in refused it, and
+ * the account page's sidebar link to the admin page. `fetch` is the shared fake server, whose admin routes keep the accounts and answer as
  * the server's do (403 for anyone but an admin, 400 for the admin's own access or role); every request is recorded.
  * Dialogs run on the jsdom stand-in for `showModal` (loaded by the setup file).
  */
@@ -10,6 +10,7 @@ import { type AuthenticationResponseJSON, browserSupportsWebAuthn, startAuthenti
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { formatApproxCost } from '@unalgorithm/core';
 import {
+  ACCOUNT_PAGE_PATH,
   ADMIN_PAGE_PATH,
   ADMIN_USERS_PATH,
   type AdminUser,
@@ -119,14 +120,24 @@ async function signIn(user: ReturnType<typeof setupUser>) {
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 
-/** The list row of the account with this address (the open dialog's title repeats it). */
+/** The people table's row of the account with this address (the open dialog's title repeats it). */
 function row(email: string): HTMLElement {
   const found = screen
     .getAllByText(email)
-    .map((el) => el.closest('.ua-row'))
+    .map((el) => el.closest('tr'))
     .find((el) => el !== null);
   if (!(found instanceof HTMLElement)) throw new Error(`No row for ${email}`);
   return found;
+}
+
+/** A row's cells as their text: the account (address, badges, devices), today, 30 days, AI cost and its actions. */
+function cells(email: string): string[] {
+  return [...row(email).querySelectorAll('th, td')].map((c) => c.textContent ?? '');
+}
+
+/** A row's badges, as their text. */
+function badges(email: string): string[] {
+  return [...row(email).querySelectorAll('.ua-badge')].map((b) => b.textContent ?? '');
 }
 
 /** The per-person dialog, open or not. */
@@ -140,11 +151,18 @@ function button(name: string): HTMLButtonElement {
   return within(dialog()).getByRole('button', { name }) as HTMLButtonElement;
 }
 
+/** The open dialog's fact with this label. */
+function fact(label: string): string {
+  const found = [...dialog().querySelectorAll('.web-facts dt')].find((dt) => dt.textContent === label);
+  if (!found) throw new Error(`No fact ${label}`);
+  return found.nextElementSibling?.textContent ?? '';
+}
+
 /** Waits for the list, then opens the dialog of the account with this address. */
 async function manage(user: ReturnType<typeof setupUser>, email: string) {
   await user.click(await screen.findByRole('button', { name: `Manage ${email}` }));
   expect(dialog().open).toBe(true);
-  expect(dialog().getAttribute('aria-label')).toBe(email);
+  expect(screen.getByRole('dialog', { name: email })).toBe(dialog());
 }
 
 /** The admin actions the page sent, in order. */
@@ -184,6 +202,10 @@ describe('page frame', () => {
   it('test_admin_page_not_admin', async () => {
     const { server, user } = openAdmin({ role: 'user' });
     expect(await screen.findByText(NOT_ADMIN)).toBeTruthy();
+    // The focus layout: the server's name is the heading, a card says who is signed in, and there is no sidebar.
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(INFO.name);
+    expect(screen.getByText(`Signed in as ${TOM}`)).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
     expect(screen.queryByText(ANA)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
@@ -206,7 +228,13 @@ describe('page frame', () => {
     const { user } = openAdmin();
     expect(await screen.findByText(ANA)).toBeTruthy();
     expect(document.title).toBe(`Admin · ${INFO.name}`);
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Admin · Example AI');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Overview');
+    // The top bar names the server and who is signed in, with "Sign out".
+    const topBar = document.querySelector('.web-topbar');
+    if (!(topBar instanceof HTMLElement)) throw new Error('No top bar');
+    expect(topBar.textContent).toContain(INFO.name);
+    expect(within(topBar).getByText(TOM)).toBeTruthy();
+    expect(within(topBar).getByRole('button', { name: 'Sign out' })).toBeTruthy();
     await manage(user, ANA);
     expect(document.body.textContent).toContain(INFO.name);
     expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
@@ -215,6 +243,8 @@ describe('page frame', () => {
     openAdmin({ session: null });
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
     expect(document.title).toBe('Admin · Example AI');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Example AI');
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
     expect(document.body.textContent).not.toContain('unAlgorithm Cloud');
   });
 });
@@ -224,22 +254,25 @@ describe('users list', () => {
     openAdmin();
     expect(await screen.findByText(ANA)).toBeTruthy();
 
-    const own = row(TOM);
-    expect(within(own).getByText('Admin').className).toContain('ua-badge');
-    expect(within(own).queryByText('Removed')).toBeNull();
-    expect(own.textContent).toContain(
-      `2 devices · 120 posts today · 2,400 in 30 days · ${formatApproxCost(180_000)} · server cap 1,000`,
-    );
+    const people = screen.getByRole('region', { name: 'People' });
+    const table = within(people).getByRole('table');
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['Account', 'Today', '30 days', 'AI cost', 'Actions']);
+    expect(within(table).getAllByRole('rowheader')).toHaveLength(3);
 
-    const ana = row(ANA);
-    expect(within(ana).queryByText('Admin')).toBeNull();
-    expect(ana.textContent).toContain(
-      `1 device · 1,234 posts today · 45,678 in 30 days · ${formatApproxCost(2_500_000)} · cap 500`,
-    );
-
-    const ben = row(BEN);
-    expect(within(ben).getByText('Removed').className).toContain('ua-badge');
-    expect(ben.textContent).toContain(`0 devices · 0 posts today · 12 in 30 days · ${formatApproxCost(0)} · server cap 1,000`);
+    // Each row: the address with its badges and devices, then today, 30 days, AI cost and "Manage".
+    expect(badges(TOM)).toEqual(['Admin']);
+    expect(cells(TOM)).toEqual([`T${TOM}Admin2 devices`, '120', '2,400', formatApproxCost(180_000), 'Manage']);
+    expect(badges(ANA)).toEqual(['Cap 500']);
+    expect(cells(ANA)).toEqual([`A${ANA}Cap 5001 device`, '1,234', '45,678', formatApproxCost(2_500_000), 'Manage']);
+    expect(badges(BEN)).toEqual(['Removed']);
+    expect(cells(BEN)).toEqual([`B${BEN}Removed0 devices`, '0', '12', formatApproxCost(0), 'Manage']);
+    for (const email of [TOM, ANA, BEN]) {
+      expect(within(row(email)).getByRole('button', { name: `Manage ${email}` })).toBeTruthy();
+    }
     expect(screen.queryByText(TRUNCATED)).toBeNull();
     cleanup();
 
@@ -253,6 +286,20 @@ describe('users list', () => {
     await manage(user, ANA);
     expect(showModal).toHaveBeenCalledTimes(1);
     expect(showModal.mock.contexts[0]).toBe(dialog());
+    // The sheet's facts about Ana.
+    expect(
+      [...dialog().querySelectorAll('.web-facts dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]),
+    ).toEqual([
+      ['Role', 'Regular user'],
+      ['Access', 'Can sign in'],
+      ['Devices', '1'],
+      ['Posts today', '1,234'],
+      ['Posts in 30 days', '45,678'],
+      ['AI cost in 30 days', formatApproxCost(2_500_000)],
+      ['Daily posts', '500 posts a day'],
+      ['Joined', 'Sep 1, 2026'],
+      ['Last active', 'Oct 14, 2026'],
+    ]);
 
     const field = within(dialog()).getByLabelText('Daily posts') as HTMLInputElement;
     expect(field.value).toBe('500');
@@ -269,12 +316,14 @@ describe('users list', () => {
     await user.type(field, '50');
     expect(button('Save cap').disabled).toBe(false);
     await user.click(button('Save cap'));
-    await waitFor(() => expect(row(ANA).textContent).toContain('cap 50'));
+    await waitFor(() => expect(badges(ANA)).toEqual(['Cap 50']));
+    expect(fact('Daily posts')).toBe('50 posts a day');
     expect(actions(server)).toEqual([{ method: 'POST', path: adminUserActionPath('u2', 'cap'), body: { dailyPostCap: 50 } }]);
     expect(server.count('GET', ADMIN_USERS_PATH)).toBe(2);
 
     await user.click(button(USE_SERVER_CAP));
-    await waitFor(() => expect(row(ANA).textContent).toContain('server cap 1,000'));
+    await waitFor(() => expect(badges(ANA)).toEqual([]));
+    expect(fact('Daily posts')).toBe('Server cap (1,000)');
     expect(actions(server)[1]).toEqual({ method: 'POST', path: adminUserActionPath('u2', 'cap'), body: { dailyPostCap: null } });
     expect(server.count('GET', ADMIN_USERS_PATH)).toBe(3);
   });
@@ -296,11 +345,13 @@ describe('users list', () => {
     await user.click(button('Remove access'));
     expect(await within(dialog()).findByRole('button', { name: 'Restore access' })).toBeTruthy();
     expect(within(row(ANA)).getByText('Removed')).toBeTruthy();
+    expect(fact('Access')).toBe('Removed');
     expect(actions(server)).toEqual([{ method: 'POST', path: adminUserActionPath('u2', 'access'), body: { access: 'removed' } }]);
 
     await user.click(button('Restore access'));
     expect(await within(dialog()).findByRole('button', { name: 'Remove access' })).toBeTruthy();
     expect(within(row(ANA)).queryByText('Removed')).toBeNull();
+    expect(fact('Access')).toBe('Can sign in');
     expect(actions(server)[1]).toEqual({ method: 'POST', path: adminUserActionPath('u2', 'access'), body: { access: 'active' } });
   });
 
@@ -311,6 +362,7 @@ describe('users list', () => {
     await user.click(button('Make admin'));
     expect(await within(dialog()).findByRole('button', { name: 'Make regular user' })).toBeTruthy();
     expect(within(row(ANA)).getByText('Admin')).toBeTruthy();
+    expect(fact('Role')).toBe('Admin');
     await user.click(button('Make regular user'));
     expect(await within(dialog()).findByRole('button', { name: 'Make admin' })).toBeTruthy();
     expect(actions(server)).toEqual([
@@ -413,7 +465,7 @@ describe('sign-in and account', () => {
     expect(screen.queryByText(REMOVED)).toBeNull();
   });
 
-  it('test_account_page_admin_link', async () => {
+  it('test_account_page_admin_sidebar_link', async () => {
     for (const role of ['admin', 'user', null]) {
       fakeServer({ session: TOM, role });
       render(
@@ -422,9 +474,19 @@ describe('sign-in and account', () => {
         </ToastProvider>,
       );
       expect(await screen.findByText(SIGNED_IN)).toBeTruthy();
-      const link = screen.queryByRole('link', { name: 'Admin' });
-      if (role === 'admin') expect(link?.getAttribute('href')).toBe(ADMIN_PAGE_PATH);
-      else expect(link).toBeNull();
+      // No "Admin" link row any more, for anyone.
+      expect(screen.queryByRole('link', { name: 'Admin' })).toBeNull();
+      const nav = screen.queryByRole('navigation', { name: 'Pages' });
+      if (role === 'admin') {
+        if (!nav) throw new Error('No sidebar');
+        expect(within(nav).getByRole('link', { name: 'Overview' }).getAttribute('href')).toBe(ADMIN_PAGE_PATH);
+        const own = within(nav).getByRole('link', { name: 'Account' });
+        expect(own.getAttribute('href')).toBe(ACCOUNT_PAGE_PATH);
+        expect(own.getAttribute('aria-current')).toBe('page');
+      } else {
+        expect(nav).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Overview' })).toBeNull();
+      }
       cleanup();
     }
   });

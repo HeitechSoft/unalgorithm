@@ -6,11 +6,12 @@
  * as" needs a click, also after Google.
  */
 import { type AuthorizeRequest, AuthorizeRequestSchema, type ServerInfo } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup } from '@unalgorithm/ui';
+import { Banner, Button, LoaderCircle } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, authorize, getSession, serverInfo, signOut } from './api.ts';
-import { Page } from './Page.tsx';
+import { Page, PageLoading } from './Page.tsx';
 import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
+import { Card } from './ui.tsx';
 
 const INTRO = 'Sign in to use AI in the unAlgorithm Feed extension.';
 
@@ -123,7 +124,7 @@ export function Authorize() {
       </Page>
     );
   }
-  if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
+  if (step.name === 'loading') return <PageLoading />;
 
   return (
     <Page info={info} intro={INTRO}>
@@ -151,25 +152,32 @@ export function Authorize() {
         />
       ) : null}
       {step.name === 'continue' ? (
-        <ListGroup>
+        <Card>
           <form
-            className="web-form ua-stack"
+            className="web-form"
             onSubmit={(e) => {
               e.preventDefault();
               void toExtension(request);
             }}
           >
-            <Button type="submit" variant="primary" fullWidth loading={busy} autoFocus>
+            <div className="web-continue">
+              <span className="web-avatar web-avatar--lg" aria-hidden="true">
+                {step.email.charAt(0).toUpperCase()}
+              </span>
+              <p>You're signed in on this server.</p>
+            </div>
+            <Button type="submit" variant="primary" size="lg" fullWidth loading={busy} autoFocus>
               Continue as {step.email}
             </Button>
             <Button variant="plain" fullWidth disabled={busy} onClick={onUseAnotherEmail}>
               Use another email
             </Button>
           </form>
-        </ListGroup>
+        </Card>
       ) : null}
       {step.name === 'done' ? (
-        <p className="web-status" role="status">
+        <p className="web-status web-status--busy" role="status">
+          <LoaderCircle className="ua-spin" aria-hidden="true" />
           Signed in. Returning to the extension.
         </p>
       ) : null}

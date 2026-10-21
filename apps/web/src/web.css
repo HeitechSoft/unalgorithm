@@ -1,94 +1,743 @@
-/* Layout of the server's own pages. Colors, type and controls come from @unalgorithm/ui. */
-.web-page {
-  display: grid;
-  gap: var(--ua-space-6);
-  width: min(400px, 100%);
-  margin: 0 auto;
-  padding: var(--ua-space-12) var(--ua-space-4);
+/*
+ * The portal's layout and its own components (docs/design/portal.md). Colours, controls and lists come from
+ * @unalgorithm/ui; this file sets the portal's larger type scale over its tokens, the shell (focus and app layouts, top
+ * bar, sidebar), and each page's pieces, in that order.
+ */
+
+/* ---------- Type: a step larger than the extension's, for a page read on a desktop browser ---------- */
+:root {
+  --ua-type-title1: 700 2rem / 2.375rem var(--ua-font-display);
+  --ua-type-title2: 600 1.25rem / 1.625rem var(--ua-font-display);
+  --ua-type-title3: 600 1.0625rem / 1.375rem var(--ua-font-sans);
+  --ua-type-headline: 600 0.9375rem / 1.25rem var(--ua-font-sans);
+  --ua-type-body: 400 0.9375rem / 1.375rem var(--ua-font-sans);
+  --ua-type-callout: 400 0.875rem / 1.25rem var(--ua-font-sans);
+  --ua-type-subhead: 500 0.8125rem / 1.125rem var(--ua-font-sans);
+  --ua-type-footnote: 400 0.8125rem / 1.125rem var(--ua-font-sans);
+  --ua-type-caption: 500 0.75rem / 1rem var(--ua-font-sans);
+  --ua-type-stat: 700 2.5rem / 2.75rem var(--ua-font-display);
+  --web-topbar-height: 52px;
+  --web-gutter: 16px;
 }
-/* A page of lists and tables (the signed-in admin page) uses the screen's width instead of a form's. */
-.web-page-wide {
-  width: min(1120px, 100%);
-}
-/* The admin page: accounts and invites, then usage; side by side when there is room, in that order for screen readers. */
-.web-admin {
-  display: grid;
-  gap: var(--ua-space-4) var(--ua-space-8);
-  align-items: start;
-}
-.web-admin-column {
-  display: grid;
-  gap: var(--ua-space-4);
-  min-width: 0;
-}
-@media (min-width: 900px) {
-  .web-admin {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+@media (min-width: 600px) {
+  :root {
+    --web-gutter: 32px;
   }
 }
-.web-main {
-  display: grid;
-  gap: var(--ua-space-4);
+/* The gallery's forced theme (`?theme=`), as the page's own `color-scheme` would. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
-.web-main .ua-group {
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ---------- Controls, sized for a pointer on a page rather than a popup ---------- */
+.ua-button {
+  height: 36px;
+  padding: 0 16px;
+}
+.ua-button--sm {
+  height: 30px;
+  padding: 0 12px;
+}
+.ua-button--lg {
+  height: 44px;
+  padding: 0 22px;
+  font: 600 1rem / 1.25rem var(--ua-font-sans);
+}
+.ua-button--plain {
+  padding: 0 10px;
+}
+.ua-input-wrap {
+  height: 40px;
+}
+.ua-select {
+  height: 36px;
+  font: var(--ua-type-body);
+}
+.ua-row {
+  padding: 10px 16px;
+}
+.ua-row-subtitle {
+  margin-top: 1px;
+}
+.ua-group {
   margin: 0;
 }
-.web-header {
-  display: grid;
-  gap: var(--ua-space-1);
-  margin-bottom: var(--ua-space-2);
-  text-align: center;
+.ua-group-header {
+  padding: 0 16px 8px;
+  font: var(--ua-type-subhead);
+  font-weight: 600;
 }
-.web-header p,
-.web-status {
-  color: var(--ua-text-secondary);
+.ua-group-footer {
+  padding: 8px 16px 0;
 }
-.web-status {
-  text-align: center;
+.ua-group-body {
+  border-radius: var(--ua-radius-lg);
 }
-.web-form {
-  padding: var(--ua-space-4);
+.ua-banner {
+  font: var(--ua-type-callout);
+  border-radius: var(--ua-radius-lg);
 }
-.web-actions {
-  justify-content: space-between;
+.ua-dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 24px;
 }
-.web-footer {
-  font: var(--ua-type-footnote);
-  color: var(--ua-text-secondary);
-  text-align: center;
+.ua-dialog h2 {
+  font: var(--ua-type-title2);
+  margin-bottom: 8px;
 }
-/* The source link sits in a line of text, so it is underlined rather than told apart by color alone (WCAG 1.4.1). */
-.web-footer a {
-  text-decoration: underline;
+.ua-dialog-actions {
+  margin-top: 24px;
 }
-/* An address is one long word: it wraps inside its row rather than running under the row's button. */
-.web-main .ua-row-title {
-  overflow-wrap: anywhere;
+@media (max-width: 599px) {
+  .ua-dialog-actions {
+    flex-direction: column-reverse;
+  }
+  .ua-dialog-actions > .ua-button {
+    width: 100%;
+  }
 }
-/* The account page's Credits section: the balance figure over its lines, the history, then the links. */
-.web-credits {
+/* A sheet: editing something with more than one field. */
+.web-sheet {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+}
+.web-sheet form {
   display: grid;
   gap: var(--ua-space-4);
   margin-top: var(--ua-space-4);
 }
-.web-credits h2 {
-  font: var(--ua-type-title3);
-}
-.web-balance {
-  display: grid;
-  gap: var(--ua-space-1);
-  text-align: center;
+/* Links inside a line of text are underlined, not told apart by colour alone (WCAG 1.4.1). */
+.web-prose a,
+.web-footer a,
+.ua-group-footer a,
+.ua-banner a {
+  text-decoration: underline;
 }
 .web-amount {
   flex: none;
   font-variant-numeric: tabular-nums;
 }
-.web-credit-actions {
+/* An address is one long word: it wraps inside its row rather than running under the row's button. */
+.ua-row-title {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Shell ---------- */
+.web-page {
+  min-height: 100vh;
+}
+.web-main {
   display: grid;
-  gap: var(--ua-space-3);
-  justify-items: center;
+  align-content: start;
+  gap: var(--ua-space-8);
+  min-width: 0;
+}
+.web-footer {
+  padding: var(--ua-space-8) var(--web-gutter);
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
   text-align: center;
 }
+/* While the first answers come: a spinner that fades in after a moment, so a fast load never flashes it. */
+.web-loading {
+  display: grid;
+  place-items: center;
+}
+.web-loading > svg,
+.web-section-loading > svg {
+  width: 24px;
+  height: 24px;
+  color: var(--ua-text-tertiary);
+  animation:
+    ua-spin 900ms linear infinite,
+    web-appear var(--ua-dur-3) var(--ua-ease-out) 300ms both;
+}
+.web-section-loading {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+}
+@keyframes web-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The server's mark: its first letter on an accent tile. */
+.web-monogram {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 24%;
+  background: linear-gradient(160deg, var(--ua-lagoon-500), var(--ua-lagoon-700));
+  color: #fff;
+  font: 700 0.9375rem / 1 var(--ua-font-display);
+}
+.web-monogram--lg {
+  width: 64px;
+  height: 64px;
+  font-size: 1.875rem;
+  box-shadow: var(--ua-shadow-1);
+}
+@supports (corner-shape: squircle) {
+  .web-monogram {
+    border-radius: 32%;
+    corner-shape: squircle;
+  }
+}
+
+/* Focus layout: one task in a centred column. */
+.web-focus {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  padding: clamp(32px, 10vh, 96px) var(--web-gutter) 0;
+}
+.web-focus > .web-main {
+  width: min(440px, 100%);
+  gap: var(--ua-space-6);
+}
+.web-focus-header {
+  display: grid;
+  justify-items: center;
+  gap: var(--ua-space-2);
+  text-align: center;
+}
+.web-focus-header .web-monogram {
+  margin-bottom: var(--ua-space-2);
+}
+.web-focus-header h1 {
+  font: var(--ua-type-title1);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.web-focus-header p {
+  font: var(--ua-type-body);
+  color: var(--ua-text-secondary);
+}
+.web-focus .ua-input-wrap {
+  height: 44px;
+}
+.web-focus .ua-input {
+  font-size: 1.0625rem;
+}
+/* A line of text on a focus page: what is happening, or where to go next. */
+.web-status {
+  color: var(--ua-text-secondary);
+  text-align: center;
+}
+
+/* App layout: top bar, optional sidebar, the page. */
+.web-app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.web-column {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+  min-height: calc(100vh - var(--web-topbar-height));
+}
+.web-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-3);
+  height: var(--web-topbar-height);
+  padding: 0 var(--web-gutter);
+  border-bottom: 0.5px solid var(--ua-separator);
+  background: var(--ua-material-regular);
+  backdrop-filter: var(--ua-material-filter);
+  -webkit-backdrop-filter: var(--ua-material-filter);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .web-topbar {
+    background: var(--ua-bg-grouped-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.web-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font: var(--ua-type-headline);
+  color: var(--ua-text);
+}
+.web-brand > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-brand:hover {
+  text-decoration: none;
+}
+.web-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-3);
+  margin-inline-start: auto;
+  min-width: 0;
+}
+.web-topbar-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+@media (max-width: 599px) {
+  .web-topbar-email {
+    display: none;
+  }
+}
+.web-body {
+  display: grid;
+  align-items: start;
+  min-width: 0;
+}
+.web-section > .ua-group + .ua-group,
+.web-section > .web-card + .ua-group {
+  margin-top: var(--ua-space-1);
+}
+.web-content {
+  width: 100%;
+  max-width: calc(760px + 2 * var(--web-gutter));
+  margin: 0 auto;
+  padding: var(--ua-space-8) var(--web-gutter) var(--ua-space-6);
+}
+.web-page-wide .web-content {
+  max-width: calc(1120px + 2 * var(--web-gutter));
+}
+.web-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ua-space-4);
+}
+.web-page-heading {
+  display: grid;
+  gap: var(--ua-space-1);
+  max-width: 70ch;
+}
+.web-page-heading h1 {
+  font: var(--ua-type-title1);
+  letter-spacing: -0.02em;
+}
+.web-page-heading p {
+  font: var(--ua-type-body);
+  color: var(--ua-text-secondary);
+}
+.web-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ua-space-2);
+}
+
+/* The admin sidebar, as the extension's Settings; a row of tabs on a narrow screen. */
+@media (min-width: 900px) {
+  .web-app--nav .web-body {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+}
+.web-sidebar {
+  position: sticky;
+  top: var(--web-topbar-height);
+  z-index: 10;
+  padding: var(--ua-space-4) var(--ua-space-3);
+}
+.web-sidebar ul {
+  display: grid;
+  gap: 2px;
+}
+.web-sidebar-heading {
+  margin: var(--ua-space-4) var(--ua-space-2) var(--ua-space-1);
+  font: var(--ua-type-footnote);
+  font-weight: 600;
+  color: var(--ua-text-secondary);
+}
+.web-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 var(--ua-space-2);
+  border-radius: var(--ua-radius-control);
+  font: var(--ua-type-body);
+  color: var(--ua-text);
+  white-space: nowrap;
+}
+.web-sidebar-item:hover {
+  background: var(--ua-fill-4);
+  text-decoration: none;
+}
+.web-sidebar-item[aria-current="page"] {
+  background: var(--ua-accent-tint);
+  font-weight: 600;
+}
+@media (min-width: 900px) {
+  .web-sidebar {
+    height: calc(100vh - var(--web-topbar-height));
+    overflow-y: auto;
+    border-inline-end: 0.5px solid var(--ua-separator);
+    background: var(--ua-bg-secondary);
+  }
+}
+@media (max-width: 899px) {
+  .web-sidebar {
+    display: flex;
+    gap: var(--ua-space-1);
+    overflow-x: auto;
+    padding: var(--ua-space-2) var(--web-gutter);
+    border-bottom: 0.5px solid var(--ua-separator);
+    background: var(--ua-material-thick);
+    backdrop-filter: var(--ua-material-filter);
+    -webkit-backdrop-filter: var(--ua-material-filter);
+    scrollbar-width: none;
+  }
+  .web-sidebar ul {
+    display: flex;
+    gap: var(--ua-space-1);
+  }
+  .web-sidebar-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .web-sidebar-item {
+    height: 32px;
+    padding: 0 var(--ua-space-3) 0 var(--ua-space-1_5);
+    border-radius: var(--ua-radius-full);
+    font: var(--ua-type-subhead);
+  }
+}
+
+/* ---------- Building blocks (ui.tsx) ---------- */
+.web-section {
+  display: grid;
+  gap: var(--ua-space-3);
+  min-width: 0;
+}
+.web-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ua-space-2) var(--ua-space-4);
+}
+.web-section-title {
+  display: grid;
+  gap: 2px;
+}
+.web-section-title h2 {
+  font: var(--ua-type-title2);
+  letter-spacing: -0.01em;
+}
+.web-section-title p {
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+.web-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ua-space-2);
+}
+.web-card {
+  padding: var(--ua-space-5);
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+}
+.web-focus .web-card {
+  padding: var(--ua-space-6);
+  border-radius: var(--ua-radius-xl);
+}
+.web-form {
+  display: grid;
+  gap: var(--ua-space-4);
+}
+/* A form's buttons: the primary on the trailing edge, Cancel before it; stacked on a phone. */
+.web-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ua-space-2);
+}
+.web-form-reason {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+  text-align: end;
+}
+.web-form-note {
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+.web-form-error {
+  font: var(--ua-type-callout);
+  color: var(--ua-danger);
+}
+@media (max-width: 599px) {
+  .web-form-actions {
+    flex-direction: column-reverse;
+  }
+  .web-form-actions > .ua-button {
+    width: 100%;
+  }
+}
+.web-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: var(--ua-space-3);
+}
+.web-stat {
+  display: grid;
+  align-content: start;
+  gap: var(--ua-space-1);
+  padding: var(--ua-space-4) var(--ua-space-5);
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+  color: var(--ua-text);
+}
+.web-stat--link {
+  transition: box-shadow var(--ua-dur-2);
+}
+.web-stat--link:hover {
+  box-shadow: var(--ua-shadow-2);
+  text-decoration: none;
+}
+.web-stat-label {
+  font: var(--ua-type-subhead);
+  color: var(--ua-text-secondary);
+}
+.web-stat-value {
+  font: 700 1.75rem / 2.125rem var(--ua-font-display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.web-stat-detail {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+.web-meter {
+  display: block;
+  height: 6px;
+  margin: var(--ua-space-1) 0;
+  border-radius: 3px;
+  background: var(--ua-fill-3);
+  overflow: hidden;
+}
+.web-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ua-accent);
+}
+.web-meter--warning > span {
+  background: var(--ua-warning);
+}
+.web-meter--danger > span {
+  background: var(--ua-danger);
+}
+.web-status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ua-space-1_5);
+  white-space: nowrap;
+}
+.web-status-dot > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ua-text-tertiary);
+}
+.web-status-dot--success > span {
+  background: var(--ua-success);
+}
+.web-status-dot--warning > span {
+  background: var(--ua-warning);
+}
+.web-status-dot--danger > span {
+  background: var(--ua-danger);
+}
+@media (forced-colors: active) {
+  .web-status-dot > span {
+    background: CanvasText;
+  }
+}
+.web-add-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--ua-accent);
+  font: var(--ua-type-body);
+  text-align: start;
+  cursor: pointer;
+}
+.web-add-row:hover:not(:disabled) {
+  background: var(--ua-fill-4);
+}
+.ua-row + .web-add-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  height: 0.5px;
+  background: var(--ua-separator);
+}
+.web-add-row > svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.web-add-row:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.web-block {
+  display: block;
+}
+.web-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: start;
+  height: 30px;
+  padding: 0 8px 0 2px;
+  margin-inline-start: -4px;
+  border: none;
+  border-radius: var(--ua-radius-control);
+  background: transparent;
+  color: var(--ua-accent);
+  font: var(--ua-type-body);
+  cursor: pointer;
+}
+.web-back:hover {
+  background: var(--ua-accent-tint);
+}
+.web-back > svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.web-back {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Facts about one thing, as label and value: a two-column list on a wide screen. */
+.web-facts {
+  display: grid;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.web-facts > div {
+  display: grid;
+  gap: 2px var(--ua-space-4);
+  padding: 10px 0;
+}
+.web-facts > div + div {
+  border-top: 0.5px solid var(--ua-separator);
+}
+@media (min-width: 600px) {
+  .web-facts > div {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+}
+.web-facts dt {
+  color: var(--ua-text-secondary);
+}
+.web-facts dd {
+  margin: 0;
+}
+/* A row's state and numbers, under its title: badges and a short line. */
+.web-row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ua-space-1) var(--ua-space-2);
+}
+/* A small round tile with a person's initial. */
+.web-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #a1a1aa, #71717a);
+  color: #fff;
+  font: 600 0.875rem / 1 var(--ua-font-sans);
+}
+.web-avatar--lg {
+  width: 56px;
+  height: 56px;
+  font-size: 1.5rem;
+}
+.ua-row:has(> .web-avatar) {
+  --ua-row-inset: 60px;
+}
+
+/* ---------- Tables ---------- */
+.web-table-card {
+  overflow-x: auto;
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+}
+.web-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--ua-type-callout);
+  font-variant-numeric: tabular-nums;
+}
+.web-table caption {
+  padding: var(--ua-space-3) var(--ua-space-4) 0;
+  font: var(--ua-type-headline);
+  text-align: start;
+}
+.web-table th,
+.web-table td {
+  padding: 10px var(--ua-space-4);
+  text-align: end;
+}
+.web-table tbody tr + tr > * {
+  border-top: 0.5px solid var(--ua-separator);
+}
+.web-table th:first-child {
+  text-align: start;
+}
+.web-table thead th {
+  border-bottom: 0.5px solid var(--ua-separator);
+  font: var(--ua-type-footnote);
+  font-weight: 600;
+  color: var(--ua-text-secondary);
+  white-space: nowrap;
+}
+.web-table tbody th {
+  font-weight: 500;
+}
+
+/* ---------- Sign-in (SignIn.tsx) ---------- */
 /* "or" between the email form and the other ways to sign in, with a rule on each side; screen readers skip it. */
 .web-or {
   display: flex;
@@ -101,136 +750,518 @@
 .web-or::after {
   content: "";
   flex: 1;
-  border-top: 1px solid var(--ua-separator);
+  border-top: 0.5px solid var(--ua-separator);
 }
-/* The account page's Devices and Passkeys sections: a list group, with any banner above it and its button below. */
-.web-section {
-  display: grid;
-  gap: var(--ua-space-3);
-  margin-top: var(--ua-space-4);
+.web-code-sent {
+  color: var(--ua-text-secondary);
+  overflow-wrap: anywhere;
 }
-.web-section-actions {
-  display: grid;
-  justify-items: center;
+/* The code: large, spaced digits, as a one-time code field reads on a phone. */
+.web-code .ua-input {
+  font-size: 1.5rem;
+  letter-spacing: 0.35em;
   text-align: center;
 }
-/* The admin page's accounts: the badges and numbers under each address, wrapping as one line. */
-.web-user-facts {
+.web-code-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ua-space-2);
+}
+.web-status--busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ua-space-2);
+}
+.web-status--busy > svg {
+  width: 18px;
+  height: 18px;
+}
+/* The extension's sign-in, already signed in: who, then Continue. */
+.web-continue {
+  display: grid;
+  justify-items: center;
+  gap: var(--ua-space-2);
+  margin-bottom: var(--ua-space-2);
+  color: var(--ua-text-secondary);
+  text-align: center;
+}
+/* A task finished: a check over the way on. */
+.web-done {
+  display: grid;
+  justify-items: center;
+  gap: var(--ua-space-5);
+}
+.web-done > svg {
+  width: 48px;
+  height: 48px;
+  color: var(--ua-success);
+}
+/* The server's own address on its home page: what to enter in the extension. */
+.web-home {
+  display: grid;
+  gap: var(--ua-space-4);
+  text-align: center;
+}
+.web-home-address {
+  padding: var(--ua-space-3);
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-fill-4);
+  font: 500 1rem / 1.5rem var(--ua-font-mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---------- Account (Account.tsx, Credits.tsx, Devices.tsx, Passkeys.tsx, AccountData.tsx) ---------- */
+.web-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-4);
+}
+.web-profile-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.web-profile-email {
+  font: var(--ua-type-title3);
+  overflow-wrap: anywhere;
+}
+.web-profile-server {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--ua-space-1) var(--ua-space-2);
-}
-/* The admin page's per-person dialog: one titled block for each change. */
-.web-dialog-section {
-  display: grid;
   gap: var(--ua-space-2);
-  margin-top: var(--ua-space-4);
-}
-.web-dialog-section h3 {
-  font: var(--ua-type-headline);
-}
-/* The admin page's Invites and Usage sections: a title over the section's groups. */
-.web-section h2 {
-  font: var(--ua-type-title3);
-}
-/* The sentence an admin passes on and the line under it: an address or an origin wraps anywhere, and the link sits in a
-   line of text, so it is underlined rather than told apart by color alone (WCAG 1.4.1). */
-.web-notes {
-  display: grid;
-  gap: var(--ua-space-2);
-  overflow-wrap: anywhere;
-}
-.web-notes a {
-  text-decoration: underline;
-}
-/* The admin page's last 30 days: one row a day, its figures right-aligned. */
-.web-table {
-  width: 100%;
-  border-collapse: collapse;
-  font: var(--ua-type-footnote);
-  font-variant-numeric: tabular-nums;
-}
-.web-table caption {
-  font: var(--ua-type-headline);
-  text-align: start;
-  padding-bottom: var(--ua-space-2);
-}
-.web-table th,
-.web-table td {
-  padding: var(--ua-space-1) var(--ua-space-2);
-  border-bottom: 1px solid var(--ua-separator);
-  text-align: end;
-}
-.web-table th:first-child {
-  text-align: start;
-}
-.web-table thead th {
   color: var(--ua-text-secondary);
 }
-/* The source list's table (the public page, P3-67, and the source control page, P3-74): it scrolls inside its own box
-   on a narrow screen, every cell reads from the start, and its links sit in text, so they are underlined (WCAG 1.4.1). */
-.web-table-scroll {
-  overflow-x: auto;
+/* The balance: its figure and what it buys, "Add credit" on the trailing edge, then its details. */
+.web-balance-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ua-space-4) var(--ua-space-6);
 }
-/* Wide enough that a web address keeps its line; on a phone the box scrolls instead. */
+.web-balance {
+  display: grid;
+  gap: 2px;
+}
+.web-balance-estimate {
+  color: var(--ua-text-secondary);
+}
+.web-balance-actions {
+  display: grid;
+  justify-items: end;
+  gap: var(--ua-space-1_5);
+  text-align: end;
+}
+.web-balance-lines {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--ua-space-1);
+  padding-top: var(--ua-space-4);
+  border-top: 0.5px solid var(--ua-separator);
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+@media (max-width: 599px) {
+  .web-balance-card {
+    grid-template-columns: 1fr;
+  }
+  .web-balance-actions {
+    justify-items: stretch;
+    text-align: start;
+  }
+}
+.web-amount--credit {
+  color: var(--ua-success);
+}
+
+/* ---------- Admin overview (Admin.tsx, AdminUsers.tsx, AdminInvites.tsx, AdminUsage.tsx) ---------- */
+/* People and invites, then the server and its usage: side by side when there is room, in that order for screen readers. */
+.web-admin {
+  display: grid;
+  gap: var(--ua-space-8);
+  align-items: start;
+}
+.web-admin-column {
+  display: grid;
+  gap: var(--ua-space-8);
+  min-width: 0;
+}
+@media (min-width: 1100px) {
+  .web-admin {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+.web-not-admin {
+  display: grid;
+  gap: var(--ua-space-4);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.web-people td {
+  white-space: nowrap;
+}
+.web-people tbody th {
+  font-weight: 400;
+}
+.web-person {
+  display: flex;
+  align-items: center;
+  gap: var(--ua-space-3);
+  min-width: 220px;
+}
+.web-person-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.web-person-email {
+  font: var(--ua-type-body);
+  overflow-wrap: anywhere;
+}
+.web-person .web-row-facts {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+.web-sheet-section {
+  display: grid;
+  gap: var(--ua-space-2);
+  margin-top: var(--ua-space-5);
+}
+.web-sheet-section h3 {
+  font: var(--ua-type-headline);
+}
+/* A field and its button on one line. */
+.web-inline-form {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ua-space-2);
+}
+.web-inline-form > .ua-field {
+  flex: 1;
+  min-width: 0;
+}
+.web-confirm {
+  display: grid;
+  gap: var(--ua-space-3);
+  padding: var(--ua-space-3) var(--ua-space-4);
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-danger-tint);
+}
+.web-dialog-facts,
+.ua-dialog .web-facts {
+  margin-top: var(--ua-space-2);
+  font: var(--ua-type-callout);
+}
+.ua-dialog .web-facts > div {
+  padding: 6px 0;
+}
+/* The usage chart: a bar a day, oldest on the left. */
+.web-chart {
+  display: grid;
+  gap: var(--ua-space-2);
+  font: var(--ua-type-caption);
+  color: var(--ua-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.web-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 140px;
+  padding-top: var(--ua-space-1);
+  border-bottom: 0.5px solid var(--ua-separator);
+}
+.web-chart-bar {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+.web-chart-bar > span {
+  width: 100%;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--ua-accent);
+}
+.web-chart-bar:hover > span {
+  background: var(--ua-accent-hover);
+}
+.web-chart-axis {
+  display: flex;
+  justify-content: space-between;
+}
+/* "Show as a table" under a chart. */
+.web-disclosure > summary {
+  width: fit-content;
+  padding: 4px 0;
+  color: var(--ua-accent);
+  cursor: pointer;
+}
+.web-disclosure[open] > summary {
+  margin-bottom: var(--ua-space-2);
+}
+/* The invite form: the field and "Invite" on one line, the button level with the field. */
+.web-invite {
+  align-items: flex-end;
+}
+@media (max-width: 599px) {
+  .web-invite {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+/* A message to pass on, with its Copy button. */
+.web-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--ua-space-3);
+  padding: var(--ua-space-4);
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-accent-tint);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Source list (SourceList.tsx, AdminSources.tsx) ---------- */
+.web-meta {
+  display: grid;
+  gap: var(--ua-space-1);
+  margin-top: calc(-1 * var(--ua-space-5));
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+.ua-button > svg {
+  flex: none;
+}
+a.ua-button > svg {
+  width: 16px;
+  height: 16px;
+}
+/* The list's balance: a column per lean bucket, its bar as tall as its count against the fullest. */
+.web-balance-buckets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--ua-space-3);
+  padding: var(--ua-space-5);
+}
+.web-balance-buckets > li {
+  display: grid;
+  justify-items: center;
+  gap: var(--ua-space-1);
+  text-align: center;
+}
+.web-bucket-bar {
+  display: flex;
+  align-items: flex-end;
+  width: min(48px, 100%);
+  height: 64px;
+  border-radius: var(--ua-radius-sm);
+  background: var(--ua-fill-4);
+  overflow: hidden;
+}
+.web-bucket-bar > span {
+  width: 100%;
+  background: var(--ua-accent);
+}
+.web-bucket-count {
+  font: var(--ua-type-title3);
+  font-variant-numeric: tabular-nums;
+}
+.web-bucket-label {
+  font: var(--ua-type-footnote);
+  color: var(--ua-text-secondary);
+}
+/* The outlets: wide enough that a web address keeps its line; on a phone the card scrolls instead. */
 .web-outlets {
-  min-width: 720px;
+  min-width: 760px;
 }
 .web-outlets th,
 .web-outlets td {
   text-align: start;
   vertical-align: top;
 }
+.web-outlets tbody th {
+  font-weight: 600;
+}
 .web-outlets a {
   text-decoration: underline;
 }
 .web-outlet-id {
   display: block;
-  font-weight: normal;
+  font: var(--ua-type-footnote);
   color: var(--ua-text-secondary);
 }
 .web-evidence {
   display: grid;
   gap: var(--ua-space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
-/* The source list's change history: one line per change, newest first. */
-.web-changes {
+.web-outlet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ua-space-1);
+}
+.web-icon-destructive:hover {
+  background: var(--ua-danger-tint);
+  color: var(--ua-danger);
+}
+.ua-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ua-icon-button:disabled:hover {
+  background: transparent;
+  color: var(--ua-text-secondary);
+}
+/* An empty list's card: what's missing and how to fill it. */
+.web-empty-card {
   display: grid;
+  justify-items: center;
   gap: var(--ua-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-wrap: anywhere;
+  padding: var(--ua-space-10) var(--ua-space-5);
+  text-align: center;
 }
-/* The problem reports page (ADR 0009 §7). Its groups: the title and counts, the last 14 days, then the buttons, which
-   wrap under the text on a narrow screen. */
+.web-empty-card > svg {
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--ua-space-1);
+  color: var(--ua-text-tertiary);
+}
+.web-empty-card .web-form-actions {
+  justify-content: center;
+  margin-top: var(--ua-space-3);
+}
+/* A group of fields in a sheet, under its legend. */
+.web-fieldset {
+  display: grid;
+  gap: var(--ua-space-3);
+  margin: 0;
+  padding: var(--ua-space-4);
+  border: none;
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-fill-4);
+}
+.web-fieldset > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font: var(--ua-type-headline);
+}
+.web-evidence-row {
+  display: grid;
+  gap: var(--ua-space-2) var(--ua-space-3);
+}
+@media (min-width: 600px) {
+  .web-evidence-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.ua-select {
+  border-color: var(--ua-control-border);
+}
+.web-sheet .ua-field > .ua-select {
+  width: 100%;
+}
+
+/* ---------- Pricing (AdminPrices.tsx, AdminPriceSettings.tsx) ---------- */
+/* When a price applies: "Now" in accent, a later day in grey, at the row's leading edge. */
+.web-when {
+  flex: none;
+  align-self: flex-start;
+  min-width: 96px;
+  margin-top: 1px;
+  font: var(--ua-type-subhead);
+  font-weight: 600;
+  color: var(--ua-text-secondary);
+}
+.web-when--now {
+  color: var(--ua-accent);
+}
+.ua-row:has(> .web-when) {
+  align-items: flex-start;
+  --ua-row-inset: 16px;
+}
+.ua-row:has(> .web-when) .ua-row-title {
+  font-weight: 600;
+}
+.web-row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ua-space-2);
+}
+@media (max-width: 599px) {
+  .ua-row:has(> .web-when) {
+    flex-wrap: wrap;
+  }
+  .ua-row:has(> .web-when) > .web-when {
+    width: 100%;
+  }
+}
+/* A sheet's fields two to a line when there is room. */
+.web-field-grid {
+  display: grid;
+  gap: var(--ua-space-4);
+}
+@media (min-width: 600px) {
+  .web-field-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+/* What people will see: the price lines as they read them. */
+.web-preview {
+  display: grid;
+  gap: var(--ua-space-1);
+  padding: var(--ua-space-3) var(--ua-space-4);
+  border-radius: var(--ua-radius-md);
+  background: var(--ua-accent-tint);
+}
+.web-preview-title {
+  font: var(--ua-type-subhead);
+  color: var(--ua-text-secondary);
+}
+.web-preview-lines {
+  font: var(--ua-type-headline);
+}
+.web-sheet .web-confirm {
+  background: var(--ua-warning-tint);
+}
+.web-sheet form > .ua-banner,
+.web-form > .ua-banner {
+  margin-bottom: var(--ua-space-1);
+}
+
+/* ---------- Problem reports (AdminReports.tsx) ---------- */
+.web-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ua-space-2);
+  font: var(--ua-type-callout);
+  color: var(--ua-text-secondary);
+}
+.web-empty-line {
+  color: var(--ua-text-secondary);
+  text-align: center;
+}
+/* A group: its title and counts, the last 14 days, then its buttons, which wrap under the text on a narrow screen. */
 .web-groups {
   display: grid;
   gap: var(--ua-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 .web-group {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--ua-space-2) var(--ua-space-3);
+  gap: var(--ua-space-3);
   align-items: center;
-  padding: var(--ua-space-3);
+  padding: var(--ua-space-4);
   border-radius: var(--ua-radius-lg);
   background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
   overflow-wrap: anywhere;
-}
-.web-group > .ua-hstack {
-  grid-column: 1 / -1;
 }
 .web-group-text {
   display: grid;
-  gap: var(--ua-space-1);
+  gap: 2px;
 }
 .web-group-title {
   font: var(--ua-type-headline);
@@ -241,17 +1272,58 @@
   font-variant-numeric: tabular-nums;
 }
 .web-group-tools {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ua-space-2);
+  padding-top: var(--ua-space-3);
+  border-top: 0.5px solid var(--ua-separator);
+}
+.web-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
+  gap: var(--ua-space-2) var(--ua-space-3);
+}
+.web-toolbar > .ua-hstack,
+.web-group-tools > .ua-hstack {
+  gap: var(--ua-space-2);
+}
+.web-pager {
+  display: flex;
+  justify-content: center;
+  gap: var(--ua-space-2);
+}
+/* A view inside the page (a group, a report): Back, its heading, then its parts. */
+.web-view {
+  gap: var(--ua-space-4);
+}
+.web-view-head {
+  display: grid;
+  gap: var(--ua-space-1);
+}
+.web-view-head h2 {
+  font: var(--ua-type-title2);
+  overflow-wrap: anywhere;
+}
+.web-report-part {
+  display: grid;
+  gap: var(--ua-space-2);
+}
+.web-report-part h3 {
+  font: var(--ua-type-headline);
 }
 /* A group's last 14 days: one thin bar a day, a day without reports a hairline. */
 .web-spark {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
-  height: 20px;
+  height: 24px;
 }
 .web-spark-day {
-  width: 4px;
+  width: 5px;
   min-height: 2px;
   border-radius: 1px;
   background: var(--ua-accent);
@@ -259,11 +1331,11 @@
 .web-spark-none {
   background: var(--ua-fill);
 }
-/* The last 30 days as bars: a row a day, one color per platform, the total at the end. Screen readers read the table
-   under it instead, so the colors need no words of their own. */
+/* The last 30 days as bars: a row a day, one colour per platform, the total at the end. Screen readers read the table
+   instead, so the colours need no words of their own beyond the key. */
 .web-bars {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   font: var(--ua-type-footnote);
   color: var(--ua-text-secondary);
   font-variant-numeric: tabular-nums;
@@ -271,13 +1343,13 @@
 .web-bars-key {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ua-space-1) var(--ua-space-3);
-  margin-bottom: var(--ua-space-1);
+  gap: var(--ua-space-1) var(--ua-space-4);
+  margin-bottom: var(--ua-space-2);
 }
 .web-bars-key > span {
   display: inline-flex;
   align-items: center;
-  gap: var(--ua-space-1);
+  gap: var(--ua-space-1_5);
 }
 .web-bars-key .web-bar {
   width: 10px;
@@ -294,6 +1366,7 @@
 }
 .web-bar-track {
   display: flex;
+  gap: 1px;
   height: 10px;
 }
 .web-bar {
@@ -310,51 +1383,62 @@
 .web-bar--other {
   background: var(--ua-text-tertiary);
 }
-/* A report in full: its facts as label and value, the plain lines, the person's words as they wrote them (line breaks
-   kept), and the stored details as JSON that scrolls inside its own box. */
-.web-facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--ua-space-1) var(--ua-space-4);
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.web-facts dt {
-  color: var(--ua-text-secondary);
-}
-.web-facts dd {
-  margin: 0;
-}
+/* A report in full: the plain lines, the person's words as they wrote them (line breaks kept), and the stored details
+   as JSON that scrolls inside its own box. */
 .web-lines {
   display: grid;
-  gap: var(--ua-space-1);
-  margin: 0;
+  gap: var(--ua-space-1_5);
   padding-inline-start: var(--ua-space-5);
+  list-style: disc;
   overflow-wrap: anywhere;
 }
 .web-message {
-  padding: var(--ua-space-3);
-  border-radius: var(--ua-radius-md);
-  background: var(--ua-bg-secondary);
+  padding: var(--ua-space-4);
+  border-radius: var(--ua-radius-lg);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .web-contact {
   overflow-wrap: anywhere;
 }
-.web-contact a {
+a.web-contact {
   text-decoration: underline;
 }
 .web-json {
   margin: 0;
-  padding: var(--ua-space-3);
+  padding: var(--ua-space-4);
   max-height: 480px;
   overflow: auto;
   border-radius: var(--ua-radius-md);
-  background: var(--ua-bg-secondary);
-  font: 0.75rem / 1.125rem var(--ua-font-mono);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+  font: 0.8125rem / 1.25rem var(--ua-font-mono);
 }
 .web-find {
-  display: grid;
+  align-items: flex-start;
+}
+.web-find > .ua-button {
+  margin-top: 24px;
+}
+
+/* ---------- Pages a billing module renders in the focus frame (apps/server/src/http/page-frame.ts) ---------- */
+/* Each top-level section is a card, its status lines read from the start, and its actions sit at its ends. */
+.web-focus > .web-main > .web-section {
+  gap: var(--ua-space-4);
+  padding: var(--ua-space-6);
+  border-radius: var(--ua-radius-xl);
+  background: var(--ua-bg-grouped-raised);
+  box-shadow: var(--ua-shadow-1);
+}
+.web-focus > .web-main > .web-section .web-status {
+  text-align: start;
+}
+.web-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--ua-space-3);
 }

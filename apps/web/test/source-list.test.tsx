@@ -10,6 +10,7 @@ import {
   BUCKET_LABELS,
   CORRECTIONS_PAGE,
   FEATURE_NAMES,
+  MAX_LISTED_CHANGES,
   type OfficialList,
   type OfficialOutlet,
   OUTLET_CHANGES_JSON_PATH,
@@ -95,37 +96,72 @@ function openPage(options: Parameters<typeof fakeServer>[0] = {}) {
 /** The list with only these outlets. */
 const listOf = (outlets: OfficialOutlet[]): OfficialList => ({ ...LIST, outlets });
 
+/** A section of the page by its heading. */
+function region(name: string): HTMLElement {
+  return screen.getByRole('region', { name });
+}
+
+/** The balance's buckets in order, each as its label and count. */
+function buckets(): string[][] {
+  return [...region('Balance').querySelectorAll('.web-balance-buckets > li')].map((li) => [
+    li.querySelector('.web-bucket-label')?.textContent ?? '',
+    li.querySelector('.web-bucket-count')?.textContent ?? '',
+  ]);
+}
+
+/** The change history's rows, newest first, each as its title and subtitle. */
+function history(): (string | undefined)[][] {
+  return [...region('Changes').querySelectorAll('.ua-row')].map((row) =>
+    ['.ua-row-title', '.ua-row-subtitle'].map((part) => row.querySelector(part)?.textContent ?? undefined),
+  );
+}
+
 describe('page', () => {
   it('test_source_list_page_shows_list', async () => {
     const { server, view } = openPage({ session: TOM });
-    expect(view.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(view.container.querySelector('.web-page.web-loading[aria-busy="true"]')).not.toBeNull();
 
+    // The app layout: the server's name in the top bar, with no account; the page under its own title.
     const heading = await screen.findByRole('heading', { level: 1 });
-    expect(heading.textContent).toBe(`Source list · ${INFO.name}`);
+    expect(heading.textContent).toBe('Source list');
     expect(document.title).toBe(`Source list · ${INFO.name}`);
+    const topBar = view.container.querySelector('.web-topbar') as HTMLElement;
+    expect(within(topBar).getByText(INFO.name)).toBeTruthy();
+    expect(within(topBar).queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
     expect(
       screen.getByText(
         `The news outlets ${FEATURE_NAMES.perspectives} compares coverage across, and the lean bucket of each. Leans are ` +
           "set by this server's admins, each with evidence, and every change is listed below. Never by AI.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/^Version 12 ·/).textContent).toBe(
-      'Version 12 · Updated Feb 3, 2026 · Data CC BY 4.0 · Download JSON',
-    );
-    expect(screen.getByRole('link', { name: 'Download JSON' }).getAttribute('href')).toBe(OUTLETS_JSON_PATH);
+    const meta = view.container.querySelector('.web-meta') as HTMLElement;
+    expect(within(meta).getByText(/^Version 12 ·/).textContent).toBe('Version 12 · Updated Feb 3, 2026 · Data CC BY 4.0');
+    // The download is the page's action, beside its title.
+    const download = screen.getByRole('link', { name: 'Download JSON' });
+    expect(download.getAttribute('href')).toBe(OUTLETS_JSON_PATH);
+    expect(download.getAttribute('download')).toBe('outlets.json');
+    expect(download.closest('.web-page-actions')).not.toBeNull();
     expect(screen.getByRole('link', { name: 'CC BY 4.0' }).getAttribute('href')).toBe(
       'https://creativecommons.org/licenses/by/4.0/',
     );
-    expect(screen.getByText(/^To appeal a listing or a lean/).textContent).toBe(
+    expect(within(meta).getByText(/^To appeal a listing or a lean/).textContent).toBe(
       'To appeal a listing or a lean, see Corrections and appeals.',
     );
     expect(screen.getByRole('link', { name: 'Corrections and appeals' }).getAttribute('href')).toBe(siteUrl(CORRECTIONS_PAGE));
 
     // Balanced: no warning, and the counts per bucket in order.
     expect(screen.queryByText(NOT_BALANCED)).toBeNull();
-    expect(screen.getByText('Left 2 · Leans left 2 · Center 2 · Leans right 2 · Right 2')).toBeTruthy();
+    expect(buckets()).toEqual([
+      ['Left', '2'],
+      ['Leans left', '2'],
+      ['Center', '2'],
+      ['Leans right', '2'],
+      ['Right', '2'],
+    ]);
 
-    const table = screen.getByRole('table');
+    const table = within(region('Outlets')).getByRole('table');
+    expect(table.closest('.web-table-card')).not.toBeNull();
     const [head, ...rows] = within(table).getAllByRole('row');
     expect(
       within(head as HTMLElement)
@@ -146,6 +182,10 @@ describe('page', () => {
         (outlet.lean?.evidence ?? []).map((e) => e.note).join(''),
         outlet.changedOn === '2026-01-15' ? 'Jan 15, 2026' : 'Feb 3, 2026',
       ]);
+      // The lean is a badge with the same words.
+      expect(cells[2]?.querySelector('.ua-badge')?.textContent).toBe(
+        outlet.lean ? BUCKET_LABELS[outlet.lean.bucket] : 'Not labelled',
+      );
       const links = within(row).queryAllByRole('link');
       expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual(
         (outlet.lean?.evidence ?? []).map((e) => [e.note, e.url]),
@@ -170,8 +210,15 @@ describe('page', () => {
     openPage({ sourceList: listOf(noRight) });
     const notice = await screen.findByText(NOT_BALANCED);
     const banner = notice.closest('.ua-banner') as HTMLElement;
+    expect(region('Balance').contains(banner)).toBe(true);
     expect(within(banner).getByText('No outlets in Right.')).toBeTruthy();
-    expect(screen.getByText('Left 2 · Leans left 2 · Center 2 · Leans right 2 · Right 0')).toBeTruthy();
+    expect(buckets()).toEqual([
+      ['Left', '2'],
+      ['Leans left', '2'],
+      ['Center', '2'],
+      ['Leans right', '2'],
+      ['Right', '0'],
+    ]);
     cleanup();
 
     // No lean at all: the list can't be used.
@@ -180,6 +227,7 @@ describe('page', () => {
       await screen.findByText(`This list has no outlets with a lean, so ${FEATURE_NAMES.perspectives} can't use it.`),
     ).toBeTruthy();
     expect(screen.queryByText(NOT_BALANCED)).toBeNull();
+    expect(buckets().map(([, count]) => count)).toEqual(['0', '0', '0', '0', '0']);
     expect(screen.getAllByRole('row')).toHaveLength(2);
   });
 
@@ -204,30 +252,31 @@ describe('page', () => {
     expect(await screen.findByText(UNREACHABLE)).toBeTruthy();
     cleanup();
 
-    // A list never changed: no outlets, no changes.
+    // A list never changed: no outlets, no balance, no changes.
     openPage({ sourceList: EMPTY_SOURCE_LIST, outletChanges: NO_OUTLET_CHANGES });
-    expect(await screen.findByText('No outlets yet.')).toBeTruthy();
+    const empty = await screen.findByText('No outlets yet.');
+    expect(region('Outlets').contains(empty)).toBe(true);
+    expect(empty.closest('.web-card')).not.toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByText(/^Version 0 ·/).textContent).toBe('Version 0 · Data CC BY 4.0 · Download JSON');
-    expect(screen.getByText('No changes yet.')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Balance' })).toBeNull();
+    expect(screen.getByText(/^Version 0 ·/).textContent).toBe('Version 0 · Data CC BY 4.0');
+    expect(screen.getByRole('link', { name: 'Download JSON' }).getAttribute('href')).toBe(OUTLETS_JSON_PATH);
+    expect(history()).toEqual([['No changes yet.', undefined]]);
   });
 
   it('test_source_list_page_history_without_identities', async () => {
     // Even a history that carried who (the admin page's shape) shows no one: the page passes no `showBy`.
     const withBy = CHANGES.map((c) => ({ ...c, by: TOM }));
     openPage({ outletChanges: { v: 1, changes: withBy } });
-    const history = await screen.findByRole('list', { name: 'Changes' });
+    await screen.findByRole('region', { name: 'Changes' });
     const lines = [
-      'Feb 3, 2026 · Added Fixture Unlabelled (fx-unlabelled)',
-      'Feb 2, 2026 · Edited Fixture Center A (fx-center-a) · lean: Center → Leans left',
-      'Feb 1, 2026 · Removed Fixture Gone (fx-gone)',
-      'Jan 15, 2026 · Imported Fixture Imported (fx-imported)',
+      ['Added Fixture Unlabelled (fx-unlabelled)', 'Feb 3, 2026'],
+      ['Edited Fixture Center A (fx-center-a)', 'Feb 2, 2026 · lean: Center → Leans left'],
+      ['Removed Fixture Gone (fx-gone)', 'Feb 1, 2026'],
+      ['Imported Fixture Imported (fx-imported)', 'Jan 15, 2026'],
     ];
-    expect(
-      within(history)
-        .getAllByRole('listitem')
-        .map((li) => li.textContent),
-    ).toEqual(lines);
+    expect(history()).toEqual(lines);
+    expect(screen.queryByText(/^The latest/)).toBeNull();
     expect(document.body.textContent).not.toContain(TOM);
     expect(document.body.textContent).not.toContain('@');
     cleanup();
@@ -243,9 +292,16 @@ describe('page', () => {
       after: renamed,
     };
     render(<ChangeList changes={[{ ...edit, by: null }, ...withBy]} showBy />);
-    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'Feb 4, 2026 · Edited Fixture Renamed (fx-unlabelled) · web addresses, name, country',
-      ...lines.map((line) => `${line} · by ${TOM}`),
+    expect(history()).toEqual([
+      ['Edited Fixture Renamed (fx-unlabelled)', 'Feb 4, 2026 · web addresses, name, country'],
+      ...lines.map(([title, subtitle]) => [title, `${subtitle} · by ${TOM}`]),
     ]);
+    cleanup();
+
+    // A history at the most the server lists says it shows only the latest.
+    const most = Array.from({ length: MAX_LISTED_CHANGES }, (_, i) => ({ ...edit, seq: i + 1 }));
+    render(<ChangeList changes={most} />);
+    expect(history()).toHaveLength(MAX_LISTED_CHANGES);
+    expect(region('Changes').querySelector('.ua-group-footer')?.textContent).toBe(`The latest ${MAX_LISTED_CHANGES} changes.`);
   });
 });

@@ -21,8 +21,9 @@ import {
   retailMicrosPer1000Posts,
 } from '@unalgorithm/protocol';
 import { Banner, ListGroup, ListRow } from '@unalgorithm/ui';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ApiError, creditAccount, publicPrices } from './api.ts';
+import { LinkRow, Section, SectionLoading } from './ui.tsx';
 
 const PAUSED = 'AI is paused while the balance is empty. Filters and results already saved keep working.';
 const LOAD_FAILED = "Couldn't load your credits.";
@@ -67,7 +68,6 @@ export interface CreditsProps {
 
 export function Credits({ onSignedOut }: CreditsProps) {
   const [state, setState] = useState<State>({ name: 'loading' });
-  const headingId = useId();
 
   const load = useCallback(async () => {
     setState({ name: 'loading' });
@@ -87,13 +87,13 @@ export function Credits({ onSignedOut }: CreditsProps) {
   }, [load]);
 
   return (
-    <section className="web-credits" aria-labelledby={headingId} aria-busy={state.name === 'loading' || undefined}>
-      <h2 id={headingId}>Credits</h2>
+    <Section title="Credits" busy={state.name === 'loading'}>
+      {state.name === 'loading' ? <SectionLoading /> : null}
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
       {state.name === 'loaded' ? <CreditDetails account={state.account} at={state.at} prices={state.prices} /> : null}
-    </section>
+    </Section>
   );
 }
 
@@ -128,27 +128,49 @@ function CreditDetails({
   const later = laterClassifyPriceChanges(at, schedule);
   return (
     <>
-      <div className="web-balance">
-        <p className="ua-stat">{formatBalance(balance.balanceMicros)}</p>
-        <p className="ua-secondary">
-          {balance.balanceMicros > 0
-            ? formatPostsEstimate(estimatePosts(balance.balanceMicros, at, 'classify', schedule))
-            : PAUSED}
-        </p>
-        {promotional ? <p className="ua-footnote">{promotional}</p> : null}
-        {balance.purchasedMicros > 0 ? (
-          // No expiry: the protocol has none for purchased credit.
-          <p className="ua-footnote">Purchased credit: {formatBalance(balance.purchasedMicros)}</p>
-        ) : null}
-        {balance.starter === 'active' ? null : <p className="ua-footnote">{STARTER[balance.starter]}</p>}
-        <p className="ua-footnote">AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</p>
-        {later.map((from) => (
-          // In UTC, as a change starts at 00:00 UTC: west of UTC it is the previous evening.
-          <p className="ua-footnote" key={from.toISOString()}>
-            From {DATE.format(from)} (UTC): about {per1000Posts(from, schedule)} per 1,000 posts.
+      <div className="web-card web-balance-card">
+        <div className="web-balance">
+          <p className="ua-stat">{formatBalance(balance.balanceMicros)}</p>
+          <p className="web-balance-estimate">
+            {balance.balanceMicros > 0
+              ? formatPostsEstimate(estimatePosts(balance.balanceMicros, at, 'classify', schedule))
+              : PAUSED}
           </p>
-        ))}
+        </div>
+        <div className="web-balance-actions">
+          {addCreditPath ? (
+            <>
+              {/* A page on this server, so it opens in place (`Button`'s links open a new tab). */}
+              <a className="ua-button ua-button--primary ua-button--lg" href={addCreditPath}>
+                Add credit
+              </a>
+              <p className="ua-footnote">{amountRange(purchase)}</p>
+            </>
+          ) : (
+            <p className="ua-footnote">Adding credit isn't available yet.</p>
+          )}
+        </div>
+        <ul className="web-balance-lines">
+          {promotional ? <li>{promotional}</li> : null}
+          {balance.purchasedMicros > 0 ? (
+            // No expiry: the protocol has none for purchased credit.
+            <li>Purchased credit: {formatBalance(balance.purchasedMicros)}</li>
+          ) : null}
+          {balance.starter === 'active' ? null : <li>{STARTER[balance.starter]}</li>}
+          <li>AI costs about {per1000Posts(at, schedule)} per 1,000 posts.</li>
+          {later.map((from) => (
+            // In UTC, as a change starts at 00:00 UTC: west of UTC it is the previous evening.
+            <li key={from.toISOString()}>
+              From {DATE.format(from)} (UTC): about {per1000Posts(from, schedule)} per 1,000 posts.
+            </li>
+          ))}
+        </ul>
       </div>
+      {autoReload ? (
+        <ListGroup>
+          <AutoReloadRow summary={autoReload} />
+        </ListGroup>
+      ) : null}
       <ListGroup header="History">
         {history.length === 0 ? (
           <ListRow title={<span className="ua-secondary">No credit activity yet.</span>} />
@@ -159,35 +181,21 @@ function CreditDetails({
               key={i}
               title={historyTitle(item)}
               subtitle={DATE.format(new Date(item.at))}
-              control={<span className="web-amount">{formatCreditAmount(item.amountMicros)}</span>}
+              control={
+                <span className={item.amountMicros > 0 ? 'web-amount web-amount--credit' : 'web-amount'}>
+                  {formatCreditAmount(item.amountMicros)}
+                </span>
+              }
             />
           ))
         )}
       </ListGroup>
-      <div className="web-credit-actions">
-        {addCreditPath ? (
-          <>
-            {/* A page on this server, so it opens in place (`Button`'s links open a new tab). */}
-            <a className="ua-button ua-button--primary" href={addCreditPath}>
-              Add credit
-            </a>
-            <p className="ua-footnote">{amountRange(purchase)}</p>
-          </>
-        ) : (
-          <p className="ua-footnote">Adding credit isn't available yet.</p>
-        )}
-        {autoReload ? <AutoReloadLine summary={autoReload} /> : null}
-        {pricingUrl ? (
-          <a href={pricingUrl} target="_blank" rel="noreferrer">
-            How credits work
-          </a>
-        ) : null}
-        {refundPolicyUrl ? (
-          <a href={refundPolicyUrl} target="_blank" rel="noreferrer">
-            Refund policy
-          </a>
-        ) : null}
-      </div>
+      {pricingUrl || refundPolicyUrl ? (
+        <ListGroup>
+          {pricingUrl ? <LinkRow title="How credits work" href={pricingUrl} external /> : null}
+          {refundPolicyUrl ? <LinkRow title="Refund policy" href={refundPolicyUrl} external /> : null}
+        </ListGroup>
+      ) : null}
     </>
   );
 }
@@ -196,7 +204,7 @@ function CreditDetails({
  * Whether credit is bought automatically, with a link to the server's auto-reload page (it opens in place, like "Add
  * credit"). Draft copy (D21).
  */
-function AutoReloadLine({ summary }: { summary: AutoReloadSummary }) {
+function AutoReloadRow({ summary }: { summary: AutoReloadSummary }) {
   const { path, state, amountMicros = 0, thresholdMicros = 0, monthlyLimitMicros = 0 } = summary;
   const [sentence, label] =
     state === 'on'
@@ -208,10 +216,15 @@ function AutoReloadLine({ summary }: { summary: AutoReloadSummary }) {
         ? ["Auto-reload is off: the last automatic payment didn't go through.", 'Set up auto-reload again']
         : ['Auto-reload is off.', 'Set up auto-reload'];
   return (
-    <>
-      <p className="ua-footnote">{sentence}</p>
-      <a href={path}>{label}</a>
-    </>
+    <ListRow
+      title="Auto-reload"
+      subtitle={sentence}
+      control={
+        <a className="ua-button ua-button--secondary ua-button--sm" href={path}>
+          {label}
+        </a>
+      }
+    />
   );
 }
 

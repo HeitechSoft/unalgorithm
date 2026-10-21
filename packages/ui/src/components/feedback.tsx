@@ -155,6 +155,7 @@ export function Dialog({
   children,
   actions,
   alert,
+  className,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -163,6 +164,8 @@ export function Dialog({
   children?: ReactNode;
   actions?: ReactNode;
   alert?: boolean;
+  /** Added to the dialog's own class: a page's wider sheet. */
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -174,7 +177,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className="ua-dialog"
+      className={className ? `ua-dialog ${className}` : 'ua-dialog'}
       role={alert ? 'alertdialog' : 'dialog'}
       // Named by its title without an id, which two dialogs on one page (open or closed) would share.
       aria-label={title}

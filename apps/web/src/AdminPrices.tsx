@@ -11,7 +11,8 @@
  * page loading again; a refusal is said in the server's words (400) or the page's (404, 409).
  *
  * After the task prices come the starter credit, buying credit and auto-reload sections, then the history of every
- * change (PA-06, `AdminPriceSettings.tsx`); their saves go through the same handler, one open form at a time.
+ * change (PA-06, `AdminPriceSettings.tsx`); their saves go through the same handler, one open form at a time. Every
+ * form is a sheet, and cancelling a scheduled change asks first in an alert.
  */
 import { priceIssuesText, REFERENCE_MODEL_LABELS, TASK_PRICE_NAMES, taskPriceLines } from '@unalgorithm/core';
 import {
@@ -36,9 +37,9 @@ import {
   taskPriceAt,
   withTaskCard,
 } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, ListRow, TextField } from '@unalgorithm/ui';
-import { type FormEvent, Fragment, type ReactNode, useId, useState } from 'react';
-import { AdminGate, useAdminSession } from './Admin.tsx';
+import { Banner, Button, Dialog, ListGroup, ListRow, Pencil, TextField } from '@unalgorithm/ui';
+import { type FormEvent, type ReactNode, useId, useState } from 'react';
+import { AdminGate, AdminPage, useAdminSession } from './Admin.tsx';
 import {
   AutoReloadSection,
   PriceHistory,
@@ -49,8 +50,8 @@ import {
 } from './AdminPriceSettings.tsx';
 import { ApiError, adminPrices, changePrices } from './api.ts';
 import { dollarsInput, fromUtcDayInput, parseDollars, parseMultiplier, utcDayInput } from './money.ts';
-import { Page } from './Page.tsx';
 import { failureMessage } from './SignIn.tsx';
+import { AddRow, Section } from './ui.tsx';
 
 // Draft copy for Tom (decision PD14).
 const TITLE = 'Pricing';
@@ -110,7 +111,7 @@ function PriceLines({ lines }: { lines: readonly string[] }) {
 
 export function AdminPrices() {
   const session = useAdminSession(TITLE, adminPrices);
-  const { info, heading, step, reload, sessionEnded } = session;
+  const { info, step, reload, sessionEnded } = session;
   const [open, setOpen] = useState<Open | null>(null);
   /** The request in flight: 'save', 'move' or 'cancel'. */
   const [pending, setPending] = useState<string | null>(null);
@@ -173,6 +174,8 @@ export function AdminPrices() {
   }
 
   function onClose() {
+    // A sheet stays while its save is out: Escape waits for the answer.
+    if (pending !== null) return;
     setOpen(null);
     setNotice(null);
   }
@@ -200,7 +203,7 @@ export function AdminPrices() {
   });
 
   return (
-    <Page info={info} heading={heading} intro={INTRO} wide>
+    <AdminPage session={session} nav="prices" title={TITLE} intro={INTRO} wide={false}>
       {billing ? null : <Banner title={NO_BILLING} />}
       <TaskPrices
         book={book}
@@ -217,7 +220,7 @@ export function AdminPrices() {
       <PurchaseSection {...settings('purchase')} />
       <AutoReloadSection {...settings('auto-reload')} />
       <PriceHistory changes={step.data.changes} />
-    </Page>
+    </AdminPage>
   );
 }
 
@@ -236,87 +239,130 @@ interface TaskPricesProps {
 }
 
 /**
- * Each task's price, in `CREDIT_TASKS` order: the card in effect now and what people see, each scheduled change (an
- * entry that changes several tasks is listed under each) with what people will see from its date, "Move" and "Cancel",
- * then the form.
+ * Each task's price, in `CREDIT_TASKS` order: the price in effect now, with what people see and the card behind it;
+ * each scheduled change (an entry that changes several tasks is listed under each) from its date, with "Move" and
+ * "Cancel"; then "Change the price", which opens the task's sheet. Moving opens a sheet, cancelling an alert.
  */
 function TaskPrices({ book, version, now, open, pending, notice, onOpen, onClose, onSend }: TaskPricesProps) {
-  const headingId = useId();
   const idle = pending === null && open === null;
+  const opened = open !== null && 'task' in open ? open : null;
+  const props = opened
+    ? {
+        task: opened.task,
+        book,
+        now,
+        version,
+        effectiveFrom: 'effectiveFrom' in opened ? opened.effectiveFrom : '',
+        busy: pending !== null,
+        notice,
+        onSend,
+        onBack: onClose,
+      }
+    : null;
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>Task prices</h2>
+    <Section
+      title="Task prices"
+      description="What people pay for each kind of AI work. People see the lines in bold; the card under them is how they're worked out."
+    >
       {open === null ? notice : null}
       {CREDIT_TASKS.map((task) => {
         const name = TASK_PRICE_NAMES[task];
         const current = taskPriceAt(now, task, book.schedule);
-        const opened = open !== null && 'task' in open && open.task === task ? open : null;
         return (
-          <Fragment key={task}>
-            {opened ? notice : null}
-            <ListGroup header={name}>
-              <ListRow
-                title={current.offered ? `Now: ${cardSummary(task, current.card)}` : 'Not offered yet.'}
-                subtitle={<PriceLines lines={taskPriceLines(book.schedule, task, now)} />}
-              />
-              {scheduledTaskChanges(book.schedule, task, now).map(({ effectiveFrom, card }) => {
-                const when = day(effectiveFrom);
-                const step = opened?.kind !== 'form' && opened?.effectiveFrom === effectiveFrom ? opened.kind : null;
-                const props = { task, book, now, version, effectiveFrom, busy: pending !== null, onSend, onBack: onClose };
-                return (
-                  <Fragment key={effectiveFrom}>
-                    <ListRow
-                      title={`From ${when} (UTC): ${card ? cardSummary(task, card) : 'not offered'}`}
-                      subtitle={<PriceLines lines={taskPriceLines(book.schedule, task, new Date(effectiveFrom))} />}
-                      control={
-                        <div className="ua-hstack ua-wrap">
-                          <Button
-                            size="sm"
-                            aria-label={`Move the change from ${when}`}
-                            disabled={!idle}
-                            onClick={() => onOpen({ kind: 'move', task, effectiveFrom })}
-                          >
-                            Move
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            aria-label={`Cancel the change from ${when}`}
-                            disabled={!idle}
-                            onClick={() => onOpen({ kind: 'cancel', task, effectiveFrom })}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      }
-                    />
-                    {step === 'move' ? <MoveStep {...props} /> : null}
-                    {step === 'cancel' ? <CancelStep {...props} /> : null}
-                  </Fragment>
-                );
-              })}
-              {opened?.kind === 'form' ? (
-                <TaskPriceForm
-                  task={task}
-                  book={book}
-                  now={now}
-                  version={version}
-                  busy={pending === 'save'}
-                  onSubmit={(req) => onSend('save', req)}
-                  onCancel={onClose}
+          <ListGroup key={task} header={name}>
+            <ListRow
+              leading={<span className="web-when web-when--now">Now</span>}
+              title={current.offered ? <PriceLines lines={taskPriceLines(book.schedule, task, now)} /> : 'Not offered yet.'}
+              subtitle={current.offered ? cardSummary(task, current.card) : undefined}
+            />
+            {scheduledTaskChanges(book.schedule, task, now).map(({ effectiveFrom, card }) => {
+              const when = day(effectiveFrom);
+              return (
+                <ListRow
+                  key={effectiveFrom}
+                  leading={<span className="web-when">{`From ${when}`}</span>}
+                  title={
+                    card ? <PriceLines lines={taskPriceLines(book.schedule, task, new Date(effectiveFrom))} /> : 'Not offered.'
+                  }
+                  subtitle={card ? `${cardSummary(task, card)} · from 00:00 UTC` : 'From 00:00 UTC'}
+                  control={
+                    <div className="web-row-buttons">
+                      <Button
+                        size="sm"
+                        aria-label={`Move the change from ${when}`}
+                        disabled={!idle}
+                        onClick={() => onOpen({ kind: 'move', task, effectiveFrom })}
+                      >
+                        Move
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        aria-label={`Cancel the change from ${when}`}
+                        disabled={!idle}
+                        onClick={() => onOpen({ kind: 'cancel', task, effectiveFrom })}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  }
                 />
-              ) : (
-                <div className="web-form">
-                  <Button disabled={!idle} onClick={() => onOpen({ kind: 'form', task })}>
-                    {current.offered ? 'Change the price' : 'Set its first price'}
-                  </Button>
-                </div>
-              )}
-            </ListGroup>
-          </Fragment>
+              );
+            })}
+            <AddRow
+              icon={Pencil}
+              label={current.offered ? 'Change the price' : 'Set its first price'}
+              disabled={!idle}
+              onSelect={() => onOpen({ kind: 'form', task })}
+            />
+          </ListGroup>
         );
       })}
-    </section>
+      <Dialog
+        open={opened?.kind === 'form'}
+        onOpenChange={(next) => (next ? undefined : onClose())}
+        className="web-sheet"
+        title={
+          opened
+            ? taskPriceAt(now, opened.task, book.schedule).offered
+              ? `Change the price of ${TASK_PRICE_NAMES[opened.task]}`
+              : `Set the first price of ${TASK_PRICE_NAMES[opened.task]}`
+            : 'Change the price'
+        }
+      >
+        {opened?.kind === 'form' ? (
+          <TaskPriceForm
+            key={opened.task}
+            task={opened.task}
+            book={book}
+            now={now}
+            version={version}
+            busy={pending === 'save'}
+            notice={notice}
+            onSubmit={(req) => onSend('save', req)}
+            onCancel={onClose}
+          />
+        ) : null}
+      </Dialog>
+      <Dialog
+        open={opened?.kind === 'move'}
+        onOpenChange={(next) => (next ? undefined : onClose())}
+        className="web-sheet"
+        title={opened && 'effectiveFrom' in opened ? `Move the change from ${day(opened.effectiveFrom)}` : 'Move the change'}
+      >
+        {opened?.kind === 'move' && props ? <MoveStep key={props.effectiveFrom} {...props} /> : null}
+      </Dialog>
+      <Dialog
+        open={opened?.kind === 'cancel'}
+        onOpenChange={(next) => (next ? undefined : onClose())}
+        alert
+        title={
+          opened && 'effectiveFrom' in opened ? `Cancel the change from ${day(opened.effectiveFrom)}?` : 'Cancel the change?'
+        }
+      >
+        {opened?.kind === 'cancel' && props ? <CancelStep {...props} /> : null}
+      </Dialog>
+    </Section>
   );
 }
 
@@ -328,6 +374,8 @@ interface StepProps {
   /** The scheduled change's date. */
   effectiveFrom: string;
   busy: boolean;
+  /** A refused change, said above the step. */
+  notice: ReactNode;
   onSend(key: string, req: PriceChangeRequest): Promise<void>;
   onBack(): void;
 }
@@ -337,21 +385,24 @@ function refusal(book: PriceBook, schedule: PriceBook['schedule'], now: Date): s
   return priceIssuesText(priceBookChangeIssues(book, { ...book, schedule }, now));
 }
 
-/** "Cancel the change from Dec 3, 2026?": the change undone (PA-01's `cancelTaskChange`), and why not when the rules refuse. */
-function CancelStep({ task, book, now, version, effectiveFrom, busy, onSend, onBack }: StepProps) {
+/**
+ * The alert's body, "Cancel the change from Dec 3, 2026?": what goes back, the change undone (PA-01's
+ * `cancelTaskChange`), and why not when the rules refuse.
+ */
+function CancelStep({ task, book, now, version, effectiveFrom, busy, notice, onSend, onBack }: StepProps) {
   const head = cancelTaskChange(book.schedule, task, effectiveFrom);
   const blocked = head ? refusal(book, head, now) : GONE;
   return (
-    <div className="web-form ua-stack">
-      <p>{`Cancel the change from ${day(effectiveFrom)}?`}</p>
-      {blocked ? <p className="ua-field-error">{blocked}</p> : null}
-      <div className="ua-hstack ua-wrap">
+    <div className="web-form">
+      {notice}
+      <p className="web-form-note">{`${TASK_PRICE_NAMES[task]} keeps the price before it.`}</p>
+      {blocked ? <p className="web-form-error">{blocked}</p> : null}
+      <div className="web-form-actions">
         {/* Focused when the question appears: the destructive button never has the focus first. */}
-        <Button size="sm" autoFocus disabled={busy} onClick={onBack}>
+        <Button autoFocus disabled={busy} onClick={onBack}>
           Keep it
         </Button>
         <Button
-          size="sm"
           variant="destructive-solid"
           loading={busy}
           disabled={busy || blocked !== ''}
@@ -365,7 +416,7 @@ function CancelStep({ task, book, now, version, effectiveFrom, busy, onSend, onB
 }
 
 /** The change from another day (PA-01's `moveTaskChange`): a date field, set to its day, and "Save". */
-function MoveStep({ task, book, now, version, effectiveFrom, busy, onSend, onBack }: StepProps) {
+function MoveStep({ task, book, now, version, effectiveFrom, busy, notice, onSend, onBack }: StepProps) {
   const [to, setTo] = useState(() => utcDayInput(effectiveFrom));
   const target = fromUtcDayInput(to);
   const head = target === null || target === effectiveFrom ? null : moveTaskChange(book.schedule, task, effectiveFrom, target);
@@ -386,7 +437,8 @@ function MoveStep({ task, book, now, version, effectiveFrom, busy, onSend, onBac
   }
 
   return (
-    <form className="web-form ua-stack" noValidate onSubmit={onSave}>
+    <form noValidate onSubmit={onSave}>
+      {notice}
       <TextField
         label="Move to"
         type="date"
@@ -396,13 +448,13 @@ function MoveStep({ task, book, now, version, effectiveFrom, busy, onSend, onBac
         hint="From 00:00 UTC on this day."
         onChange={(e) => setTo(e.target.value)}
       />
-      {reason ? <p className="ua-field-error">{reason}</p> : null}
-      <div className="ua-hstack ua-wrap">
-        <Button type="submit" size="sm" variant="primary" loading={busy} disabled={busy || !ready}>
-          Save
-        </Button>
-        <Button size="sm" disabled={busy} onClick={onBack}>
+      {reason ? <p className="web-form-error">{reason}</p> : null}
+      <div className="web-form-actions">
+        <Button disabled={busy} onClick={onBack}>
           Back
+        </Button>
+        <Button type="submit" variant="primary" loading={busy} disabled={busy || !ready}>
+          Save
         </Button>
       </div>
     </form>
@@ -437,6 +489,7 @@ function TaskPriceForm({
   now,
   version,
   busy,
+  notice,
   onSubmit,
   onCancel,
 }: {
@@ -445,6 +498,8 @@ function TaskPriceForm({
   now: Date;
   version: string;
   busy: boolean;
+  /** A refused save, said above the fields. */
+  notice: ReactNode;
   onSubmit(req: PriceChangeRequest): Promise<void>;
   onCancel(): void;
 }) {
@@ -510,78 +565,80 @@ function TaskPriceForm({
 
   return (
     <form
-      className="web-form ua-stack"
       noValidate
       aria-label={initial.card ? `Change the price of ${name}` : `Set the first price of ${name}`}
       onSubmit={onSave}
     >
-      <TextField
-        label="Multiplier"
-        autoFocus
-        inputMode="decimal"
-        autoComplete="off"
-        value={multiplierText}
-        trailing={<span className="ua-secondary">×</span>}
-        hint="Times our AI cost."
-        error={multiplier === null ? ENTER_MULTIPLIER : undefined}
-        onChange={(e) => edit(setMultiplierText)(e.target.value)}
-      />
-      <div className="ua-field">
-        <label htmlFor={`${fieldId}-model`} className="ua-field-label">
-          Reference model
-        </label>
-        <select id={`${fieldId}-model`} className="ua-select" value={model} onChange={(e) => edit(setModel)(e.target.value)}>
-          {model === '' ? <option value="">Pick a model</option> : null}
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {REFERENCE_MODEL_LABELS[m] ?? m}
-            </option>
-          ))}
-        </select>
-      </div>
-      <TextField
-        label="Our AI cost"
-        inputMode="decimal"
-        autoComplete="off"
-        value={costText}
-        hint={job ? `per ${unit}` : 'per 1,000 posts'}
-        error={cost === null ? ENTER_AMOUNT : undefined}
-        onChange={(e) => edit(setCostText)(e.target.value)}
-      />
-      {job ? (
+      {notice}
+      <div className="web-field-grid">
         <TextField
-          label="At most"
+          label="Multiplier"
+          autoFocus
           inputMode="decimal"
           autoComplete="off"
-          value={capText}
-          hint={`for one ${unit}`}
-          error={cap === null ? ENTER_AMOUNT : undefined}
-          onChange={(e) => edit(setCapText)(e.target.value)}
+          value={multiplierText}
+          trailing={<span className="ua-secondary">×</span>}
+          hint="Times our AI cost."
+          error={multiplier === null ? ENTER_MULTIPLIER : undefined}
+          onChange={(e) => edit(setMultiplierText)(e.target.value)}
         />
-      ) : null}
-      <TextField
-        label="Starts on"
-        type="date"
-        min={utcDayInput(earliestStart(kind ?? 'neutral', now))}
-        value={dayText}
-        hint="From 00:00 UTC on this day."
-        error={from === null ? PICK_DAY : undefined}
-        onChange={(e) => edit(setDayText)(e.target.value)}
-      />
-      {kind ? <p>{kindLine(kind, task, now)}</p> : null}
+        <div className="ua-field">
+          <label htmlFor={`${fieldId}-model`} className="ua-field-label">
+            Reference model
+          </label>
+          <select id={`${fieldId}-model`} className="ua-select" value={model} onChange={(e) => edit(setModel)(e.target.value)}>
+            {model === '' ? <option value="">Pick a model</option> : null}
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {REFERENCE_MODEL_LABELS[m] ?? m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <TextField
+          label="Our AI cost"
+          inputMode="decimal"
+          autoComplete="off"
+          value={costText}
+          hint={job ? `In dollars, per ${unit}.` : 'In dollars, per 1,000 posts.'}
+          error={cost === null ? ENTER_AMOUNT : undefined}
+          onChange={(e) => edit(setCostText)(e.target.value)}
+        />
+        {job ? (
+          <TextField
+            label="At most"
+            inputMode="decimal"
+            autoComplete="off"
+            value={capText}
+            hint={`In dollars, for one ${unit}.`}
+            error={cap === null ? ENTER_AMOUNT : undefined}
+            onChange={(e) => edit(setCapText)(e.target.value)}
+          />
+        ) : null}
+        <TextField
+          label="Starts on"
+          type="date"
+          min={utcDayInput(earliestStart(kind ?? 'neutral', now))}
+          value={dayText}
+          hint="From 00:00 UTC on this day."
+          error={from === null ? PICK_DAY : undefined}
+          onChange={(e) => edit(setDayText)(e.target.value)}
+        />
+      </div>
+      {kind ? <p className="web-form-note">{kindLine(kind, task, now)}</p> : null}
       {lines.length > 0 && from ? (
-        <div>
-          <p>{`People will see, from ${day(from)}:`}</p>
-          <p className="ua-footnote">
+        <div className="web-preview">
+          <p className="web-preview-title">{`People will see, from ${day(from)}:`}</p>
+          <p className="web-preview-lines">
             <PriceLines lines={lines} />
           </p>
         </div>
       ) : null}
-      {issueText ? <p className="ua-field-error">{issueText}</p> : null}
+      {issueText ? <p className="web-form-error">{issueText}</p> : null}
       {confirming ? (
-        <div className="ua-stack">
+        <div className="web-confirm">
           <p>{CUT_QUESTION}</p>
-          <div className="ua-hstack ua-wrap">
+          <div className="web-form-actions">
             <Button autoFocus disabled={busy} onClick={() => setConfirming(false)}>
               Back
             </Button>
@@ -591,12 +648,12 @@ function TaskPriceForm({
           </div>
         </div>
       ) : (
-        <div className="ua-hstack ua-wrap">
-          <Button type="submit" variant="primary" loading={busy} disabled={busy || !ready}>
-            Save
-          </Button>
+        <div className="web-form-actions">
           <Button disabled={busy} onClick={onCancel}>
             Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={busy || !ready}>
+            Save
           </Button>
         </div>
       )}

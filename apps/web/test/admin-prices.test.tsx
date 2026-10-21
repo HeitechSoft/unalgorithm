@@ -137,7 +137,7 @@ describe('access', () => {
         },
       },
     });
-    expect(view.container.querySelector('.web-page')?.getAttribute('aria-busy')).toBe('true');
+    expect(view.container.querySelector('.web-page.web-loading')?.getAttribute('aria-busy')).toBe('true');
     expect(await screen.findByText(UNREACHABLE)).toBeTruthy();
     expect(server.count('GET', ADMIN_PRICES_PATH)).toBe(0);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
@@ -152,7 +152,8 @@ describe('access', () => {
     const info = { ...BILLING_INFO, auth: { ...INFO.auth, methods: [EMAIL_OTP_METHOD, GOOGLE_METHOD] } };
     ({ server, user } = openPrices({ session: null, info }));
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(`Pricing · ${INFO.name}`);
+    // The sign-in's heading is the server's name; the tab still names the page.
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(INFO.name);
     expect(document.title).toBe(`Pricing · ${INFO.name}`);
     expect(server.count('GET', ADMIN_PRICES_PATH)).toBe(0);
     await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
@@ -185,12 +186,18 @@ describe('access', () => {
   it('test_admin_page_links_pricing', async () => {
     fakeServer({ session: TOM, role: 'admin' });
     render(<Admin />);
-    const link = await screen.findByRole('link', { name: 'Pricing' });
+    // In the admin sidebar, after "Source list".
+    const nav = within(await screen.findByRole('navigation', { name: 'Pages' }));
+    const link = nav.getByRole('link', { name: 'Pricing' });
     expect(link.getAttribute('href')).toBe(ADMIN_PRICES_PAGE_PATH);
-    // Beside "Source list", in one line under the intro.
-    const line = link.closest('p') as HTMLElement;
-    expect(line.textContent).toBe('Source list · Pricing');
-    expect(within(line).getByRole('link', { name: 'Source list' })).toBeTruthy();
+    expect(link.getAttribute('aria-current')).toBeNull();
+    expect(nav.getAllByRole('link').map((a) => a.textContent)).toEqual([
+      'Account',
+      'Overview',
+      'Source list',
+      'Pricing',
+      'Problem reports',
+    ]);
   });
 
   it('test_admin_prices_without_billing_banner', async () => {
@@ -214,8 +221,9 @@ describe('task prices', () => {
   it('test_admin_prices_shows_prices_and_preview', async () => {
     openPrices();
     expect(await screen.findByText(INTRO)).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(`Pricing · ${INFO.name}`);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Pricing');
     expect(document.title).toBe(`Pricing · ${INFO.name}`);
+    expect(screen.getByRole('heading', { level: 2, name: 'Task prices' })).toBeTruthy();
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Classifying posts',
       'Fact-check',
@@ -223,13 +231,14 @@ describe('task prices', () => {
     ]);
 
     const classify = within(group('Classifying posts'));
-    expect(classify.getByText('Now: 2× our AI cost · Claude Haiku 5.5 · our cost $0.073 per 1,000 posts')).toBeTruthy();
+    expect(classify.getByText('Now')).toBeTruthy();
+    expect(classify.getByText('2× our AI cost · Claude Haiku 5.5 · our cost $0.073 per 1,000 posts')).toBeTruthy();
     expect(classify.getByText('AI costs about $0.15 per 1,000 posts.')).toBeTruthy();
     expect(classify.getByText('$5.00 left · about 34,000 posts')).toBeTruthy();
 
     const factcheck = within(group('Fact-check'));
     expect(
-      factcheck.getByText('Now: 2× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check'),
+      factcheck.getByText('2× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check'),
     ).toBeTruthy();
     expect(
       factcheck.getByText(
@@ -241,7 +250,7 @@ describe('task prices', () => {
     const perspectives = within(group('UnEcho Chamber'));
     expect(
       perspectives.getByText(
-        'Now: 2× our AI cost · Claude Sonnet 5.5 · our cost $0.135 per comparison · at most $0.50 for one comparison',
+        '2× our AI cost · Claude Sonnet 5.5 · our cost $0.135 per comparison · at most $0.50 for one comparison',
       ),
     ).toBeTruthy();
     expect(
@@ -259,6 +268,8 @@ describe('task prices', () => {
   it('test_admin_prices_schedules_a_cut_with_confirm', async () => {
     const { server, user } = openPrices();
     await openForm(user, 'Fact-check');
+    // In a sheet named for the task.
+    expect(screen.getByRole('dialog', { name: 'Change the price of Fact-check' })).toBeTruthy();
     // Filled with the card in effect at the default date, the next 00:00 UTC.
     expect(field('Multiplier').value).toBe('2');
     expect(field('Reference model').value).toBe('claude-sonnet-5-5');
@@ -291,7 +302,7 @@ describe('task prices', () => {
 
     await user.click(save());
     await user.click(screen.getByRole('button', { name: 'Save the cut' }));
-    await waitFor(() => expect(within(group('Fact-check')).queryByText(/^From Nov 3, 2026 \(UTC\)/)).not.toBeNull());
+    await waitFor(() => expect(within(group('Fact-check')).queryByText('From Nov 3, 2026')).not.toBeNull());
     expect(changes(server)).toEqual([
       {
         method: 'POST',
@@ -317,7 +328,7 @@ describe('task prices', () => {
     const factcheck = within(group('Fact-check'));
     expect(
       factcheck.getByText(
-        'From Nov 3, 2026 (UTC): 2× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.30 for one check',
+        '2× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.30 for one check · from 00:00 UTC',
       ),
     ).toBeTruthy();
     expect(factcheck.getByText('About $0.24, at most $0.30')).toBeTruthy();
@@ -361,9 +372,10 @@ describe('task prices', () => {
       effectiveFrom: '2026-12-03T00:00:00Z',
       card: { ...FACTCHECK, multiplier: 2.5 },
     });
+    expect(await within(group('Fact-check')).findByText('From Dec 3, 2026')).toBeTruthy();
     expect(
-      await within(group('Fact-check')).findByText(
-        'From Dec 3, 2026 (UTC): 2.5× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check',
+      within(group('Fact-check')).getByText(
+        '2.5× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check · from 00:00 UTC',
       ),
     ).toBeTruthy();
   });
@@ -371,9 +383,10 @@ describe('task prices', () => {
   it('test_admin_prices_cancel_and_move', async () => {
     const { server, user } = openPrices({ priceBook: RAISED, priceVersion: '7' });
     const factcheck = () => within(group('Fact-check'));
+    expect(await screen.findByText('From Dec 3, 2026')).toBeTruthy();
     expect(
-      await screen.findByText(
-        'From Dec 3, 2026 (UTC): 2.5× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check',
+      factcheck().getByText(
+        '2.5× our AI cost · Claude Sonnet 5.5 · our cost $0.12 per check · at most $0.40 for one check · from 00:00 UTC',
       ),
     ).toBeTruthy();
     expect(
@@ -382,13 +395,14 @@ describe('task prices', () => {
       ),
     ).toBeTruthy();
 
-    // Move: a date field set to the change's date, then "Save".
+    // Move: a sheet with a date field set to the change's date, then "Save".
     await user.click(factcheck().getByRole('button', { name: 'Move the change from Dec 3, 2026' }));
+    expect(screen.getByRole('dialog', { name: 'Move the change from Dec 3, 2026' })).toBeTruthy();
     expect(field('Move to').value).toBe('2026-12-03');
     expect(save().disabled).toBe(true);
     pickDay('Move to', '2026-12-10');
     await user.click(save());
-    await waitFor(() => expect(factcheck().queryByText(/^From Dec 10, 2026 \(UTC\)/)).not.toBeNull());
+    await waitFor(() => expect(factcheck().queryByText('From Dec 10, 2026')).not.toBeNull());
     expect(changes(server)).toEqual([
       {
         method: 'POST',
@@ -404,10 +418,12 @@ describe('task prices', () => {
     ]);
     expect(factcheck().queryByText(/^From Dec 3, 2026/)).toBeNull();
 
-    // Cancel: asked first, and "Keep it" sends nothing.
+    // Cancel: asked first in an alert, with "Keep it" focused, and "Keep it" sends nothing.
     const question = 'Cancel the change from Dec 10, 2026?';
     await user.click(factcheck().getByRole('button', { name: 'Cancel the change from Dec 10, 2026' }));
-    expect(screen.getByText(question)).toBeTruthy();
+    const alert = within(screen.getByRole('alertdialog', { name: question }));
+    expect(alert.getByText('Fact-check keeps the price before it.')).toBeTruthy();
+    expect(document.activeElement).toBe(alert.getByRole('button', { name: 'Keep it' }));
     await user.click(screen.getByRole('button', { name: 'Keep it' }));
     expect(screen.queryByText(question)).toBeNull();
     await settle();

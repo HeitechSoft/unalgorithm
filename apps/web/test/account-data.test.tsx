@@ -257,8 +257,8 @@ describe('copy and accessibility', () => {
     const signOut = await screen.findByRole('button', { name: 'Sign out' });
     const download = await screen.findByRole('button', { name: DOWNLOAD });
     const deleteRow = screen.getByRole('button', { name: DELETE_ROW });
-    // Both rows come after the page's other controls, in order, with Tab.
-    for (const control of [signOut, download, deleteRow]) {
+    // Both rows come after the page's other controls (the top bar's server name and "Sign out"), in order, with Tab.
+    for (const control of [screen.getByRole('link', { name: INFO.name }), signOut, download, deleteRow]) {
       await user.tab();
       expect(document.activeElement).toBe(control);
     }

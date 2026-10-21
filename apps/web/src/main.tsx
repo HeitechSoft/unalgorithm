@@ -21,7 +21,7 @@ import { AdminReports } from './AdminReports.tsx';
 import { AdminSources } from './AdminSources.tsx';
 import { Authorize } from './Authorize.tsx';
 import { serverInfo } from './api.ts';
-import { Page } from './Page.tsx';
+import { Page, PageLoading } from './Page.tsx';
 import { Setup } from './Setup.tsx';
 import { SourceList } from './SourceList.tsx';
 
@@ -38,18 +38,19 @@ export function Home() {
       () => setFailed(true),
     );
   }, []);
-  if (!info && !failed) return <div className="web-page" aria-busy="true" />;
+  if (!info && !failed) return <PageLoading />;
   return (
     <Page info={info} intro="This server provides AI for the unAlgorithm Feed extension.">
       {failed ? (
         <Banner tone="danger" title="Couldn't reach the server. Try again." />
       ) : (
-        <>
-          <p className="web-status">To use it, enter this page's address in the extension and sign in from there.</p>
-          <p className="web-status">
-            <a href={ACCOUNT_PAGE_PATH}>Your account</a>
-          </p>
-        </>
+        <div className="web-card web-home">
+          <p>To use it, enter this page's address in the extension and sign in from there.</p>
+          <p className="web-home-address">{window.location.origin}</p>
+          <a className="ua-button ua-button--secondary ua-button--lg ua-button--full" href={ACCOUNT_PAGE_PATH}>
+            Your account
+          </a>
+        </div>
       )}
     </Page>
   );
