@@ -22,7 +22,7 @@ import { startWatchdog } from '../src/content/watchdog.ts';
 import type { ReportDraftInput } from '../src/lib/messages.ts';
 import { choicesFor } from '../src/lib/report-links.ts';
 import type { ReportDraft } from '../src/lib/storage.ts';
-import { forbiddenTokens, leaks } from './support/leak-scan.ts';
+import { forbiddenTokens, leaks, reportLeaks } from './support/leak-scan.ts';
 
 const FIXTURES = join(import.meta.dirname, '../../../packages/platforms/fixtures');
 const ENV: ReportEnv = { extension: '0.4.0', channel: 'development', browser: 'chrome', browserMajor: 141 };
@@ -190,7 +190,7 @@ describe('drafts from every fixture', () => {
         // The lookup key never travels.
         expect(JSON.stringify(report)).not.toContain(h.id);
       }
-      for (const report of reports) expect(leaks(JSON.stringify(report), tokens), f.name).toEqual([]);
+      for (const report of reports) expect(reportLeaks(report, tokens), f.name).toEqual([]);
       controller.stop();
     });
   }
@@ -336,6 +336,26 @@ describe('the leak scan', () => {
     expect(leaks(JSON.stringify({ route: 'feed', reason: 'sponsored', detector: 'li.follow-button', n: 12 }), tokens)).toEqual(
       [],
     );
+  });
+
+  it('test_report_id_is_not_scanned_but_every_other_field_is', () => {
+    // The synthetic Facebook feed links to `/groups/hikingontario/permalink/9999/`, and a random report id can hold
+    // the same four digits: a flaky failure on CI, not a leak.
+    const f = FEEDS.find((x) => x.name === 'facebook synthetic builders') as Fixture;
+    const tokens = forbiddenTokens(f.html);
+    expect(tokens).toContain('9999');
+    document.body.innerHTML = f.html;
+    const controller = new FeedController(f.adapter, bridge(), mountUi);
+    controller.start(runtime());
+    const report = { ...completed(buildReportDraft(controller, { kind: 'detection', from: 'popup' }, pageOf(f))) };
+    controller.stop();
+    report.id = '3b9e9999-0c1d-4e2f-8a3b-9999c4d5e6f7';
+    expect(ProblemReportSchema.parse(report).id).toBe(report.id);
+    expect(leaks(JSON.stringify(report), tokens)).toContain('9999');
+    expect(reportLeaks(report, tokens)).toEqual([]);
+    // The same digits anywhere else in the report are still found.
+    const copied = { ...report, page: { ...report.page, feedWord: 'n9999' } } as typeof report;
+    expect(reportLeaks(copied, tokens)).toEqual(['9999']);
   });
 });
 

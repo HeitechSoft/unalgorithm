@@ -85,3 +85,13 @@ export function forbiddenTokens(html: string): string[] {
 export function leaks(json: string, tokens: readonly string[]): string[] {
   return tokens.filter((t) => json.includes(t) || json.includes(JSON.stringify(t).slice(1, -1)));
 }
+
+/**
+ * The tokens of `tokens` found in a report, all but its `id`. The background makes the id with `crypto.randomUUID()`
+ * and the schema holds it to a UUID, so it carries nothing from the page, but its 32 random hex digits can spell a
+ * fixture's number by chance ("9999" from a permalink, about one run in forty for the synthetic Facebook feed).
+ */
+export function reportLeaks(report: { id: string }, tokens: readonly string[]): string[] {
+  const { id: _random, ...rest } = report;
+  return leaks(JSON.stringify(rest), tokens);
+}
