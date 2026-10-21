@@ -5,10 +5,11 @@
  * component (CL3-22).
  */
 import type { AccountDevice } from '@unalgorithm/protocol';
-import { Banner, Button, Dialog, ListGroup, ListRow, useToast } from '@unalgorithm/ui';
+import { Banner, Button, Dialog, ListGroup, ListRow, Monitor, useToast } from '@unalgorithm/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, listDevices, revokeDevice } from './api.ts';
 import { failureMessage } from './SignIn.tsx';
+import { Section, SectionLoading } from './ui.tsx';
 
 const LOAD_FAILED = "Couldn't load your devices.";
 /** Days in the reader's time zone, written as Credits writes its days: "Oct 14, 2026". */
@@ -70,29 +71,43 @@ export function Devices({ onSignedOut }: DevicesProps) {
   }
 
   return (
-    <div className="web-section" aria-busy={state.name === 'loading' || undefined}>
+    <Section
+      title="Devices"
+      description="Browsers signed in with unAlgorithm Feed. Revoke one you no longer use, or have lost."
+      busy={state.name === 'loading'}
+    >
       {error ? <Banner tone="danger" title={error} /> : null}
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      <ListGroup header="Devices signed in with unAlgorithm Feed">
-        {state.name !== 'loaded' ? null : state.devices.length === 0 ? (
-          <ListRow title={<span className="ua-secondary">No devices are signed in.</span>} />
-        ) : (
-          state.devices.map((device) => (
-            <ListRow
-              key={device.id}
-              title={device.name ?? 'Unnamed device'}
-              subtitle={`Signed in ${day(device.createdAt)} · Last used ${device.lastUsedAt ? day(device.lastUsedAt) : 'not yet'}`}
-              control={
-                <Button size="sm" loading={revoking === device.id} disabled={revoking !== null} onClick={() => onAsk(device)}>
-                  Revoke
-                </Button>
-              }
-            />
-          ))
-        )}
-      </ListGroup>
+      {state.name === 'loading' ? <SectionLoading /> : null}
+      {state.name !== 'loaded' ? null : (
+        <ListGroup>
+          {state.devices.length === 0 ? (
+            <ListRow title={<span className="ua-secondary">No devices are signed in.</span>} />
+          ) : (
+            state.devices.map((device) => (
+              <ListRow
+                key={device.id}
+                icon={{ icon: Monitor, tint: 'slate' }}
+                title={device.name ?? 'Unnamed device'}
+                subtitle={`Signed in ${day(device.createdAt)} · Last used ${device.lastUsedAt ? day(device.lastUsedAt) : 'not yet'}`}
+                control={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    loading={revoking === device.id}
+                    disabled={revoking !== null}
+                    onClick={() => onAsk(device)}
+                  >
+                    Revoke
+                  </Button>
+                }
+              />
+            ))
+          )}
+        </ListGroup>
+      )}
       <Dialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
@@ -109,7 +124,7 @@ export function Devices({ onSignedOut }: DevicesProps) {
           </>
         }
       />
-    </div>
+    </Section>
   );
 }
 

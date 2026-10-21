@@ -118,8 +118,10 @@ describe('frame', { timeout: PGLITE_TIMEOUT }, () => {
     expect(body).toContain('<link rel="stylesheet" href="/assets/index-AbC1.css">');
     expect(body).toContain('<p>&lt;b&gt;&amp;</p>');
     expect(body).toContain('<h1>Test server</h1><p>Pay as you go.</p>');
+    // The server's monogram, its first letter, as apps/web's pages show it.
+    expect(body).toContain('<span class="web-monogram web-monogram--lg" aria-hidden="true">T</span>');
     expect(body).toContain(`<a href="${SOURCE_URL}" target="_blank" rel="noreferrer">Source</a>`);
-    expect(body).toMatch(/class="web-page".*class="web-main".*class="web-header".*class="web-footer"/s);
+    expect(body).toMatch(/class="web-page web-focus".*class="web-main".*class="web-focus-header".*class="web-footer"/s);
     expect(body).not.toContain('<script');
     expect(body).not.toContain('index-a1b2.js');
   });

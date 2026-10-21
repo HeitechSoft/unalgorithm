@@ -24,9 +24,10 @@ import {
   TASK_UNITS,
   withStarterCredit,
 } from '@unalgorithm/protocol';
-import { Button, ListGroup, ListRow, TextField } from '@unalgorithm/ui';
+import { Button, Dialog, ListGroup, ListRow, Pencil, TextField } from '@unalgorithm/ui';
 import { type FormEvent, type ReactNode, useId, useState } from 'react';
 import { dollarsInput, parseDollars } from './money.ts';
+import { AddRow, Section } from './ui.tsx';
 
 // Draft copy for Tom (decision PD14).
 const STARTER_APPLIES = 'Applies to accounts created from now on. Accounts made earlier keep the amount they were offered.';
@@ -96,7 +97,10 @@ interface Change {
   request: PriceChangeRequest;
 }
 
-/** A section of the page: its heading, the figures now, then "Edit" or, while open, its form (`children`). */
+/**
+ * A section of the page: its heading, the figures now and "Edit", which opens the section's form (`children`) in a
+ * sheet titled `edit`.
+ */
 function SettingsSection({
   title,
   figures,
@@ -106,30 +110,22 @@ function SettingsSection({
 }: {
   title: string;
   figures: string;
-  /** The "Edit" button's name. */
+  /** The "Edit" row's accessible name and the sheet's title. */
   edit: string;
   props: SettingsSectionProps;
   children: ReactNode;
 }) {
-  const headingId = useId();
-  const { open, idle, notice, onOpen } = props;
+  const { open, idle, busy, onOpen, onClose } = props;
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>{title}</h2>
-      {open ? notice : null}
+    <Section title={title}>
       <ListGroup>
         <ListRow title={figures} />
-        {open ? (
-          children
-        ) : (
-          <div className="web-form">
-            <Button aria-label={edit} disabled={!idle} onClick={onOpen}>
-              Edit
-            </Button>
-          </div>
-        )}
+        <AddRow icon={Pencil} label="Edit" accessibleLabel={edit} disabled={!idle} onSelect={onOpen} />
       </ListGroup>
-    </section>
+      <Dialog open={open} onOpenChange={(next) => (next || busy ? undefined : onClose())} className="web-sheet" title={edit}>
+        {open ? children : null}
+      </Dialog>
+    </Section>
   );
 }
 
@@ -151,7 +147,7 @@ function SettingsForm({
   props: SettingsSectionProps;
   children: ReactNode;
 }) {
-  const { book, now, busy, onClose, onSend } = props;
+  const { book, now, busy, notice, onClose, onSend } = props;
   const issueText = change ? priceIssuesText(priceBookChangeIssues(book, change.head, now)) : '';
   const ready = change !== null && issueText === '';
 
@@ -162,16 +158,17 @@ function SettingsForm({
   }
 
   return (
-    <form className="web-form ua-stack" noValidate aria-label={title} onSubmit={onSave}>
+    <form noValidate aria-label={title} onSubmit={onSave}>
+      {notice}
       {children}
-      <p>{applies}</p>
-      {issueText ? <p className="ua-field-error">{issueText}</p> : null}
-      <div className="ua-hstack ua-wrap">
-        <Button type="submit" variant="primary" loading={busy} disabled={busy || !ready}>
-          Save
-        </Button>
+      <p className="web-form-note">{applies}</p>
+      {issueText ? <p className="web-form-error">{issueText}</p> : null}
+      <div className="web-form-actions">
         <Button disabled={busy} onClick={onClose}>
           Cancel
+        </Button>
+        <Button type="submit" variant="primary" loading={busy} disabled={busy || !ready}>
+          Save
         </Button>
       </div>
     </form>
@@ -483,10 +480,8 @@ export function priceChangeLine(change: PriceChange): string {
 
 /** Every price change, newest first, each with when it was made (UTC) and by which admin. Admins only (PD9). */
 export function PriceHistory({ changes }: { changes: readonly PriceChange[] }) {
-  const headingId = useId();
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>History</h2>
+    <Section title="History" description="Every change, newest first, with when it was made and by whom. Only admins see it.">
       <ListGroup>
         {changes.length === 0 ? (
           <ListRow title={<span className="ua-secondary">{SHIPPED}</span>} />
@@ -502,6 +497,6 @@ export function PriceHistory({ changes }: { changes: readonly PriceChange[] }) {
             ))
         )}
       </ListGroup>
-    </section>
+    </Section>
   );
 }

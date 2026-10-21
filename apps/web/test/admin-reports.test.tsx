@@ -337,6 +337,18 @@ function groupLines(): string[][] {
     .map((li) => [...li.querySelectorAll('.web-group-title, .web-group-stats')].map((p) => p.textContent ?? ''));
 }
 
+/** A stat tile's figure and its line of context, by its label. */
+function stat(label: string): [string, string] {
+  const tile = screen.getByText(label, { selector: '.web-stat-label' }).closest('.web-stat') as HTMLElement;
+  return [tile.querySelector('.web-stat-value')?.textContent ?? '', tile.querySelector('.web-stat-detail')?.textContent ?? ''];
+}
+
+/** A report's fact, by its label. */
+function fact(label: string): string {
+  const term = screen.getByText(label, { selector: 'dl.web-facts dt' });
+  return term.parentElement?.querySelector('dd')?.textContent ?? '';
+}
+
 /** A group's item, by its title. */
 function groupItem(title: string): HTMLElement {
   const item = screen.getByText(title).closest('li');
@@ -439,7 +451,8 @@ describe('access', () => {
   it('test_admin_reports_signed_out_and_not_admin', async () => {
     let { server } = openReports({ session: null });
     expect(await screen.findByText(SIGN_IN_INTRO)).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(`Problem reports · ${INFO.name}`);
+    // The sign-in's heading is the server's name; the tab still names the page.
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(INFO.name);
     expect(document.title).toBe(`Problem reports · ${INFO.name}`);
     expect(reportCalls(server)).toEqual([]);
     cleanup();
@@ -472,9 +485,14 @@ describe('summary', () => {
     const { server } = openReports();
     expect(await screen.findByText(groupTitle(LI_GROUP))).toBeTruthy();
     expect(screen.getByText(INTRO)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Problem reports');
+    expect(document.title).toBe(`Problem reports · ${INFO.name}`);
     expect(document.querySelector('.web-page')?.className).toContain('web-page-wide');
-    expect(screen.getByText('12 reports today, of at most 1,000 a day.')).toBeTruthy();
-    expect(screen.getByText('From unlisted extension ids in the last 7 days: 3')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Problem reports' }).getAttribute('aria-current')).toBe('page');
+    // The open reports, today's against the daily cap, and the unlisted extension ids as tiles.
+    expect(stat('Open')).toEqual(['10', 'in 3 groups']);
+    expect(stat('Reports today')).toEqual(['12', 'of at most 1,000 a day']);
+    expect(stat('From unlisted extension ids')).toEqual(['3', 'in the last 7 days']);
 
     // Open groups first, as the server sends them; corrections have their own list.
     expect(groupLines()).toEqual([
@@ -510,7 +528,9 @@ describe('summary', () => {
   it('test_admin_reports_corrections_against_the_promise', async () => {
     openReports();
     const corrections = await screen.findByRole('region', { name: 'Corrections' });
-    expect(within(corrections).getByText('We answer corrections within 5 business days.')).toBeTruthy();
+    expect(
+      within(corrections).getByText('We answer corrections within 5 business days. The longest waiting come first.'),
+    ).toBeTruthy();
     // The longest waiting first.
     const late = await within(corrections).findByText(/^7KQ3-M2PC · Fact-check/);
     const rows = [...corrections.querySelectorAll('.ua-row')].map((r) => r.textContent ?? '');
@@ -556,6 +576,7 @@ describe('summary', () => {
     openReports();
     const days = await screen.findByRole('region', { name: 'Last 30 days' });
     const table = within(days).getByRole('table', { name: 'Reports a day (UTC)' });
+    expect(table.closest('details')?.querySelector('summary')?.textContent).toBe('Show as a table');
     const rows = [...table.querySelectorAll('tbody tr')].map((tr) =>
       [...tr.querySelectorAll('th, td')].map((c) => c.textContent),
     );
@@ -584,12 +605,14 @@ describe('summary', () => {
     const devSummary = { ...SUMMARY, today: 20, groups: [{ ...OTHER_GROUP, key: '||other|ai', topic: 'ai' }] };
     const { server, user } = openReports({ devSummary });
     const toggle = await screen.findByRole('switch', { name: 'Show development builds' });
+    // In the groups' section, beside its heading.
+    expect(toggle.closest('.web-section-actions')?.closest('section')).toBe(screen.getByRole('region', { name: 'Groups' }));
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     await user.click(toggle);
     expect(await screen.findByText('Something else: ai')).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Show development builds' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.queryByText(groupTitle(LI_GROUP))).toBeNull();
-    expect(screen.getByText('20 reports today, of at most 1,000 a day.')).toBeTruthy();
+    expect(stat('Reports today')).toEqual(['20', 'of at most 1,000 a day']);
     expect(reportCalls(server, 'GET').map((c) => c.path)).toContain(summaryPath(true));
 
     // And back.
@@ -747,7 +770,7 @@ describe('group', () => {
     ]);
 
     // Back to the summary, which loads again; the groups' heading takes the focus.
-    await user.click(screen.getByRole('button', { name: 'Back to all reports' }));
+    await user.click(screen.getByRole('button', { name: 'All reports' }));
     const groups = await screen.findByRole('heading', { name: 'Groups' });
     await waitFor(() => expect(document.activeElement).toBe(groups));
     expect(reportCalls(server, 'GET').filter((c) => c.path === summaryPath(false))).toHaveLength(2);
@@ -785,10 +808,14 @@ describe('report', () => {
     const { server, user } = openReports();
     const heading = await openCorrection(user);
     await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(screen.getByText('Oct 9, 2026, 10:00 UTC')).toBeTruthy();
-    expect(screen.getByText('Correction: factcheck')).toBeTruthy();
-    expect(screen.getByText('Open')).toBeTruthy();
-    expect(screen.getByText('Listed on this server')).toBeTruthy();
+    // The handled line under the heading, and the facts.
+    expect(heading.nextElementSibling?.textContent).toBe('Open');
+    expect(fact('Received')).toBe('Oct 9, 2026, 10:00 UTC');
+    expect(fact('About')).toBe('Correction: factcheck');
+    expect(fact('Status')).toBe('Open');
+    expect(fact('Extension id')).toBe('Listed on this server');
+    // "Back" names where it goes.
+    expect(screen.getByRole('button', { name: 'All reports' })).toBeTruthy();
 
     // describeReport's lines, as the server made them.
     const lines = within(screen.getByText('What was sent').parentElement as HTMLElement)
@@ -796,14 +823,16 @@ describe('report', () => {
       .map((li) => li.textContent);
     expect(lines).toEqual(CORRECTION.lines);
 
-    // The stored details as JSON text in a <pre>.
+    // The stored details as JSON text in a <pre>, under "As stored".
     const pre = document.querySelector('pre.web-json') as HTMLElement;
+    expect(pre.closest('details')?.querySelector('summary')?.textContent).toBe('As stored');
     expect(pre.textContent).toBe(JSON.stringify(CORRECTION.details, null, 2));
     expect(pre.children).toHaveLength(0);
 
     // The reply address as a mailto: link, built from the validated address.
     const link = screen.getByRole('link', { name: 'ana+news@example.com' });
     expect(link.getAttribute('href')).toBe(replyLink('ana+news@example.com', '7KQ3-M2PC'));
+    expect(within(link.closest('.ua-row') as HTMLElement).getByRole('button', { name: 'Forget email' })).toBeTruthy();
     expect(reportCalls(server, 'GET').at(-1)?.path).toBe(adminReportPath(id(12)));
   });
 
@@ -868,10 +897,12 @@ describe('report', () => {
     ]);
     await user.selectOptions(resolutions, 'no-change');
     await user.click(screen.getByRole('button', { name: 'Mark handled: report 7KQ3-M2PC' }));
-    expect(await screen.findByText(`Handled Oct 19, 2026, 15:30 UTC by ${TOM}: No change`)).toBeTruthy();
+    const handled = `Handled Oct 19, 2026, 15:30 UTC by ${TOM}: No change`;
+    await waitFor(() => expect(fact('Status')).toBe(handled));
+    expect(screen.getByRole('heading', { name: 'Report 7KQ3-M2PC' }).nextElementSibling?.textContent).toBe(handled);
 
     await user.click(screen.getByRole('button', { name: 'Reopen' }));
-    expect(await screen.findByText('Open')).toBeTruthy();
+    await waitFor(() => expect(fact('Status')).toBe('Open'));
     expect(reportCalls(server, 'POST')).toEqual([
       { method: 'POST', path: ADMIN_REPORTS_HANDLE_PATH, body: { ids: [id(12)], handled: true, resolution: 'no-change' } },
       { method: 'POST', path: ADMIN_REPORTS_HANDLE_PATH, body: { ids: [id(12)], handled: false } },
@@ -906,13 +937,13 @@ describe('report', () => {
     await user.click(await screen.findByRole('button', { name: `View ${groupTitle(LI_GROUP)}` }));
     await user.click(await screen.findByRole('button', { name: 'View 7KQ3-M2PB' }));
     expect(await screen.findByRole('heading', { name: 'Report 7KQ3-M2PB' })).toBeTruthy();
-    expect(screen.getByText(groupTitle(LI_GROUP))).toBeTruthy();
-    expect(screen.getByText("2 codes this server doesn't know yet")).toBeTruthy();
+    expect(fact('About')).toBe(groupTitle(LI_GROUP));
+    expect(fact('Codes left out')).toBe("2 codes this server doesn't know yet");
     // Not a correction and no address: no reply section, no words.
     expect(screen.queryByText('Reply to')).toBeNull();
     expect(screen.queryByText('In their own words')).toBeNull();
-    // "Back" returns to the group.
-    await user.click(screen.getByRole('button', { name: 'Back to the group' }));
+    // "Back", named for the group, returns to it.
+    await user.click(screen.getByRole('button', { name: groupTitle(LI_GROUP) }));
     expect(await screen.findByRole('heading', { name: groupTitle(LI_GROUP), level: 2 })).toBeTruthy();
   });
 

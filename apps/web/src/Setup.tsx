@@ -9,10 +9,10 @@
  * Only the emailed code: Google sign-in leaves the page, and the token, kept nowhere else, would not come back with it.
  */
 import { ADMIN_PAGE_PATH, SETUP_PAGE_PATH, type ServerInfo, SetupRequestSchema } from '@unalgorithm/protocol';
-import { Banner } from '@unalgorithm/ui';
+import { Banner, CircleCheck, LoaderCircle } from '@unalgorithm/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, claimSetup, getSession, serverInfo, signOut } from './api.ts';
-import { Page } from './Page.tsx';
+import { Page, PageLoading } from './Page.tsx';
 import { failureMessage, SIGNED_OUT, SignIn } from './SignIn.tsx';
 
 const INTRO = 'Set up this server.';
@@ -98,7 +98,7 @@ export function Setup() {
     }
   }
 
-  if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
+  if (step.name === 'loading') return <PageLoading />;
   if (step.name === 'unavailable' || !info) {
     return (
       <Page info={null} intro={INTRO}>
@@ -116,9 +116,12 @@ export function Setup() {
   if (step.name === 'done') {
     return (
       <Page info={info} intro={`You're now the admin of ${info.name}.`}>
-        <p className="web-status">
-          <a href={ADMIN_PAGE_PATH}>Open the admin page</a>
-        </p>
+        <div className="web-card web-done">
+          <CircleCheck aria-hidden="true" />
+          <a className="ua-button ua-button--primary ua-button--lg ua-button--full" href={ADMIN_PAGE_PATH}>
+            Open the admin page
+          </a>
+        </div>
       </Page>
     );
   }
@@ -126,7 +129,8 @@ export function Setup() {
     <Page info={info} intro={INTRO}>
       {step.name === 'no-link' ? <Banner tone="warning" title={NO_LINK} /> : null}
       {step.name === 'claiming' ? (
-        <p className="web-status" role="status" aria-busy="true">
+        <p className="web-status web-status--busy" role="status" aria-busy="true">
+          <LoaderCircle className="ua-spin" aria-hidden="true" />
           Setting up…
         </p>
       ) : null}

@@ -1,39 +1,33 @@
 /**
- * The admin page every server serves at `/admin` (R38): who uses this server, and for each person the daily post cap,
- * access and role (`AdminUsers`); the addresses invited to make an account (`AdminInvites`); and the server's usage
- * against its daily spend limit with its content-free status (`AdminUsage`). Everything it shows comes from the admin routes, which answer only an admin of this
- * server (CL4-05, CL4-06): the page is the same for everyone, and tells a signed-in non-admin so. It names the server
- * only by its discovery document. The page keeps the accounts list and hands its sections a way to ask for it again; a
- * section that finds the session gone sends the person back to the sign-in, saying so. Links lead to the source
- * control page (`/admin/sources`, P3-74), the Pricing page (`/admin/prices`, PA-05) and, while the server takes them,
- * the problem reports page with how many are open (`/admin/reports`, ADR 0009 §7).
+ * The admin overview every server serves at `/admin` (R38): today's figures as tiles; who uses this server, and for
+ * each person the daily post cap, access and role (`AdminUsers`); the addresses invited to make an account
+ * (`AdminInvites`); and the server's content-free status and its last 30 days (`AdminUsage`). Everything it shows comes
+ * from the admin routes, which answer only an admin of this server (CL4-05, CL4-06): the page is the same for everyone,
+ * and tells a signed-in non-admin so. It names the server only by its discovery document. The page keeps the accounts
+ * list and the overview (read once) and hands its sections a way to ask for them again; a section that finds the
+ * session gone sends the person back to the sign-in, saying so. The admin sidebar leads to the source control page
+ * (`/admin/sources`, P3-74), the Pricing page (`/admin/prices`, PA-05) and the problem reports page
+ * (`/admin/reports`, ADR 0009 §7).
  *
  * `useAdminSession` and `AdminGate` are the admin pages' shared session flow (this page's, the source control page's,
  * the Pricing page's and the problem reports page's): the discovery document, who is signed in, the page's own data
  * that only an admin gets, and every step before that data has loaded.
  */
-import {
-  ADMIN_PAGE_PATH,
-  ADMIN_PRICES_PAGE_PATH,
-  ADMIN_REPORTS_PAGE_PATH,
-  ADMIN_SOURCES_PAGE_PATH,
-  type AdminOverview,
-  type ServerInfo,
-} from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, ListRow } from '@unalgorithm/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { ADMIN_PAGE_PATH, type ServerInfo } from '@unalgorithm/protocol';
+import { Banner, Button } from '@unalgorithm/ui';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { AdminInvites } from './AdminInvites.tsx';
-import { AdminUsage } from './AdminUsage.tsx';
+import { AdminUsage, OverviewStats, useOverview } from './AdminUsage.tsx';
 import { AdminUsers } from './AdminUsers.tsx';
-import { ApiError, adminOverview, adminUsers, getSession, serverInfo, signOut } from './api.ts';
-import { Page } from './Page.tsx';
+import { ApiError, adminUsers, getSession, serverInfo, signOut } from './api.ts';
+import { type NavKey, Page, PageLoading, type TopBarAccount } from './Page.tsx';
 import { failureMessage, googleSignInError, googleSignInFailed, SIGNED_OUT, SignIn } from './SignIn.tsx';
+import { Card } from './ui.tsx';
 
-const INTRO = 'Who uses this server, and what each person may do.';
+const INTRO = "Who uses this server, what it costs, and how it's running.";
 const SIGN_IN_INTRO = 'Sign in to manage this server.';
 const NOT_ADMIN = "This account isn't an admin of this server.";
 const UNREACHABLE = "Couldn't reach the server. Try again.";
-const COUNT = new Intl.NumberFormat('en-US');
 
 /** Where an admin page is; `data` is what the page's own admin route answered. */
 export type AdminStep<T> =
@@ -46,8 +40,6 @@ export type AdminStep<T> =
 export interface AdminSession<T> {
   /** The discovery document, once it has loaded. */
   info: ServerInfo | null;
-  /** "<title> · <server name>", once the discovery document has loaded. */
-  heading: string | undefined;
   step: AdminStep<T>;
   /** From the start: the discovery document and the session, then the page's data. */
   load(): Promise<void>;
@@ -62,11 +54,13 @@ export interface AdminSession<T> {
   /** Google sent the browser back with `?error=`: said until the person signs out, when it no longer applies. */
   googleFailed: boolean;
   googleError: string | undefined;
+  /** The top bar's account, once the page's data has loaded. */
+  account: TopBarAccount | undefined;
 }
 
 /**
  * An admin page's session flow: the discovery document and who is signed in, then `loadData`, one of the admin routes
- * (401 without a session, 403 for a non-admin). `title` names the page in its heading and the browser's tab.
+ * (401 without a session, 403 for a non-admin). `title` names the page in the browser's tab.
  * `loadData` keeps its identity (a module function), so the page loads once.
  */
 export function useAdminSession<T>(title: string, loadData: () => Promise<T>): AdminSession<T> {
@@ -136,7 +130,6 @@ export function useAdminSession<T>(title: string, loadData: () => Promise<T>): A
 
   return {
     info,
-    heading: info ? `${title} · ${info.name}` : undefined,
     step,
     load,
     reload,
@@ -146,6 +139,7 @@ export function useAdminSession<T>(title: string, loadData: () => Promise<T>): A
     signOutError,
     googleFailed,
     googleError,
+    account: step.name === 'loaded' ? { email: step.email, onSignOut: () => void onSignOut(), signingOut } : undefined,
   };
 }
 
@@ -154,11 +148,11 @@ export function useAdminSession<T>(title: string, loadData: () => Promise<T>): A
  * which brings the person back to `returnTo`; and a signed-in non-admin, told so, with "Sign out".
  */
 export function AdminGate<T>({ session, intro, returnTo }: { session: AdminSession<T>; intro: string; returnTo: string }) {
-  const { info, heading, step } = session;
-  if (step.name === 'loading') return <div className="web-page" aria-busy="true" />;
+  const { info, step } = session;
+  if (step.name === 'loading') return <PageLoading />;
   if (step.name === 'signed-out' && info) {
     return (
-      <Page info={info} heading={heading} intro={SIGN_IN_INTRO}>
+      <Page info={info} intro={SIGN_IN_INTRO}>
         <SignIn
           methods={info.auth.methods}
           returnTo={returnTo}
@@ -172,69 +166,75 @@ export function AdminGate<T>({ session, intro, returnTo }: { session: AdminSessi
   }
   if (step.name === 'not-admin' && info) {
     return (
-      <Page info={info} heading={heading} intro={NOT_ADMIN}>
+      <Page info={info} intro={NOT_ADMIN}>
         {session.signOutError ? <Banner tone="danger" title={session.signOutError} /> : null}
-        <ListGroup>
-          <ListRow
-            title={`Signed in as ${step.email}`}
-            control={
-              <Button size="sm" loading={session.signingOut} onClick={() => void session.signOut()}>
-                Sign out
-              </Button>
-            }
-          />
-        </ListGroup>
+        <Card className="web-not-admin">
+          <p>{`Signed in as ${step.email}`}</p>
+          <Button size="lg" fullWidth loading={session.signingOut} onClick={() => void session.signOut()}>
+            Sign out
+          </Button>
+        </Card>
       </Page>
     );
   }
   return (
-    <Page info={info} heading={heading} intro={intro}>
+    <Page info={info} intro={intro}>
       <Banner tone="danger" title={UNREACHABLE} action={{ label: 'Try again', onAction: () => void session.load() }} />
+    </Page>
+  );
+}
+
+/** An admin page once its data has loaded: the app frame with the admin sidebar, the top bar's account and its title. */
+export function AdminPage<T>({
+  session,
+  nav,
+  title,
+  intro,
+  wide = true,
+  actions,
+  children,
+}: {
+  session: AdminSession<T>;
+  nav: NavKey;
+  title: string;
+  intro: string;
+  wide?: boolean;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Page
+      info={session.info}
+      layout="app"
+      title={title}
+      intro={intro}
+      wide={wide}
+      nav={nav}
+      account={session.account}
+      actions={actions}
+    >
+      {children}
     </Page>
   );
 }
 
 export function Admin() {
   const session = useAdminSession('Admin', adminUsers);
-  const { info, heading, step, reload, sessionEnded } = session;
+  const { info, step, reload, sessionEnded } = session;
+  const overview = useOverview(step.name === 'loaded', sessionEnded);
   if (step.name !== 'loaded' || !info) return <AdminGate session={session} intro={INTRO} returnTo={ADMIN_PAGE_PATH} />;
   return (
-    <Page info={info} heading={heading} intro={INTRO} wide>
-      <p className="web-status">
-        <a href={ADMIN_SOURCES_PAGE_PATH}>Source list</a> · <a href={ADMIN_PRICES_PAGE_PATH}>Pricing</a>
-        <ReportsLink />
-      </p>
+    <AdminPage session={session} nav="admin" title="Overview" intro={INTRO}>
+      <OverviewStats overview={overview.state} users={step.data} />
       <div className="web-admin">
         <div className="web-admin-column">
           <AdminUsers data={step.data} email={step.email} reload={reload} onSignedOut={sessionEnded} />
           <AdminInvites invites={step.data.invites} reload={reload} onSignedOut={sessionEnded} />
         </div>
         <div className="web-admin-column">
-          <AdminUsage onSignedOut={sessionEnded} />
+          <AdminUsage overview={overview} />
         </div>
       </div>
-    </Page>
-  );
-}
-
-/**
- * " · Problem reports (N open)" after the other links, once the overview says the server takes reports. It reads the
- * overview on its own: the usage section says when that fails or the session is gone, so here a failure just leaves
- * the link out. A server older than reports, or one with `REPORTS=off`, gets no link.
- */
-function ReportsLink() {
-  const [reports, setReports] = useState<AdminOverview['reports'] | null>(null);
-  useEffect(() => {
-    adminOverview().then(
-      (overview) => setReports(overview.reports ?? null),
-      () => setReports(null),
-    );
-  }, []);
-  if (!reports?.enabled) return null;
-  return (
-    <>
-      {' · '}
-      <a href={ADMIN_REPORTS_PAGE_PATH}>{`Problem reports (${COUNT.format(reports.open)} open)`}</a>
-    </>
+    </AdminPage>
   );
 }

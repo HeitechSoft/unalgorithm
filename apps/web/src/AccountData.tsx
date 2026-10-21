@@ -13,6 +13,7 @@ import { Banner, Button, Dialog, Download, ListGroup, ListRow, TextField, Trash2
 import { useRef, useState } from 'react';
 import { ApiError, creditAccount, deleteAccount, exportAccount } from './api.ts';
 import { failureMessage } from './SignIn.tsx';
+import { Section } from './ui.tsx';
 
 /** The downloaded file's name. */
 export const EXPORT_FILE = 'account-export.json';
@@ -109,13 +110,10 @@ export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut
   }
 
   return (
-    <div className="web-section">
+    <Section title="Your data">
       {error ? <Banner tone="danger" title={error} /> : null}
-      <ListGroup
-        header="Your data"
-        footer="A JSON file with your account, devices, sign-in methods, usage counts and synced settings."
-      >
-        <ListRow title="Download your data" icon={{ icon: Download, tint: 'gray' }} onSelect={() => void onExport()} />
+      <ListGroup footer="A JSON file with your account, devices, sign-in methods, usage counts and synced settings.">
+        <ListRow title="Download your data" icon={{ icon: Download, tint: 'blue' }} onSelect={() => void onExport()} />
         <ListRow title="Delete account…" tone="destructive" icon={{ icon: Trash2, tint: 'gray' }} onSelect={onAsk} />
       </ListGroup>
       <Dialog
@@ -167,7 +165,7 @@ export function AccountData({ email, info, onDeleted, onNeedsSignIn, onSignedOut
           spellCheck={false}
         />
       </Dialog>
-    </div>
+    </Section>
   );
 }
 

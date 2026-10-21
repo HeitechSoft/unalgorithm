@@ -41,15 +41,17 @@ import {
   Dialog,
   ListGroup,
   ListRow,
+  Mail,
   SegmentedControl,
   type SegmentedOption,
   Switch,
   TextField,
+  Trash2,
   useToast,
 } from '@unalgorithm/ui';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
-import { AdminGate, useAdminSession } from './Admin.tsx';
+import { AdminGate, AdminPage, useAdminSession } from './Admin.tsx';
 import {
   ApiError,
   adminReport,
@@ -61,8 +63,8 @@ import {
   type ReportDetail,
   setReportFloor,
 } from './api.ts';
-import { Page } from './Page.tsx';
 import { failureMessage } from './SignIn.tsx';
+import { BackButton, Card, Facts, Section, SectionLoading, StatTile } from './ui.tsx';
 
 /** Days of daily counts the page shows. */
 const DAYS = 30;
@@ -245,7 +247,7 @@ function useFocusWhen<T extends HTMLElement>(ready: boolean) {
 
 export function AdminReports() {
   const session = useAdminSession(TITLE, loadSummary);
-  const { info, heading, step, sessionEnded } = session;
+  const { info, step, sessionEnded } = session;
   /**
    * The summary asked for since it loaded (after a change, or with development builds), with the answer it replaced:
    * after a new sign-in the page's own load is newer, and this one no longer counts.
@@ -344,7 +346,7 @@ export function AdminReports() {
       <ReportDetails
         key={id}
         id={id}
-        backLabel={back.name === 'group' ? 'Back to the group' : 'Back to all reports'}
+        backLabel={back.name === 'group' ? groupTitle(latest(back.group)) : 'All reports'}
         pending={pending}
         onBack={() => show(back)}
         onHandle={(resolution) => run('handle', () => handleReports({ ids: [id], handled: true, resolution }), 'Marked handled.')}
@@ -381,10 +383,10 @@ export function AdminReports() {
   }
 
   return (
-    <Page info={info} heading={heading} intro={INTRO} wide>
+    <AdminPage session={session} nav="reports" title={TITLE} intro={INTRO}>
       {notice ? <Banner tone="danger" title={notice} /> : null}
       {body}
-    </Page>
+    </AdminPage>
   );
 }
 
@@ -419,9 +421,24 @@ function Summary({
   return (
     <>
       {off}
-      <div className="web-notes web-status">
-        <p>{`${count(summary.today, 'report', 'reports')} today, of at most ${COUNT.format(summary.dailyMax)} a day.`}</p>
-        <p>{`From unlisted extension ids in the last 7 days: ${COUNT.format(summary.unlisted7d)}`}</p>
+      <div className="web-stats">
+        <StatTile
+          label="Open"
+          value={COUNT.format(summary.groups.reduce((n, g) => n + g.open, 0))}
+          detail={`in ${count(summary.groups.filter((g) => g.open > 0).length, 'group', 'groups')}`}
+        />
+        <StatTile
+          label="Reports today"
+          value={COUNT.format(summary.today)}
+          meter={summary.dailyMax > 0 ? summary.today / summary.dailyMax : 0}
+          detail={`of at most ${COUNT.format(summary.dailyMax)} a day`}
+        />
+        <StatTile
+          label="From unlisted extension ids"
+          value={COUNT.format(summary.unlisted7d)}
+          detail="in the last 7 days"
+          tone={summary.unlisted7d > 0 ? 'warning' : 'accent'}
+        />
       </div>
       <div className="web-admin">
         <div className="web-admin-column">
@@ -472,23 +489,25 @@ function Groups({
   onView(group: ReportGroup): void;
   onHandle(group: ReportGroup, resolution: ReportResolution): void;
 }) {
-  const headingId = useId();
   const headingRef = useFocusWhen<HTMLHeadingElement>(focusHeading);
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId} ref={headingRef} tabIndex={-1}>
-        Groups
-      </h2>
-      <ListGroup>
-        <ListRow
-          title="Show development builds"
-          control={<Switch label="Show development builds" checked={dev} disabled={pending !== null} onCheckedChange={onDev} />}
-        />
-      </ListGroup>
+    <Section
+      title="Groups"
+      description="Reports grouped by platform, detection version, kind and topic; open groups first."
+      headingRef={headingRef}
+      actions={
+        <label className="web-switch-label">
+          <span>Development builds</span>
+          <Switch label="Show development builds" checked={dev} disabled={pending !== null} onCheckedChange={onDev} />
+        </label>
+      }
+    >
       {groups.length === 0 ? (
-        <p className="web-status">{NO_GROUPS}</p>
+        <Card>
+          <p className="web-empty-line">{NO_GROUPS}</p>
+        </Card>
       ) : (
-        <ul className="web-groups" aria-labelledby={headingId}>
+        <ul className="web-groups" aria-label="Groups">
           {groups.map((group) => {
             const title = groupTitle(group);
             return (
@@ -498,7 +517,7 @@ function Groups({
                   <p className="web-group-stats">{groupStats(group, now)}</p>
                 </div>
                 <Spark perDay={group.perDay} />
-                <div className="ua-hstack ua-wrap">
+                <div className="web-group-tools">
                   <Button size="sm" aria-label={`View ${title}`} disabled={pending !== null} onClick={() => onView(group)}>
                     View
                   </Button>
@@ -517,7 +536,7 @@ function Groups({
           })}
         </ul>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -608,7 +627,6 @@ function Corrections({
   onOpen(id: string): void;
   onSignedOut(): void;
 }) {
-  const headingId = useId();
   // The groups' identity changes with every summary; their keys say when the lists need reading again.
   const waiting = groups
     .filter((g) => g.open > 0)
@@ -644,14 +662,28 @@ function Corrections({
   }, [load]);
 
   return (
-    <section className="web-section" aria-labelledby={headingId} aria-busy={state.name === 'loading' || undefined}>
-      <h2 id={headingId}>Corrections</h2>
-      <p className="ua-footnote">{`We answer corrections within ${CORRECTION_ANSWER_BUSINESS_DAYS} business days.`}</p>
+    <Section
+      title="Corrections"
+      description={`We answer corrections within ${CORRECTION_ANSWER_BUSINESS_DAYS} business days. The longest waiting come first.`}
+      busy={state.name === 'loading'}
+      actions={
+        groups.length > 0
+          ? groups.map((group) => (
+              <Button key={group.key} size="sm" variant="plain" onClick={() => onView(group)}>
+                {`All ${featureName(group.topic)} corrections`}
+              </Button>
+            ))
+          : undefined
+      }
+    >
+      {state.name === 'loading' ? <SectionLoading /> : null}
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
       {state.name !== 'loaded' ? null : state.data.rows.length === 0 ? (
-        <p className="web-status">{NO_CORRECTIONS}</p>
+        <Card>
+          <p className="web-empty-line">{NO_CORRECTIONS}</p>
+        </Card>
       ) : (
         <ListGroup>
           {state.data.rows.map((row) => {
@@ -683,22 +715,12 @@ function Corrections({
       {state.name === 'loaded' && state.data.more ? (
         <p className="ua-footnote">More corrections are waiting than this list shows: open their group to see them all.</p>
       ) : null}
-      {groups.length > 0 ? (
-        <div className="ua-hstack ua-wrap">
-          {groups.map((group) => (
-            <Button key={group.key} size="sm" variant="plain" onClick={() => onView(group)}>
-              {`All ${featureName(group.topic)} corrections`}
-            </Button>
-          ))}
-        </div>
-      ) : null}
-    </section>
+    </Section>
   );
 }
 
 /** Lookup by reference (an exact match, for privacy requests); a found report opens at once. */
 function FindReport({ onFound, onSignedOut }: { onFound(id: string): void; onSignedOut(): void }) {
-  const headingId = useId();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -727,26 +749,25 @@ function FindReport({ onFound, onSignedOut }: { onFound(id: string): void; onSig
   }
 
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>Find a report</h2>
-      <form className="web-find" noValidate onSubmit={(e) => void onFind(e)}>
-        <TextField
-          label="Reference"
-          mono
-          autoComplete="off"
-          spellCheck={false}
-          hint="The reference the person was shown, as in a privacy request."
-          error={error}
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-        />
-        <div>
+    <Section title="Find a report">
+      <Card>
+        <form className="web-inline-form web-find" noValidate onSubmit={(e) => void onFind(e)}>
+          <TextField
+            label="Reference"
+            mono
+            autoComplete="off"
+            spellCheck={false}
+            hint="The reference the person was shown, as in a privacy request."
+            error={error}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
           <Button type="submit" loading={busy}>
             Find
           </Button>
-        </div>
-      </form>
-    </section>
+        </form>
+      </Card>
+    </Section>
   );
 }
 
@@ -760,10 +781,8 @@ function FixedIn({
   pending: string | null;
   onFloor(platform: PlatformId, adapter: string | null): void;
 }) {
-  const headingId = useId();
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>Fixed in</h2>
+    <Section title="Fixed in">
       <ListGroup footer={FLOOR_NOTE}>
         {PLATFORMS.map((platform) => {
           const floor = summary.floors.find((f) => f.platform === platform) ?? null;
@@ -785,7 +804,7 @@ function FixedIn({
           );
         })}
       </ListGroup>
-    </section>
+    </Section>
   );
 }
 
@@ -819,7 +838,7 @@ function FloorRow({
       title={name}
       subtitle={subtitle}
       control={
-        <div className="ua-hstack ua-wrap">
+        <div className="web-row-buttons">
           {versions.length > 0 ? (
             <>
               <label className="ua-vh" htmlFor={id}>
@@ -866,13 +885,11 @@ const dayTotal = (day: ReportDay) => day.linkedin + day.facebook + day.other;
  * numbers as a table. The bars are hidden from screen readers, which read the table.
  */
 function LastDays({ days }: { days: readonly ReportDay[] }) {
-  const headingId = useId();
   const newest = [...days].reverse();
   const most = Math.max(1, ...days.map(dayTotal));
   return (
-    <section className="web-section" aria-labelledby={headingId}>
-      <h2 id={headingId}>{`Last ${DAYS} days`}</h2>
-      <div className="web-bars" aria-hidden="true">
+    <Section title={`Last ${DAYS} days`} description="Reports a day, newest first (UTC).">
+      <div className="web-card web-bars" aria-hidden="true">
         <p className="web-bars-key">
           {PARTS.map((part) => (
             <span key={part}>
@@ -895,30 +912,35 @@ function LastDays({ days }: { days: readonly ReportDay[] }) {
           </div>
         ))}
       </div>
-      <table className="web-table">
-        <caption>Reports a day (UTC)</caption>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            {PARTS.map((part) => (
-              <th key={part} scope="col">
-                {PART_LABELS[part]}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {newest.map((day) => (
-            <tr key={day.day}>
-              <th scope="row">{DAY.format(new Date(day.day))}</th>
-              {PARTS.map((part) => (
-                <td key={part}>{COUNT.format(day[part])}</td>
+      <details className="web-disclosure">
+        <summary>Show as a table</summary>
+        <div className="web-table-card">
+          <table className="web-table">
+            <caption>Reports a day (UTC)</caption>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                {PARTS.map((part) => (
+                  <th key={part} scope="col">
+                    {PART_LABELS[part]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {newest.map((day) => (
+                <tr key={day.day}>
+                  <th scope="row">{DAY.format(new Date(day.day))}</th>
+                  {PARTS.map((part) => (
+                    <td key={part}>{COUNT.format(day[part])}</td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </Section>
   );
 }
 
@@ -983,17 +1005,15 @@ function GroupReports({
   const title = groupTitle(group);
   const empty = status === 'open' ? 'No open reports.' : status === 'handled' ? 'No handled reports.' : 'No reports.';
   return (
-    <section className="web-section" aria-labelledby={headingId} aria-busy={loading || undefined}>
-      <div>
-        <Button size="sm" variant="plain" onClick={onBack}>
-          Back to all reports
-        </Button>
+    <section className="web-section web-view" aria-labelledby={headingId} aria-busy={loading || undefined}>
+      <BackButton label="All reports" onBack={onBack} />
+      <div className="web-view-head">
+        <h2 id={headingId} ref={headingRef} tabIndex={-1}>
+          {title}
+        </h2>
+        <p className="web-group-stats">{groupStats(group, now)}</p>
       </div>
-      <h2 id={headingId} ref={headingRef} tabIndex={-1}>
-        {title}
-      </h2>
-      <p className="web-group-stats">{groupStats(group, now)}</p>
-      <div className="ua-hstack ua-wrap web-group-tools">
+      <div className="web-toolbar">
         <SegmentedControl label="Show" value={status} options={STATUSES} onValueChange={onStatus} />
         {group.open > 0 ? (
           <MarkHandled
@@ -1010,8 +1030,11 @@ function GroupReports({
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
+      {state.name === 'loading' ? <SectionLoading /> : null}
       {state.name !== 'loaded' ? null : state.data.rows.length === 0 ? (
-        <p className="web-status">{empty}</p>
+        <Card>
+          <p className="web-empty-line">{empty}</p>
+        </Card>
       ) : (
         <ListGroup>
           {state.data.rows.map((row) => (
@@ -1034,7 +1057,7 @@ function GroupReports({
         </ListGroup>
       )}
       {state.name === 'loaded' && (cursors.length > 1 || state.data.nextBefore !== null) ? (
-        <div className="ua-hstack ua-wrap">
+        <div className="web-pager">
           <Button
             size="sm"
             disabled={cursors.length === 1}
@@ -1118,44 +1141,26 @@ function ReportDetails({
 
   const report = state.name === 'loaded' ? state.data : null;
   return (
-    <article className="web-section" aria-labelledby={headingId} aria-busy={loading || undefined}>
-      <div>
-        <Button size="sm" variant="plain" onClick={onBack}>
-          {backLabel}
-        </Button>
+    <article className="web-section web-view" aria-labelledby={headingId} aria-busy={loading || undefined}>
+      <BackButton label={backLabel} onBack={onBack} />
+      <div className="web-view-head">
+        <h2 id={headingId} ref={headingRef} tabIndex={-1}>
+          {report ? `Report ${report.ref}` : 'Report'}
+        </h2>
+        {report ? <p className="web-group-stats">{handledLine(report)}</p> : null}
       </div>
-      <h2 id={headingId} ref={headingRef} tabIndex={-1}>
-        {report ? `Report ${report.ref}` : 'Report'}
-      </h2>
+      {state.name === 'loading' ? <SectionLoading /> : null}
       {state.name === 'failed' ? (
         <Banner tone="danger" title={LOAD_FAILED} action={{ label: 'Try again', onAction: () => void load() }} />
       ) : null}
-      {state.name === 'gone' ? <p className="web-status">{GONE}</p> : null}
+      {state.name === 'gone' ? (
+        <Card>
+          <p className="web-empty-line">{GONE}</p>
+        </Card>
+      ) : null}
       {report ? (
         <>
-          <dl className="web-facts">
-            <dt>Received</dt>
-            <dd>{`${TIME.format(new Date(report.receivedAt))} UTC`}</dd>
-            <dt>About</dt>
-            <dd>{groupTitle(report)}</dd>
-            <dt>Status</dt>
-            <dd>{handledLine(report)}</dd>
-            <dt>Extension id</dt>
-            <dd>{report.listed ? 'Listed on this server' : 'Not listed on this server (EXTENSION_IDS)'}</dd>
-            <dt>Network</dt>
-            <dd>
-              {report.firstFromNetwork
-                ? 'The first report of its kind about this site from its network that day'
-                : 'Not the first of its kind about this site from its network that day'}
-            </dd>
-            {report.unknownCodes > 0 ? (
-              <>
-                <dt>Codes left out</dt>
-                <dd>{`${count(report.unknownCodes, 'code', 'codes')} this server doesn't know yet`}</dd>
-              </>
-            ) : null}
-          </dl>
-          <div className="ua-hstack ua-wrap">
+          <div className="web-toolbar">
             {report.handledAt === null ? (
               <MarkHandled
                 kind={report.kind}
@@ -1169,52 +1174,84 @@ function ReportDetails({
                 Reopen
               </Button>
             )}
-            <Button size="sm" variant="destructive" disabled={pending !== null} onClick={() => setAsking(true)}>
+            <Button size="sm" variant="destructive" icon={Trash2} disabled={pending !== null} onClick={() => setAsking(true)}>
               Delete
             </Button>
           </div>
-          <section className="web-dialog-section">
+          <Card>
+            <Facts
+              items={[
+                ['Received', `${TIME.format(new Date(report.receivedAt))} UTC`],
+                ['About', groupTitle(report)],
+                ['Status', handledLine(report)],
+                ['Extension id', report.listed ? 'Listed on this server' : 'Not listed on this server (EXTENSION_IDS)'],
+                [
+                  'Network',
+                  report.firstFromNetwork
+                    ? 'The first report of its kind about this site from its network that day'
+                    : 'Not the first of its kind about this site from its network that day',
+                ],
+                ...(report.unknownCodes > 0
+                  ? ([['Codes left out', `${count(report.unknownCodes, 'code', 'codes')} this server doesn't know yet`]] as const)
+                  : []),
+              ]}
+            />
+          </Card>
+          <section className="web-report-part">
             <h3>What was sent</h3>
-            <ul className="web-lines">
-              {report.lines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
+            <Card>
+              <ul className="web-lines">
+                {report.lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </Card>
           </section>
           {report.message !== null ? (
-            <section className="web-dialog-section">
+            <section className="web-report-part">
               <h3>In their own words</h3>
               <p className="web-message">{cleanReportMessage(report.message)}</p>
             </section>
           ) : null}
           {report.kind === 'correction' || report.contact !== null ? (
-            <section className="web-dialog-section">
+            <section className="web-report-part">
               <h3>Reply to</h3>
               {report.contact === null ? (
-                <p>No reply email.</p>
+                <Card>
+                  <p className="web-empty-line">No reply email.</p>
+                </Card>
               ) : (
-                <div className="ua-hstack ua-wrap web-contact">
-                  {isEmail(report.contact) ? (
-                    <a href={replyLink(report.contact, report.ref)}>{report.contact}</a>
-                  ) : (
-                    <span>{`Not an email address: ${cleanReportMessage(report.contact)}`}</span>
-                  )}
-                  <Button
-                    size="sm"
-                    loading={pending === 'forget'}
-                    disabled={pending !== null}
-                    onClick={() => void change(onForget)}
-                  >
-                    Forget email
-                  </Button>
-                </div>
+                <ListGroup>
+                  <ListRow
+                    icon={{ icon: Mail, tint: 'blue' }}
+                    title={
+                      isEmail(report.contact) ? (
+                        <a className="web-contact" href={replyLink(report.contact, report.ref)}>
+                          {report.contact}
+                        </a>
+                      ) : (
+                        <span className="web-contact">{`Not an email address: ${cleanReportMessage(report.contact)}`}</span>
+                      )
+                    }
+                    control={
+                      <Button
+                        size="sm"
+                        loading={pending === 'forget'}
+                        disabled={pending !== null}
+                        onClick={() => void change(onForget)}
+                      >
+                        Forget email
+                      </Button>
+                    }
+                  />
+                </ListGroup>
               )}
             </section>
           ) : null}
-          <section className="web-dialog-section">
-            <h3>As stored</h3>
+          <details className="web-disclosure web-report-part">
+            <summary>As stored</summary>
             <pre className="web-json">{JSON.stringify(report.details, null, 2)}</pre>
-          </section>
+          </details>
           <Dialog
             open={asking}
             onOpenChange={setAsking}

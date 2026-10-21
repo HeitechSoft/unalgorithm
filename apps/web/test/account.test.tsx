@@ -3,7 +3,7 @@
  * when nobody is, and the home page's link to it. `fetch` is a fake server per test that keeps a session as the real one
  * does: an accepted code starts it and signing out ends it. The Credits section has its own tests (credits.test.tsx).
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import {
   ACCOUNT_DEVICES_PATH,
   ACCOUNT_PAGE_PATH,
@@ -28,6 +28,18 @@ async function sectionsLoaded() {
   await screen.findByText('No passkeys yet.');
 }
 
+/**
+ * `html` with each id React generated (`useId`, which a section's heading and its `aria-labelledby` share) renumbered in
+ * order of first use: the Credits section takes ids of its own, which shifts those of the sections after it.
+ */
+function numberIds(html: string): string {
+  const ids = new Map<string, number>();
+  return html.replace(/_r_[0-9a-z]+_/g, (id) => {
+    if (!ids.has(id)) ids.set(id, ids.size);
+    return `id-${ids.get(id)}`;
+  });
+}
+
 /** Renders the account page. */
 function openAccount() {
   const user = setupUser();
@@ -46,9 +58,15 @@ describe('signed in', () => {
     fakeServer({ session: TOM });
     openAccount();
     expect(await screen.findByText(SIGNED_IN)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1, name: INFO.name })).toBeTruthy();
+    // The page is the account, under its own title; the top bar names the server and who is signed in.
+    expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeTruthy();
     expect(screen.getByText('Your account on this server.')).toBeTruthy();
+    const topBar = document.querySelector('.web-topbar') as HTMLElement;
+    expect(within(topBar).getByRole('link', { name: INFO.name }).getAttribute('href')).toBe(ACCOUNT_PAGE_PATH);
+    expect(within(topBar).getByText(TOM)).toBeTruthy();
+    expect(within(topBar).getByRole('button', { name: 'Sign out' })).toBeTruthy();
+    // Someone who isn't an admin gets no sidebar.
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
     expect(document.title).toBe(`Account · ${INFO.name}`);
     expect(screen.queryByLabelText('Email')).toBeNull();
   });
@@ -86,6 +104,7 @@ describe('signed out and errors', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText(SIGNED_IN)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeTruthy();
     expect(screen.queryByLabelText('Email')).toBeNull();
     // The address shown is the one the server reports for the new session, asked for again.
     expect(server.count('GET', SESSION_PATH)).toBe(2);
@@ -168,7 +187,7 @@ describe('signed out and errors', () => {
       const credits = screen.queryByRole('region', { name: 'Credits' });
       expect(credits !== null).toBe(billing);
       credits?.remove();
-      pages.push(container.innerHTML);
+      pages.push(numberIds(container.innerHTML));
       expect(server.calls.map((c) => c.path)).toEqual(
         billing
           ? [SERVER_INFO_PATH, SESSION_PATH, CREDIT_ACCOUNT_PATH, PRICES_JSON_PATH, ...SECTIONS]

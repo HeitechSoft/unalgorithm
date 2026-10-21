@@ -9,9 +9,10 @@
  */
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { EMAIL_OTP_METHOD, GOOGLE_METHOD, PASSKEY_METHOD } from '@unalgorithm/protocol';
-import { Banner, Button, ListGroup, TextField } from '@unalgorithm/ui';
+import { Banner, Button, KeyRound, TextField } from '@unalgorithm/ui';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, getSession, googleSignInUrl, PasskeyCancelled, sendCode, signInWithPasskey, verifyCode } from './api.ts';
+import { Card } from './ui.tsx';
 
 /** What a page says when it sends the person back to sign in because the server no longer knows the session. */
 export const SIGNED_OUT = 'You were signed out. Sign in again.';
@@ -207,8 +208,8 @@ export function SignIn({
       {error ? <Banner tone="danger" title={error} /> : null}
       {notice ? <Banner tone="info" title={notice} /> : null}
       {step.name === 'email' ? (
-        <ListGroup>
-          <form className="web-form ua-stack" onSubmit={onSendCode}>
+        <Card>
+          <form className="web-form" onSubmit={onSendCode}>
             <TextField
               label="Email"
               type="email"
@@ -218,7 +219,7 @@ export function SignIn({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            <Button type="submit" variant="primary" fullWidth loading={busy === 'email'} disabled={busy !== null}>
+            <Button type="submit" variant="primary" size="lg" fullWidth loading={busy === 'email'} disabled={busy !== null}>
               Send code
             </Button>
             {google || passkey ? (
@@ -227,22 +228,31 @@ export function SignIn({
               </p>
             ) : null}
             {google ? (
-              <Button fullWidth loading={busy === 'google'} disabled={busy !== null} onClick={onGoogle}>
+              <Button size="lg" fullWidth loading={busy === 'google'} disabled={busy !== null} onClick={onGoogle}>
                 Continue with Google
               </Button>
             ) : null}
             {passkey ? (
-              <Button fullWidth loading={busy === 'passkey'} disabled={busy !== null} onClick={onPasskey}>
+              <Button
+                size="lg"
+                fullWidth
+                icon={KeyRound}
+                loading={busy === 'passkey'}
+                disabled={busy !== null}
+                onClick={onPasskey}
+              >
                 Sign in with a passkey
               </Button>
             ) : null}
           </form>
-        </ListGroup>
+        </Card>
       ) : (
-        <ListGroup footer={`If ${step.email} can sign in here, a 6-digit code is on its way.`}>
-          <form className="web-form ua-stack" onSubmit={(e) => onSignIn(e, step.email)}>
+        <Card>
+          <form className="web-form" onSubmit={(e) => onSignIn(e, step.email)}>
+            <p className="web-code-sent">{`If ${step.email} can sign in here, a 6-digit code is on its way.`}</p>
             <TextField
               label="6-digit code"
+              className="web-code"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
@@ -252,10 +262,10 @@ export function SignIn({
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
             />
-            <Button type="submit" variant="primary" fullWidth loading={busy !== null}>
+            <Button type="submit" variant="primary" size="lg" fullWidth loading={busy !== null}>
               Sign in
             </Button>
-            <div className="ua-hstack web-actions">
+            <div className="web-code-links">
               <Button variant="plain" size="sm" disabled={busy !== null} onClick={() => onSendNewCode(step.email)}>
                 Send a new code
               </Button>
@@ -264,7 +274,7 @@ export function SignIn({
               </Button>
             </div>
           </form>
-        </ListGroup>
+        </Card>
       )}
     </>
   );
