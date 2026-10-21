@@ -1,5 +1,13 @@
 # @unalgorithm/extension
 
+## 0.4.1
+
+### Patch Changes
+
+- [#44](https://github.com/HeitechSoft/unalgorithm/pull/44) [`2764cca`](https://github.com/HeitechSoft/unalgorithm/commit/2764ccae11cf12fbd77df988f97c57a50629136a) Thanks [@OwenHeiber](https://github.com/OwenHeiber)! - A LinkedIn or Facebook tab that loads while unAlgorithm Feed installs no longer shows every hidden post for a moment: the extension adds its script only to tabs that don't already run it.
+- Updated dependencies [[`d645d02`](https://github.com/HeitechSoft/unalgorithm/commit/d645d0262d5729c492887b502930a052fad9c169)]:
+  - @unalgorithm/ui@0.1.1
+
 ## 0.4.0
 
 ### Minor Changes
