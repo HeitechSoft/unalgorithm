@@ -54,7 +54,7 @@
     "@wxt-dev/module-react": "^1.2.2",
     "axe-core": "~4.14.0",
     "cross-env": "^10.1.0",
-    "fake-indexeddb": "^6.2.5",
+    "fake-indexeddb": "^6.2.6",
     "puppeteer-core": "25.14.0",
     "web-ext": "^10.8.0",
     "wxt": "0.21.4"
